@@ -1,6 +1,6 @@
 # news-recap
 
- 
+
 
 
 ### Advanced
@@ -14,4 +14,3 @@ to see all available options.
 !!! info "About"
     ![About](images/about.jpg)
     [About][news_recap.__about__]
-
