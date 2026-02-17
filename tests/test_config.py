@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from os import environ
+
+import pytest
+
+from news_recap.config import IngestionSettings, RssSettings, Settings
+
+
+def test_validate_for_rss_requires_at_least_one_feed_url() -> None:
+    settings = Settings(rss=RssSettings(feed_urls=()))
+
+    with pytest.raises(ValueError, match="At least one RSS feed URL is required"):
+        settings.validate_for_rss()
+
+
+def test_validate_for_rss_rejects_invalid_feed_url() -> None:
+    settings = Settings(rss=RssSettings(feed_urls=("https://example.com/feed.xml",)))
+
+    with pytest.raises(ValueError, match="Invalid RSS feed URL"):
+        settings.validate_for_rss(override_feed_urls=("ftp://example.com/feed.xml",))
+
+
+def test_validate_for_rss_accepts_absolute_http_and_https_urls() -> None:
+    settings = Settings(rss=RssSettings(feed_urls=("https://example.com/feed.xml",)))
+    settings.validate_for_rss()
+    settings.validate_for_rss(
+        override_feed_urls=("http://example.com/feed.xml", "https://example.com/feed2.xml"),
+    )
+
+
+def test_validate_for_rss_rejects_non_positive_default_items_per_feed() -> None:
+    settings = Settings(
+        rss=RssSettings(
+            feed_urls=("https://example.com/feed.xml",),
+            default_items_per_feed=0,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="DEFAULT_ITEMS_PER_FEED"):
+        settings.validate_for_rss()
+
+
+def test_validate_for_rss_rejects_non_positive_per_feed_override() -> None:
+    settings = Settings(
+        rss=RssSettings(
+            feed_urls=("https://example.com/feed.xml",),
+            per_feed_items={"https://example.com/feed.xml": -1},
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Per-feed RSS items override"):
+        settings.validate_for_rss()
+
+
+def test_validate_for_rss_rejects_non_positive_active_run_stale_after_seconds() -> None:
+    settings = Settings(
+        ingestion=IngestionSettings(active_run_stale_after_seconds=0),
+        rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
+    )
+
+    with pytest.raises(ValueError, match="ACTIVE_RUN_STALE_AFTER_SECONDS"):
+        settings.validate_for_rss()
+
+
+def test_from_env_parses_per_feed_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "NEWS_RECAP_RSS_FEED_URLS", "https://a.example/feed.xml,https://b.example/feed.xml"
+    )
+    monkeypatch.setenv(
+        "NEWS_RECAP_RSS_FEED_ITEMS",
+        "https://a.example/feed.xml|5000,https://b.example/feed.xml|123",
+    )
+    monkeypatch.setenv("NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED", "10000")
+
+    settings = Settings.from_env()
+    assert settings.rss.default_items_per_feed == 10000
+    assert settings.rss.per_feed_items == {
+        "https://a.example/feed.xml": 5000,
+        "https://b.example/feed.xml": 123,
+    }
+
+    # Cleanup explicit env keys set in this test for isolation in local runs.
+    environ.pop("NEWS_RECAP_RSS_FEED_URLS", None)
+    environ.pop("NEWS_RECAP_RSS_FEED_ITEMS", None)
+    environ.pop("NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED", None)

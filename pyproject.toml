@@ -11,8 +11,12 @@ classifiers = [ "Programming Language :: Python :: 3", "License :: OSI Approved 
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "alembic>=1.16.0",
     "click>=8.2.0",
+    "defusedxml>=0.7.1",
     "rich-click>=1.8.8",
+    "sentence-transformers>=3.0.1",
+    "sqlmodel>=0.0.22",
 ]
 [[project.authors]]
 name = "Andrey Sorokin"
