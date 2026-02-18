@@ -5,16 +5,16 @@
 | Name                                                     |    Stmts |     Miss |   Cover |   Missing |
 |--------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
-| src/news\_recap/config.py                                |      117 |       15 |     87% |152, 159, 175, 177, 187-188, 192, 206, 208, 227-232 |
+| src/news\_recap/config.py                                |      120 |       15 |     88% |156, 163, 179, 181, 191-192, 196, 210, 212, 231-236 |
 | src/news\_recap/ingestion/cleaning.py                    |       53 |        4 |     92% |41, 45-46, 75 |
-| src/news\_recap/ingestion/controllers.py                 |      120 |        8 |     93% |136, 158, 182, 205, 225, 263-264, 301 |
+| src/news\_recap/ingestion/controllers.py                 |      145 |       12 |     92% |133, 161, 183, 207, 230, 250, 282, 291, 314-315, 352, 363 |
 | src/news\_recap/ingestion/dedup/calibration.py           |       66 |       32 |     52% |71-95, 105-107, 113-143 |
 | src/news\_recap/ingestion/dedup/cluster.py               |       74 |        4 |     95% |20, 58, 62, 128 |
 | src/news\_recap/ingestion/dedup/embedder.py              |       71 |       14 |     80% |27-30, 40, 58, 61, 83-86, 89-91, 118 |
 | src/news\_recap/ingestion/language.py                    |       23 |        2 |     91% |    21, 35 |
-| src/news\_recap/ingestion/models.py                      |      148 |        0 |    100% |           |
+| src/news\_recap/ingestion/models.py                      |      154 |        0 |    100% |           |
 | src/news\_recap/ingestion/pipeline.py                    |       39 |        0 |    100% |           |
-| src/news\_recap/ingestion/repository.py                  |      396 |       41 |     90% |100, 129, 169, 194, 224, 240-245, 263, 292-302, 442-444, 503, 541, 647-649, 697, 727, 756, 781-784, 846-851, 932-934, 963, 1054 |
+| src/news\_recap/ingestion/repository.py                  |      409 |       41 |     90% |101, 130, 170, 195, 225, 241-246, 264, 293-303, 506-508, 567, 605, 711-713, 761, 791, 820, 845-848, 910-915, 996-998, 1027, 1118 |
 | src/news\_recap/ingestion/services/dedup\_service.py     |       51 |        3 |     94% |     97-99 |
 | src/news\_recap/ingestion/services/fetch\_service.py     |       65 |        2 |     97% |   79, 119 |
 | src/news\_recap/ingestion/services/normalize\_service.py |       14 |        0 |    100% |           |
@@ -23,8 +23,8 @@
 | src/news\_recap/ingestion/storage/alembic\_runner.py     |       12 |        0 |    100% |           |
 | src/news\_recap/ingestion/storage/common.py              |       15 |        8 |     47% |18-21, 27-30 |
 | src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      137 |        0 |    100% |           |
-| src/news\_recap/main.py                                  |       46 |        0 |    100% |           |
-| **TOTAL**                                                | **1892** |  **249** | **87%** |           |
+| src/news\_recap/main.py                                  |       52 |        0 |    100% |           |
+| **TOTAL**                                                | **1945** |  **253** | **87%** |           |
 
 
 ## Setup coverage badge
