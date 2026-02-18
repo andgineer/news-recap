@@ -123,7 +123,9 @@ class IngestionCliController:
         for feed in fetch_stats.feeds:
             lines.append(
                 "  feed="
-                f"{feed.feed_url} items={feed.items_limit} status={feed.status} "
+                f"{feed.feed_url} request_url={feed.request_url} "
+                f"requested_n={feed.requested_n} "
+                f"received_items={feed.received_items} status={feed.status} "
                 f"if_none_match={'yes' if feed.sent_if_none_match else 'no'} "
                 f"if_modified_since={'yes' if feed.sent_if_modified_since else 'no'} "
                 f"etag={'yes' if feed.received_etag else 'no'} "

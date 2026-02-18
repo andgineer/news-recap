@@ -64,7 +64,7 @@ news-recap ingest duplicates --run-id <run_id>
 
 ## Retention Cleanup
 
-Delete old articles by `published_at`:
+Delete old user-linked articles by `discovered_at`:
 
 ```bash
 news-recap ingest prune --days 30

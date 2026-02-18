@@ -115,12 +115,14 @@ class RssFeedFetchStats:
     """Per-feed HTTP conditional fetch diagnostics for one run."""
 
     feed_url: str
-    items_limit: int
+    request_url: str
+    requested_n: int
     sent_if_none_match: bool
     sent_if_modified_since: bool
     status: str
     received_etag: bool
     received_last_modified: bool
+    received_items: int
 
 
 @dataclass(slots=True)
@@ -242,12 +244,14 @@ class RssSource(PageCheckpointSourceAdapter):
                     stats.feeds.append(
                         RssFeedFetchStats(
                             feed_url=feed_url,
-                            items_limit=items_limit,
+                            request_url=feed_url,
+                            requested_n=items_limit,
                             sent_if_none_match=False,
                             sent_if_modified_since=False,
                             status="restored_snapshot",
                             received_etag=False,
                             received_last_modified=False,
+                            received_items=0,
                         ),
                     )
         return self._snapshot_articles
@@ -273,12 +277,16 @@ class RssSource(PageCheckpointSourceAdapter):
             response = _coerce_fetch_response(
                 self._request_feed(request_url, etag=etag, last_modified=last_modified),
             )
+            parsed_items_count = 0
+            parsed_feed_items: list[SourceArticle] = []
             if response.not_modified or response.raw_xml is None:
                 status = "not_modified"
                 stats.responses_not_modified += 1
             else:
                 status = "fetched"
                 stats.responses_fetched += 1
+                parsed_feed_items = _parse_feed(response.raw_xml, feed_url)
+                parsed_items_count = len(parsed_feed_items)
             if response.etag is not None:
                 stats.responses_with_etag += 1
             if response.last_modified is not None:
@@ -286,12 +294,14 @@ class RssSource(PageCheckpointSourceAdapter):
             stats.feeds.append(
                 RssFeedFetchStats(
                     feed_url=feed_url,
-                    items_limit=items_limit,
+                    request_url=request_url,
+                    requested_n=items_limit,
                     sent_if_none_match=sent_if_none_match,
                     sent_if_modified_since=sent_if_modified_since,
                     status=status,
                     received_etag=response.etag is not None,
                     received_last_modified=response.last_modified is not None,
+                    received_items=parsed_items_count,
                 ),
             )
             self._save_http_cache(
@@ -301,7 +311,7 @@ class RssSource(PageCheckpointSourceAdapter):
             )
             if response.not_modified or response.raw_xml is None:
                 continue
-            articles.extend(_parse_feed(response.raw_xml, feed_url))
+            articles.extend(parsed_feed_items)
         articles.sort(key=lambda article: article.published_at, reverse=True)
         stats.snapshot_articles = len(articles)
         return articles

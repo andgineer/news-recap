@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import event, func, or_
+from sqlalchemy import and_, case, event, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, create_engine, delete, select
 
@@ -45,10 +45,12 @@ from news_recap.ingestion.storage.sqlmodel_models import (
     ArticleEmbedding,
     ArticleExternalId,
     ArticleRaw,
+    ArticleResource,
     DedupCluster,
     IngestionRun,
     RssFeedState,
     RssProcessingSnapshot,
+    UserArticle,
 )
 from news_recap.ingestion.storage.sqlmodel_models import (
     IngestionGap as IngestionGapRow,
@@ -337,7 +339,6 @@ class SQLiteRepository:
             if article_ids:
                 article_rows = session.exec(
                     select(Article).where(
-                        Article.user_id == self.user_id,
                         col(Article.article_id).in_(list(article_ids)),
                     ),
                 ).all()
@@ -412,11 +413,24 @@ class SQLiteRepository:
         source_name: str,
         external_id: str,
         raw_payload: dict[str, object],
+        *,
+        article_id: str | None = None,
     ) -> None:
         with Session(self.engine) as session:
+            resolved_article_id = article_id
+            if resolved_article_id is None:
+                alias = session.exec(
+                    select(ArticleExternalId).where(
+                        ArticleExternalId.source_name == source_name,
+                        ArticleExternalId.external_id == external_id,
+                    ),
+                ).one_or_none()
+                if alias is None:
+                    return
+                resolved_article_id = alias.article_id
+
             existing = session.exec(
                 select(ArticleRaw).where(
-                    ArticleRaw.user_id == self.user_id,
                     ArticleRaw.source_name == source_name,
                     ArticleRaw.external_id == external_id,
                 ),
@@ -424,13 +438,19 @@ class SQLiteRepository:
             if existing is None:
                 session.add(
                     ArticleRaw(
-                        user_id=self.user_id,
+                        article_id=resolved_article_id,
                         source_name=source_name,
                         external_id=external_id,
                         raw_json=json.dumps(raw_payload, ensure_ascii=False, sort_keys=True),
                         first_seen_at=utc_now(),
                     ),
                 )
+                session.commit()
+                return
+
+            if existing.article_id != resolved_article_id:
+                existing.article_id = resolved_article_id
+                session.add(existing)
                 session.commit()
 
     def prune_articles(
@@ -440,51 +460,55 @@ class SQLiteRepository:
         dry_run: bool = False,
     ) -> RetentionPruneResult:
         cutoff_db = _to_db_datetime(cutoff)
-        raw_matches_deleted_article = (
-            select(1)
-            .where(
-                col(Article.user_id) == col(ArticleRaw.user_id),
-                col(Article.source_name) == col(ArticleRaw.source_name),
-                col(Article.external_id) == col(ArticleRaw.external_id),
-                col(Article.published_at) < cutoff_db,
-            )
-            .exists()
-        )
         with Session(self.engine) as session:
-            articles_deleted = int(
-                session.exec(
-                    select(func.count())
-                    .select_from(Article)
-                    .where(
-                        Article.user_id == self.user_id,
-                        Article.published_at < cutoff_db,
-                    ),
-                ).one(),
-            )
-            raw_payloads_deleted = int(
-                session.exec(
-                    select(func.count())
-                    .select_from(ArticleRaw)
-                    .where(
-                        ArticleRaw.user_id == self.user_id,
-                        raw_matches_deleted_article,
-                    ),
-                ).one(),
+            candidate_article_ids = session.exec(
+                select(UserArticle.article_id).where(
+                    UserArticle.user_id == self.user_id,
+                    UserArticle.discovered_at < cutoff_db,
+                ),
+            ).all()
+            articles_deleted = len(candidate_article_ids)
+
+            orphan_article_ids: list[str] = []
+            if candidate_article_ids:
+                orphan_article_ids = list(
+                    session.exec(
+                        select(Article.article_id).where(
+                            col(Article.article_id).in_(candidate_article_ids),
+                            ~select(1)
+                            .where(
+                                col(UserArticle.article_id) == col(Article.article_id),
+                                col(UserArticle.user_id) != self.user_id,
+                            )
+                            .exists(),
+                        ),
+                    ).all(),
+                )
+
+            raw_payloads_deleted = (
+                int(
+                    session.exec(
+                        select(func.count())
+                        .select_from(ArticleRaw)
+                        .where(col(ArticleRaw.article_id).in_(orphan_article_ids)),
+                    ).one(),
+                )
+                if orphan_article_ids
+                else 0
             )
 
             if not dry_run:
-                if raw_payloads_deleted > 0:
+                if candidate_article_ids:
                     session.exec(
-                        delete(ArticleRaw).where(
-                            col(ArticleRaw.user_id) == self.user_id,
-                            raw_matches_deleted_article,
+                        delete(UserArticle).where(
+                            col(UserArticle.user_id) == self.user_id,
+                            col(UserArticle.article_id).in_(candidate_article_ids),
                         ),
                     )
-                if articles_deleted > 0:
+                if orphan_article_ids:
                     session.exec(
                         delete(Article).where(
-                            col(Article.user_id) == self.user_id,
-                            col(Article.published_at) < cutoff_db,
+                            col(Article.article_id).in_(orphan_article_ids),
                         ),
                     )
                 session.commit()
@@ -499,13 +523,18 @@ class SQLiteRepository:
     def upsert_article(self, article: NormalizedArticle, run_id: str) -> UpsertResult:
         with Session(self.engine) as session:
             existing = self._find_existing_article(session, article)
+            inserted_article = False
             if existing is None:
                 inserted = self._try_insert_article(session=session, article=article, run_id=run_id)
                 if inserted is not None:
-                    return inserted
-                existing = self._find_existing_article(session, article)
-                if existing is None:
-                    raise RuntimeError("Failed to resolve article after insertion conflict")
+                    inserted_article = True
+                    existing = session.get(Article, inserted.article_id)
+                    if existing is None:
+                        raise RuntimeError("Inserted article row not found")
+                else:
+                    existing = self._find_existing_article(session, article)
+                    if existing is None:
+                        raise RuntimeError("Failed to resolve article after insertion conflict")
 
             self._ensure_external_alias(
                 session=session,
@@ -518,34 +547,43 @@ class SQLiteRepository:
                 article,
                 existing_fallback_key=existing.fallback_key,
             )
-            if not _row_changed(existing, article, target_fallback_key):
-                session.commit()
-                return UpsertResult(article_id=existing.article_id, action=UpsertAction.SKIPPED)
+            row_changed = _row_changed(existing, article, target_fallback_key)
 
-            existing.url = article.url
-            existing.url_canonical = article.url_canonical
-            existing.url_hash = article.url_hash
-            existing.title = article.title
-            existing.source_domain = article.source_domain
-            existing.published_at = _to_db_datetime(article.published_at)
-            existing.language_detected = article.language_detected
-            existing.content_raw = article.content_raw
-            existing.summary_raw = article.summary_raw
-            existing.is_full_content = article.is_full_content
-            existing.needs_enrichment = article.needs_enrichment
-            existing.clean_text = article.clean_text
-            existing.clean_text_chars = article.clean_text_chars
-            existing.is_truncated = article.is_truncated
-            existing.fallback_key = target_fallback_key
-            existing.last_processed_run_id = run_id
-            if _is_generated_external_id(existing.external_id) and not _is_generated_external_id(
-                article.external_id,
-            ):
-                existing.external_id = article.external_id
+            if row_changed:
+                existing.url = article.url
+                existing.url_canonical = article.url_canonical
+                existing.url_hash = article.url_hash
+                existing.title = article.title
+                existing.source_domain = article.source_domain
+                existing.published_at = _to_db_datetime(article.published_at)
+                existing.language_detected = article.language_detected
+                existing.content_raw = article.content_raw
+                existing.summary_raw = article.summary_raw
+                existing.is_full_content = article.is_full_content
+                existing.clean_text = article.clean_text
+                existing.clean_text_chars = article.clean_text_chars
+                existing.is_truncated = article.is_truncated
+                existing.fallback_key = target_fallback_key
+                existing.last_processed_run_id = run_id
+                if _is_generated_external_id(
+                    existing.external_id,
+                ) and not _is_generated_external_id(
+                    article.external_id,
+                ):
+                    existing.external_id = article.external_id
 
+            user_link_inserted = self._ensure_user_article_link(
+                session=session,
+                article_id=existing.article_id,
+            )
             session.add(existing)
             session.commit()
-            return UpsertResult(article_id=existing.article_id, action=UpsertAction.UPDATED)
+
+            if user_link_inserted:
+                return UpsertResult(article_id=existing.article_id, action=UpsertAction.INSERTED)
+            if inserted_article or row_changed:
+                return UpsertResult(article_id=existing.article_id, action=UpsertAction.UPDATED)
+            return UpsertResult(article_id=existing.article_id, action=UpsertAction.SKIPPED)
 
     def create_gap(self, *, run_id: str, source: str, gap: GapWrite) -> int:
         with Session(self.engine) as session:
@@ -766,8 +804,9 @@ class SQLiteRepository:
         with Session(self.engine) as session:
             rows = session.exec(
                 select(Article)
+                .join(UserArticle, col(UserArticle.article_id) == col(Article.article_id))
                 .where(
-                    Article.user_id == self.user_id,
+                    UserArticle.user_id == self.user_id,
                     Article.published_at >= _to_db_datetime(since),
                 )
                 .order_by(col(Article.published_at).desc()),
@@ -794,7 +833,6 @@ class SQLiteRepository:
         with Session(self.engine) as session:
             rows = session.exec(
                 select(ArticleEmbedding).where(
-                    ArticleEmbedding.user_id == self.user_id,
                     ArticleEmbedding.model_name == model_name,
                     col(ArticleEmbedding.article_id).in_(article_ids),
                     or_(
@@ -826,14 +864,12 @@ class SQLiteRepository:
             for article_id, vector in vectors.items():
                 row = session.exec(
                     select(ArticleEmbedding).where(
-                        ArticleEmbedding.user_id == self.user_id,
                         ArticleEmbedding.article_id == article_id,
                         ArticleEmbedding.model_name == model_name,
                     ),
                 ).one_or_none()
                 if row is None:
                     row = ArticleEmbedding(
-                        user_id=self.user_id,
                         article_id=article_id,
                         model_name=model_name,
                         embedding_dim=len(vector),
@@ -849,6 +885,180 @@ class SQLiteRepository:
 
                 session.add(row)
             session.commit()
+
+    def get_article_resource_for_user(self, *, url_hash: str) -> ArticleResource | None:
+        now = utc_now()
+        has_content = and_(
+            col(ArticleResource.content_text).is_not(None),
+            func.length(func.trim(col(ArticleResource.content_text))) > 0,
+        )
+        with Session(self.engine) as session:
+            return session.exec(
+                select(ArticleResource)
+                .where(
+                    ArticleResource.url_hash == url_hash,
+                    or_(
+                        col(ArticleResource.user_id) == self.user_id,
+                        col(ArticleResource.user_id).is_(None),
+                    ),
+                    or_(
+                        col(ArticleResource.expires_at).is_(None),
+                        col(ArticleResource.expires_at) > now,
+                    ),
+                )
+                .order_by(
+                    case(
+                        (has_content, 0),
+                        else_=1,
+                    ),
+                    case(
+                        (col(ArticleResource.user_id) == self.user_id, 0),
+                        else_=1,
+                    ),
+                    col(ArticleResource.updated_at).desc(),
+                )
+                .limit(1),
+            ).one_or_none()
+
+    def upsert_public_article_resource(  # noqa: PLR0913
+        self,
+        *,
+        url_hash: str,
+        url_canonical: str,
+        fetch_status: str,
+        http_status: int | None = None,
+        content_text: str | None = None,
+        error_code: str | None = None,
+        fetched_at: datetime | None = None,
+        expires_at: datetime | None = None,
+    ) -> None:
+        with Session(self.engine) as session:
+            row = session.exec(
+                select(ArticleResource).where(
+                    col(ArticleResource.user_id).is_(None),
+                    ArticleResource.url_hash == url_hash,
+                ),
+            ).one_or_none()
+            if row is None:
+                row = ArticleResource(
+                    user_id=None,
+                    url_hash=url_hash,
+                    url_canonical=url_canonical,
+                    fetch_status=fetch_status,
+                    http_status=http_status,
+                    content_text=content_text,
+                    error_code=error_code,
+                    fetched_at=fetched_at,
+                    updated_at=utc_now(),
+                    expires_at=expires_at,
+                )
+            else:
+                row.url_canonical = url_canonical
+                row.fetch_status = fetch_status
+                row.http_status = http_status
+                row.content_text = content_text
+                row.error_code = error_code
+                row.fetched_at = fetched_at
+                row.updated_at = utc_now()
+                row.expires_at = expires_at
+            session.add(row)
+            session.commit()
+
+    def upsert_user_article_resource(  # noqa: PLR0913
+        self,
+        *,
+        url_hash: str,
+        url_canonical: str,
+        fetch_status: str,
+        http_status: int | None = None,
+        content_text: str | None = None,
+        error_code: str | None = None,
+        fetched_at: datetime | None = None,
+        expires_at: datetime | None = None,
+    ) -> None:
+        with Session(self.engine) as session:
+            row = session.exec(
+                select(ArticleResource).where(
+                    col(ArticleResource.user_id) == self.user_id,
+                    ArticleResource.url_hash == url_hash,
+                ),
+            ).one_or_none()
+            if row is None:
+                row = ArticleResource(
+                    user_id=self.user_id,
+                    url_hash=url_hash,
+                    url_canonical=url_canonical,
+                    fetch_status=fetch_status,
+                    http_status=http_status,
+                    content_text=content_text,
+                    error_code=error_code,
+                    fetched_at=fetched_at,
+                    updated_at=utc_now(),
+                    expires_at=expires_at,
+                )
+            else:
+                row.url_canonical = url_canonical
+                row.fetch_status = fetch_status
+                row.http_status = http_status
+                row.content_text = content_text
+                row.error_code = error_code
+                row.fetched_at = fetched_at
+                row.updated_at = utc_now()
+                row.expires_at = expires_at
+            session.add(row)
+            session.commit()
+
+    def prune_user_private_resources(
+        self,
+        *,
+        cutoff: datetime,
+        dry_run: bool = False,
+    ) -> int:
+        cutoff_db = _to_db_datetime(cutoff)
+        with Session(self.engine) as session:
+            to_delete = int(
+                session.exec(
+                    select(func.count())
+                    .select_from(ArticleResource)
+                    .where(
+                        col(ArticleResource.user_id) == self.user_id,
+                        col(ArticleResource.updated_at) < cutoff_db,
+                    ),
+                ).one(),
+            )
+            if not dry_run and to_delete > 0:
+                session.exec(
+                    delete(ArticleResource).where(
+                        col(ArticleResource.user_id) == self.user_id,
+                        col(ArticleResource.updated_at) < cutoff_db,
+                    ),
+                )
+                session.commit()
+            return to_delete
+
+    def gc_unreferenced_articles(self, *, dry_run: bool = False) -> tuple[int, int]:
+        with Session(self.engine) as session:
+            orphan_article_ids = session.exec(
+                select(Article.article_id).where(
+                    ~select(1).where(UserArticle.article_id == Article.article_id).exists(),
+                ),
+            ).all()
+            articles_deleted = len(orphan_article_ids)
+            raw_deleted = (
+                int(
+                    session.exec(
+                        select(func.count())
+                        .select_from(ArticleRaw)
+                        .where(col(ArticleRaw.article_id).in_(orphan_article_ids)),
+                    ).one(),
+                )
+                if orphan_article_ids
+                else 0
+            )
+            if not dry_run and orphan_article_ids:
+                session.exec(delete(Article).where(col(Article.article_id).in_(orphan_article_ids)))
+                session.commit()
+            return articles_deleted, raw_deleted
 
     def save_dedup_clusters(
         self,
@@ -903,6 +1113,27 @@ class SQLiteRepository:
                     )
             session.commit()
 
+    def _ensure_user_article_link(self, *, session: Session, article_id: str) -> bool:
+        existing = session.exec(
+            select(UserArticle).where(
+                UserArticle.user_id == self.user_id,
+                UserArticle.article_id == article_id,
+            ),
+        ).one_or_none()
+        if existing is not None:
+            return False
+
+        session.add(
+            UserArticle(
+                user_id=self.user_id,
+                article_id=article_id,
+                discovered_at=utc_now(),
+                state="active",
+                deleted_at=None,
+            ),
+        )
+        return True
+
     def _ensure_actor_context(self) -> None:
         with Session(self.engine) as session:
             user = session.get(AppUser, self.user_id)
@@ -922,7 +1153,6 @@ class SQLiteRepository:
     ) -> Article | None:
         alias = session.exec(
             select(ArticleExternalId).where(
-                ArticleExternalId.user_id == self.user_id,
                 ArticleExternalId.source_name == article.source_name,
                 ArticleExternalId.external_id == article.external_id,
             ),
@@ -934,7 +1164,6 @@ class SQLiteRepository:
         if _use_url_timestamp_fallback(article):
             return session.exec(
                 select(Article).where(
-                    Article.user_id == self.user_id,
                     Article.source_name == article.source_name,
                     Article.fallback_key == fallback_key,
                 ),
@@ -942,7 +1171,6 @@ class SQLiteRepository:
 
         return session.exec(
             select(Article).where(
-                Article.user_id == self.user_id,
                 Article.source_name == article.source_name,
                 Article.fallback_key == fallback_key,
                 col(Article.external_id).like("generated:%"),
@@ -959,7 +1187,6 @@ class SQLiteRepository:
         article_id = str(uuid4())
         row = Article(
             article_id=article_id,
-            user_id=self.user_id,
             source_name=article.source_name,
             external_id=article.external_id,
             url=article.url,
@@ -972,7 +1199,6 @@ class SQLiteRepository:
             content_raw=article.content_raw,
             summary_raw=article.summary_raw,
             is_full_content=article.is_full_content,
-            needs_enrichment=article.needs_enrichment,
             clean_text=article.clean_text,
             clean_text_chars=article.clean_text_chars,
             is_truncated=article.is_truncated,
@@ -1007,7 +1233,6 @@ class SQLiteRepository:
     ) -> None:
         mapped = session.exec(
             select(ArticleExternalId).where(
-                ArticleExternalId.user_id == self.user_id,
                 ArticleExternalId.source_name == source_name,
                 ArticleExternalId.external_id == external_id,
             ),
@@ -1040,7 +1265,6 @@ class SQLiteRepository:
     ) -> None:
         session.add(
             ArticleExternalId(
-                user_id=self.user_id,
                 source_name=source_name,
                 external_id=external_id,
                 article_id=article_id,
@@ -1089,7 +1313,6 @@ def _row_changed(
             existing.content_raw != article.content_raw,
             existing.summary_raw != article.summary_raw,
             existing.is_full_content != article.is_full_content,
-            existing.needs_enrichment != article.needs_enrichment,
             existing.clean_text != article.clean_text,
             existing.clean_text_chars != article.clean_text_chars,
             existing.is_truncated != article.is_truncated,

@@ -215,7 +215,7 @@ def test_ingest_prune_command_deletes_articles_older_than_days(tmp_path: Path) -
     old_published_at = now - timedelta(days=40)
     fresh_published_at = now - timedelta(days=3)
 
-    repo.upsert_article(
+    old = repo.upsert_article(
         article=_article(
             external_id="old-ext",
             title="Old article",
@@ -224,7 +224,7 @@ def test_ingest_prune_command_deletes_articles_older_than_days(tmp_path: Path) -
         ),
         run_id=run_id,
     )
-    repo.upsert_article(
+    fresh = repo.upsert_article(
         article=_article(
             external_id="fresh-ext",
             title="Fresh article",
@@ -233,6 +233,15 @@ def test_ingest_prune_command_deletes_articles_older_than_days(tmp_path: Path) -
         ),
         run_id=run_id,
     )
+    repo._connection.execute(
+        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
+        (old_published_at.isoformat(), repo.user_id, old.article_id),
+    )
+    repo._connection.execute(
+        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
+        (fresh_published_at.isoformat(), repo.user_id, fresh.article_id),
+    )
+    repo._connection.commit()
     repo.close()
 
     runner = CliRunner()

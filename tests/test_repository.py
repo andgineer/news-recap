@@ -325,9 +325,9 @@ def test_fallback_key_has_db_level_uniqueness_for_generated_items(tmp_path: Path
         INSERT INTO articles(
             article_id, source_name, external_id, url, url_canonical, url_hash,
             title, source_domain, published_at, language_detected, content_raw,
-            summary_raw, is_full_content, needs_enrichment, clean_text,
+            summary_raw, is_full_content, clean_text,
             clean_text_chars, is_truncated, ingested_at, fallback_key, last_processed_run_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             "article-1",
@@ -343,7 +343,6 @@ def test_fallback_key_has_db_level_uniqueness_for_generated_items(tmp_path: Path
             "<p>x</p>",
             None,
             1,
-            0,
             "x",
             1,
             0,
@@ -360,9 +359,9 @@ def test_fallback_key_has_db_level_uniqueness_for_generated_items(tmp_path: Path
             INSERT INTO articles(
                 article_id, source_name, external_id, url, url_canonical, url_hash,
                 title, source_domain, published_at, language_detected, content_raw,
-                summary_raw, is_full_content, needs_enrichment, clean_text,
+                summary_raw, is_full_content, clean_text,
                 clean_text_chars, is_truncated, ingested_at, fallback_key, last_processed_run_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "article-2",
@@ -378,7 +377,6 @@ def test_fallback_key_has_db_level_uniqueness_for_generated_items(tmp_path: Path
                 "<p>y</p>",
                 None,
                 1,
-                0,
                 "y",
                 1,
                 0,
@@ -527,6 +525,14 @@ def test_prune_articles_removes_old_content_and_related_rows(tmp_path: Path) -> 
         "UPDATE articles_raw SET first_seen_at = ? WHERE source_name = ? AND external_id = ?",
         (old_published_at.isoformat(), "inoreader", "old-ext"),
     )
+    repo._connection.execute(
+        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
+        (old_published_at.isoformat(), repo.user_id, old_inserted.article_id),
+    )
+    repo._connection.execute(
+        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
+        (fresh_published_at.isoformat(), repo.user_id, fresh_inserted.article_id),
+    )
     repo._connection.commit()
 
     repo.save_dedup_clusters(
@@ -618,3 +624,165 @@ def test_prune_articles_keeps_raw_when_article_is_recent_even_if_raw_is_old(tmp_
     assert row is not None
     assert int(row["cnt"]) == 1
     repo.close()
+
+
+def test_shared_articles_are_reused_across_users_and_deleted_after_last_unlink(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "shared-articles.db"
+    published_at = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+
+    first_repo = SQLiteRepository(db_path, user_id="user_a", user_name="User A")
+    first_repo.init_schema()
+    first_run = first_repo.start_run(source="rss")
+    first_result = first_repo.upsert_article(
+        article=_article(
+            external_id="stable-1",
+            text="same global article",
+            title="Shared article",
+            published_at=published_at,
+        ),
+        run_id=first_run,
+    )
+    assert first_result.action == UpsertAction.INSERTED
+    first_repo.finish_run(
+        run_id=first_run,
+        status=RunStatus.SUCCEEDED,
+        counters=IngestionRunCounters(ingested_count=1),
+    )
+    first_repo.close()
+
+    second_repo = SQLiteRepository(db_path, user_id="user_b", user_name="User B")
+    second_repo.init_schema()
+    second_run = second_repo.start_run(source="rss")
+    second_result = second_repo.upsert_article(
+        article=_article(
+            external_id="stable-1",
+            text="same global article",
+            title="Shared article",
+            published_at=published_at,
+        ),
+        run_id=second_run,
+    )
+    assert second_result.action == UpsertAction.INSERTED
+    second_repo.finish_run(
+        run_id=second_run,
+        status=RunStatus.SUCCEEDED,
+        counters=IngestionRunCounters(ingested_count=1),
+    )
+
+    article_count = second_repo._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM articles"
+    ).fetchone()
+    assert article_count is not None
+    assert int(article_count["cnt"]) == 1
+
+    links_count = second_repo._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM user_articles"
+    ).fetchone()
+    assert links_count is not None
+    assert int(links_count["cnt"]) == 2
+
+    cutoff = datetime.now(tz=UTC)
+    second_prune = second_repo.prune_articles(cutoff=cutoff)
+    assert second_prune.articles_deleted == 1
+
+    after_second_prune = second_repo._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM articles"
+    ).fetchone()
+    assert after_second_prune is not None
+    assert int(after_second_prune["cnt"]) == 1
+    second_repo.close()
+
+    first_repo_again = SQLiteRepository(db_path, user_id="user_a", user_name="User A")
+    first_repo_again.init_schema()
+    first_prune = first_repo_again.prune_articles(cutoff=cutoff)
+    assert first_prune.articles_deleted == 1
+
+    final_count = first_repo_again._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM articles"
+    ).fetchone()
+    assert final_count is not None
+    assert int(final_count["cnt"]) == 0
+    first_repo_again.close()
+
+
+def test_article_resource_lookup_prefers_private_then_public(tmp_path: Path) -> None:
+    db_path = tmp_path / "article-resources.db"
+    canonical = canonicalize_url("https://example.com/news/1")
+    hashed = url_hash(canonical)
+
+    repo_a = SQLiteRepository(db_path, user_id="user_a", user_name="User A")
+    repo_a.init_schema()
+    repo_a.upsert_public_article_resource(
+        url_hash=hashed,
+        url_canonical=canonical,
+        fetch_status="ok",
+        http_status=200,
+        content_text="public-content",
+        fetched_at=datetime.now(tz=UTC),
+    )
+
+    public_view = repo_a.get_article_resource_for_user(url_hash=hashed)
+    assert public_view is not None
+    assert public_view.user_id is None
+    assert public_view.content_text == "public-content"
+
+    repo_a.upsert_user_article_resource(
+        url_hash=hashed,
+        url_canonical=canonical,
+        fetch_status="ok",
+        http_status=200,
+        content_text="private-a",
+        fetched_at=datetime.now(tz=UTC),
+    )
+
+    private_a_view = repo_a.get_article_resource_for_user(url_hash=hashed)
+    assert private_a_view is not None
+    assert private_a_view.user_id == "user_a"
+    assert private_a_view.content_text == "private-a"
+
+    repo_a.upsert_user_article_resource(
+        url_hash=hashed,
+        url_canonical=canonical,
+        fetch_status="ok",
+        http_status=200,
+        content_text="expired-private-a",
+        fetched_at=datetime.now(tz=UTC),
+        expires_at=datetime.now(tz=UTC) - timedelta(minutes=1),
+    )
+    fallback_to_public = repo_a.get_article_resource_for_user(url_hash=hashed)
+    assert fallback_to_public is not None
+    assert fallback_to_public.user_id is None
+    assert fallback_to_public.content_text == "public-content"
+
+    repo_b = SQLiteRepository(db_path, user_id="user_b", user_name="User B")
+    repo_b.init_schema()
+
+    user_b_view_before_private = repo_b.get_article_resource_for_user(url_hash=hashed)
+    assert user_b_view_before_private is not None
+    assert user_b_view_before_private.user_id is None
+    assert user_b_view_before_private.content_text == "public-content"
+
+    repo_b.upsert_user_article_resource(
+        url_hash=hashed,
+        url_canonical=canonical,
+        fetch_status="ok",
+        http_status=200,
+        content_text="private-b",
+        fetched_at=datetime.now(tz=UTC),
+    )
+    user_b_view_after_private = repo_b.get_article_resource_for_user(url_hash=hashed)
+    assert user_b_view_after_private is not None
+    assert user_b_view_after_private.user_id == "user_b"
+    assert user_b_view_after_private.content_text == "private-b"
+
+    rows = repo_b._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM article_resources WHERE url_hash = ?",
+        (hashed,),
+    ).fetchone()
+    assert rows is not None
+    assert int(rows["cnt"]) == 3
+
+    repo_b.close()
+    repo_a.close()

@@ -64,7 +64,7 @@ news-recap ingest duplicates --run-id <run_id>
 
 ## Очистка по retention
 
-Удалить старые статьи по `published_at`:
+Удалить старые пользовательские связи со статьями по `discovered_at`:
 
 ```bash
 news-recap ingest prune --days 30

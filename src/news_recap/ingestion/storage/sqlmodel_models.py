@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     LargeBinary,
+    PrimaryKeyConstraint,
     Text,
     UniqueConstraint,
     text,
@@ -148,54 +149,17 @@ class RssProcessingSnapshot(SQLModel, table=True):
     updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
-class ArticleRaw(SQLModel, table=True):
-    __tablename__ = "articles_raw"  # type: ignore[bad-override]
-    __table_args__ = (
-        UniqueConstraint(
-            "user_id",
-            "source_name",
-            "external_id",
-            name="uq_articles_raw_scope_source_external",
-        ),
-    )
-
-    id: int | None = Field(default=None, primary_key=True)
-    user_id: str = Field(
-        default=DEFAULT_USER_ID,
-        sa_column=Column(
-            ForeignKey("users.user_id", ondelete="CASCADE"),
-            nullable=False,
-            server_default=DEFAULT_USER_ID,
-            index=True,
-        ),
-    )
-    source_name: str = Field(index=True)
-    external_id: str = Field(index=True)
-    raw_json: str = Field(sa_column=Column(Text, nullable=False))
-    first_seen_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
-
-
 class Article(SQLModel, table=True):
     __tablename__ = "articles"  # type: ignore[bad-override]
     __table_args__ = (
         UniqueConstraint(
-            "user_id",
             "source_name",
             "external_id",
-            name="uq_articles_scope_source_external",
+            name="uq_articles_source_external",
         ),
     )
 
     article_id: str = Field(primary_key=True)
-    user_id: str = Field(
-        default=DEFAULT_USER_ID,
-        sa_column=Column(
-            ForeignKey("users.user_id", ondelete="CASCADE"),
-            nullable=False,
-            server_default=DEFAULT_USER_ID,
-            index=True,
-        ),
-    )
     source_name: str = Field(index=True)
     external_id: str = Field(index=True)
     url: str
@@ -210,7 +174,6 @@ class Article(SQLModel, table=True):
     content_raw: str | None = Field(default=None, sa_column=Column(Text))
     summary_raw: str | None = Field(default=None, sa_column=Column(Text))
     is_full_content: bool
-    needs_enrichment: bool
     clean_text: str = Field(sa_column=Column(Text, nullable=False))
     clean_text_chars: int
     is_truncated: bool
@@ -219,18 +182,13 @@ class Article(SQLModel, table=True):
     last_processed_run_id: str
 
 
-class ArticleExternalId(SQLModel, table=True):
-    __tablename__ = "article_external_ids"  # type: ignore[bad-override]
+class UserArticle(SQLModel, table=True):
+    __tablename__ = "user_articles"  # type: ignore[bad-override]
     __table_args__ = (
-        UniqueConstraint(
-            "user_id",
-            "source_name",
-            "external_id",
-            name="uq_article_external_ids_scope_source_external",
-        ),
+        PrimaryKeyConstraint("user_id", "article_id", name="pk_user_articles"),
+        Index("idx_user_articles_user_discovered", "user_id", "discovered_at"),
     )
 
-    id: int | None = Field(default=None, primary_key=True)
     user_id: str = Field(
         default=DEFAULT_USER_ID,
         sa_column=Column(
@@ -240,6 +198,29 @@ class ArticleExternalId(SQLModel, table=True):
             index=True,
         ),
     )
+    article_id: str = Field(
+        sa_column=Column(
+            ForeignKey("articles.article_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    discovered_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    state: str = Field(default="active", index=True)
+    deleted_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+
+
+class ArticleExternalId(SQLModel, table=True):
+    __tablename__ = "article_external_ids"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "source_name",
+            "external_id",
+            name="uq_article_external_ids_source_external",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
     source_name: str = Field(index=True)
     external_id: str = Field(index=True)
     article_id: str = Field(foreign_key="articles.article_id", index=True)
@@ -247,32 +228,82 @@ class ArticleExternalId(SQLModel, table=True):
     created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
-class ArticleEmbedding(SQLModel, table=True):
-    __tablename__ = "article_embeddings"  # type: ignore[bad-override]
+class ArticleRaw(SQLModel, table=True):
+    __tablename__ = "articles_raw"  # type: ignore[bad-override]
     __table_args__ = (
         UniqueConstraint(
-            "user_id",
+            "source_name",
+            "external_id",
+            name="uq_articles_raw_source_external",
+        ),
+        UniqueConstraint(
             "article_id",
-            "model_name",
-            name="uq_article_embeddings_scope_article_model",
+            name="uq_articles_raw_article",
         ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    user_id: str = Field(
-        default=DEFAULT_USER_ID,
-        sa_column=Column(
-            ForeignKey("users.user_id", ondelete="CASCADE"),
-            nullable=False,
-            server_default=DEFAULT_USER_ID,
-            index=True,
+    article_id: str = Field(foreign_key="articles.article_id", index=True)
+    source_name: str = Field(index=True)
+    external_id: str = Field(index=True)
+    raw_json: str = Field(sa_column=Column(Text, nullable=False))
+    first_seen_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class ArticleEmbedding(SQLModel, table=True):
+    __tablename__ = "article_embeddings"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "article_id",
+            "model_name",
+            name="uq_article_embeddings_article_model",
         ),
     )
+
+    id: int | None = Field(default=None, primary_key=True)
     article_id: str = Field(foreign_key="articles.article_id", index=True)
     model_name: str = Field(index=True)
     embedding_dim: int
     embedding_blob: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
     created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    expires_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), index=True),
+    )
+
+
+class ArticleResource(SQLModel, table=True):
+    __tablename__ = "article_resources"  # type: ignore[bad-override]
+    __table_args__ = (
+        Index(
+            "uq_article_resources_public_url_hash",
+            "url_hash",
+            unique=True,
+            sqlite_where=text("user_id IS NULL"),
+        ),
+        Index(
+            "uq_article_resources_private_user_url_hash",
+            "user_id",
+            "url_hash",
+            unique=True,
+            sqlite_where=text("user_id IS NOT NULL"),
+        ),
+        Index("idx_article_resources_lookup", "url_hash", "user_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str | None = Field(
+        default=None,
+        sa_column=Column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True),
+    )
+    url_hash: str = Field(index=True)
+    url_canonical: str
+    fetch_status: str = Field(index=True)
+    http_status: int | None = None
+    content_text: str | None = Field(default=None, sa_column=Column(Text))
+    error_code: str | None = Field(default=None, index=True)
+    fetched_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     expires_at: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), index=True),

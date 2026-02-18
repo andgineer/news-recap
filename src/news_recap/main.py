@@ -221,7 +221,7 @@ def ingest_duplicates(  # noqa: PLR0913
     type=click.IntRange(min=0),
     default=None,
     help=(
-        "Delete articles older than this many days by published_at. "
+        "Delete user-article links older than this many days by discovered_at. "
         "Defaults to NEWS_RECAP_ARTICLE_RETENTION_DAYS."
     ),
 )

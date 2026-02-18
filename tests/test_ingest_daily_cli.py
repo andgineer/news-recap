@@ -69,8 +69,9 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
         "resumed_snapshot=no resume_cursor=-"
     ) in first.output
     assert (
-        "feed=https://example.com/feed.xml items=10000 status=fetched "
-        "if_none_match=no if_modified_since=no etag=yes last_modified=yes"
+        "feed=https://example.com/feed.xml request_url=https://example.com/feed.xml "
+        "requested_n=10000 received_items=1 status=fetched if_none_match=no if_modified_since=no etag=yes "
+        "last_modified=yes"
     ) in first.output
 
     second = runner.invoke(
@@ -92,6 +93,8 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
         "resumed_snapshot=no resume_cursor=-"
     ) in second.output
     assert (
-        "feed=https://example.com/feed.xml items=10000 status=not_modified "
-        "if_none_match=yes if_modified_since=yes etag=yes last_modified=yes"
+        "feed=https://example.com/feed.xml request_url=https://example.com/feed.xml "
+        "requested_n=10000 received_items=0 status=not_modified "
+        "if_none_match=yes if_modified_since=yes etag=yes "
+        "last_modified=yes"
     ) in second.output

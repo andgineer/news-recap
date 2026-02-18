@@ -106,13 +106,14 @@ class FetchStageService:
                 gap_resolved = True
 
             for source_article in page.articles:
+                normalized = self.normalizer.normalize(source_article)
+                result = self.repository.upsert_article(article=normalized, run_id=run_id)
                 self.repository.upsert_raw_article(
                     source_name=self.source.name,
                     external_id=source_article.external_id,
                     raw_payload=source_article.raw_payload,
+                    article_id=result.article_id,
                 )
-                normalized = self.normalizer.normalize(source_article)
-                result = self.repository.upsert_article(article=normalized, run_id=run_id)
                 if result.action == UpsertAction.INSERTED:
                     counters.ingested_count += 1
                 elif result.action == UpsertAction.UPDATED:

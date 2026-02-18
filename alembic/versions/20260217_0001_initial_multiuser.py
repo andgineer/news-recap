@@ -99,27 +99,8 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "articles_raw",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
-        sa.Column("source_name", sa.String(), nullable=False),
-        sa.Column("external_id", sa.String(), nullable=False),
-        sa.Column("raw_json", sa.Text(), nullable=False),
-        sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "user_id",
-            "source_name",
-            "external_id",
-            name="uq_articles_raw_scope_source_external",
-        ),
-    )
-
-    op.create_table(
         "articles",
         sa.Column("article_id", sa.String(), nullable=False),
-        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
         sa.Column("source_name", sa.String(), nullable=False),
         sa.Column("external_id", sa.String(), nullable=False),
         sa.Column("url", sa.String(), nullable=False),
@@ -132,62 +113,100 @@ def upgrade() -> None:
         sa.Column("content_raw", sa.Text(), nullable=True),
         sa.Column("summary_raw", sa.Text(), nullable=True),
         sa.Column("is_full_content", sa.Boolean(), nullable=False),
-        sa.Column("needs_enrichment", sa.Boolean(), nullable=False),
         sa.Column("clean_text", sa.Text(), nullable=False),
         sa.Column("clean_text_chars", sa.Integer(), nullable=False),
         sa.Column("is_truncated", sa.Boolean(), nullable=False),
         sa.Column("ingested_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("fallback_key", sa.String(), nullable=True),
         sa.Column("last_processed_run_id", sa.String(), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("article_id"),
         sa.UniqueConstraint(
-            "user_id",
             "source_name",
             "external_id",
-            name="uq_articles_scope_source_external",
+            name="uq_articles_source_external",
         ),
+    )
+
+    op.create_table(
+        "user_articles",
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("article_id", sa.String(), nullable=False),
+        sa.Column("discovered_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("state", sa.String(), nullable=False, server_default="active"),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["article_id"], ["articles.article_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("user_id", "article_id", name="pk_user_articles"),
     )
 
     op.create_table(
         "article_external_ids",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
         sa.Column("source_name", sa.String(), nullable=False),
         sa.Column("external_id", sa.String(), nullable=False),
         sa.Column("article_id", sa.String(), nullable=False),
         sa.Column("is_primary", sa.Boolean(), nullable=False, server_default=sa.text("0")),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["article_id"], ["articles.article_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
-            "user_id",
             "source_name",
             "external_id",
-            name="uq_article_external_ids_scope_source_external",
+            name="uq_article_external_ids_source_external",
+        ),
+    )
+
+    op.create_table(
+        "articles_raw",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("article_id", sa.String(), nullable=False),
+        sa.Column("source_name", sa.String(), nullable=False),
+        sa.Column("external_id", sa.String(), nullable=False),
+        sa.Column("raw_json", sa.Text(), nullable=False),
+        sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["article_id"], ["articles.article_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("article_id", name="uq_articles_raw_article"),
+        sa.UniqueConstraint(
+            "source_name",
+            "external_id",
+            name="uq_articles_raw_source_external",
         ),
     )
 
     op.create_table(
         "article_embeddings",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
         sa.Column("article_id", sa.String(), nullable=False),
         sa.Column("model_name", sa.String(), nullable=False),
         sa.Column("embedding_dim", sa.Integer(), nullable=False),
         sa.Column("embedding_blob", sa.LargeBinary(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["article_id"], ["articles.article_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
-            "user_id",
             "article_id",
             "model_name",
-            name="uq_article_embeddings_scope_article_model",
+            name="uq_article_embeddings_article_model",
         ),
+    )
+
+    op.create_table(
+        "article_resources",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), nullable=True),
+        sa.Column("url_hash", sa.String(), nullable=False),
+        sa.Column("url_canonical", sa.String(), nullable=False),
+        sa.Column("fetch_status", sa.String(), nullable=False),
+        sa.Column("http_status", sa.Integer(), nullable=True),
+        sa.Column("content_text", sa.Text(), nullable=True),
+        sa.Column("error_code", sa.String(), nullable=True),
+        sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
 
     op.create_table(
@@ -244,9 +263,9 @@ def upgrade() -> None:
     )
 
     op.create_index(
-        "idx_articles_scope_hash_published",
+        "idx_articles_hash_published",
         "articles",
-        ["user_id", "source_name", "url_hash", "published_at"],
+        ["source_name", "url_hash", "published_at"],
     )
     op.create_index(
         "uq_ingestion_runs_scope_source_running",
@@ -256,12 +275,32 @@ def upgrade() -> None:
         sqlite_where=sa.text("status = 'running'"),
     )
     op.create_index(
-        "uq_articles_scope_fallback_key",
+        "uq_articles_fallback_key",
         "articles",
-        ["user_id", "source_name", "fallback_key"],
+        ["source_name", "fallback_key"],
         unique=True,
         sqlite_where=sa.text("fallback_key IS NOT NULL"),
     )
+    op.create_index(
+        "idx_user_articles_user_discovered",
+        "user_articles",
+        ["user_id", "discovered_at"],
+    )
+    op.create_index(
+        "uq_article_resources_public_url_hash",
+        "article_resources",
+        ["url_hash"],
+        unique=True,
+        sqlite_where=sa.text("user_id IS NULL"),
+    )
+    op.create_index(
+        "uq_article_resources_private_user_url_hash",
+        "article_resources",
+        ["user_id", "url_hash"],
+        unique=True,
+        sqlite_where=sa.text("user_id IS NOT NULL"),
+    )
+    op.create_index("idx_article_resources_lookup", "article_resources", ["url_hash", "user_id"])
     op.create_index("idx_dedup_clusters_scope_run", "dedup_clusters", ["user_id", "run_id"])
     op.create_index("idx_article_dedup_scope_run", "article_dedup", ["user_id", "run_id"])
 
@@ -279,15 +318,21 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("idx_article_dedup_scope_run", table_name="article_dedup")
     op.drop_index("idx_dedup_clusters_scope_run", table_name="dedup_clusters")
-    op.drop_index("uq_articles_scope_fallback_key", table_name="articles")
+    op.drop_index("idx_article_resources_lookup", table_name="article_resources")
+    op.drop_index("uq_article_resources_private_user_url_hash", table_name="article_resources")
+    op.drop_index("uq_article_resources_public_url_hash", table_name="article_resources")
+    op.drop_index("idx_user_articles_user_discovered", table_name="user_articles")
+    op.drop_index("uq_articles_fallback_key", table_name="articles")
     op.drop_index("uq_ingestion_runs_scope_source_running", table_name="ingestion_runs")
-    op.drop_index("idx_articles_scope_hash_published", table_name="articles")
+    op.drop_index("idx_articles_hash_published", table_name="articles")
     op.drop_table("article_dedup")
     op.drop_table("dedup_clusters")
+    op.drop_table("article_resources")
     op.drop_table("article_embeddings")
-    op.drop_table("article_external_ids")
-    op.drop_table("articles")
     op.drop_table("articles_raw")
+    op.drop_table("article_external_ids")
+    op.drop_table("user_articles")
+    op.drop_table("articles")
     op.drop_table("rss_processing_snapshots")
     op.drop_table("rss_feed_states")
     op.drop_table("ingestion_gaps")
