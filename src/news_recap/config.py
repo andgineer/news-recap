@@ -57,11 +57,34 @@ class OrchestratorSettings:
     """CLI orchestrator settings."""
 
     workdir_root: Path = Path(".news_recap_workdir")
-    cli_backend_command: str = "python -m news_recap.orchestrator.backend.echo_agent"
     default_agent: str = "codex"
-    codex_command: str = "codex exec {prompt}"
-    claude_command: str = "claude -p --permission-mode bypassPermissions {prompt}"
-    antigravity_command: str = "antigravity chat --mode agent {prompt}"
+    task_type_profile_map: dict[str, str] = field(
+        default_factory=lambda: {
+            "highlights": "fast",
+            "story": "quality",
+            "qa": "fast",
+        },
+    )
+    codex_command_template: str = (
+        "codex exec --sandbox workspace-write "
+        "-c sandbox_workspace_write.network_access=true "
+        "-c model_reasoning_effort=high --model {model} {prompt}"
+    )
+    claude_command_template: str = (
+        "claude -p --model {model} --permission-mode dontAsk "
+        '--allowed-tools "Read,Write,Edit,WebFetch,'
+        'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
+        "-- {prompt}"
+    )
+    gemini_command_template: str = (
+        "gemini --model {model} --approval-mode auto_edit --prompt {prompt}"
+    )
+    codex_model_fast: str = "gpt-5-codex-mini"
+    codex_model_quality: str = "gpt-5-codex"
+    claude_model_fast: str = "sonnet"
+    claude_model_quality: str = "opus"
+    gemini_model_fast: str = "gemini-2.5-flash"
+    gemini_model_quality: str = "gemini-2.5-pro"
     worker_id: str = "worker-default"
     poll_interval_seconds: float = 2.0
     retry_base_seconds: int = 30
@@ -147,22 +170,48 @@ class Settings:
                         ".news_recap_workdir",
                     ),
                 ),
-                cli_backend_command=os.getenv(
-                    "NEWS_RECAP_LLM_CLI_COMMAND",
-                    "python -m news_recap.orchestrator.backend.echo_agent",
-                ),
                 default_agent=os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex"),
-                codex_command=os.getenv(
-                    "NEWS_RECAP_LLM_CODEX_COMMAND",
-                    "codex exec {prompt}",
+                task_type_profile_map=_collect_task_type_profile_map(),
+                codex_command_template=os.getenv(
+                    "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
+                    "codex exec --sandbox workspace-write "
+                    "-c sandbox_workspace_write.network_access=true "
+                    "-c model_reasoning_effort=high --model {model} {prompt}",
                 ),
-                claude_command=os.getenv(
-                    "NEWS_RECAP_LLM_CLAUDE_COMMAND",
-                    "claude -p --permission-mode bypassPermissions {prompt}",
+                claude_command_template=os.getenv(
+                    "NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE",
+                    "claude -p --model {model} --permission-mode dontAsk "
+                    '--allowed-tools "Read,Write,Edit,WebFetch,'
+                    'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
+                    "-- {prompt}",
                 ),
-                antigravity_command=os.getenv(
-                    "NEWS_RECAP_LLM_ANTIGRAVITY_COMMAND",
-                    "antigravity chat --mode agent {prompt}",
+                gemini_command_template=os.getenv(
+                    "NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE",
+                    "gemini --model {model} --approval-mode auto_edit --prompt {prompt}",
+                ),
+                codex_model_fast=os.getenv(
+                    "NEWS_RECAP_LLM_CODEX_MODEL_FAST",
+                    "gpt-5-codex-mini",
+                ),
+                codex_model_quality=os.getenv(
+                    "NEWS_RECAP_LLM_CODEX_MODEL_QUALITY",
+                    "gpt-5-codex",
+                ),
+                claude_model_fast=os.getenv(
+                    "NEWS_RECAP_LLM_CLAUDE_MODEL_FAST",
+                    "sonnet",
+                ),
+                claude_model_quality=os.getenv(
+                    "NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY",
+                    "opus",
+                ),
+                gemini_model_fast=os.getenv(
+                    "NEWS_RECAP_LLM_GEMINI_MODEL_FAST",
+                    "gemini-2.5-flash",
+                ),
+                gemini_model_quality=os.getenv(
+                    "NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY",
+                    "gemini-2.5-pro",
                 ),
                 worker_id=os.getenv("NEWS_RECAP_LLM_WORKER_ID", "worker-default"),
                 poll_interval_seconds=float(
@@ -251,6 +300,47 @@ def _collect_feed_item_overrides() -> dict[str, int]:
             )
         overrides[feed_url] = items
     return overrides
+
+
+def _collect_task_type_profile_map() -> dict[str, str]:
+    raw = os.getenv(
+        "NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP",
+        "highlights=fast,story=quality,qa=fast",
+    ).strip()
+    if not raw:
+        return {
+            "highlights": "fast",
+            "story": "quality",
+            "qa": "fast",
+        }
+    mapping: dict[str, str] = {}
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        if "=" not in token:
+            raise ValueError(
+                "Invalid NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP entry: "
+                f"{token!r}. Expected format '<task_type>=<profile>'.",
+            )
+        task_type, profile = token.split("=", 1)
+        normalized_task_type = task_type.strip().lower()
+        normalized_profile = profile.strip().lower()
+        if not normalized_task_type:
+            raise ValueError(
+                f"Invalid NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP task_type: {token!r}",
+            )
+        if normalized_profile not in {"fast", "quality"}:
+            raise ValueError(
+                "Invalid NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP profile: "
+                f"{normalized_profile!r} (expected fast or quality)",
+            )
+        mapping[normalized_task_type] = normalized_profile
+    if not mapping:
+        raise ValueError(
+            "NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP resolved to empty mapping.",
+        )
+    return mapping
 
 
 def _normalize_feed_urls(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:

@@ -24,6 +24,7 @@ if "--help" in sys.argv:
     raise SystemExit(0)
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--model", default=None)
 parser.add_argument("--prompt-file", default=None)
 parser.add_argument("prompt", nargs="?")
 args = parser.parse_args()
@@ -73,7 +74,8 @@ def test_llm_smoke_runs_synthetic_task_without_db(tmp_path: Path, monkeypatch) -
         ],
     )
     assert result.exit_code == 0
-    assert "agent=codex available=yes probe=ok run=ok" in result.output
+    assert "agent=codex available=yes model=" in result.output
+    assert "probe=ok run=ok" in result.output
     assert "Smoke status: passed" in result.output
 
 
@@ -94,7 +96,8 @@ def test_llm_smoke_fails_when_agent_executable_is_missing(tmp_path: Path, monkey
         ],
     )
     assert result.exit_code != 0
-    assert "agent=claude available=no probe=failed run=skipped" in result.output
+    assert "agent=claude available=no model=" in result.output
+    assert "probe=failed run=skipped" in result.output
     assert "LLM smoke check failed." in result.output
 
 
@@ -121,4 +124,36 @@ def test_llm_smoke_quotes_prompt_placeholder(tmp_path: Path, monkeypatch) -> Non
         ],
     )
     assert result.exit_code == 0
-    assert "agent=codex available=yes probe=ok run=ok" in result.output
+    assert "agent=codex available=yes model=" in result.output
+    assert "probe=ok run=ok" in result.output
+
+
+def test_llm_smoke_resolves_model_profile_for_template(tmp_path: Path, monkeypatch) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    _write_fake_agent(bin_dir / "codex", "codex")
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setenv(
+        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
+        "codex --model {model} --prompt-file {prompt_file}",
+    )
+    monkeypatch.setenv("NEWS_RECAP_LLM_CODEX_MODEL_QUALITY", "codex-quality-test")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "smoke",
+            "--agent",
+            "codex",
+            "--model-profile",
+            "quality",
+            "--prompt",
+            "Reply with exactly: OK",
+            "--expect-substring",
+            "OK",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "agent=codex available=yes model=codex-quality-test probe=ok run=ok" in result.output

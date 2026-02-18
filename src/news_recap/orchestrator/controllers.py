@@ -12,6 +12,7 @@ from news_recap.config import Settings
 from news_recap.orchestrator.backend import CliAgentBackend
 from news_recap.orchestrator.models import LlmTaskStatus
 from news_recap.orchestrator.repository import OrchestratorRepository
+from news_recap.orchestrator.routing import SUPPORTED_AGENTS, RoutingDefaults
 from news_recap.orchestrator.services import EnqueueDemoTask, OrchestratorService
 from news_recap.orchestrator.smoke import AgentSmokeSpec, run_smoke_checks
 from news_recap.orchestrator.worker import OrchestratorWorker
@@ -28,6 +29,9 @@ class LlmEnqueueCommand:
     priority: int
     max_attempts: int
     timeout_seconds: int
+    agent: str | None
+    model_profile: str | None
+    model: str | None
 
 
 @dataclass(slots=True)
@@ -69,12 +73,14 @@ class LlmSmokeCommand:
     """CLI input for direct agent smoke check."""
 
     agents: tuple[str, ...]
+    model_profile: str
+    model: str | None
     prompt: str
     expect_substring: str
     timeout_seconds: int
     claude_command: str | None
     codex_command: str | None
-    antigravity_command: str | None
+    gemini_command: str | None
 
 
 @dataclass(slots=True)
@@ -90,10 +96,12 @@ class OrchestratorCliController:
 
     def enqueue_demo(self, command: LlmEnqueueCommand) -> list[str]:
         settings = Settings.from_env(db_path=command.db_path)
+        routing_defaults = _routing_defaults(settings=settings)
         with _repository(settings) as repository:
             service = OrchestratorService(
                 repository=repository,
                 workdir_root=settings.orchestrator.workdir_root,
+                routing_defaults=routing_defaults,
             )
             task = service.enqueue_demo_task(
                 EnqueueDemoTask(
@@ -103,6 +111,9 @@ class OrchestratorCliController:
                     priority=command.priority,
                     max_attempts=command.max_attempts,
                     timeout_seconds=command.timeout_seconds,
+                    agent=command.agent,
+                    model_profile=command.model_profile,
+                    model=command.model,
                 ),
             )
 
@@ -114,10 +125,12 @@ class OrchestratorCliController:
 
     def run_worker(self, command: LlmWorkerCommand) -> list[str]:
         settings = Settings.from_env(db_path=command.db_path)
+        routing_defaults = _routing_defaults(settings=settings)
         with _repository(settings) as repository:
             worker = OrchestratorWorker(
                 repository=repository,
-                backend=CliAgentBackend(settings.orchestrator.cli_backend_command),
+                backend=CliAgentBackend(),
+                routing_defaults=routing_defaults,
                 worker_id=settings.orchestrator.worker_id,
                 poll_interval_seconds=settings.orchestrator.poll_interval_seconds,
                 retry_base_seconds=settings.orchestrator.retry_base_seconds,
@@ -188,11 +201,29 @@ class OrchestratorCliController:
             repository.cancel_task(task_id=command.task_id)
         return [f"Task canceled: {command.task_id}"]
 
-    def smoke(self, command: LlmSmokeCommand) -> LlmSmokeResult:
+    def smoke(self, command: LlmSmokeCommand) -> LlmSmokeResult:  # noqa: C901
         settings = Settings.from_env()
-        default_agent = settings.orchestrator.default_agent.strip().lower()
+        try:
+            routing_defaults = _routing_defaults(settings=settings)
+            default_agent = routing_defaults.default_agent
+        except ValueError as error:
+            return LlmSmokeResult(
+                lines=[
+                    "LLM smoke check:",
+                    str(error),
+                ],
+                success=False,
+            )
+        if command.model_profile not in {"fast", "quality"}:
+            return LlmSmokeResult(
+                lines=[
+                    "LLM smoke check:",
+                    f"Unsupported model profile: {command.model_profile!r}",
+                ],
+                success=False,
+            )
         selected = set(command.agents) if command.agents else {default_agent}
-        if not selected.issubset({"claude", "codex", "antigravity"}):
+        if not selected.issubset(set(SUPPORTED_AGENTS)):
             return LlmSmokeResult(
                 lines=[
                     "LLM smoke check:",
@@ -204,21 +235,28 @@ class OrchestratorCliController:
         command_templates = {
             "claude": command.claude_command
             or os.getenv("NEWS_RECAP_LLM_SMOKE_CLAUDE_COMMAND")
-            or settings.orchestrator.claude_command,
+            or settings.orchestrator.claude_command_template,
             "codex": command.codex_command
             or os.getenv("NEWS_RECAP_LLM_SMOKE_CODEX_COMMAND")
-            or settings.orchestrator.codex_command,
-            "antigravity": command.antigravity_command
-            or os.getenv("NEWS_RECAP_LLM_SMOKE_ANTIGRAVITY_COMMAND")
-            or settings.orchestrator.antigravity_command,
+            or settings.orchestrator.codex_command_template,
+            "gemini": command.gemini_command
+            or os.getenv("NEWS_RECAP_LLM_SMOKE_GEMINI_COMMAND")
+            or settings.orchestrator.gemini_command_template,
         }
+        selected_models: dict[str, str] = {}
+        for agent in selected:
+            if command.model is not None:
+                selected_models[agent] = command.model
+            else:
+                selected_models[agent] = routing_defaults.models[agent][command.model_profile]
         specs = [
             AgentSmokeSpec(
                 agent=agent,
                 executable=agent,
+                model=selected_models[agent],
                 command_template=command_templates.get(agent),
             )
-            for agent in ("claude", "codex", "antigravity")
+            for agent in ("claude", "codex", "gemini")
             if agent in selected
         ]
         results = run_smoke_checks(
@@ -231,6 +269,8 @@ class OrchestratorCliController:
         lines = [
             "LLM smoke check:",
             f"default_agent={default_agent}",
+            f"model_profile={command.model_profile}",
+            f"model_override={command.model!r}",
             f"prompt={command.prompt!r}",
             f"expect_substring={command.expect_substring!r}",
             f"timeout_seconds={command.timeout_seconds}",
@@ -240,6 +280,7 @@ class OrchestratorCliController:
             run_state = "ok" if result.run_ok else ("skipped" if result.skipped_run else "failed")
             line = (
                 f"  agent={result.agent} available={'yes' if result.available else 'no'} "
+                f"model={selected_models[result.agent]} "
                 f"probe={'ok' if result.probe_ok else 'failed'} run={run_state}"
             )
             if result.error:
@@ -256,8 +297,8 @@ class OrchestratorCliController:
         if not success:
             lines.append(
                 "Hint: configure run commands with "
-                "NEWS_RECAP_LLM_SMOKE_{CLAUDE|CODEX|ANTIGRAVITY}_COMMAND "
-                "or --claude-command/--codex-command/--antigravity-command.",
+                "NEWS_RECAP_LLM_SMOKE_{CLAUDE|CODEX|GEMINI}_COMMAND "
+                "or --claude-command/--codex-command/--gemini-command.",
             )
         return LlmSmokeResult(lines=lines, success=success)
 
@@ -266,6 +307,10 @@ def _parse_status(value: str | None) -> LlmTaskStatus | None:
     if value is None:
         return None
     return LlmTaskStatus(value.strip().lower())
+
+
+def _routing_defaults(*, settings: Settings) -> RoutingDefaults:
+    return RoutingDefaults.from_settings(settings.orchestrator)
 
 
 @contextmanager

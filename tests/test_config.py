@@ -104,14 +104,52 @@ def test_from_env_parses_article_retention_days(monkeypatch: pytest.MonkeyPatch)
 
 def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NEWS_RECAP_LLM_DEFAULT_AGENT", raising=False)
-    monkeypatch.delenv("NEWS_RECAP_LLM_CODEX_COMMAND", raising=False)
-    monkeypatch.delenv("NEWS_RECAP_LLM_CLAUDE_COMMAND", raising=False)
-    monkeypatch.delenv("NEWS_RECAP_LLM_ANTIGRAVITY_COMMAND", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE", raising=False)
     settings = Settings.from_env()
     assert settings.orchestrator.default_agent == "codex"
-    assert settings.orchestrator.codex_command == "codex exec {prompt}"
-    assert (
-        settings.orchestrator.claude_command
-        == "claude -p --permission-mode bypassPermissions {prompt}"
+    assert settings.orchestrator.task_type_profile_map == {
+        "highlights": "fast",
+        "story": "quality",
+        "qa": "fast",
+    }
+    assert settings.orchestrator.codex_command_template == (
+        "codex exec --sandbox workspace-write "
+        "-c sandbox_workspace_write.network_access=true "
+        "-c model_reasoning_effort=high --model {model} {prompt}"
     )
-    assert settings.orchestrator.antigravity_command == "antigravity chat --mode agent {prompt}"
+    assert settings.orchestrator.claude_command_template == (
+        "claude -p --model {model} --permission-mode dontAsk "
+        '--allowed-tools "Read,Write,Edit,WebFetch,'
+        'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
+        "-- {prompt}"
+    )
+    assert (
+        settings.orchestrator.gemini_command_template
+        == "gemini --model {model} --approval-mode auto_edit --prompt {prompt}"
+    )
+    assert settings.orchestrator.gemini_model_fast == "gemini-2.5-flash"
+    assert settings.orchestrator.gemini_model_quality == "gemini-2.5-pro"
+
+
+def test_from_env_parses_task_type_profile_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP",
+        "highlights=fast,story=quality,digest=fast",
+    )
+    settings = Settings.from_env()
+    assert settings.orchestrator.task_type_profile_map == {
+        "highlights": "fast",
+        "story": "quality",
+        "digest": "fast",
+    }
+
+
+def test_from_env_rejects_invalid_task_type_profile_map_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP", "highlights=cheap")
+    with pytest.raises(ValueError, match="expected fast or quality"):
+        Settings.from_env()

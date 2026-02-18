@@ -16,9 +16,15 @@ from news_recap.orchestrator.backend import (
     CliAgentBackend,
 )
 from news_recap.orchestrator.contracts import read_articles_index, read_manifest, read_task_input
+from news_recap.orchestrator.failure_classifier import classify_backend_failure
 from news_recap.orchestrator.models import FailureClass, LlmTaskStatus, LlmTaskView
 from news_recap.orchestrator.repair import decide_repair
 from news_recap.orchestrator.repository import OrchestratorRepository
+from news_recap.orchestrator.routing import (
+    FrozenRouting,
+    RoutingDefaults,
+    resolve_routing_for_execution,
+)
 from news_recap.orchestrator.validator import validate_output_contract
 
 
@@ -47,6 +53,7 @@ class OrchestratorWorker:
         *,
         repository: OrchestratorRepository,
         backend: CliAgentBackend,
+        routing_defaults: RoutingDefaults,
         worker_id: str,
         poll_interval_seconds: float = 2.0,
         retry_base_seconds: int = 30,
@@ -56,6 +63,7 @@ class OrchestratorWorker:
     ) -> None:
         self.repository = repository
         self.backend = backend
+        self.routing_defaults = routing_defaults
         self.worker_id = worker_id
         self.poll_interval_seconds = poll_interval_seconds
         self.retry_base_seconds = retry_base_seconds
@@ -77,7 +85,7 @@ class OrchestratorWorker:
         manifest_path = Path(task.input_manifest_path)
         try:
             manifest = read_manifest(manifest_path)
-            read_task_input(Path(manifest.task_input_path))
+            task_input = read_task_input(Path(manifest.task_input_path))
             article_entries = read_articles_index(Path(manifest.articles_index_path))
         except Exception as error:  # noqa: BLE001
             failed = self.repository.fail_task(
@@ -92,12 +100,29 @@ class OrchestratorWorker:
             return summary
 
         allowed_source_ids = {entry.source_id for entry in article_entries}
+        routing, fallback_reason = resolve_routing_for_execution(
+            task_input=task_input,
+            task_type=task.task_type,
+            defaults=self.routing_defaults,
+        )
+        if fallback_reason is not None:
+            self.repository.add_task_event(
+                task_id=task.task_id,
+                event_type="routing_fallback_applied",
+                status_from=LlmTaskStatus.RUNNING,
+                status_to=LlmTaskStatus.RUNNING,
+                details={
+                    "reason": fallback_reason,
+                    "routing": routing.to_metadata(),
+                },
+            )
 
         try:
             execution = self._execute_backend(
                 task_id=task.task_id,
                 manifest_path=manifest_path,
                 task=task,
+                routing=routing,
             )
         except BackendRunError as error:
             failure_class = (
@@ -105,6 +130,12 @@ class OrchestratorWorker:
                 if error.transient
                 else FailureClass.BACKEND_NON_RETRYABLE
             )
+            failure_details: dict[str, object] = {
+                "reason_code": f"{routing.agent}_backend_run_error",
+                "resolved_agent": routing.agent,
+                "resolved_model": routing.model,
+                "resolved_profile": routing.profile,
+            }
             if failure_class == FailureClass.BACKEND_TRANSIENT:
                 outcome = self._handle_retry_or_fail(
                     task_id=task.task_id,
@@ -115,6 +146,7 @@ class OrchestratorWorker:
                     last_exit_code=None,
                     timeout_seconds=task.timeout_seconds,
                     status_on_final=LlmTaskStatus.FAILED,
+                    details=failure_details,
                 )
                 if outcome.retried:
                     summary.retried = 1
@@ -128,6 +160,7 @@ class OrchestratorWorker:
                 failure_class=failure_class,
                 error_summary=str(error),
                 last_exit_code=None,
+                details=failure_details,
             )
             if failed:
                 summary.failed = 1
@@ -152,20 +185,36 @@ class OrchestratorWorker:
             return summary
 
         if execution.exit_code != 0:
-            transient = execution.exit_code in self.transient_exit_codes
-            failure_class = (
-                FailureClass.BACKEND_TRANSIENT if transient else FailureClass.BACKEND_NON_RETRYABLE
+            stdout_preview = self._read_preview(execution.stdout_path)
+            stderr_preview = self._read_preview(execution.stderr_path)
+            classification = classify_backend_failure(
+                agent=routing.agent,
+                exit_code=execution.exit_code,
+                stdout=stdout_preview,
+                stderr=stderr_preview,
+                transient_exit_codes=self.transient_exit_codes,
             )
-            if transient:
+            failure_details: dict[str, object] = classification.to_event_details(
+                agent=routing.agent,
+                model=routing.model,
+            )
+            failure_details["resolved_profile"] = routing.profile
+            failure_details["stdout_preview"] = stdout_preview
+            failure_details["stderr_preview"] = stderr_preview
+            if classification.failure_class == FailureClass.BACKEND_TRANSIENT:
                 outcome = self._handle_retry_or_fail(
                     task_id=task.task_id,
                     task_attempt=task.attempt,
                     max_attempts=task.max_attempts,
-                    failure_class=failure_class,
-                    error_summary=f"Backend exited with code {execution.exit_code}.",
+                    failure_class=classification.failure_class,
+                    error_summary=(
+                        f"{classification.reason_code}: "
+                        f"backend exited with code {execution.exit_code}."
+                    ),
                     last_exit_code=execution.exit_code,
                     timeout_seconds=task.timeout_seconds,
                     status_on_final=LlmTaskStatus.FAILED,
+                    details=failure_details,
                 )
                 if outcome.retried:
                     summary.retried = 1
@@ -176,9 +225,12 @@ class OrchestratorWorker:
             failed = self.repository.fail_task(
                 task_id=task.task_id,
                 status=LlmTaskStatus.FAILED,
-                failure_class=failure_class,
-                error_summary=f"Backend exited with code {execution.exit_code}.",
+                failure_class=classification.failure_class,
+                error_summary=(
+                    f"{classification.reason_code}: backend exited with code {execution.exit_code}."
+                ),
                 last_exit_code=execution.exit_code,
+                details=failure_details,
             )
             if failed:
                 summary.failed = 1
@@ -220,6 +272,7 @@ class OrchestratorWorker:
                     task_id=task.task_id,
                     manifest_path=manifest_path,
                     task=task,
+                    routing=routing,
                     repair_mode=True,
                 )
                 if repair_execution.exit_code == 0 and not repair_execution.timed_out:
@@ -274,12 +327,17 @@ class OrchestratorWorker:
         task_id: str,
         manifest_path: Path,
         task: LlmTaskView,
+        routing: FrozenRouting,
         repair_mode: bool = False,
     ):
         execution = self.backend.run(
             BackendRunRequest(
                 manifest_path=manifest_path,
                 timeout_seconds=task.timeout_seconds,
+                agent=routing.agent,
+                profile=routing.profile,
+                model=routing.model,
+                command_template=routing.command_template,
                 repair_mode=repair_mode,
             ),
         )
@@ -309,6 +367,15 @@ class OrchestratorWorker:
             size_bytes=path.stat().st_size if path.exists() else 0,
         )
 
+    def _read_preview(self, path: Path, *, limit: int = 1200) -> str:
+        if not path.exists():
+            return ""
+        text = path.read_text("utf-8", errors="replace")
+        compact = text.strip()
+        if len(compact) <= limit:
+            return compact
+        return compact[:limit]
+
     def _handle_retry_or_fail(  # noqa: PLR0913
         self,
         *,
@@ -320,6 +387,7 @@ class OrchestratorWorker:
         last_exit_code: int | None,
         timeout_seconds: int,
         status_on_final: LlmTaskStatus,
+        details: dict[str, object] | None = None,
     ) -> RetryOutcome:
         retries_left = task_attempt < max_attempts
         if retries_left and failure_class in {
@@ -334,6 +402,7 @@ class OrchestratorWorker:
                 failure_class=failure_class,
                 error_summary=error_summary,
                 last_exit_code=last_exit_code,
+                details=details,
             )
             return RetryOutcome(retried=retried, failed=False)
 
@@ -343,6 +412,7 @@ class OrchestratorWorker:
             failure_class=failure_class,
             error_summary=error_summary,
             last_exit_code=last_exit_code,
+            details=details,
         )
         return RetryOutcome(retried=False, failed=failed)
 

@@ -287,6 +287,23 @@ def llm() -> None:
     help="Lower number means higher priority.",
 )
 @click.option(
+    "--agent",
+    type=click.Choice(["claude", "codex", "gemini"], case_sensitive=False),
+    default=None,
+    help="Optional target agent override for this task.",
+)
+@click.option(
+    "--model-profile",
+    type=click.Choice(["fast", "quality"], case_sensitive=False),
+    default=None,
+    help="Optional model profile override (fast or quality).",
+)
+@click.option(
+    "--model",
+    default=None,
+    help="Optional concrete model override for this task.",
+)
+@click.option(
     "--max-attempts",
     type=click.IntRange(min=1, max=10),
     default=3,
@@ -306,6 +323,9 @@ def llm_enqueue_test(  # noqa: PLR0913
     prompt: str,
     source_ids: tuple[str, ...],
     priority: int,
+    agent: str | None,
+    model_profile: str | None,
+    model: str | None,
     max_attempts: int,
     timeout_seconds: int,
 ) -> None:
@@ -321,6 +341,9 @@ def llm_enqueue_test(  # noqa: PLR0913
                 priority=priority,
                 max_attempts=max_attempts,
                 timeout_seconds=timeout_seconds,
+                agent=agent.lower() if agent is not None else None,
+                model_profile=model_profile.lower() if model_profile is not None else None,
+                model=model,
             ),
         ),
     )
@@ -447,8 +470,20 @@ def llm_cancel(db_path: Path | None, task_id: str) -> None:
     "--agent",
     "agents",
     multiple=True,
-    type=click.Choice(["claude", "codex", "antigravity"], case_sensitive=False),
+    type=click.Choice(["claude", "codex", "gemini"], case_sensitive=False),
     help="Agent to test. Repeat to test multiple; defaults to NEWS_RECAP_LLM_DEFAULT_AGENT.",
+)
+@click.option(
+    "--model-profile",
+    type=click.Choice(["fast", "quality"], case_sensitive=False),
+    default="fast",
+    show_default=True,
+    help="Select fast or quality model profile for selected agent(s).",
+)
+@click.option(
+    "--model",
+    default=None,
+    help="Optional explicit model id override for selected agent(s).",
 )
 @click.option(
     "--prompt",
@@ -473,7 +508,7 @@ def llm_cancel(db_path: Path | None, task_id: str) -> None:
     "--claude-command",
     default=None,
     help=(
-        "Run template for Claude CLI. Supports {prompt} and {prompt_file}. "
+        "Run template for Claude CLI. Supports {model}, {prompt}, and {prompt_file}. "
         "If omitted, NEWS_RECAP_LLM_SMOKE_CLAUDE_COMMAND is used."
     ),
 )
@@ -481,38 +516,42 @@ def llm_cancel(db_path: Path | None, task_id: str) -> None:
     "--codex-command",
     default=None,
     help=(
-        "Run template for Codex CLI. Supports {prompt} and {prompt_file}. "
+        "Run template for Codex CLI. Supports {model}, {prompt}, and {prompt_file}. "
         "If omitted, NEWS_RECAP_LLM_SMOKE_CODEX_COMMAND is used."
     ),
 )
 @click.option(
-    "--antigravity-command",
+    "--gemini-command",
     default=None,
     help=(
-        "Run template for Antigravity CLI. Supports {prompt} and {prompt_file}. "
-        "If omitted, NEWS_RECAP_LLM_SMOKE_ANTIGRAVITY_COMMAND is used."
+        "Run template for Gemini CLI. Supports {model}, {prompt}, and {prompt_file}. "
+        "If omitted, NEWS_RECAP_LLM_SMOKE_GEMINI_COMMAND is used."
     ),
 )
 def llm_smoke(  # noqa: PLR0913
     agents: tuple[str, ...],
+    model_profile: str,
+    model: str | None,
     prompt: str,
     expect_substring: str,
     timeout_seconds: int,
     claude_command: str | None,
     codex_command: str | None,
-    antigravity_command: str | None,
+    gemini_command: str | None,
 ) -> None:
     """Run lightweight direct smoke checks for external CLI agents (no DB queue)."""
 
     result = ORCHESTRATOR_CONTROLLER.smoke(
         LlmSmokeCommand(
             agents=tuple(agent.lower() for agent in agents),
+            model_profile=model_profile.lower(),
+            model=model,
             prompt=prompt,
             expect_substring=expect_substring,
             timeout_seconds=timeout_seconds,
             claude_command=claude_command,
             codex_command=codex_command,
-            antigravity_command=antigravity_command,
+            gemini_command=gemini_command,
         ),
     )
     _emit_lines(result.lines)

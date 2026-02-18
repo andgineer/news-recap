@@ -62,6 +62,97 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 news-recap ingest duplicates --run-id <run_id>
 ```
 
+## Smoke-проверка и обновление моделей LLM-агентов
+
+Быстрый smoke:
+
+```bash
+news-recap llm smoke
+```
+
+Матрица по профилям:
+
+```bash
+news-recap llm smoke --agent codex --model-profile fast
+news-recap llm smoke --agent codex --model-profile quality
+news-recap llm smoke --agent claude --model-profile fast
+news-recap llm smoke --agent claude --model-profile quality
+news-recap llm smoke --agent gemini --model-profile fast
+news-recap llm smoke --agent gemini --model-profile quality
+```
+
+Когда запускать автоматическое обновление mapping моделей:
+
+- сразу при ошибке `model_not_available`;
+- сразу, если smoke падает 2 раза подряд для одного `agent/profile`;
+- после обновления CLI-агента (`codex --version`, `claude --version`, `gemini --version`);
+- планово раз в неделю.
+
+Когда **не** менять mapping моделей:
+
+- `access_or_auth`;
+- `billing_or_quota`.
+- ошибки timeout на probe/runtime (`Probe timed out`, `Synthetic task timed out`).
+
+В этих двух случаях сначала исправьте авторизацию или биллинг.
+
+Примечание по Gemini:
+
+- Для текущего CLI-потока `GEMINI_API_KEY` не нужен; используется авторизация Gemini CLI
+  (преднастроенная сессия/login).
+
+Готовый maintenance prompt для агента:
+
+```text
+You are the LLM model-maintenance agent for this repo.
+
+Goal:
+Validate current model routing for codex/claude/gemini and update model mappings only if needed.
+
+Rules:
+1) Work only in this repo.
+2) Run smoke matrix for agents x profiles (fast, quality).
+3) Treat auth/quota failures as non-model issues; do NOT change model mapping for them.
+4) Change mapping only when failure indicates model drift (not found/deprecated/unsupported).
+5) After each candidate change, re-run smoke for that exact agent/profile.
+6) Keep edits minimal and deterministic.
+
+Commands to use:
+- news-recap llm smoke --agent codex --model-profile fast
+- news-recap llm smoke --agent codex --model-profile quality
+- news-recap llm smoke --agent claude --model-profile fast
+- news-recap llm smoke --agent claude --model-profile quality
+- news-recap llm smoke --agent gemini --model-profile fast
+- news-recap llm smoke --agent gemini --model-profile quality
+
+If a model drift is confirmed:
+- Update env defaults/mapping in config.
+- Update docs with new known-good defaults.
+- Update tests that assert defaults.
+- Run:
+  - uv run pytest -q
+  - source ./activate.sh && pre-commit run --verbose --all-files --
+
+Output:
+1) A short report with before/after matrix.
+2) Exact files changed.
+3) Unresolved blockers (if any).
+```
+
+Скрипт watchdog (рекомендуемая точка автоматизации):
+
+```bash
+scripts/model_watchdog.sh
+scripts/model_watchdog.sh --run-refresh --refresh-agent codex
+```
+
+Коды выхода:
+
+- `0` проверки успешны (или refresh выполнен успешно);
+- `10` нужен refresh (есть триггеры, но `--run-refresh` не указан);
+- `11` refresh запускался и завершился ошибкой;
+- `12` обнаружены блокирующие auth/quota/timeout-ошибки.
+
 ## Очистка по retention
 
 Удалить старые пользовательские связи со статьями по `discovered_at`:

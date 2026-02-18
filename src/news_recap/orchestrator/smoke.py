@@ -17,6 +17,7 @@ class AgentSmokeSpec:
 
     agent: str
     executable: str
+    model: str
     command_template: str | None = None
 
 
@@ -106,6 +107,7 @@ def run_smoke_checks(
         run_ok, run_error, run_stdout, run_stderr = _run_synthetic_task(
             command_template=spec.command_template,
             resolved_executable=resolved_executable,
+            model=spec.model,
             prompt=prompt,
             expect_substring=expect_substring,
             timeout_seconds=timeout_seconds,
@@ -154,10 +156,11 @@ def _run_probe(*, executable: str, timeout_seconds: int) -> tuple[bool, str | No
     return False, "Probe command failed.", stdout, stderr
 
 
-def _run_synthetic_task(  # noqa: PLR0911
+def _run_synthetic_task(  # noqa: PLR0911, PLR0913
     *,
     command_template: str,
     resolved_executable: str,
+    model: str,
     prompt: str,
     expect_substring: str,
     timeout_seconds: int,
@@ -172,7 +175,9 @@ def _run_synthetic_task(  # noqa: PLR0911
             if os.name == "nt":
                 prompt_arg = subprocess.list2cmdline([prompt])
                 prompt_file_arg = subprocess.list2cmdline([str(prompt_file)])
+                model_arg = subprocess.list2cmdline([model])
                 rendered = command_template.format(
+                    model=model_arg,
                     prompt=prompt_arg,
                     prompt_file=prompt_file_arg,
                 ).strip()
@@ -194,6 +199,7 @@ def _run_synthetic_task(  # noqa: PLR0911
                 )
             else:
                 rendered = command_template.format(
+                    model=shlex.quote(model),
                     prompt=shlex.quote(prompt),
                     prompt_file=shlex.quote(str(prompt_file)),
                 )

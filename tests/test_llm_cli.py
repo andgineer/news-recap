@@ -11,9 +11,13 @@ from news_recap.main import news_recap
 
 def test_llm_cli_enqueue_worker_and_inspect(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "llm-cli.db"
+    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
     monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CLI_COMMAND",
-        f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent",
+        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
+        (
+            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
+            "--task-manifest {task_manifest}"
+        ),
     )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
 

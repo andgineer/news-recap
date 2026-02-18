@@ -273,7 +273,7 @@ class OrchestratorRepository:
             session.commit()
             return True
 
-    def fail_task(
+    def fail_task(  # noqa: PLR0913
         self,
         *,
         task_id: str,
@@ -281,6 +281,7 @@ class OrchestratorRepository:
         failure_class: FailureClass,
         error_summary: str,
         last_exit_code: int | None,
+        details: dict[str, object] | None = None,
     ) -> bool:
         """Mark a running task as failed/timeout."""
 
@@ -319,6 +320,7 @@ class OrchestratorRepository:
                     "failure_class": failure_class.value,
                     "last_exit_code": last_exit_code,
                     "error_summary": error_summary,
+                    **(details or {}),
                 },
             )
             session.commit()
@@ -333,6 +335,7 @@ class OrchestratorRepository:
         failure_class: FailureClass,
         error_summary: str,
         last_exit_code: int | None,
+        details: dict[str, object] | None = None,
     ) -> bool:
         """Requeue a running task for automatic retry."""
 
@@ -373,10 +376,41 @@ class OrchestratorRepository:
                     "run_after": _to_utc_aware_datetime(run_after).isoformat(),
                     "timeout_seconds": timeout_seconds,
                     "failure_class": failure_class.value,
+                    **(details or {}),
                 },
             )
             session.commit()
             return True
+
+    def add_task_event(
+        self,
+        *,
+        task_id: str,
+        event_type: str,
+        details: dict[str, object] | None = None,
+        status_from: LlmTaskStatus | None = None,
+        status_to: LlmTaskStatus | None = None,
+    ) -> None:
+        """Append custom task event with optional details."""
+
+        with Session(self.engine) as session:
+            row = session.exec(
+                select(LlmTask).where(
+                    LlmTask.task_id == task_id,
+                    LlmTask.user_id == self.user_id,
+                ),
+            ).one_or_none()
+            if row is None:
+                raise RuntimeError(f"Task not found: {task_id}")
+            self._add_event(
+                session=session,
+                task_id=task_id,
+                event_type=event_type,
+                status_from=status_from,
+                status_to=status_to,
+                details=details or {},
+            )
+            session.commit()
 
     def retry_task(self, *, task_id: str) -> None:
         """Manual operator retry for failed/timeout tasks."""

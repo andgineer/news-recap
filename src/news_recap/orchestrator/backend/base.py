@@ -13,6 +13,10 @@ class BackendRunRequest:
 
     manifest_path: Path
     timeout_seconds: int
+    agent: str
+    profile: str
+    model: str
+    command_template: str
     repair_mode: bool = False
 
 
