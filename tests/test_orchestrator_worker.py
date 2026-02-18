@@ -109,7 +109,7 @@ parser.add_argument("--task-manifest", required=True)
 args = parser.parse_args()
 manifest = read_manifest(Path(args.task_manifest))
 articles = read_articles_index(Path(manifest.articles_index_path))
-time.sleep(0.6)
+time.sleep(2.0)
 source_id = articles[0].source_id if articles else "source:demo"
 Path(manifest.output_result_path).write_text(
     '{"blocks":[{"text":"ok","source_ids":["' + source_id + '"]}]}',
@@ -147,7 +147,19 @@ Path(manifest.output_result_path).write_text(
     else:  # pragma: no cover - defensive
         raise AssertionError("Task never reached running state before cancel.")
 
-    repository.cancel_task(task_id=task.task_id)
+    cancel_applied = False
+    cancel_deadline = time.time() + 2
+    while time.time() < cancel_deadline:
+        try:
+            repository.cancel_task(task_id=task.task_id)
+            cancel_applied = True
+            break
+        except RuntimeError as error:
+            if "Task state changed concurrently while canceling" in str(error):
+                time.sleep(0.02)
+                continue
+            raise
+    assert cancel_applied
     thread.join(timeout=5)
     assert thread.is_alive() is False
 

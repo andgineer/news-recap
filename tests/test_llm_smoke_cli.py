@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import stat
+import sys
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -9,7 +11,7 @@ from news_recap.main import news_recap
 
 
 def _write_fake_agent(path: Path, name: str) -> None:
-    script = f"""#!/usr/bin/env python3
+    script = f"""
 import argparse
 import sys
 from pathlib import Path
@@ -31,15 +33,28 @@ else:
     text = args.prompt or ""
 print("OK" if "OK" in text else "BAD")
 """
-    path.write_text(script, "utf-8")
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    implementation = path.parent / f"{name}_impl.py"
+    implementation.write_text(script.strip() + "\n", "utf-8")
+
+    if os.name == "nt":
+        launcher = path.parent / f"{name}.cmd"
+        launcher.write_text(
+            f'@echo off\r\n"{sys.executable}" "{implementation}" %*\r\n',
+            "utf-8",
+        )
+    else:
+        path.write_text(
+            f'#!/usr/bin/env sh\nexec "{sys.executable}" "{implementation}" "$@"\n',
+            "utf-8",
+        )
+        path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
 def test_llm_smoke_runs_synthetic_task_without_db(tmp_path: Path, monkeypatch) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     _write_fake_agent(bin_dir / "codex", "codex")
-    monkeypatch.setenv("PATH", f"{bin_dir}:{Path.cwd()!s}:{Path.home()!s}:{Path('/usr/bin')!s}")
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
 
     runner = CliRunner()
     result = runner.invoke(
@@ -66,7 +81,7 @@ def test_llm_smoke_fails_when_agent_executable_is_missing(tmp_path: Path, monkey
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     _write_fake_agent(bin_dir / "codex", "codex")
-    monkeypatch.setenv("PATH", f"{bin_dir}:{Path.cwd()!s}:{Path.home()!s}:{Path('/usr/bin')!s}")
+    monkeypatch.setenv("PATH", str(bin_dir))
 
     runner = CliRunner()
     result = runner.invoke(
@@ -87,7 +102,7 @@ def test_llm_smoke_quotes_prompt_placeholder(tmp_path: Path, monkeypatch) -> Non
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     _write_fake_agent(bin_dir / "codex", "codex")
-    monkeypatch.setenv("PATH", f"{bin_dir}:{Path.cwd()!s}:{Path.home()!s}:{Path('/usr/bin')!s}")
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
 
     runner = CliRunner()
     result = runner.invoke(

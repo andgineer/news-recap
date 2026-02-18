@@ -33,10 +33,10 @@ class CliAgentBackend:
         stdout_path.parent.mkdir(parents=True, exist_ok=True)
         stderr_path.parent.mkdir(parents=True, exist_ok=True)
 
-        argv = shlex.split(self.command)
-        if not argv:
-            raise BackendRunError("CLI backend command is empty.", transient=False)
-        argv.extend(["--task-manifest", str(request.manifest_path)])
+        run_args, command_head = _build_run_args(
+            command=self.command,
+            manifest_path=request.manifest_path,
+        )
 
         env = os.environ.copy()
         env["NEWS_RECAP_REPAIR_MODE"] = "1" if request.repair_mode else "0"
@@ -50,7 +50,7 @@ class CliAgentBackend:
                 ) as stderr_handle,
             ):
                 completed = subprocess.run(  # noqa: S603
-                    argv,
+                    run_args,
                     check=False,
                     env=env,
                     timeout=request.timeout_seconds,
@@ -72,7 +72,7 @@ class CliAgentBackend:
             )
         except FileNotFoundError as error:
             raise BackendRunError(
-                f"CLI backend command not found: {argv[0]}",
+                f"CLI backend command not found: {command_head}",
                 transient=False,
             ) from error
         except OSError as error:
@@ -80,3 +80,20 @@ class CliAgentBackend:
                 f"CLI backend failed to start: {error}",
                 transient=True,
             ) from error
+
+
+def _build_run_args(*, command: str, manifest_path: Path) -> tuple[str | list[str], str]:
+    stripped = command.strip()
+    if not stripped:
+        raise BackendRunError("CLI backend command is empty.", transient=False)
+
+    if os.name == "nt":
+        tail = subprocess.list2cmdline(["--task-manifest", str(manifest_path)])
+        command_head = stripped.split(maxsplit=1)[0]
+        return f"{stripped} {tail}", command_head
+
+    argv = shlex.split(stripped)
+    if not argv:
+        raise BackendRunError("CLI backend command is empty.", transient=False)
+    argv.extend(["--task-manifest", str(manifest_path)])
+    return argv, argv[0]

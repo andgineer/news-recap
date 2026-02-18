@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -144,7 +145,7 @@ def _run_probe(*, executable: str, timeout_seconds: int) -> tuple[bool, str | No
     return False, "Probe command failed.", stdout, stderr
 
 
-def _run_synthetic_task(
+def _run_synthetic_task(  # noqa: PLR0911
     *,
     command_template: str,
     prompt: str,
@@ -157,25 +158,44 @@ def _run_synthetic_task(
 
         has_prompt_placeholder = "{prompt}" in command_template
         has_prompt_file_placeholder = "{prompt_file}" in command_template
-        rendered = command_template.format(
-            prompt=shlex.quote(prompt),
-            prompt_file=shlex.quote(str(prompt_file)),
-        )
-        argv = shlex.split(rendered)
-        if not argv:
-            return False, "Configured command is empty.", "", ""
-        if not has_prompt_placeholder and not has_prompt_file_placeholder:
-            argv.append(prompt)
-
         try:
-            completed = subprocess.run(  # noqa: S603
-                argv,
-                check=False,
-                capture_output=True,
-                text=True,
-                input=prompt,
-                timeout=timeout_seconds,
-            )
+            if os.name == "nt":
+                prompt_arg = subprocess.list2cmdline([prompt])
+                prompt_file_arg = subprocess.list2cmdline([str(prompt_file)])
+                rendered = command_template.format(
+                    prompt=prompt_arg,
+                    prompt_file=prompt_file_arg,
+                ).strip()
+                if not rendered:
+                    return False, "Configured command is empty.", "", ""
+                if not has_prompt_placeholder and not has_prompt_file_placeholder:
+                    rendered = f"{rendered} {prompt_arg}"
+                completed = subprocess.run(  # noqa: S603
+                    rendered,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    input=prompt,
+                    timeout=timeout_seconds,
+                )
+            else:
+                rendered = command_template.format(
+                    prompt=shlex.quote(prompt),
+                    prompt_file=shlex.quote(str(prompt_file)),
+                )
+                argv = shlex.split(rendered)
+                if not argv:
+                    return False, "Configured command is empty.", "", ""
+                if not has_prompt_placeholder and not has_prompt_file_placeholder:
+                    argv.append(prompt)
+                completed = subprocess.run(  # noqa: S603
+                    argv,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    input=prompt,
+                    timeout=timeout_seconds,
+                )
         except subprocess.TimeoutExpired:
             return False, "Synthetic task timed out.", "", ""
         except OSError as error:
