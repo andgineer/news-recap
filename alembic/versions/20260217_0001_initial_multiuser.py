@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "20260217_0001"
 down_revision = None
@@ -223,8 +224,8 @@ def upgrade() -> None:
             INSERT INTO users(user_id, display_name, created_at)
             VALUES ('default_user', 'Default User', CURRENT_TIMESTAMP)
             ON CONFLICT(user_id) DO NOTHING
-            """
-        )
+            """,
+        ),
     )
 
 

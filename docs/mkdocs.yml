@@ -71,3 +71,4 @@ extra:
 nav:
   - index.md
   - installation.md
+  - cli.md

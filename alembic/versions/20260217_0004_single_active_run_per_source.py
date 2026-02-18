@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "20260217_0004"
 down_revision = "20260217_0003"
@@ -35,7 +36,7 @@ def upgrade() -> None:
                     'Auto-closed during migration: duplicate running runs.'
                 )
             WHERE run_id IN (SELECT run_id FROM ranked WHERE rn > 1)
-            """
+            """,
         ),
     )
     op.execute(
@@ -44,7 +45,7 @@ def upgrade() -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS uq_ingestion_runs_scope_source_running
             ON ingestion_runs (user_id, source)
             WHERE status = 'running'
-            """
+            """,
         ),
     )
 

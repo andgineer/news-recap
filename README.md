@@ -18,70 +18,9 @@ Epic 1 is already usable with real data from RSS feeds (including Inoreader Outp
 - Single-tenant, multi-user-ready schema and repository contracts.
 - Automatic local bootstrap of `default_user`.
 
-### Run with real data
+### Usage
 
-1. Activate the environment:
-
-```bash
-source ./activate.sh
-```
-
-2. Configure RSS feed URL(s):
-
-```bash
-export NEWS_RECAP_RSS_FEED_URLS="https://www.inoreader.com/stream/user/100.../tag/news?output=rss,https://example.com/another.xml"
-```
-
-3. Run ingestion:
-
-```bash
-uv run news-recap ingest daily
-```
-
-Optional:
-
-```bash
-uv run news-recap ingest daily --db-path /path/to/news_recap.db
-uv run news-recap ingest daily --feed-url "https://www.inoreader.com/stream/user/100.../tag/news?output=rss"
-```
-
-### Expected CLI result
-
-The command prints one run summary with:
-
-- `run_id`, `status`
-- `ingested`, `updated`, `skipped`
-- `clusters`, `duplicates`
-- `gaps`
-
-### Inspect ingestion quality from CLI
-
-Get 24h window stats (ingested/updated/skipped, dedup duplicates, clusters):
-
-```bash
-uv run news-recap ingest stats --hours 24
-```
-
-Inspect cluster sizes for a run (or latest run in lookback window):
-
-```bash
-uv run news-recap ingest clusters --hours 24 --limit 20
-uv run news-recap ingest clusters --run-id <run_id> --show-members
-```
-
-Show duplicate examples with article samples from the same cluster:
-
-```bash
-uv run news-recap ingest duplicates --hours 24 --limit-clusters 10
-uv run news-recap ingest duplicates --run-id <run_id>
-```
-
-### Inspect results in SQLite
-
-```bash
-sqlite3 .news_recap.db "SELECT run_id,status,ingested_count,updated_count,skipped_count,dedup_clusters_count,dedup_duplicates_count,gaps_opened_count FROM ingestion_runs ORDER BY started_at DESC LIMIT 5;"
-sqlite3 .news_recap.db "SELECT COUNT(*) FROM articles;"
-```
+- [News Recap](https://andgineer.github.io/news-recap/)
 
 ### User defaults
 
@@ -95,10 +34,6 @@ sqlite3 .news_recap.db "SELECT COUNT(*) FROM articles;"
 Epic 1 covers ingestion and dedup foundation only.
 Highlights generation, story assembly, Telegram delivery, and interactive Q&A are planned for
 later epics.
-
-# Documentation
-
-[News Recap](https://andgineer.github.io/news-recap/)
 
 # Developers
 
