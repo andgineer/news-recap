@@ -46,8 +46,8 @@ def run_smoke_checks(
 
     results: list[AgentSmokeResult] = []
     for spec in specs:
-        executable_path = shutil.which(spec.executable)
-        if executable_path is None:
+        resolved_executable = shutil.which(spec.executable)
+        if resolved_executable is None:
             results.append(
                 AgentSmokeResult(
                     agent=spec.agent,
@@ -64,7 +64,7 @@ def run_smoke_checks(
             continue
 
         probe_ok, probe_error, probe_stdout, probe_stderr = _run_probe(
-            executable=spec.executable,
+            executable=resolved_executable,
             timeout_seconds=timeout_seconds,
         )
         if not probe_ok:
@@ -76,7 +76,11 @@ def run_smoke_checks(
                     probe_ok=False,
                     run_ok=False,
                     skipped_run=True,
-                    error=probe_error,
+                    error=(
+                        f"{probe_error} (resolved executable: {resolved_executable})"
+                        if probe_error is not None
+                        else f"Probe failed (resolved executable: {resolved_executable})"
+                    ),
                     stdout_preview=probe_stdout,
                     stderr_preview=probe_stderr,
                 ),
@@ -101,6 +105,7 @@ def run_smoke_checks(
 
         run_ok, run_error, run_stdout, run_stderr = _run_synthetic_task(
             command_template=spec.command_template,
+            resolved_executable=resolved_executable,
             prompt=prompt,
             expect_substring=expect_substring,
             timeout_seconds=timeout_seconds,
@@ -113,7 +118,11 @@ def run_smoke_checks(
                 probe_ok=True,
                 run_ok=run_ok,
                 skipped_run=False,
-                error=run_error,
+                error=(
+                    f"{run_error} (resolved executable: {resolved_executable})"
+                    if run_error is not None
+                    else None
+                ),
                 stdout_preview=run_stdout,
                 stderr_preview=run_stderr,
             ),
@@ -148,6 +157,7 @@ def _run_probe(*, executable: str, timeout_seconds: int) -> tuple[bool, str | No
 def _run_synthetic_task(  # noqa: PLR0911
     *,
     command_template: str,
+    resolved_executable: str,
     prompt: str,
     expect_substring: str,
     timeout_seconds: int,
@@ -168,6 +178,10 @@ def _run_synthetic_task(  # noqa: PLR0911
                 ).strip()
                 if not rendered:
                     return False, "Configured command is empty.", "", ""
+                rendered = _replace_command_head_windows(
+                    command=rendered,
+                    executable=resolved_executable,
+                )
                 if not has_prompt_placeholder and not has_prompt_file_placeholder:
                     rendered = f"{rendered} {prompt_arg}"
                 completed = subprocess.run(  # noqa: S603
@@ -186,6 +200,7 @@ def _run_synthetic_task(  # noqa: PLR0911
                 argv = shlex.split(rendered)
                 if not argv:
                     return False, "Configured command is empty.", "", ""
+                argv[0] = resolved_executable
                 if not has_prompt_placeholder and not has_prompt_file_placeholder:
                     argv.append(prompt)
                 completed = subprocess.run(  # noqa: S603
@@ -213,6 +228,25 @@ def _run_synthetic_task(  # noqa: PLR0911
                 stderr,
             )
         return True, None, stdout, stderr
+
+
+def _replace_command_head_windows(*, command: str, executable: str) -> str:
+    stripped = command.lstrip()
+    if not stripped:
+        return command
+
+    offset = len(command) - len(stripped)
+    if stripped.startswith('"'):
+        closing_quote = stripped.find('"', 1)
+        token_end = len(command) if closing_quote < 0 else offset + closing_quote + 1
+    else:
+        token_end = len(command)
+        for index, char in enumerate(stripped):
+            if char.isspace():
+                token_end = offset + index
+                break
+
+    return f"{subprocess.list2cmdline([executable])}{command[token_end:]}"
 
 
 def _truncate(value: str, *, limit: int = 240) -> str:
