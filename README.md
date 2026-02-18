@@ -7,24 +7,24 @@
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
 | src/news\_recap/config.py                                |      120 |       15 |     88% |156, 163, 179, 181, 191-192, 196, 210, 212, 231-236 |
 | src/news\_recap/ingestion/cleaning.py                    |       53 |        4 |     92% |41, 45-46, 75 |
-| src/news\_recap/ingestion/controllers.py                 |      145 |       12 |     92% |133, 161, 183, 207, 230, 250, 282, 291, 314-315, 352, 363 |
+| src/news\_recap/ingestion/controllers.py                 |      145 |       12 |     92% |135, 163, 185, 209, 232, 252, 284, 293, 316-317, 354, 365 |
 | src/news\_recap/ingestion/dedup/calibration.py           |       66 |       32 |     52% |71-95, 105-107, 113-143 |
 | src/news\_recap/ingestion/dedup/cluster.py               |       74 |        4 |     95% |20, 58, 62, 128 |
 | src/news\_recap/ingestion/dedup/embedder.py              |       71 |       14 |     80% |27-30, 40, 58, 61, 83-86, 89-91, 118 |
 | src/news\_recap/ingestion/language.py                    |       23 |        2 |     91% |    21, 35 |
 | src/news\_recap/ingestion/models.py                      |      154 |        0 |    100% |           |
 | src/news\_recap/ingestion/pipeline.py                    |       39 |        0 |    100% |           |
-| src/news\_recap/ingestion/repository.py                  |      409 |       41 |     90% |101, 130, 170, 195, 225, 241-246, 264, 293-303, 506-508, 567, 605, 711-713, 761, 791, 820, 845-848, 910-915, 996-998, 1027, 1118 |
+| src/news\_recap/ingestion/repository.py                  |      488 |       67 |     86% |103, 132, 172, 197, 227, 243-248, 266, 295-305, 429, 452-454, 533-537, 605, 643, 749-751, 799, 830, 858, 881-884, 956-963, 1017-1037, 1040-1061, 1222-1224, 1252, 1341 |
 | src/news\_recap/ingestion/services/dedup\_service.py     |       51 |        3 |     94% |     97-99 |
-| src/news\_recap/ingestion/services/fetch\_service.py     |       65 |        2 |     97% |   79, 119 |
+| src/news\_recap/ingestion/services/fetch\_service.py     |       65 |        2 |     97% |   79, 120 |
 | src/news\_recap/ingestion/services/normalize\_service.py |       14 |        0 |    100% |           |
 | src/news\_recap/ingestion/sources/base.py                |       31 |        3 |     90% |46, 55, 64 |
-| src/news\_recap/ingestion/sources/rss.py                 |      413 |      113 |     73% |45, 56, 70, 81, 91, 100, 197, 314, 328, 341, 365-370, 391, 393, 404-444, 454-461, 470-493, 504-505, 511-512, 520-533, 584-622, 626-640, 658-663, 667-670, 710, 715, 719, 738-739, 749, 757 |
+| src/news\_recap/ingestion/sources/rss.py                 |      419 |      113 |     73% |45, 56, 70, 81, 91, 100, 199, 324, 338, 351, 375-380, 401, 403, 414-454, 464-471, 480-503, 514-515, 521-522, 530-543, 594-632, 636-650, 668-673, 677-680, 720, 725, 729, 748-749, 759, 767 |
 | src/news\_recap/ingestion/storage/alembic\_runner.py     |       12 |        0 |    100% |           |
 | src/news\_recap/ingestion/storage/common.py              |       15 |        8 |     47% |18-21, 27-30 |
-| src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      137 |        0 |    100% |           |
+| src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      155 |        0 |    100% |           |
 | src/news\_recap/main.py                                  |       52 |        0 |    100% |           |
-| **TOTAL**                                                | **1945** |  **253** | **87%** |           |
+| **TOTAL**                                                | **2048** |  **279** | **86%** |           |
 
 
 ## Setup coverage badge
