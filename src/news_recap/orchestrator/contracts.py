@@ -15,6 +15,7 @@ class ArticleIndexEntry:
     source_id: str
     title: str
     url: str
+    source: str = ""
     published_at: str | None = None
 
 
@@ -116,6 +117,7 @@ def read_articles_index(path: Path) -> list[ArticleIndexEntry]:
         source_id = item.get("source_id")
         title = item.get("title")
         url = item.get("url")
+        source = item.get("source", "")
         published_at = item.get("published_at")
         if not isinstance(source_id, str) or not source_id.strip():
             raise ValueError("articles_index.source_id must be a non-empty string")
@@ -123,6 +125,8 @@ def read_articles_index(path: Path) -> list[ArticleIndexEntry]:
             raise TypeError("articles_index.title must be a string")
         if not isinstance(url, str):
             raise TypeError("articles_index.url must be a string")
+        if not isinstance(source, str):
+            raise TypeError("articles_index.source must be a string")
         if published_at is not None and not isinstance(published_at, str):
             raise ValueError("articles_index.published_at must be a string when provided")
         entries.append(
@@ -130,6 +134,7 @@ def read_articles_index(path: Path) -> list[ArticleIndexEntry]:
                 source_id=source_id,
                 title=title,
                 url=url,
+                source=source,
                 published_at=published_at,
             ),
         )

@@ -68,6 +68,14 @@ class IngestionPruneCommand:
     dry_run: bool
 
 
+@dataclass(slots=True)
+class IngestionGcCommand:
+    """CLI inputs for global GC command."""
+
+    db_path: Path | None
+    dry_run: bool
+
+
 class IngestionCliController:
     """Coordinates ingestion command execution."""
 
@@ -139,7 +147,8 @@ class IngestionCliController:
                 f"days={settings.ingestion.article_retention_days} "
                 f"cutoff={prune_result.cutoff.isoformat()} "
                 f"articles_deleted={prune_result.articles_deleted} "
-                f"raw_deleted={prune_result.raw_payloads_deleted}",
+                f"raw_deleted={prune_result.raw_payloads_deleted} "
+                f"private_resources_deleted={prune_result.private_resources_deleted}",
             )
         return lines
 
@@ -299,8 +308,21 @@ class IngestionCliController:
             "Retention prune completed: "
             f"days={days} dry_run={'yes' if command.dry_run else 'no'} "
             f"cutoff={prune_result.cutoff.isoformat()}",
-            f"Articles deleted: {prune_result.articles_deleted}",
+            f"User article links deleted: {prune_result.articles_deleted}",
             f"Raw payload rows deleted: {prune_result.raw_payloads_deleted}",
+            f"User private resources deleted: {prune_result.private_resources_deleted}",
+        ]
+
+    def gc(self, command: IngestionGcCommand) -> list[str]:
+        settings = Settings.from_env(db_path=command.db_path)
+        with _repository(settings) as repository:
+            result = repository.gc_unreferenced_articles(dry_run=command.dry_run)
+
+        return [
+            f"Global GC completed: dry_run={'yes' if command.dry_run else 'no'}",
+            f"Global articles deleted: {result.articles_deleted}",
+            f"Global raw payload rows deleted: {result.raw_payloads_deleted}",
+            f"Public resources deleted: {result.public_resources_deleted}",
         ]
 
     @staticmethod

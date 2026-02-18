@@ -557,11 +557,17 @@ def test_prune_articles_removes_old_content_and_related_rows(tmp_path: Path) -> 
 
     result = repo.prune_articles(cutoff=now - timedelta(days=30))
     assert result.articles_deleted == 1
-    assert result.raw_payloads_deleted == 1
+    assert result.raw_payloads_deleted == 0
 
-    article_count = repo._connection.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
-    assert article_count is not None
-    assert int(article_count["cnt"]) == 1
+    article_count_after_prune = repo._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM articles"
+    ).fetchone()
+    assert article_count_after_prune is not None
+    assert int(article_count_after_prune["cnt"]) == 2
+
+    gc_result = repo.gc_unreferenced_articles()
+    assert gc_result.articles_deleted == 1
+    assert gc_result.raw_payloads_deleted == 1
 
     remaining_article = repo._connection.execute(
         "SELECT article_id, external_id FROM articles LIMIT 1"
@@ -699,6 +705,9 @@ def test_shared_articles_are_reused_across_users_and_deleted_after_last_unlink(
     first_prune = first_repo_again.prune_articles(cutoff=cutoff)
     assert first_prune.articles_deleted == 1
 
+    gc_result = first_repo_again.gc_unreferenced_articles()
+    assert gc_result.articles_deleted == 1
+
     final_count = first_repo_again._connection.execute(
         "SELECT COUNT(*) AS cnt FROM articles"
     ).fetchone()
@@ -786,3 +795,39 @@ def test_article_resource_lookup_prefers_private_then_public(tmp_path: Path) -> 
 
     repo_b.close()
     repo_a.close()
+
+
+def test_prune_articles_deletes_old_user_private_resources(tmp_path: Path) -> None:
+    db_path = tmp_path / "prune-private-resources.db"
+    repo = SQLiteRepository(db_path, user_id="user_a", user_name="User A")
+    repo.init_schema()
+
+    now = datetime.now(tz=UTC)
+    old = now - timedelta(days=40)
+    canonical = canonicalize_url("https://example.com/news/private-cache")
+    hashed = url_hash(canonical)
+
+    repo.upsert_user_article_resource(
+        url_hash=hashed,
+        url_canonical=canonical,
+        fetch_status="ok",
+        http_status=200,
+        content_text="private-old",
+        fetched_at=old,
+    )
+    repo._connection.execute(
+        "UPDATE article_resources SET updated_at = ? WHERE user_id = ? AND url_hash = ?",
+        (old.isoformat(), repo.user_id, hashed),
+    )
+    repo._connection.commit()
+
+    result = repo.prune_articles(cutoff=now - timedelta(days=30))
+    assert result.private_resources_deleted == 1
+
+    remaining = repo._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM article_resources WHERE user_id = ?",
+        (repo.user_id,),
+    ).fetchone()
+    assert remaining is not None
+    assert int(remaining["cnt"]) == 0
+    repo.close()

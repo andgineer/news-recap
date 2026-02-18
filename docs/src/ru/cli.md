@@ -81,6 +81,9 @@ news-recap llm smoke --agent gemini --model-profile fast
 news-recap llm smoke --agent gemini --model-profile quality
 ```
 
+Для `llm enqueue-test` каждый `--source-id` должен принадлежать текущему user corpus и иметь
+формат `article:<article_id>`; валидность `source_id` проверяется через `user_articles`.
+
 Когда запускать автоматическое обновление mapping моделей:
 
 - сразу при ошибке `model_not_available`;
@@ -170,6 +173,17 @@ news-recap ingest prune --days 30 --dry-run
 Автоочистка также запускается после `news-recap ingest daily`, если
 `NEWS_RECAP_ARTICLE_RETENTION_DAYS > 0`.
 
+Глобальный GC для shared-записей, на которые больше не ссылается ни один пользователь:
+
+```bash
+news-recap ingest gc
+news-recap ingest gc --dry-run
+```
+
+Рекомендуемый порядок обслуживания:
+1. Выполнить per-user очистку (`ingest prune`) для каждого пользовательского расписания.
+2. Выполнить глобальный GC shared-данных (`ingest gc`).
+
 ## Полезные переменные окружения
 
 - `NEWS_RECAP_DB_PATH`
@@ -189,4 +203,5 @@ news-recap ingest stats --help
 news-recap ingest clusters --help
 news-recap ingest duplicates --help
 news-recap ingest prune --help
+news-recap ingest gc --help
 ```

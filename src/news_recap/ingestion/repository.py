@@ -22,6 +22,7 @@ from news_recap.ingestion.models import (
     DedupCandidate,
     GapStatus,
     GapWrite,
+    GlobalGcResult,
     IngestionGap,
     IngestionRunCounters,
     IngestionRunView,
@@ -468,33 +469,16 @@ class SQLiteRepository:
                 ),
             ).all()
             articles_deleted = len(candidate_article_ids)
-
-            orphan_article_ids: list[str] = []
-            if candidate_article_ids:
-                orphan_article_ids = list(
-                    session.exec(
-                        select(Article.article_id).where(
-                            col(Article.article_id).in_(candidate_article_ids),
-                            ~select(1)
-                            .where(
-                                col(UserArticle.article_id) == col(Article.article_id),
-                                col(UserArticle.user_id) != self.user_id,
-                            )
-                            .exists(),
-                        ),
-                    ).all(),
-                )
-
-            raw_payloads_deleted = (
-                int(
-                    session.exec(
-                        select(func.count())
-                        .select_from(ArticleRaw)
-                        .where(col(ArticleRaw.article_id).in_(orphan_article_ids)),
-                    ).one(),
-                )
-                if orphan_article_ids
-                else 0
+            raw_payloads_deleted = 0
+            private_resources_deleted = int(
+                session.exec(
+                    select(func.count())
+                    .select_from(ArticleResource)
+                    .where(
+                        col(ArticleResource.user_id) == self.user_id,
+                        col(ArticleResource.updated_at) < cutoff_db,
+                    ),
+                ).one(),
             )
 
             if not dry_run:
@@ -505,10 +489,11 @@ class SQLiteRepository:
                             col(UserArticle.article_id).in_(candidate_article_ids),
                         ),
                     )
-                if orphan_article_ids:
+                if private_resources_deleted > 0:
                     session.exec(
-                        delete(Article).where(
-                            col(Article.article_id).in_(orphan_article_ids),
+                        delete(ArticleResource).where(
+                            col(ArticleResource.user_id) == self.user_id,
+                            col(ArticleResource.updated_at) < cutoff_db,
                         ),
                     )
                 session.commit()
@@ -518,6 +503,7 @@ class SQLiteRepository:
                 dry_run=dry_run,
                 articles_deleted=articles_deleted,
                 raw_payloads_deleted=raw_payloads_deleted,
+                private_resources_deleted=private_resources_deleted,
             )
 
     def upsert_article(self, article: NormalizedArticle, run_id: str) -> UpsertResult:
@@ -1036,7 +1022,8 @@ class SQLiteRepository:
                 session.commit()
             return to_delete
 
-    def gc_unreferenced_articles(self, *, dry_run: bool = False) -> tuple[int, int]:
+    def gc_unreferenced_articles(self, *, dry_run: bool = False) -> GlobalGcResult:
+        now = utc_now()
         with Session(self.engine) as session:
             orphan_article_ids = session.exec(
                 select(Article.article_id).where(
@@ -1055,10 +1042,45 @@ class SQLiteRepository:
                 if orphan_article_ids
                 else 0
             )
-            if not dry_run and orphan_article_ids:
-                session.exec(delete(Article).where(col(Article.article_id).in_(orphan_article_ids)))
-                session.commit()
-            return articles_deleted, raw_deleted
+            public_gc_condition = and_(
+                col(ArticleResource.user_id).is_(None),
+                or_(
+                    and_(
+                        col(ArticleResource.expires_at).is_not(None),
+                        col(ArticleResource.expires_at) <= now,
+                    ),
+                    ~select(1)
+                    .select_from(Article)
+                    .join(
+                        UserArticle,
+                        col(UserArticle.article_id) == col(Article.article_id),
+                    )
+                    .where(col(Article.url_hash) == col(ArticleResource.url_hash))
+                    .exists(),
+                ),
+            )
+            public_resources_deleted = int(
+                session.exec(
+                    select(func.count()).select_from(ArticleResource).where(public_gc_condition),
+                ).one(),
+            )
+            if not dry_run:
+                if orphan_article_ids:
+                    session.exec(
+                        delete(Article).where(col(Article.article_id).in_(orphan_article_ids)),
+                    )
+                if public_resources_deleted > 0:
+                    session.exec(
+                        delete(ArticleResource).where(public_gc_condition),
+                    )
+                if orphan_article_ids or public_resources_deleted > 0:
+                    session.commit()
+            return GlobalGcResult(
+                dry_run=dry_run,
+                articles_deleted=articles_deleted,
+                raw_payloads_deleted=raw_deleted,
+                public_resources_deleted=public_resources_deleted,
+            )
 
     def save_dedup_clusters(
         self,

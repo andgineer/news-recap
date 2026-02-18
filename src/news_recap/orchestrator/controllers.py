@@ -166,6 +166,7 @@ class OrchestratorCliController:
         settings = Settings.from_env(db_path=command.db_path)
         with _repository(settings) as repository:
             details = repository.get_task_details(task_id=command.task_id)
+            citations = repository.list_output_citations(task_id=command.task_id)
         if details is None:
             return [f"Task not found: {command.task_id}"]
 
@@ -179,8 +180,18 @@ class OrchestratorCliController:
             f"Error: {task.error_summary or '-'}",
             f"Manifest: {task.input_manifest_path}",
             f"Output: {task.output_path or '-'}",
+            f"Citation snapshots: {len(citations)}",
             f"Events: {len(details.events)}",
         ]
+        for citation in citations:
+            published = (
+                citation.published_at.isoformat() if citation.published_at is not None else "-"
+            )
+            lines.append(
+                f"  citation source_id={citation.source_id} "
+                f"title={citation.title} url={citation.url} "
+                f"source={citation.source or '-'} published_at={published}",
+            )
         for event in details.events:
             lines.append(
                 f"  {event.created_at.isoformat()} {event.event_type} "

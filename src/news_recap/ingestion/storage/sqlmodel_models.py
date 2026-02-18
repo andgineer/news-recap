@@ -466,3 +466,45 @@ class LlmTaskArtifact(SQLModel, table=True):
     size_bytes: int
     checksum_sha256: str | None = None
     created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class OutputCitationSnapshot(SQLModel, table=True):
+    __tablename__ = "output_citation_snapshots"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "task_id",
+            "source_id",
+            name="uq_output_citation_snapshots_scope_task_source",
+        ),
+        Index(
+            "idx_output_citation_snapshots_scope_task",
+            "user_id",
+            "task_id",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    task_id: str = Field(
+        sa_column=Column(
+            ForeignKey("llm_tasks.task_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    source_id: str = Field(index=True)
+    article_id: str | None = Field(default=None, index=True)
+    title: str
+    url: str
+    source: str = ""
+    published_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))

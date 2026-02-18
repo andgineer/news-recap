@@ -10,16 +10,19 @@ from uuid import uuid4
 
 from sqlalchemy import event
 from sqlalchemy import update as sa_update
-from sqlmodel import Session, col, create_engine, select
+from sqlmodel import Session, col, create_engine, delete, select
 
 from news_recap.ingestion.storage.alembic_runner import upgrade_head
 from news_recap.ingestion.storage.common import utc_now
 from news_recap.ingestion.storage.sqlmodel_models import (
     DEFAULT_USER_ID,
     AppUser,
+    Article,
     LlmTask,
     LlmTaskArtifact,
     LlmTaskEvent,
+    OutputCitationSnapshot,
+    UserArticle,
 )
 from news_recap.orchestrator.models import (
     FailureClass,
@@ -29,6 +32,9 @@ from news_recap.orchestrator.models import (
     LlmTaskEventView,
     LlmTaskStatus,
     LlmTaskView,
+    OutputCitationSnapshotView,
+    OutputCitationSnapshotWrite,
+    SourceCorpusEntry,
 )
 
 
@@ -239,6 +245,7 @@ class OrchestratorRepository:
         *,
         task_id: str,
         output_path: str,
+        citations: list[OutputCitationSnapshotWrite] | None = None,
     ) -> bool:
         """Mark a running task as succeeded."""
 
@@ -262,13 +269,43 @@ class OrchestratorRepository:
             if result.rowcount != 1:
                 session.rollback()
                 return False
+
+            if citations is not None:
+                session.exec(
+                    delete(OutputCitationSnapshot).where(
+                        col(OutputCitationSnapshot.task_id) == task_id,
+                        col(OutputCitationSnapshot.user_id) == self.user_id,
+                    ),
+                )
+                for citation in citations:
+                    session.add(
+                        OutputCitationSnapshot(
+                            user_id=self.user_id,
+                            task_id=task_id,
+                            source_id=citation.source_id,
+                            article_id=citation.article_id,
+                            title=citation.title,
+                            url=citation.url,
+                            source=citation.source,
+                            published_at=(
+                                _to_db_datetime(citation.published_at)
+                                if citation.published_at is not None
+                                else None
+                            ),
+                            created_at=now,
+                        ),
+                    )
+
             self._add_event(
                 session=session,
                 task_id=task_id,
                 event_type="succeeded",
                 status_from=LlmTaskStatus.RUNNING,
                 status_to=LlmTaskStatus.SUCCEEDED,
-                details={"output_path": output_path},
+                details={
+                    "output_path": output_path,
+                    "citation_count": len(citations or []),
+                },
             )
             session.commit()
             return True
@@ -604,6 +641,173 @@ class OrchestratorRepository:
             session.add(row)
             session.commit()
 
+    def list_user_retrieval_articles(
+        self,
+        *,
+        limit: int = 20,
+        source_ids: tuple[str, ...] | None = None,
+    ) -> list[SourceCorpusEntry]:
+        """Resolve user-scoped retrieval corpus entries from `user_articles`."""
+
+        with Session(self.engine) as session:
+            if source_ids is None:
+                rows = session.exec(
+                    select(Article, UserArticle)
+                    .join(
+                        UserArticle,
+                        col(UserArticle.article_id) == col(Article.article_id),
+                    )
+                    .where(UserArticle.user_id == self.user_id)
+                    .order_by(col(UserArticle.discovered_at).desc())
+                    .limit(max(1, limit)),
+                ).all()
+                return [
+                    SourceCorpusEntry(
+                        source_id=f"article:{article.article_id}",
+                        article_id=article.article_id,
+                        title=article.title,
+                        url=article.url,
+                        source=article.source_domain,
+                        published_at=_to_utc_aware_datetime(article.published_at),
+                    )
+                    for article, _user_link in rows
+                ]
+
+            normalized_source_ids = tuple(dict.fromkeys(source_ids))
+            article_ids: list[str] = []
+            for source_id in normalized_source_ids:
+                article_id = _article_id_from_source_id(source_id)
+                if article_id is None:
+                    raise ValueError(
+                        f"Invalid source_id format: {source_id!r}. "
+                        "Expected 'article:<article_id>'.",
+                    )
+                article_ids.append(article_id)
+
+            rows = session.exec(
+                select(Article)
+                .join(
+                    UserArticle,
+                    col(UserArticle.article_id) == col(Article.article_id),
+                )
+                .where(
+                    UserArticle.user_id == self.user_id,
+                    col(Article.article_id).in_(article_ids),
+                ),
+            ).all()
+            by_article_id = {row.article_id: row for row in rows}
+            resolved: list[SourceCorpusEntry] = []
+            for source_id in normalized_source_ids:
+                article_id = _article_id_from_source_id(source_id)
+                if article_id is None:
+                    continue
+                article = by_article_id.get(article_id)
+                if article is None:
+                    continue
+                resolved.append(
+                    SourceCorpusEntry(
+                        source_id=f"article:{article.article_id}",
+                        article_id=article.article_id,
+                        title=article.title,
+                        url=article.url,
+                        source=article.source_domain,
+                        published_at=_to_utc_aware_datetime(article.published_at),
+                    ),
+                )
+            return resolved
+
+    def validate_user_source_ids(
+        self,
+        *,
+        source_ids: tuple[str, ...],
+    ) -> tuple[list[SourceCorpusEntry], list[str]]:
+        """Validate that source IDs belong to current user via `user_articles`."""
+
+        normalized_source_ids = tuple(dict.fromkeys(source_ids))
+        resolved = self.list_user_retrieval_articles(source_ids=normalized_source_ids)
+        resolved_ids = {entry.source_id for entry in resolved}
+        missing = [
+            source_id for source_id in normalized_source_ids if source_id not in resolved_ids
+        ]
+        return resolved, missing
+
+    def persist_output_citation_snapshots(
+        self,
+        *,
+        task_id: str,
+        citations: list[OutputCitationSnapshotWrite],
+    ) -> int:
+        """Persist immutable citation snapshots for a completed output."""
+
+        with Session(self.engine) as session:
+            task = session.exec(
+                select(LlmTask).where(
+                    LlmTask.task_id == task_id,
+                    LlmTask.user_id == self.user_id,
+                ),
+            ).one_or_none()
+            if task is None:
+                raise RuntimeError(f"Task not found: {task_id}")
+
+            session.exec(
+                delete(OutputCitationSnapshot).where(
+                    col(OutputCitationSnapshot.task_id) == task_id,
+                    col(OutputCitationSnapshot.user_id) == self.user_id,
+                ),
+            )
+
+            for citation in citations:
+                session.add(
+                    OutputCitationSnapshot(
+                        user_id=self.user_id,
+                        task_id=task_id,
+                        source_id=citation.source_id,
+                        article_id=citation.article_id,
+                        title=citation.title,
+                        url=citation.url,
+                        source=citation.source,
+                        published_at=(
+                            _to_db_datetime(citation.published_at)
+                            if citation.published_at is not None
+                            else None
+                        ),
+                        created_at=utc_now(),
+                    ),
+                )
+            session.commit()
+            return len(citations)
+
+    def list_output_citations(self, *, task_id: str) -> list[OutputCitationSnapshotView]:
+        """List stored output citation snapshots for one task."""
+
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(OutputCitationSnapshot)
+                .where(
+                    OutputCitationSnapshot.task_id == task_id,
+                    OutputCitationSnapshot.user_id == self.user_id,
+                )
+                .order_by(col(OutputCitationSnapshot.source_id).asc()),
+            ).all()
+        return [
+            OutputCitationSnapshotView(
+                id=row.id or 0,
+                task_id=row.task_id,
+                source_id=row.source_id,
+                article_id=row.article_id,
+                title=row.title,
+                url=row.url,
+                source=row.source,
+                published_at=(
+                    _to_utc_aware_datetime(row.published_at)
+                    if row.published_at is not None
+                    else None
+                ),
+                created_at=_to_utc_aware_datetime(row.created_at),
+            )
+            for row in rows
+        ]
+
     def _get_task_row_for_update(self, *, session: Session, task_id: str) -> LlmTask:
         row = session.exec(
             select(LlmTask).where(
@@ -690,3 +894,13 @@ def _to_task_view(row: LlmTask) -> LlmTaskView:
         created_at=_to_utc_aware_datetime(row.created_at),
         updated_at=_to_utc_aware_datetime(row.updated_at),
     )
+
+
+def _article_id_from_source_id(source_id: str) -> str | None:
+    prefix = "article:"
+    if not source_id.startswith(prefix):
+        return None
+    article_id = source_id[len(prefix) :].strip()
+    if not article_id:
+        return None
+    return article_id

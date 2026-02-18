@@ -103,3 +103,42 @@ class LlmTaskDetails:
 
     task: LlmTaskView
     events: list[LlmTaskEventView]
+
+
+@dataclass(slots=True)
+class SourceCorpusEntry:
+    """User-scoped source entry resolved from shared articles via user link."""
+
+    source_id: str
+    article_id: str
+    title: str
+    url: str
+    source: str
+    published_at: datetime
+
+
+@dataclass(slots=True)
+class OutputCitationSnapshotWrite:
+    """Immutable citation snapshot persisted for one output source reference."""
+
+    source_id: str
+    article_id: str | None
+    title: str
+    url: str
+    source: str
+    published_at: datetime | None
+
+
+@dataclass(slots=True)
+class OutputCitationSnapshotView:
+    """Stored citation snapshot row for output rendering and audit."""
+
+    id: int
+    task_id: str
+    source_id: str
+    article_id: str | None
+    title: str
+    url: str
+    source: str
+    published_at: datetime | None
+    created_at: datetime

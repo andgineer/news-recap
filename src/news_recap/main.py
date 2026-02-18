@@ -10,6 +10,7 @@ from news_recap.ingestion.controllers import (
     IngestionCliController,
     IngestionClustersCommand,
     IngestionDuplicatesCommand,
+    IngestionGcCommand,
     IngestionPruneCommand,
     IngestionStatsCommand,
 )
@@ -253,6 +254,30 @@ def ingest_prune(
             IngestionPruneCommand(
                 db_path=db_path,
                 days=days,
+                dry_run=dry_run,
+            ),
+        ),
+    )
+
+
+@ingest.command("gc")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--dry-run/--no-dry-run",
+    default=False,
+    show_default=True,
+    help="Show deletion counts without modifying the database.",
+)
+def ingest_gc(
+    db_path: Path | None,
+    dry_run: bool,
+) -> None:
+    """Run global GC for shared unreferenced records."""
+
+    _emit_lines(
+        INGESTION_CONTROLLER.gc(
+            IngestionGcCommand(
+                db_path=db_path,
                 dry_run=dry_run,
             ),
         ),

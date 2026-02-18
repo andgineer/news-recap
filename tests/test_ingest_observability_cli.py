@@ -259,11 +259,146 @@ def test_ingest_prune_command_deletes_articles_older_than_days(tmp_path: Path) -
 
     assert result.exit_code == 0
     assert "Retention prune completed: days=30 dry_run=no" in result.output
-    assert "Articles deleted: 1" in result.output
+    assert "User article links deleted: 1" in result.output
 
     reopened = SQLiteRepository(db_path)
     reopened.init_schema()
     remaining = reopened._connection.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
     assert remaining is not None
-    assert int(remaining["cnt"]) == 1
+    assert int(remaining["cnt"]) == 2
+    remaining_links = reopened._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM user_articles WHERE user_id = ?",
+        (reopened.user_id,),
+    ).fetchone()
+    assert remaining_links is not None
+    assert int(remaining_links["cnt"]) == 1
     reopened.close()
+
+
+def test_ingest_gc_command_deletes_global_orphans_and_public_resources(tmp_path: Path) -> None:
+    db_path = tmp_path / "gc.db"
+    repo = SQLiteRepository(db_path)
+    repo.init_schema()
+    run_id = repo.start_run(source="rss")
+
+    now = datetime.now(tz=UTC)
+    published_at = now - timedelta(days=40)
+    inserted = repo.upsert_article(
+        article=_article(
+            external_id="orphan-ext",
+            title="Orphan article",
+            url="https://example.com/news/orphan",
+            published_at=published_at,
+        ),
+        run_id=run_id,
+    )
+    repo.upsert_raw_article(
+        source_name="rss",
+        external_id="orphan-ext",
+        raw_payload={"id": "orphan-ext"},
+    )
+    canonical = canonicalize_url("https://example.com/news/orphan")
+    hashed = url_hash(canonical)
+    repo.upsert_public_article_resource(
+        url_hash=hashed,
+        url_canonical=canonical,
+        fetch_status="ok",
+        content_text="public cache",
+        fetched_at=now,
+    )
+    repo._connection.execute(
+        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
+        (published_at.isoformat(), repo.user_id, inserted.article_id),
+    )
+    repo._connection.commit()
+    repo.prune_articles(cutoff=now)
+    repo.close()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        news_recap,
+        [
+            "ingest",
+            "gc",
+            "--db-path",
+            str(db_path),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Global GC completed: dry_run=no" in result.output
+    assert "Global articles deleted: 1" in result.output
+    assert "Public resources deleted: 1" in result.output
+
+    reopened = SQLiteRepository(db_path)
+    reopened.init_schema()
+    articles_count = reopened._connection.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
+    assert articles_count is not None
+    assert int(articles_count["cnt"]) == 0
+    resources_count = reopened._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM article_resources"
+    ).fetchone()
+    assert resources_count is not None
+    assert int(resources_count["cnt"]) == 0
+    reopened.close()
+
+
+def test_ingest_gc_dry_run_matches_wet_counts_for_public_resources(tmp_path: Path) -> None:
+    db_path = tmp_path / "gc-dry-vs-wet.db"
+    repo = SQLiteRepository(db_path)
+    repo.init_schema()
+    run_id = repo.start_run(source="rss")
+
+    now = datetime.now(tz=UTC)
+    published_at = now - timedelta(days=40)
+    inserted = repo.upsert_article(
+        article=_article(
+            external_id="dry-wet-ext",
+            title="Dry wet article",
+            url="https://example.com/news/dry-wet",
+            published_at=published_at,
+        ),
+        run_id=run_id,
+    )
+    canonical = canonicalize_url("https://example.com/news/dry-wet")
+    hashed = url_hash(canonical)
+    repo.upsert_public_article_resource(
+        url_hash=hashed,
+        url_canonical=canonical,
+        fetch_status="ok",
+        content_text="public cache",
+        fetched_at=now,
+    )
+    repo._connection.execute(
+        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
+        (published_at.isoformat(), repo.user_id, inserted.article_id),
+    )
+    repo._connection.commit()
+    repo.prune_articles(cutoff=now)
+    repo.close()
+
+    runner = CliRunner()
+    dry = runner.invoke(
+        news_recap,
+        [
+            "ingest",
+            "gc",
+            "--db-path",
+            str(db_path),
+            "--dry-run",
+        ],
+    )
+    wet = runner.invoke(
+        news_recap,
+        [
+            "ingest",
+            "gc",
+            "--db-path",
+            str(db_path),
+        ],
+    )
+    assert dry.exit_code == 0
+    assert wet.exit_code == 0
+    assert "Global articles deleted: 1" in dry.output
+    assert "Public resources deleted: 1" in dry.output
+    assert "Global articles deleted: 1" in wet.output
+    assert "Public resources deleted: 1" in wet.output

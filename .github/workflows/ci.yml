@@ -74,6 +74,9 @@ jobs:
       run: uv sync --frozen
 
     - name: Test with pytest and Allure report
+      env:
+        NEWS_RECAP_RUN_STRESS_TESTS: "1"
+        NEWS_RECAP_STRESS_ITERATIONS: "500"
       run: "${{ env.PYTEST_CMD }} --alluredir=./allure-results"
 
     - name: Load Allure test report history

@@ -319,6 +319,29 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
 
+    op.create_table(
+        "output_citation_snapshots",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("task_id", sa.String(), nullable=False),
+        sa.Column("source_id", sa.String(), nullable=False),
+        sa.Column("article_id", sa.String(), nullable=True),
+        sa.Column("title", sa.String(), nullable=False),
+        sa.Column("url", sa.String(), nullable=False),
+        sa.Column("source", sa.String(), nullable=False, server_default=""),
+        sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["task_id"], ["llm_tasks.task_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "user_id",
+            "task_id",
+            "source_id",
+            name="uq_output_citation_snapshots_scope_task_source",
+        ),
+    )
+
     op.create_index(
         "idx_articles_hash_published",
         "articles",
@@ -375,6 +398,11 @@ def upgrade() -> None:
         "llm_task_artifacts",
         ["task_id", "kind"],
     )
+    op.create_index(
+        "idx_output_citation_snapshots_scope_task",
+        "output_citation_snapshots",
+        ["user_id", "task_id"],
+    )
 
     op.execute(
         sa.text(
@@ -388,6 +416,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "idx_output_citation_snapshots_scope_task",
+        table_name="output_citation_snapshots",
+    )
     op.drop_index("idx_llm_task_artifacts_task_kind", table_name="llm_task_artifacts")
     op.drop_index("idx_llm_task_events_task_time", table_name="llm_task_events")
     op.drop_index("idx_llm_tasks_queue", table_name="llm_tasks")
@@ -402,6 +434,7 @@ def downgrade() -> None:
     op.drop_index("idx_articles_hash_published", table_name="articles")
     op.drop_table("llm_task_artifacts")
     op.drop_table("llm_task_events")
+    op.drop_table("output_citation_snapshots")
     op.drop_table("llm_tasks")
     op.drop_table("article_dedup")
     op.drop_table("dedup_clusters")

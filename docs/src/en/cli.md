@@ -89,6 +89,9 @@ Use a concrete model override:
 news-recap llm smoke --agent codex --model gpt-5-codex-mini
 ```
 
+For `llm enqueue-test`, every `--source-id` must belong to the current user corpus and use
+format `article:<article_id>`; source IDs are validated through `user_articles`.
+
 Default command templates (fixed from research run on February 18, 2026):
 
 - `codex`: `codex exec --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c model_reasoning_effort=high --model {model} {prompt}`
@@ -208,6 +211,17 @@ news-recap ingest prune --days 30 --dry-run
 Automatic cleanup also runs after `news-recap ingest daily` when
 `NEWS_RECAP_ARTICLE_RETENTION_DAYS > 0`.
 
+Run global GC for shared records that are no longer referenced by any user:
+
+```bash
+news-recap ingest gc
+news-recap ingest gc --dry-run
+```
+
+Recommended order for periodic maintenance:
+1. Run per-user prune (`ingest prune`) for each user scope/schedule.
+2. Run global shared-record GC (`ingest gc`).
+
 ## Helpful Environment Variables
 
 - `NEWS_RECAP_DB_PATH`
@@ -227,4 +241,5 @@ news-recap ingest stats --help
 news-recap ingest clusters --help
 news-recap ingest duplicates --help
 news-recap ingest prune --help
+news-recap ingest gc --help
 ```

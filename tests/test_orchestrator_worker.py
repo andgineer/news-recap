@@ -4,8 +4,12 @@ import json
 import threading
 import time
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
+from news_recap.ingestion.cleaning import canonicalize_url, extract_domain, url_hash
+from news_recap.ingestion.models import NormalizedArticle
+from news_recap.ingestion.repository import SQLiteRepository
 from news_recap.orchestrator.backend import CliAgentBackend
 from news_recap.orchestrator.contracts import read_manifest
 from news_recap.orchestrator.models import LlmTaskStatus
@@ -34,8 +38,41 @@ def _routing_defaults(command_template: str) -> RoutingDefaults:
     )
 
 
+def _seed_source_id(db_path: Path, *, external_id: str = "seed-1") -> str:
+    repo = SQLiteRepository(db_path)
+    repo.init_schema()
+    run_id = repo.start_run(source="rss")
+    url = f"https://example.com/news/{external_id}"
+    canonical = canonicalize_url(url)
+    result = repo.upsert_article(
+        article=NormalizedArticle(
+            source_name="rss",
+            external_id=external_id,
+            url=url,
+            url_canonical=canonical,
+            url_hash=url_hash(canonical),
+            title=f"Seed {external_id}",
+            source_domain=extract_domain(canonical),
+            published_at=datetime(2026, 2, 18, 12, 0, tzinfo=UTC),
+            language_detected="en",
+            content_raw="seed",
+            summary_raw=None,
+            is_full_content=True,
+            needs_enrichment=False,
+            clean_text="seed",
+            clean_text_chars=4,
+            is_truncated=False,
+        ),
+        run_id=run_id,
+    )
+    repo.close()
+    return f"article:{result.article_id}"
+
+
 def test_worker_executes_task_successfully_with_echo_agent(tmp_path: Path) -> None:
-    repository = OrchestratorRepository(tmp_path / "worker.db")
+    db_path = tmp_path / "worker.db"
+    source_id = _seed_source_id(db_path, external_id="worker-success")
+    repository = OrchestratorRepository(db_path)
     repository.init_schema()
     command_template = (
         f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
@@ -52,7 +89,7 @@ def test_worker_executes_task_successfully_with_echo_agent(tmp_path: Path) -> No
         EnqueueDemoTask(
             task_type="highlights",
             prompt="Top stories today.",
-            source_ids=("article:1",),
+            source_ids=(source_id,),
         ),
     )
     worker = OrchestratorWorker(
@@ -70,11 +107,16 @@ def test_worker_executes_task_successfully_with_echo_agent(tmp_path: Path) -> No
     assert details is not None
     assert details.task.status == LlmTaskStatus.SUCCEEDED
     assert details.task.output_path is not None
+    citations = repository.list_output_citations(task_id=task.task_id)
+    assert len(citations) == 1
+    assert citations[0].source_id == source_id
     repository.close()
 
 
 def test_worker_marks_source_mapping_failure(tmp_path: Path) -> None:
-    repository = OrchestratorRepository(tmp_path / "worker-invalid.db")
+    db_path = tmp_path / "worker-invalid.db"
+    source_id = _seed_source_id(db_path, external_id="worker-invalid")
+    repository = OrchestratorRepository(db_path)
     repository.init_schema()
 
     invalid_agent = tmp_path / "invalid_agent.py"
@@ -105,7 +147,7 @@ Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_i
         EnqueueDemoTask(
             task_type="highlights",
             prompt="Check mapping.",
-            source_ids=("article:1",),
+            source_ids=(source_id,),
         ),
     )
     worker = OrchestratorWorker(
@@ -127,7 +169,9 @@ Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_i
 
 
 def test_worker_does_not_override_canceled_task_with_success(tmp_path: Path) -> None:
-    repository = OrchestratorRepository(tmp_path / "worker-cancel.db")
+    db_path = tmp_path / "worker-cancel.db"
+    source_id = _seed_source_id(db_path, external_id="worker-cancel")
+    repository = OrchestratorRepository(db_path)
     repository.init_schema()
 
     slow_agent = tmp_path / "slow_agent.py"
@@ -165,7 +209,7 @@ Path(manifest.output_result_path).write_text(
         EnqueueDemoTask(
             task_type="highlights",
             prompt="Cancel me.",
-            source_ids=("article:1",),
+            source_ids=(source_id,),
         ),
     )
     worker = OrchestratorWorker(
@@ -205,6 +249,8 @@ Path(manifest.output_result_path).write_text(
     final_details = repository.get_task_details(task_id=task.task_id)
     assert final_details is not None
     assert final_details.task.status == LlmTaskStatus.CANCELED
+    citations = repository.list_output_citations(task_id=task.task_id)
+    assert citations == []
     event_types = [event.event_type for event in final_details.events]
     assert "canceled" in event_types
     assert "succeeded" not in event_types
@@ -212,7 +258,9 @@ Path(manifest.output_result_path).write_text(
 
 
 def test_worker_applies_routing_fallback_for_legacy_task(tmp_path: Path) -> None:
-    repository = OrchestratorRepository(tmp_path / "worker-legacy-routing.db")
+    db_path = tmp_path / "worker-legacy-routing.db"
+    source_id = _seed_source_id(db_path, external_id="worker-legacy")
+    repository = OrchestratorRepository(db_path)
     repository.init_schema()
     command_template = (
         f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
@@ -229,7 +277,7 @@ def test_worker_applies_routing_fallback_for_legacy_task(tmp_path: Path) -> None
         EnqueueDemoTask(
             task_type="highlights",
             prompt="Legacy routing fallback.",
-            source_ids=("article:1",),
+            source_ids=(source_id,),
         ),
     )
 
@@ -253,4 +301,65 @@ def test_worker_applies_routing_fallback_for_legacy_task(tmp_path: Path) -> None
     final_details = repository.get_task_details(task_id=task.task_id)
     assert final_details is not None
     assert any(event.event_type == "routing_fallback_applied" for event in final_details.events)
+    repository.close()
+
+
+def test_enqueue_demo_task_requires_user_scoped_sources(tmp_path: Path) -> None:
+    db_path = tmp_path / "worker-no-sources.db"
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+    command_template = (
+        f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
+        "--task-manifest {task_manifest}"
+    )
+    routing_defaults = _routing_defaults(command_template)
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+
+    try:
+        service.enqueue_demo_task(
+            EnqueueDemoTask(
+                task_type="highlights",
+                prompt="No sources available.",
+                source_ids=(),
+            ),
+        )
+    except ValueError as error:
+        assert "No user-scoped articles available" in str(error)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected enqueue to fail without user-scoped sources.")
+    repository.close()
+
+
+def test_enqueue_demo_task_rejects_unknown_user_source_ids(tmp_path: Path) -> None:
+    db_path = tmp_path / "worker-unknown-source.db"
+    _seed_source_id(db_path, external_id="worker-known")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+    command_template = (
+        f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
+        "--task-manifest {task_manifest}"
+    )
+    routing_defaults = _routing_defaults(command_template)
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+
+    try:
+        service.enqueue_demo_task(
+            EnqueueDemoTask(
+                task_type="highlights",
+                prompt="Unknown source id.",
+                source_ids=("article:missing",),
+            ),
+        )
+    except ValueError as error:
+        assert "Unknown source_ids for current user scope" in str(error)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected enqueue to fail for unknown source id.")
     repository.close()

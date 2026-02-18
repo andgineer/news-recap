@@ -231,3 +231,14 @@ class RetentionPruneResult:
     dry_run: bool
     articles_deleted: int
     raw_payloads_deleted: int
+    private_resources_deleted: int = 0
+
+
+@dataclass(slots=True)
+class GlobalGcResult:
+    """Result of global garbage collection for unreferenced shared records."""
+
+    dry_run: bool
+    articles_deleted: int
+    raw_payloads_deleted: int
+    public_resources_deleted: int

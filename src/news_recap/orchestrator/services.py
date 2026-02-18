@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from news_recap.orchestrator.contracts import ArticleIndexEntry, TaskInputContract
-from news_recap.orchestrator.models import LlmTaskCreate, LlmTaskView
+from news_recap.orchestrator.models import LlmTaskCreate, LlmTaskView, SourceCorpusEntry
 from news_recap.orchestrator.repository import OrchestratorRepository
 from news_recap.orchestrator.routing import (
     RoutingDefaults,
@@ -49,7 +49,7 @@ class OrchestratorService:
         """Enqueue a test/spike task with deterministic file contracts."""
 
         task_id = str(uuid4())
-        source_ids = command.source_ids or ("source:demo",)
+        article_entries = self._resolve_article_entries(source_ids=command.source_ids)
         routing = resolve_routing_for_enqueue(
             defaults=self.routing_defaults,
             task_type=command.task_type,
@@ -67,11 +67,13 @@ class OrchestratorService:
             ),
             articles_index=[
                 ArticleIndexEntry(
-                    source_id=source_id,
-                    title=f"Article {index + 1}",
-                    url=f"https://example.com/{index + 1}",
+                    source_id=entry.source_id,
+                    title=entry.title,
+                    url=entry.url,
+                    source=entry.source,
+                    published_at=entry.published_at.isoformat(),
                 )
-                for index, source_id in enumerate(source_ids)
+                for entry in article_entries
             ],
         )
         task = self.repository.enqueue_task(
@@ -93,3 +95,22 @@ class OrchestratorService:
             },
         )
         return task
+
+    def _resolve_article_entries(self, *, source_ids: tuple[str, ...]) -> list[SourceCorpusEntry]:
+        if source_ids:
+            entries, missing = self.repository.validate_user_source_ids(source_ids=source_ids)
+            if missing:
+                raise ValueError(
+                    "Unknown source_ids for current user scope: "
+                    f"{', '.join(missing)}. "
+                    "Use source IDs from your user corpus (format: article:<article_id>).",
+                )
+            return entries
+
+        entries = self.repository.list_user_retrieval_articles(limit=20)
+        if not entries:
+            raise ValueError(
+                "No user-scoped articles available for task source mapping. "
+                "Run ingestion first or pass --source-id article:<article_id>.",
+            )
+        return entries

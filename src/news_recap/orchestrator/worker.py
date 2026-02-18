@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 import time
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
@@ -15,9 +15,19 @@ from news_recap.orchestrator.backend import (
     BackendRunRequest,
     CliAgentBackend,
 )
-from news_recap.orchestrator.contracts import read_articles_index, read_manifest, read_task_input
+from news_recap.orchestrator.contracts import (
+    ArticleIndexEntry,
+    read_articles_index,
+    read_manifest,
+    read_task_input,
+)
 from news_recap.orchestrator.failure_classifier import classify_backend_failure
-from news_recap.orchestrator.models import FailureClass, LlmTaskStatus, LlmTaskView
+from news_recap.orchestrator.models import (
+    FailureClass,
+    LlmTaskStatus,
+    LlmTaskView,
+    OutputCitationSnapshotWrite,
+)
 from news_recap.orchestrator.repair import decide_repair
 from news_recap.orchestrator.repository import OrchestratorRepository
 from news_recap.orchestrator.routing import (
@@ -241,9 +251,26 @@ class OrchestratorWorker:
             allowed_source_ids=allowed_source_ids,
         )
         if validation.is_valid:
+            try:
+                citations = self._build_output_citation_snapshots(
+                    article_entries=article_entries,
+                    validation_payload=validation.payload,
+                )
+            except Exception as error:  # noqa: BLE001
+                failed = self.repository.fail_task(
+                    task_id=task.task_id,
+                    status=LlmTaskStatus.FAILED,
+                    failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                    error_summary=f"Citation snapshot persist failed: {error}",
+                    last_exit_code=execution.exit_code,
+                )
+                if failed:
+                    summary.failed = 1
+                return summary
             completed = self.repository.complete_task(
                 task_id=task.task_id,
                 output_path=manifest.output_result_path,
+                citations=citations,
             )
             if completed:
                 summary.succeeded = 1
@@ -281,9 +308,26 @@ class OrchestratorWorker:
                         allowed_source_ids=allowed_source_ids,
                     )
                     if repaired.is_valid:
+                        try:
+                            citations = self._build_output_citation_snapshots(
+                                article_entries=article_entries,
+                                validation_payload=repaired.payload,
+                            )
+                        except Exception as error:  # noqa: BLE001
+                            failed = self.repository.fail_task(
+                                task_id=task.task_id,
+                                status=LlmTaskStatus.FAILED,
+                                failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                                error_summary=f"Citation snapshot persist failed: {error}",
+                                last_exit_code=repair_execution.exit_code,
+                            )
+                            if failed:
+                                summary.failed = 1
+                            return summary
                         completed = self.repository.complete_task(
                             task_id=task.task_id,
                             output_path=manifest.output_result_path,
+                            citations=citations,
                         )
                         if completed:
                             summary.succeeded = 1
@@ -422,3 +466,91 @@ class OrchestratorWorker:
             self.retry_base_seconds * (2 ** max(retry_number - 1, 0)),
         )
         return self._random.uniform(0, max_delay)
+
+    def _build_output_citation_snapshots(
+        self,
+        *,
+        article_entries: list[ArticleIndexEntry],
+        validation_payload: dict[str, object] | None,
+    ) -> list[OutputCitationSnapshotWrite]:
+        if validation_payload is None:
+            raise ValueError("Validation payload is missing for citation snapshot persistence.")
+
+        blocks = _validated_blocks(validation_payload)
+        ordered_source_ids = _ordered_source_ids(blocks)
+        return _build_citation_writes(
+            article_entries=article_entries,
+            ordered_source_ids=ordered_source_ids,
+        )
+
+
+def _article_id_from_source_id(source_id: str) -> str | None:
+    prefix = "article:"
+    if not source_id.startswith(prefix):
+        return None
+    article_id = source_id[len(prefix) :].strip()
+    if not article_id:
+        return None
+    return article_id
+
+
+def _parse_optional_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _validated_blocks(validation_payload: dict[str, object]) -> list[dict[str, object]]:
+    blocks = validation_payload.get("blocks")
+    if not isinstance(blocks, list):
+        raise TypeError("Validation payload has invalid blocks for citation snapshots.")
+    return [block for block in blocks if isinstance(block, dict)]
+
+
+def _ordered_source_ids(blocks: list[dict[str, object]]) -> list[str]:
+    ordered_source_ids: list[str] = []
+    seen: set[str] = set()
+    for block in blocks:
+        source_ids = block.get("source_ids")
+        if not isinstance(source_ids, list):
+            continue
+        for source_id in source_ids:
+            if not isinstance(source_id, str):
+                continue
+            if source_id in seen:
+                continue
+            seen.add(source_id)
+            ordered_source_ids.append(source_id)
+    return ordered_source_ids
+
+
+def _build_citation_writes(
+    *,
+    article_entries: list[ArticleIndexEntry],
+    ordered_source_ids: list[str],
+) -> list[OutputCitationSnapshotWrite]:
+    entries_by_source_id = {entry.source_id: entry for entry in article_entries}
+    citations: list[OutputCitationSnapshotWrite] = []
+    for source_id in ordered_source_ids:
+        entry = entries_by_source_id.get(source_id)
+        if entry is None:
+            raise ValueError(f"Source id missing in article index: {source_id}")
+        citations.append(
+            OutputCitationSnapshotWrite(
+                source_id=source_id,
+                article_id=_article_id_from_source_id(source_id),
+                title=entry.title,
+                url=entry.url,
+                source=entry.source,
+                published_at=_parse_optional_datetime(entry.published_at),
+            ),
+        )
+    return citations
