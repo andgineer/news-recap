@@ -25,19 +25,19 @@
 | src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      201 |        0 |    100% |           |
 | src/news\_recap/main.py                                  |      106 |        2 |     98% |  419, 435 |
 | src/news\_recap/orchestrator/backend/base.py             |       17 |        0 |    100% |           |
-| src/news\_recap/orchestrator/backend/cli\_backend.py     |       37 |        9 |     76% |19-20, 38, 66-79 |
+| src/news\_recap/orchestrator/backend/cli\_backend.py     |       47 |       13 |     72% |19-20, 66-79, 88, 91-93, 97 |
 | src/news\_recap/orchestrator/backend/echo\_agent.py      |       19 |        0 |    100% |           |
 | src/news\_recap/orchestrator/contracts.py                |       95 |       13 |     86% |72, 90, 92, 94, 110, 115, 121, 123, 125, 127, 161, 173-174 |
 | src/news\_recap/orchestrator/controllers.py              |      134 |       12 |     91% |157, 180-183, 186-189, 196, 251, 267 |
 | src/news\_recap/orchestrator/models.py                   |       71 |        0 |    100% |           |
 | src/news\_recap/orchestrator/repair.py                   |       14 |        2 |     86% |    30, 35 |
-| src/news\_recap/orchestrator/repository.py               |      194 |       29 |     85% |78-85, 147, 170-171, 190-204, 224-225, 289, 393, 401, 455, 459, 476-477, 523, 574-582, 617 |
+| src/news\_recap/orchestrator/repository.py               |      194 |       30 |     85% |78-85, 147, 170-171, 190-204, 224-225, 289, 393, 427-428, 455, 459, 476-477, 523, 574-582, 617 |
 | src/news\_recap/orchestrator/services.py                 |       25 |        0 |    100% |           |
-| src/news\_recap/orchestrator/smoke.py                    |       83 |       18 |     78% |70-83, 86-99, 134-137, 144, 166, 168, 179-182, 187, 189, 202 |
+| src/news\_recap/orchestrator/smoke.py                    |       93 |       26 |     72% |71-84, 87-100, 135-138, 145, 163-173, 188, 190, 199-202, 207, 209, 222 |
 | src/news\_recap/orchestrator/validator.py                |       37 |        8 |     78% |31, 40-41, 49, 57, 65, 74, 89 |
 | src/news\_recap/orchestrator/workdir.py                  |       30 |        0 |    100% |           |
 | src/news\_recap/orchestrator/worker.py                   |      160 |       73 |     54% |73-74, 82-92, 102-134, 136-152, 155-185, 201-210, 231-237, 253-269, 324-347, 350-354 |
-| **TOTAL**                                                | **3077** |  **445** | **86%** |           |
+| **TOTAL**                                                | **3097** |  **458** | **85%** |           |
 
 
 ## Setup coverage badge
