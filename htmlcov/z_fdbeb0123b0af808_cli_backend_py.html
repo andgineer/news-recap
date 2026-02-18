@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/news_recap/orchestrator/backend/cli_backend.py: 70%</title>
+    <title>Coverage for src/news_recap/orchestrator/backend/cli_backend.py: 79%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src&#8201;/&#8201;news_recap&#8201;/&#8201;orchestrator&#8201;/&#8201;backend&#8201;/&#8201;cli_backend.py</b>:
-            <span class="pc_cov">70%</span>
+            <span class="pc_cov">79%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,17 +55,17 @@
         </aside>
         <h2>
             <span class="text">56 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">39<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">17<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">44<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">12<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
-            <a id="prevFileLink" class="nav" href="z_fdbeb0123b0af808_base_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a id="prevFileLink" class="nav" href="z_fdbeb0123b0af808_benchmark_agent_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_fdbeb0123b0af808_echo_agent_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-18 16:41 +0000
+            created at 2026-02-18 17:20 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -97,8 +97,8 @@
     <p class="pln"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t">    <span class="str">"""Backend execution error with retryability hint."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t">    <span class="key">def</span> <span class="nam">__init__</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">message</span><span class="op">:</span> <span class="nam">str</span><span class="op">,</span> <span class="op">*</span><span class="op">,</span> <span class="nam">transient</span><span class="op">:</span> <span class="nam">bool</span><span class="op">)</span> <span class="op">-></span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t">        <span class="nam">super</span><span class="op">(</span><span class="op">)</span><span class="op">.</span><span class="nam">__init__</span><span class="op">(</span><span class="nam">message</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t">        <span class="nam">self</span><span class="op">.</span><span class="nam">transient</span> <span class="op">=</span> <span class="nam">transient</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t">        <span class="nam">super</span><span class="op">(</span><span class="op">)</span><span class="op">.</span><span class="nam">__init__</span><span class="op">(</span><span class="nam">message</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t">        <span class="nam">self</span><span class="op">.</span><span class="nam">transient</span> <span class="op">=</span> <span class="nam">transient</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="key">class</span> <span class="nam">CliAgentBackend</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -149,18 +149,18 @@
     <p class="run run2"><span class="n"><a id="t67" href="#t67">67</a></span><span class="t">                <span class="nam">stdout_path</span><span class="op">=</span><span class="nam">stdout_path</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t68" href="#t68">68</a></span><span class="t">                <span class="nam">stderr_path</span><span class="op">=</span><span class="nam">stderr_path</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t69" href="#t69">69</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">        <span class="key">except</span> <span class="nam">subprocess</span><span class="op">.</span><span class="nam">TimeoutExpired</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">        <span class="key">except</span> <span class="nam">subprocess</span><span class="op">.</span><span class="nam">TimeoutExpired</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t">            <span class="key">return</span> <span class="nam">BackendRunResult</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t">                <span class="nam">exit_code</span><span class="op">=</span><span class="num">124</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t">                <span class="nam">timed_out</span><span class="op">=</span><span class="key">True</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t">                <span class="nam">stdout_path</span><span class="op">=</span><span class="nam">stdout_path</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t">                <span class="nam">stderr_path</span><span class="op">=</span><span class="nam">stderr_path</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t76" href="#t76">76</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t77" href="#t77">77</a></span><span class="t">        <span class="key">except</span> <span class="nam">FileNotFoundError</span> <span class="key">as</span> <span class="nam">error</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t">            <span class="key">raise</span> <span class="nam">BackendRunError</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t">                <span class="fst">f"</span><span class="fst">CLI backend command not found: </span><span class="op">{</span><span class="nam">command_head</span><span class="op">}</span><span class="fst">"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t">                <span class="nam">transient</span><span class="op">=</span><span class="key">False</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t">            <span class="op">)</span> <span class="key">from</span> <span class="nam">error</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t77" href="#t77">77</a></span><span class="t">        <span class="key">except</span> <span class="nam">FileNotFoundError</span> <span class="key">as</span> <span class="nam">error</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t">            <span class="key">raise</span> <span class="nam">BackendRunError</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t">                <span class="fst">f"</span><span class="fst">CLI backend command not found: </span><span class="op">{</span><span class="nam">command_head</span><span class="op">}</span><span class="fst">"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t">                <span class="nam">transient</span><span class="op">=</span><span class="key">False</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t">            <span class="op">)</span> <span class="key">from</span> <span class="nam">error</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t">        <span class="key">except</span> <span class="nam">OSError</span> <span class="key">as</span> <span class="nam">error</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t">            <span class="key">raise</span> <span class="nam">BackendRunError</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t">                <span class="fst">f"</span><span class="fst">CLI backend failed to start: </span><span class="op">{</span><span class="nam">error</span><span class="op">}</span><span class="fst">"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -219,12 +219,12 @@
 <footer>
     <div class="content">
         <p>
-            <a class="nav" href="z_fdbeb0123b0af808_base_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a class="nav" href="z_fdbeb0123b0af808_benchmark_agent_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_fdbeb0123b0af808_echo_agent_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-18 16:41 +0000
+            created at 2026-02-18 17:20 +0000
         </p>
     </div>
 </footer>

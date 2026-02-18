@@ -23,23 +23,25 @@
 | src/news\_recap/ingestion/storage/alembic\_runner.py     |       12 |        0 |    100% |           |
 | src/news\_recap/ingestion/storage/common.py              |       15 |        8 |     47% |18-21, 27-30 |
 | src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      214 |        0 |    100% |           |
-| src/news\_recap/main.py                                  |      116 |        2 |     98% |  467, 483 |
+| src/news\_recap/main.py                                  |      132 |        2 |     98% |  564, 580 |
 | src/news\_recap/orchestrator/backend/base.py             |       21 |        0 |    100% |           |
-| src/news\_recap/orchestrator/backend/cli\_backend.py     |       56 |       17 |     70% |18-19, 70-83, 99, 103-115, 123-124, 131 |
+| src/news\_recap/orchestrator/backend/benchmark\_agent.py |       80 |       38 |     52% |39-40, 43-50, 63-67, 70-71, 101-107, 111-112, 116-127 |
+| src/news\_recap/orchestrator/backend/cli\_backend.py     |       56 |       12 |     79% |71, 82-83, 99, 103-115, 123-124, 131 |
 | src/news\_recap/orchestrator/backend/echo\_agent.py      |       19 |        0 |    100% |           |
 | src/news\_recap/orchestrator/contracts.py                |       99 |       14 |     86% |73, 91, 93, 95, 111, 116, 123, 125, 127, 129, 131, 166, 178-179 |
-| src/news\_recap/orchestrator/controllers.py              |      159 |       16 |     90% |171, 204-207, 210-213, 220-221, 229, 238, 260, 303, 319 |
+| src/news\_recap/orchestrator/controllers.py              |      223 |       17 |     92% |324, 357-360, 363-366, 373-374, 382, 391, 413, 456, 472, 490 |
 | src/news\_recap/orchestrator/failure\_classifier.py      |       42 |        3 |     93% |67, 100, 127 |
+| src/news\_recap/orchestrator/metrics.py                  |      203 |       36 |     82% |37-39, 86-90, 116-119, 150, 266-268, 295, 320, 398, 414, 423, 443, 447-453, 477-481, 487, 495 |
 | src/news\_recap/orchestrator/models.py                   |      101 |        0 |    100% |           |
 | src/news\_recap/orchestrator/repair.py                   |       14 |        2 |     86% |    30, 35 |
-| src/news\_recap/orchestrator/repository.py               |      257 |       32 |     88% |153, 176-177, 196-210, 230-231, 327, 441, 464, 498-499, 526, 530, 594, 681, 703, 750, 812-820, 855, 902, 905 |
+| src/news\_recap/orchestrator/repository.py               |      279 |       30 |     89% |176-177, 196-210, 230-231, 327, 441, 464, 526, 530, 638, 653, 721, 743, 790, 852-860, 895, 959, 962 |
 | src/news\_recap/orchestrator/routing.py                  |      104 |       16 |     85% |65, 83, 85, 123, 128, 153, 188, 190, 193, 195, 198, 200, 202, 204, 206, 235 |
-| src/news\_recap/orchestrator/services.py                 |       43 |        1 |     98% |       116 |
+| src/news\_recap/orchestrator/services.py                 |       44 |        0 |    100% |           |
 | src/news\_recap/orchestrator/smoke.py                    |      111 |       41 |     63% |72-89, 92-105, 146-149, 156, 176-192, 208, 211, 220-223, 228, 230, 240-255, 262 |
 | src/news\_recap/orchestrator/validator.py                |       37 |        8 |     78% |31, 40-41, 49, 57, 65, 74, 89 |
 | src/news\_recap/orchestrator/workdir.py                  |       30 |        0 |    100% |           |
-| src/news\_recap/orchestrator/worker.py                   |      249 |      111 |     55% |91-92, 100-110, 137-177, 179-195, 198-247, 259-269, 280-289, 311-334, 350-366, 415-421, 436-461, 464-468, 477, 490, 493, 499, 502, 504, 507-508, 514, 524, 527, 529, 545 |
-| **TOTAL**                                                | **3575** |  **539** | **85%** |           |
+| src/news\_recap/orchestrator/worker.py                   |      255 |       83 |     67% |100-110, 150-165, 179-195, 198-247, 269-279, 300-309, 336-346, 373, 386, 435-441, 456-481, 484-488, 497, 510, 513, 519, 525, 528, 530, 533-534, 540, 550, 553, 555, 571 |
+| **TOTAL**                                                | **3967** |  **578** | **85%** |           |
 
 
 ## Setup coverage badge
