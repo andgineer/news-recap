@@ -1,7 +1,14 @@
 from datetime import UTC, datetime
 
+import allure
+
 from news_recap.ingestion.dedup.cluster import cluster_candidates, count_duplicates
 from news_recap.ingestion.models import DedupCandidate
+
+pytestmark = [
+    allure.epic("Dedup Quality"),
+    allure.feature("Embeddings & Thresholding"),
+]
 
 
 def test_cluster_candidates_groups_similar_items() -> None:

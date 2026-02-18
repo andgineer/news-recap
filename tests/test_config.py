@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from os import environ
 
+import allure
 import pytest
 
 from news_recap.config import IngestionSettings, RssSettings, Settings
+
+pytestmark = [
+    allure.epic("Daily Ingestion"),
+    allure.feature("Persist & Run Accounting"),
+]
 
 
 def test_validate_for_rss_requires_at_least_one_feed_url() -> None:

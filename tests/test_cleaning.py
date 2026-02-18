@@ -1,4 +1,11 @@
+import allure
+
 from news_recap.ingestion.cleaning import canonicalize_url, clean_article_text, html_to_text
+
+pytestmark = [
+    allure.epic("Daily Ingestion"),
+    allure.feature("Feed Intake & Cleaning"),
+]
 
 
 def test_html_to_text_removes_tags_and_scripts() -> None:

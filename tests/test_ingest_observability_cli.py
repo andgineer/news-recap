@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import allure
 from click.testing import CliRunner
 
 from news_recap.ingestion.cleaning import canonicalize_url, extract_domain, url_hash
@@ -15,6 +16,11 @@ from news_recap.ingestion.models import (
 )
 from news_recap.ingestion.repository import SQLiteRepository
 from news_recap.main import news_recap
+
+pytestmark = [
+    allure.epic("Daily Ingestion"),
+    allure.feature("Daily Run Observability"),
+]
 
 
 def _article(

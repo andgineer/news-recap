@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import logging
 
+import allure
 import pytest
 
 import news_recap.ingestion.dedup.embedder as embedder_module
 from news_recap.ingestion.dedup.embedder import HashingEmbedder, build_embedder
+
+pytestmark = [
+    allure.epic("Dedup Quality"),
+    allure.feature("Embeddings & Thresholding"),
+]
 
 
 class _BrokenSentenceTransformerEmbedder:

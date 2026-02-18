@@ -1,4 +1,11 @@
+import allure
+
 from news_recap.ingestion.language import detect_language
+
+pytestmark = [
+    allure.epic("Daily Ingestion"),
+    allure.feature("Feed Intake & Cleaning"),
+]
 
 
 def test_detect_language_ru() -> None:

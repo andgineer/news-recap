@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import allure
+
 from news_recap.config import OrchestratorSettings
 from news_recap.orchestrator.contracts import TaskInputContract
 from news_recap.orchestrator.routing import (
@@ -8,6 +10,11 @@ from news_recap.orchestrator.routing import (
     resolve_routing_for_enqueue,
     resolve_routing_for_execution,
 )
+
+pytestmark = [
+    allure.epic("LLM Runtime"),
+    allure.feature("Routing, Failures, CLI Ops"),
+]
 
 
 def _defaults() -> RoutingDefaults:

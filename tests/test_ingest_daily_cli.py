@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import allure
 from click.testing import CliRunner
 
 from news_recap.ingestion.sources.rss import RssFetchResponse, RssSource
 from news_recap.main import news_recap
+
+pytestmark = [
+    allure.epic("Daily Ingestion"),
+    allure.feature("Daily Run Observability"),
+]
 
 _RSS_XML = """<?xml version="1.0"?>
 <rss version="2.0">

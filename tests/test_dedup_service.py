@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import allure
+
 from news_recap.config import DedupSettings
 from news_recap.ingestion.models import DedupCandidate, IngestionRunCounters
 from news_recap.ingestion.services.dedup_service import DedupStageService
+
+pytestmark = [
+    allure.epic("Dedup Quality"),
+    allure.feature("Embeddings & Thresholding"),
+]
 
 
 class FakeRepository:

@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from news_recap.config import Settings
 from news_recap.orchestrator.backend import CliAgentBackend
+from news_recap.orchestrator.metrics import (
+    build_orchestrator_metrics,
+    render_benchmark_report,
+    render_stats_lines,
+)
 from news_recap.orchestrator.models import LlmTaskStatus
 from news_recap.orchestrator.repository import OrchestratorRepository
 from news_recap.orchestrator.routing import SUPPORTED_AGENTS, RoutingDefaults
@@ -41,6 +48,27 @@ class LlmWorkerCommand:
     db_path: Path | None
     once: bool
     max_tasks: int | None
+
+
+@dataclass(slots=True)
+class LlmStatsCommand:
+    """CLI input for queue health / observability stats."""
+
+    db_path: Path | None
+    hours: int
+
+
+@dataclass(slots=True)
+class LlmBenchmarkCommand:
+    """CLI input for deterministic benchmark matrix and report."""
+
+    db_path: Path | None
+    task_types: tuple[str, ...]
+    tasks_per_type: int
+    source_ids: tuple[str, ...]
+    priority: int
+    output_path: Path | None
+    use_benchmark_agent: bool
 
 
 @dataclass(slots=True)
@@ -146,6 +174,131 @@ class OrchestratorCliController:
             f"failed={summary.failed} retried={summary.retried} "
             f"timeouts={summary.timeouts} idle_polls={summary.idle_polls}",
         ]
+
+    def stats(self, command: LlmStatsCommand) -> list[str]:
+        """Show operator-facing queue health and quality metrics."""
+
+        settings = Settings.from_env(db_path=command.db_path)
+        cutoff = datetime.now(tz=UTC) - timedelta(hours=max(1, command.hours))
+        with _repository(settings) as repository:
+            active_tasks = repository.list_tasks_for_metrics(
+                statuses=(LlmTaskStatus.QUEUED, LlmTaskStatus.RUNNING),
+            )
+            window_tasks = repository.list_tasks_for_metrics(since=cutoff)
+            window_events = repository.list_task_events_for_metrics(since=cutoff)
+
+        snapshot = build_orchestrator_metrics(
+            active_tasks=active_tasks,
+            window_tasks=window_tasks,
+            window_events=window_events,
+        )
+        return render_stats_lines(snapshot=snapshot, hours=command.hours)
+
+    def benchmark(self, command: LlmBenchmarkCommand) -> list[str]:  # noqa: C901, PLR0915
+        """Run deterministic matrix and write benchmark report."""
+
+        settings = Settings.from_env(db_path=command.db_path)
+        routing_defaults = _routing_defaults(settings=settings)
+        if command.use_benchmark_agent:
+            benchmark_command_template = (
+                sys.executable + " -m news_recap.orchestrator.backend.benchmark_agent "
+                "--task-manifest {task_manifest}"
+            )
+            routing_defaults = RoutingDefaults(
+                default_agent=routing_defaults.default_agent,
+                task_type_profile_map=routing_defaults.task_type_profile_map,
+                command_templates={
+                    "claude": benchmark_command_template,
+                    "codex": benchmark_command_template,
+                    "gemini": benchmark_command_template,
+                },
+                models=routing_defaults.models,
+            )
+
+        matrix_task_ids: list[str] = []
+        with _repository(settings) as repository:
+            service = OrchestratorService(
+                repository=repository,
+                workdir_root=settings.orchestrator.workdir_root,
+                routing_defaults=routing_defaults,
+            )
+            for task_type in command.task_types:
+                for index, benchmark_case in enumerate(
+                    _benchmark_cases(tasks_per_type=command.tasks_per_type),
+                    start=1,
+                ):
+                    task = service.enqueue_demo_task(
+                        EnqueueDemoTask(
+                            task_type=task_type,
+                            prompt=(
+                                f"Benchmark task {index}/{command.tasks_per_type} "
+                                f"for {task_type} ({benchmark_case})."
+                            ),
+                            source_ids=command.source_ids,
+                            priority=command.priority,
+                            max_attempts=2 if benchmark_case == "transient_retry_once" else 1,
+                            timeout_seconds=1 if benchmark_case == "timeout_once" else 120,
+                            metadata={
+                                "benchmark_matrix": True,
+                                "benchmark_case": benchmark_case,
+                            },
+                        ),
+                    )
+                    matrix_task_ids.append(task.task_id)
+
+            worker = OrchestratorWorker(
+                repository=repository,
+                backend=CliAgentBackend(),
+                routing_defaults=routing_defaults,
+                worker_id=f"benchmark-{settings.orchestrator.worker_id}",
+                poll_interval_seconds=0.0,
+                retry_base_seconds=0,
+                retry_max_seconds=0,
+                timeout_retry_cap_seconds=1,
+            )
+            worker_summary = worker.run_loop(max_tasks=None)
+            task_ids = tuple(matrix_task_ids)
+            window_tasks = repository.list_tasks_for_metrics(task_ids=task_ids)
+            window_events = repository.list_task_events_for_metrics(task_ids=task_ids)
+            active_tasks = repository.list_tasks_for_metrics(
+                statuses=(LlmTaskStatus.QUEUED, LlmTaskStatus.RUNNING),
+            )
+
+        snapshot = build_orchestrator_metrics(
+            active_tasks=active_tasks,
+            window_tasks=window_tasks,
+            window_events=window_events,
+        )
+        benchmark_command = _benchmark_command_preview(command=command)
+        report = render_benchmark_report(
+            snapshot=snapshot,
+            generated_at=datetime.now(tz=UTC),
+            task_types=command.task_types,
+            benchmark_command=benchmark_command,
+        )
+
+        lines = [
+            (
+                "Benchmark matrix completed: "
+                f"task_types={','.join(command.task_types)} "
+                f"tasks_per_type={command.tasks_per_type} "
+                f"enqueued={len(matrix_task_ids)} "
+                f"worker_processed={worker_summary.processed} "
+                f"worker_succeeded={worker_summary.succeeded} "
+                f"worker_failed={worker_summary.failed} "
+                f"worker_retried={worker_summary.retried} "
+                f"worker_timeouts={worker_summary.timeouts}"
+            ),
+            *render_stats_lines(
+                snapshot=snapshot,
+                hours=24,
+            ),
+        ]
+        if command.output_path is not None:
+            command.output_path.parent.mkdir(parents=True, exist_ok=True)
+            command.output_path.write_text(report, "utf-8")
+            lines.append(f"Benchmark report written: {command.output_path}")
+        return lines
 
     def list_tasks(self, command: LlmListTasksCommand) -> list[str]:
         settings = Settings.from_env(db_path=command.db_path)
@@ -322,6 +475,35 @@ def _parse_status(value: str | None) -> LlmTaskStatus | None:
 
 def _routing_defaults(*, settings: Settings) -> RoutingDefaults:
     return RoutingDefaults.from_settings(settings.orchestrator)
+
+
+def _benchmark_cases(*, tasks_per_type: int) -> list[str]:
+    base_cases = [
+        "success",
+        "source_mapping_repair",
+        "output_invalid_json_repair",
+        "transient_retry_once",
+        "timeout_once",
+    ]
+    if tasks_per_type <= len(base_cases):
+        return base_cases[:tasks_per_type]
+    return base_cases + (["success"] * (tasks_per_type - len(base_cases)))
+
+
+def _benchmark_command_preview(*, command: LlmBenchmarkCommand) -> str:
+    output_path = str(command.output_path) if command.output_path is not None else "<report-path>"
+    source_id_args = " ".join(f"--source-id {source_id}" for source_id in command.source_ids)
+    task_type_args = " ".join(f"--task-type {task_type}" for task_type in command.task_types)
+    mode_flag = "--use-benchmark-agent" if command.use_benchmark_agent else "--use-configured-agent"
+    return (
+        "uv run news-recap llm benchmark "
+        f"{task_type_args} "
+        f"--tasks-per-type {command.tasks_per_type} "
+        f"--priority {command.priority} "
+        f"{mode_flag} "
+        f"--output {output_path} "
+        f"{source_id_args}"
+    ).strip()
 
 
 @contextmanager

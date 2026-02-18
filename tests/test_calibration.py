@@ -1,6 +1,13 @@
 from pathlib import Path
 
+import allure
+
 from news_recap.ingestion.dedup.calibration import load_golden_pairs
+
+pytestmark = [
+    allure.epic("Dedup Quality"),
+    allure.feature("Embeddings & Thresholding"),
+]
 
 
 def test_golden_set_fixture_exists_and_has_expected_size() -> None:

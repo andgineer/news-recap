@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import event
+from sqlalchemy import and_, event, or_
 from sqlalchemy import update as sa_update
 from sqlmodel import Session, col, create_engine, delete, select
 
@@ -580,6 +580,65 @@ class OrchestratorRepository:
             rows = session.exec(statement).all()
         return [_to_task_view(row) for row in rows]
 
+    def list_tasks_for_metrics(
+        self,
+        *,
+        since: datetime | None = None,
+        task_ids: tuple[str, ...] | None = None,
+        statuses: tuple[LlmTaskStatus, ...] | None = None,
+    ) -> list[LlmTaskView]:
+        """List tasks for metrics/reporting use-cases."""
+
+        with Session(self.engine) as session:
+            statement = select(LlmTask).where(LlmTask.user_id == self.user_id)
+            if since is not None:
+                cutoff = _to_db_datetime(since)
+                statement = statement.where(
+                    or_(
+                        col(LlmTask.finished_at) >= cutoff,
+                        and_(
+                            col(LlmTask.finished_at).is_(None),
+                            col(LlmTask.updated_at) >= cutoff,
+                        ),
+                    ),
+                )
+            if task_ids:
+                statement = statement.where(col(LlmTask.task_id).in_(task_ids))
+            if statuses:
+                statement = statement.where(
+                    col(LlmTask.status).in_(tuple(status.value for status in statuses)),
+                )
+            rows = session.exec(statement).all()
+        return [_to_task_view(row) for row in rows]
+
+    def list_task_events_for_metrics(
+        self,
+        *,
+        since: datetime | None = None,
+        task_ids: tuple[str, ...] | None = None,
+        event_types: tuple[str, ...] | None = None,
+    ) -> list[LlmTaskEventView]:
+        """List task events for metrics/reporting use-cases."""
+
+        with Session(self.engine) as session:
+            statement = (
+                select(LlmTaskEvent)
+                .where(
+                    LlmTaskEvent.user_id == self.user_id,
+                )
+                .order_by(col(LlmTaskEvent.created_at).asc())
+            )
+            if since is not None:
+                statement = statement.where(
+                    LlmTaskEvent.created_at >= _to_db_datetime(since),
+                )
+            if task_ids:
+                statement = statement.where(col(LlmTaskEvent.task_id).in_(task_ids))
+            if event_types:
+                statement = statement.where(col(LlmTaskEvent.event_type).in_(event_types))
+            rows = session.exec(statement).all()
+        return [_to_task_event_view(row) for row in rows]
+
     def get_task_details(self, *, task_id: str) -> LlmTaskDetails | None:
         """Return task details with event stream."""
 
@@ -601,29 +660,10 @@ class OrchestratorRepository:
                 )
                 .order_by(col(LlmTaskEvent.created_at).asc()),
             ).all()
-
-        events: list[LlmTaskEventView] = []
-        for row in event_rows:
-            details = {}
-            if row.details_json:
-                parsed = json.loads(row.details_json)
-                if isinstance(parsed, dict):
-                    details = parsed
-            events.append(
-                LlmTaskEventView(
-                    event_id=row.id or 0,
-                    task_id=row.task_id,
-                    event_type=row.event_type,
-                    status_from=(
-                        LlmTaskStatus(row.status_from) if row.status_from is not None else None
-                    ),
-                    status_to=LlmTaskStatus(row.status_to) if row.status_to is not None else None,
-                    created_at=_to_utc_aware_datetime(row.created_at),
-                    details=details,
-                ),
-            )
-
-        return LlmTaskDetails(task=_to_task_view(task), events=events)
+        return LlmTaskDetails(
+            task=_to_task_view(task),
+            events=[_to_task_event_view(row) for row in event_rows],
+        )
 
     def add_artifact(self, *, task_id: str, artifact: LlmTaskArtifactWrite) -> None:
         """Persist artifact metadata."""
@@ -893,6 +933,23 @@ def _to_task_view(row: LlmTask) -> LlmTaskView:
         error_summary=row.error_summary,
         created_at=_to_utc_aware_datetime(row.created_at),
         updated_at=_to_utc_aware_datetime(row.updated_at),
+    )
+
+
+def _to_task_event_view(row: LlmTaskEvent) -> LlmTaskEventView:
+    details: dict[str, object] = {}
+    if row.details_json:
+        parsed = json.loads(row.details_json)
+        if isinstance(parsed, dict):
+            details = parsed
+    return LlmTaskEventView(
+        event_id=row.id or 0,
+        task_id=row.task_id,
+        event_type=row.event_type,
+        status_from=LlmTaskStatus(row.status_from) if row.status_from is not None else None,
+        status_to=LlmTaskStatus(row.status_to) if row.status_to is not None else None,
+        created_at=_to_utc_aware_datetime(row.created_at),
+        details=details,
     )
 
 

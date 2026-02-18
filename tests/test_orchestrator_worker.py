@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
+
+import allure
 
 from news_recap.ingestion.cleaning import canonicalize_url, extract_domain, url_hash
 from news_recap.ingestion.models import NormalizedArticle
@@ -17,6 +19,11 @@ from news_recap.orchestrator.repository import OrchestratorRepository
 from news_recap.orchestrator.routing import RoutingDefaults
 from news_recap.orchestrator.services import EnqueueDemoTask, OrchestratorService
 from news_recap.orchestrator.worker import OrchestratorWorker
+
+pytestmark = [
+    allure.epic("LLM Runtime"),
+    allure.feature("Task Queue Reliability"),
+]
 
 
 def _routing_defaults(command_template: str) -> RoutingDefaults:
@@ -106,6 +113,7 @@ def test_worker_executes_task_successfully_with_echo_agent(tmp_path: Path) -> No
     details = repository.get_task_details(task_id=task.task_id)
     assert details is not None
     assert details.task.status == LlmTaskStatus.SUCCEEDED
+    assert any(event.event_type == "first_pass_validation_passed" for event in details.events)
     assert details.task.output_path is not None
     citations = repository.list_output_citations(task_id=task.task_id)
     assert len(citations) == 1
@@ -165,6 +173,7 @@ Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_i
     assert details.task.status == LlmTaskStatus.FAILED
     assert details.task.failure_class is not None
     assert details.task.failure_class.value == "source_mapping_failed"
+    assert any(event.event_type == "first_pass_validation_failed" for event in details.events)
     repository.close()
 
 

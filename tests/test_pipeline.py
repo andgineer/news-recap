@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import allure
 import pytest
 
 from news_recap.config import DedupSettings, IngestionSettings, RssSettings, Settings
@@ -21,6 +22,11 @@ from news_recap.ingestion.sources.base import (
     TemporarySourceError,
 )
 from news_recap.ingestion.sources.rss import RssSource, RssSourceConfig
+
+pytestmark = [
+    allure.epic("Daily Ingestion"),
+    allure.feature("Daily Run Observability"),
+]
 
 
 class StaticSource:

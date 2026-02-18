@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import allure
+
 from news_recap.orchestrator.failure_classifier import (
     LLM_FAILURE_CLASSIFIER_VERSION,
     classify_backend_failure,
 )
 from news_recap.orchestrator.models import FailureClass
+
+pytestmark = [
+    allure.epic("LLM Runtime"),
+    allure.feature("Routing, Failures, CLI Ops"),
+]
 
 
 def test_classifier_version_is_stable() -> None:

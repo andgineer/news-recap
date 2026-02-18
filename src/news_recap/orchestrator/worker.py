@@ -251,6 +251,16 @@ class OrchestratorWorker:
             allowed_source_ids=allowed_source_ids,
         )
         if validation.is_valid:
+            self.repository.add_task_event(
+                task_id=task.task_id,
+                event_type="first_pass_validation_passed",
+                status_from=LlmTaskStatus.RUNNING,
+                status_to=LlmTaskStatus.RUNNING,
+                details={
+                    "schema_valid": True,
+                    "source_mapping_valid": True,
+                },
+            )
             try:
                 citations = self._build_output_citation_snapshots(
                     article_entries=article_entries,
@@ -276,6 +286,16 @@ class OrchestratorWorker:
                 summary.succeeded = 1
             return summary
 
+        self.repository.add_task_event(
+            task_id=task.task_id,
+            event_type="first_pass_validation_failed",
+            status_from=LlmTaskStatus.RUNNING,
+            status_to=LlmTaskStatus.RUNNING,
+            details={
+                "failure_class": _failure_class_value(validation.failure_class),
+                "error_summary": validation.error_summary or "Unknown validation failure.",
+            },
+        )
         if validation.failure_class is None or validation.error_summary is None:
             failed = self.repository.fail_task(
                 task_id=task.task_id,
@@ -492,6 +512,12 @@ def _article_id_from_source_id(source_id: str) -> str | None:
     if not article_id:
         return None
     return article_id
+
+
+def _failure_class_value(value: FailureClass | None) -> str:
+    if value is None:
+        return "unknown"
+    return value.value
 
 
 def _parse_optional_datetime(value: str | None) -> datetime | None:

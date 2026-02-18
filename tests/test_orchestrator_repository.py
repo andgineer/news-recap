@@ -4,9 +4,10 @@ import multiprocessing
 import os
 import queue
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import allure
 import pytest
 
 from news_recap.ingestion.cleaning import canonicalize_url, extract_domain, url_hash
@@ -19,6 +20,11 @@ from news_recap.orchestrator.models import (
     OutputCitationSnapshotWrite,
 )
 from news_recap.orchestrator.repository import OrchestratorRepository
+
+pytestmark = [
+    allure.epic("LLM Runtime"),
+    allure.feature("Task Queue Reliability"),
+]
 
 
 def _run_manual_mutation(  # pragma: no cover - executed in child process
@@ -483,6 +489,95 @@ def test_output_citation_snapshots_survive_global_article_gc(tmp_path: Path) -> 
     assert citations[0].url == "https://example.com/news/citation"
     verify.close()
     ingest.close()
+
+
+def test_list_tasks_for_metrics_uses_activity_window_and_status_filter(
+    tmp_path: Path,
+) -> None:
+    repository = OrchestratorRepository(tmp_path / "orchestrator-metrics-window.db")
+    repository.init_schema()
+
+    recent_task = repository.enqueue_task(
+        LlmTaskCreate(
+            task_type="highlights",
+            run_after=datetime.now(tz=UTC),
+            input_manifest_path=str(tmp_path / "manifest-recent.json"),
+        ),
+    )
+    claimed_recent = repository.claim_next_ready_task(worker_id="worker-recent")
+    assert claimed_recent is not None
+    assert (
+        repository.fail_task(
+            task_id=recent_task.task_id,
+            status=LlmTaskStatus.FAILED,
+            failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+            error_summary="recent terminal",
+            last_exit_code=2,
+        )
+        is True
+    )
+
+    old_task = repository.enqueue_task(
+        LlmTaskCreate(
+            task_type="highlights",
+            run_after=datetime.now(tz=UTC),
+            input_manifest_path=str(tmp_path / "manifest-old.json"),
+        ),
+    )
+    claimed_old = repository.claim_next_ready_task(worker_id="worker-old")
+    assert claimed_old is not None
+    assert (
+        repository.fail_task(
+            task_id=old_task.task_id,
+            status=LlmTaskStatus.FAILED,
+            failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+            error_summary="old terminal",
+            last_exit_code=2,
+        )
+        is True
+    )
+
+    queued_task = repository.enqueue_task(
+        LlmTaskCreate(
+            task_type="qa",
+            run_after=datetime.now(tz=UTC),
+            input_manifest_path=str(tmp_path / "manifest-queued.json"),
+        ),
+    )
+
+    now = datetime.now(tz=UTC)
+    old_timestamp = now - timedelta(days=7)
+    repository._connection.execute(
+        "UPDATE llm_tasks SET created_at = ?, finished_at = ?, updated_at = ? WHERE task_id = ?",
+        (
+            old_timestamp.replace(tzinfo=None).isoformat(sep=" "),
+            now.replace(tzinfo=None).isoformat(sep=" "),
+            now.replace(tzinfo=None).isoformat(sep=" "),
+            recent_task.task_id,
+        ),
+    )
+    repository._connection.execute(
+        "UPDATE llm_tasks SET created_at = ?, finished_at = ?, updated_at = ? WHERE task_id = ?",
+        (
+            old_timestamp.replace(tzinfo=None).isoformat(sep=" "),
+            old_timestamp.replace(tzinfo=None).isoformat(sep=" "),
+            old_timestamp.replace(tzinfo=None).isoformat(sep=" "),
+            old_task.task_id,
+        ),
+    )
+    repository._connection.commit()
+
+    cutoff = now - timedelta(hours=1)
+    window_tasks = repository.list_tasks_for_metrics(since=cutoff)
+    window_task_ids = {task.task_id for task in window_tasks}
+    assert recent_task.task_id in window_task_ids
+    assert old_task.task_id not in window_task_ids
+
+    active_tasks = repository.list_tasks_for_metrics(
+        statuses=(LlmTaskStatus.QUEUED, LlmTaskStatus.RUNNING),
+    )
+    assert {task.task_id for task in active_tasks} == {queued_task.task_id}
+    repository.close()
 
 
 @pytest.mark.skipif(

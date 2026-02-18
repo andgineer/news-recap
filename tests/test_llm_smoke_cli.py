@@ -5,9 +5,15 @@ import stat
 import sys
 from pathlib import Path
 
+import allure
 from click.testing import CliRunner
 
 from news_recap.main import news_recap
+
+pytestmark = [
+    allure.epic("LLM Runtime"),
+    allure.feature("Routing, Failures, CLI Ops"),
+]
 
 
 def _write_fake_agent(path: Path, name: str) -> None:

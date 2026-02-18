@@ -1,6 +1,13 @@
+import allure
+from click.testing import CliRunner
+
 from news_recap import __version__
 from news_recap.main import news_recap
-from click.testing import CliRunner
+
+pytestmark = [
+    allure.epic("LLM Runtime"),
+    allure.feature("Routing, Failures, CLI Ops"),
+]
 
 
 def test_version():

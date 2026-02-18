@@ -1,6 +1,13 @@
 from pathlib import Path
 
+import allure
+
 from news_recap.ingestion.repository import SQLiteRepository
+
+pytestmark = [
+    allure.epic("Daily Ingestion"),
+    allure.feature("Persist & Run Accounting"),
+]
 
 
 def test_alembic_schema_is_initialized_to_head(tmp_path: Path) -> None:

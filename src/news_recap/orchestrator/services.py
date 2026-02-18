@@ -29,6 +29,7 @@ class EnqueueDemoTask:
     agent: str | None = None
     model_profile: str | None = None
     model: str | None = None
+    metadata: dict[str, object] | None = None
 
 
 class OrchestratorService:
@@ -63,7 +64,10 @@ class OrchestratorService:
             task_input=TaskInputContract(
                 task_type=command.task_type,
                 prompt=command.prompt,
-                metadata={"routing": routing.to_metadata()},
+                metadata={
+                    "routing": routing.to_metadata(),
+                    **(command.metadata or {}),
+                },
             ),
             articles_index=[
                 ArticleIndexEntry(

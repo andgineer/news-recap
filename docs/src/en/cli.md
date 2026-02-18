@@ -62,6 +62,53 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 news-recap ingest duplicates --run-id <run_id>
 ```
 
+## LLM Queue Runtime
+
+Enqueue a demo task:
+
+```bash
+news-recap llm enqueue-test --task-type highlights --prompt "Top updates"
+```
+
+Process queued tasks:
+
+```bash
+news-recap llm worker --once
+news-recap llm worker --loop --max-tasks 100
+```
+
+Inspect queue/task state:
+
+```bash
+news-recap llm tasks --status queued
+news-recap llm inspect --task-id <task_id>
+news-recap llm retry --task-id <task_id>
+news-recap llm cancel --task-id <task_id>
+```
+
+Operator observability (no DB shell required):
+
+```bash
+news-recap llm stats --hours 24
+```
+
+The stats command prints:
+
+- queue health by status/type/priority,
+- validation failure counters (`output_invalid_json`, `source_mapping_failed`),
+- retry metrics by failure class and retry success ratio,
+- latency percentiles by task type.
+
+Deterministic benchmark matrix for Epic 2:
+
+```bash
+news-recap llm benchmark --tasks-per-type 10
+```
+
+Default output report path:
+
+- `docs/reports/epic2_orchestrator_benchmark.md`
+
 ## LLM Agent Smoke Checks
 
 Run direct checks (without DB queue):
@@ -194,6 +241,41 @@ Exit codes:
 - `11` refresh was attempted and failed;
 - `12` blocking auth/quota/timeout failures detected.
 
+## Worker Operations Runbook
+
+Runtime model:
+
+- One worker process claims one `queued` task atomically and marks it `running`.
+- `--once` processes at most one task; `--loop` keeps polling until idle (or `--max-tasks`).
+- Task lifecycle: `queued -> running -> {succeeded|failed|timeout|canceled}`.
+- `cancel` is terminal from `queued|running`; worker cannot later overwrite canceled tasks.
+- Manual `retry` is allowed from `failed|timeout|canceled` and returns task to `queued`.
+
+Retry/repair behavior:
+
+- Retryable classes: `timeout`, `backend_transient`.
+- Non-retryable classes: `backend_non_retryable`, `billing_or_quota`, `access_or_auth`,
+  `model_not_available`, `input_contract_error`.
+- Validation failures (`output_invalid_json`, `source_mapping_failed`) trigger one repair pass
+  per attempt before terminal failure.
+
+Failure class troubleshooting map:
+
+- `billing_or_quota`: restore billing/quota, then `llm retry`.
+- `access_or_auth`: fix auth/session/permissions for selected CLI agent, then `llm retry`.
+- `model_not_available`: update model mapping/profile (`llm smoke`, then env/config update), retry.
+- `backend_transient`: inspect stdout/stderr artifacts; transient network/rate-limit usually auto-retries.
+- `output_invalid_json` / `source_mapping_failed`: inspect output schema/source mapping, tighten prompt
+  or backend command, then retry.
+- `input_contract_error`: broken manifest/index/input; re-enqueue task after fixing generator path.
+
+Artifacts and cleanup:
+
+- Per task workdir contains input manifest, task input, articles index, result JSON, stdout/stderr logs.
+- DB tracks artifact metadata in `llm_task_artifacts`.
+- Cleanup policy: keep artifacts for recent audit/debug window; remove old workdirs together with old DB
+  tasks using your retention policy and backup requirements.
+
 ## Retention Cleanup
 
 Delete old user-linked articles by `discovered_at`:
@@ -242,4 +324,9 @@ news-recap ingest clusters --help
 news-recap ingest duplicates --help
 news-recap ingest prune --help
 news-recap ingest gc --help
+news-recap llm --help
+news-recap llm worker --help
+news-recap llm stats --help
+news-recap llm benchmark --help
+news-recap llm smoke --help
 ```

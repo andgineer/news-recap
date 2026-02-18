@@ -5,12 +5,18 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import allure
 from click.testing import CliRunner
 
 from news_recap.ingestion.cleaning import canonicalize_url, extract_domain, url_hash
 from news_recap.ingestion.models import NormalizedArticle
 from news_recap.ingestion.repository import SQLiteRepository
 from news_recap.main import news_recap
+
+pytestmark = [
+    allure.epic("LLM Runtime"),
+    allure.feature("Routing, Failures, CLI Ops"),
+]
 
 
 def _seed_user_article(db_path: Path) -> str:
@@ -119,3 +125,129 @@ def test_llm_cli_enqueue_worker_and_inspect(tmp_path: Path, monkeypatch) -> None
     )
     assert inspect.exit_code == 0
     assert "Status: succeeded" in inspect.output
+
+
+def test_llm_cli_stats_reports_queue_and_validation_metrics(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "llm-cli-stats.db"
+    source_id = _seed_user_article(db_path)
+    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
+    monkeypatch.setenv(
+        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
+        (
+            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
+            "--task-manifest {task_manifest}"
+        ),
+    )
+    monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
+
+    runner = CliRunner()
+    enqueue = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "enqueue-test",
+            "--db-path",
+            str(db_path),
+            "--task-type",
+            "highlights",
+            "--prompt",
+            "Generate highlights.",
+            "--source-id",
+            source_id,
+        ],
+    )
+    assert enqueue.exit_code == 0
+
+    worker = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "worker",
+            "--db-path",
+            str(db_path),
+            "--once",
+        ],
+    )
+    assert worker.exit_code == 0
+    assert "succeeded=1" in worker.output
+
+    stats = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "stats",
+            "--db-path",
+            str(db_path),
+            "--hours",
+            "24",
+        ],
+    )
+    assert stats.exit_code == 0
+    assert "LLM queue health (window=24h)" in stats.output
+    assert "Validation failures: output_invalid_json=0 source_mapping_failed=0" in stats.output
+    assert "Latency percentiles" in stats.output
+
+
+def test_llm_cli_benchmark_writes_report(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "llm-cli-benchmark.db"
+    _seed_user_article(db_path)
+    monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
+
+    report_path = tmp_path / "benchmark_report.md"
+    runner = CliRunner()
+    result = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "benchmark",
+            "--db-path",
+            str(db_path),
+            "--tasks-per-type",
+            "2",
+            "--output",
+            str(report_path),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Benchmark matrix completed:" in result.output
+    assert f"Benchmark report written: {report_path}" in result.output
+
+    report_text = report_path.read_text("utf-8")
+    assert "# Epic 2 Benchmark Report" in report_text
+    assert "Go/No-Go recommendation:" in report_text
+    assert "--use-benchmark-agent" in report_text
+
+
+def test_llm_cli_benchmark_report_reflects_configured_agent_mode(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "llm-cli-benchmark-configured.db"
+    _seed_user_article(db_path)
+    monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
+
+    report_path = tmp_path / "benchmark_report_configured.md"
+    runner = CliRunner()
+    result = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "benchmark",
+            "--db-path",
+            str(db_path),
+            "--task-type",
+            "highlights",
+            "--tasks-per-type",
+            "1",
+            "--use-configured-agent",
+            "--output",
+            str(report_path),
+        ],
+    )
+    assert result.exit_code == 0
+
+    report_text = report_path.read_text("utf-8")
+    assert "--use-configured-agent" in report_text

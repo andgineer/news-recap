@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import allure
+
 from news_recap.ingestion.sources.rss import RssFetchResponse, RssSource, RssSourceConfig
+
+pytestmark = [
+    allure.epic("Daily Ingestion"),
+    allure.feature("Feed Intake & Cleaning"),
+]
 
 
 class _InMemoryFeedStateStore:

@@ -15,11 +15,13 @@ from news_recap.ingestion.controllers import (
     IngestionStatsCommand,
 )
 from news_recap.orchestrator.controllers import (
+    LlmBenchmarkCommand,
     LlmEnqueueCommand,
     LlmInspectTaskCommand,
     LlmListTasksCommand,
     LlmMutateTaskCommand,
     LlmSmokeCommand,
+    LlmStatsCommand,
     LlmWorkerCommand,
     OrchestratorCliController,
 )
@@ -401,6 +403,101 @@ def llm_worker(
                 db_path=db_path,
                 once=once,
                 max_tasks=max_tasks,
+            ),
+        ),
+    )
+
+
+@llm.command("stats")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--hours",
+    type=click.IntRange(min=1, max=24 * 30),
+    default=24,
+    show_default=True,
+    help="Rolling window for quality/latency metrics.",
+)
+def llm_stats(db_path: Path | None, hours: int) -> None:
+    """Show queue health, validation/retry metrics, and latency summary."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.stats(
+            LlmStatsCommand(
+                db_path=db_path,
+                hours=hours,
+            ),
+        ),
+    )
+
+
+@llm.command("benchmark")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--task-type",
+    "task_types",
+    multiple=True,
+    help="Task type to benchmark. Repeatable. Defaults to highlights/story/qa.",
+)
+@click.option(
+    "--tasks-per-type",
+    type=click.IntRange(min=1, max=200),
+    default=10,
+    show_default=True,
+    help="How many tasks to enqueue per task type.",
+)
+@click.option(
+    "--source-id",
+    "source_ids",
+    multiple=True,
+    help="Optional source id filter (article:<article_id>). Defaults to recent user corpus.",
+)
+@click.option(
+    "--priority",
+    type=click.IntRange(min=0, max=1000),
+    default=100,
+    show_default=True,
+    help="Priority assigned to generated benchmark tasks.",
+)
+@click.option(
+    "--output",
+    "output_path",
+    type=click.Path(path_type=Path),
+    default=Path("docs/reports/epic2_orchestrator_benchmark.md"),
+    show_default=True,
+    help="Path for markdown benchmark report.",
+)
+@click.option(
+    "--use-benchmark-agent/--use-configured-agent",
+    default=True,
+    show_default=True,
+    help="Use deterministic built-in benchmark agent or configured external agent command.",
+)
+def llm_benchmark(  # noqa: PLR0913
+    db_path: Path | None,
+    task_types: tuple[str, ...],
+    tasks_per_type: int,
+    source_ids: tuple[str, ...],
+    priority: int,
+    output_path: Path,
+    use_benchmark_agent: bool,
+) -> None:
+    """Run deterministic orchestrator benchmark matrix and write report."""
+
+    resolved_task_types = (
+        tuple(dict.fromkeys(task_type.lower() for task_type in task_types))
+        if task_types
+        else ("highlights", "story", "qa")
+    )
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.benchmark(
+            LlmBenchmarkCommand(
+                db_path=db_path,
+                task_types=resolved_task_types,
+                tasks_per_type=tasks_per_type,
+                source_ids=source_ids,
+                priority=priority,
+                output_path=output_path,
+                use_benchmark_agent=use_benchmark_agent,
             ),
         ),
     )
