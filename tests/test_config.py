@@ -100,3 +100,18 @@ def test_from_env_parses_article_retention_days(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("NEWS_RECAP_ARTICLE_RETENTION_DAYS", "14")
     settings = Settings.from_env()
     assert settings.ingestion.article_retention_days == 14
+
+
+def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NEWS_RECAP_LLM_DEFAULT_AGENT", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_LLM_CODEX_COMMAND", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_LLM_CLAUDE_COMMAND", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_LLM_ANTIGRAVITY_COMMAND", raising=False)
+    settings = Settings.from_env()
+    assert settings.orchestrator.default_agent == "codex"
+    assert settings.orchestrator.codex_command == "codex exec {prompt}"
+    assert (
+        settings.orchestrator.claude_command
+        == "claude -p --permission-mode bypassPermissions {prompt}"
+    )
+    assert settings.orchestrator.antigravity_command == "antigravity chat --mode agent {prompt}"

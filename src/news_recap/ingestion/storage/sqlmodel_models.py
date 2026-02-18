@@ -372,3 +372,97 @@ class ArticleDedup(SQLModel, table=True):
     cluster_id: str = Field(index=True)
     is_representative: bool
     similarity_to_rep: float
+
+
+class LlmTask(SQLModel, table=True):
+    __tablename__ = "llm_tasks"  # type: ignore[bad-override]
+    __table_args__ = (Index("idx_llm_tasks_queue", "user_id", "status", "priority", "run_after"),)
+
+    task_id: str = Field(primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    task_type: str = Field(index=True)
+    priority: int = Field(default=100, index=True)
+    status: str = Field(index=True)
+    attempt: int = Field(default=0)
+    max_attempts: int = Field(default=3)
+    timeout_seconds: int = Field(default=600)
+    run_after: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    started_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    heartbeat_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    finished_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    failure_class: str | None = Field(default=None, index=True)
+    last_exit_code: int | None = None
+    repair_attempted_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
+    )
+    worker_id: str | None = Field(default=None, index=True)
+    input_manifest_path: str
+    output_path: str | None = None
+    error_summary: str | None = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class LlmTaskEvent(SQLModel, table=True):
+    __tablename__ = "llm_task_events"  # type: ignore[bad-override]
+    __table_args__ = (Index("idx_llm_task_events_task_time", "task_id", "created_at"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    task_id: str = Field(
+        sa_column=Column(
+            ForeignKey("llm_tasks.task_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    event_type: str = Field(index=True)
+    status_from: str | None = Field(default=None, index=True)
+    status_to: str | None = Field(default=None, index=True)
+    details_json: str | None = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class LlmTaskArtifact(SQLModel, table=True):
+    __tablename__ = "llm_task_artifacts"  # type: ignore[bad-override]
+    __table_args__ = (Index("idx_llm_task_artifacts_task_kind", "task_id", "kind"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    task_id: str = Field(
+        sa_column=Column(
+            ForeignKey("llm_tasks.task_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    kind: str = Field(index=True)
+    path: str
+    size_bytes: int
+    checksum_sha256: str | None = None
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))

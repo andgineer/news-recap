@@ -53,6 +53,22 @@ class UserContextSettings:
 
 
 @dataclass(slots=True)
+class OrchestratorSettings:
+    """CLI orchestrator settings."""
+
+    workdir_root: Path = Path(".news_recap_workdir")
+    cli_backend_command: str = "python -m news_recap.orchestrator.backend.echo_agent"
+    default_agent: str = "codex"
+    codex_command: str = "codex exec {prompt}"
+    claude_command: str = "claude -p --permission-mode bypassPermissions {prompt}"
+    antigravity_command: str = "antigravity chat --mode agent {prompt}"
+    worker_id: str = "worker-default"
+    poll_interval_seconds: float = 2.0
+    retry_base_seconds: int = 30
+    retry_max_seconds: int = 900
+
+
+@dataclass(slots=True)
 class Settings:
     """Application settings grouped by domain concerns."""
 
@@ -61,6 +77,7 @@ class Settings:
     dedup: DedupSettings = field(default_factory=DedupSettings)
     rss: RssSettings = field(default_factory=RssSettings)
     user_context: UserContextSettings = field(default_factory=UserContextSettings)
+    orchestrator: OrchestratorSettings = field(default_factory=OrchestratorSettings)
 
     @classmethod
     def from_env(cls, db_path: Path | None = None) -> Settings:
@@ -122,6 +139,41 @@ class Settings:
             user_context=UserContextSettings(
                 user_id=os.getenv("NEWS_RECAP_USER_ID", "default_user"),
                 user_name=os.getenv("NEWS_RECAP_USER_NAME", "Default User"),
+            ),
+            orchestrator=OrchestratorSettings(
+                workdir_root=Path(
+                    os.getenv(
+                        "NEWS_RECAP_LLM_WORKDIR_ROOT",
+                        ".news_recap_workdir",
+                    ),
+                ),
+                cli_backend_command=os.getenv(
+                    "NEWS_RECAP_LLM_CLI_COMMAND",
+                    "python -m news_recap.orchestrator.backend.echo_agent",
+                ),
+                default_agent=os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex"),
+                codex_command=os.getenv(
+                    "NEWS_RECAP_LLM_CODEX_COMMAND",
+                    "codex exec {prompt}",
+                ),
+                claude_command=os.getenv(
+                    "NEWS_RECAP_LLM_CLAUDE_COMMAND",
+                    "claude -p --permission-mode bypassPermissions {prompt}",
+                ),
+                antigravity_command=os.getenv(
+                    "NEWS_RECAP_LLM_ANTIGRAVITY_COMMAND",
+                    "antigravity chat --mode agent {prompt}",
+                ),
+                worker_id=os.getenv("NEWS_RECAP_LLM_WORKER_ID", "worker-default"),
+                poll_interval_seconds=float(
+                    os.getenv("NEWS_RECAP_LLM_POLL_INTERVAL_SECONDS", "2.0"),
+                ),
+                retry_base_seconds=int(
+                    os.getenv("NEWS_RECAP_LLM_RETRY_BASE_SECONDS", "30"),
+                ),
+                retry_max_seconds=int(
+                    os.getenv("NEWS_RECAP_LLM_RETRY_MAX_SECONDS", "900"),
+                ),
             ),
         )
 

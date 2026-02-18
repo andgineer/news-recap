@@ -13,9 +13,19 @@ from news_recap.ingestion.controllers import (
     IngestionPruneCommand,
     IngestionStatsCommand,
 )
+from news_recap.orchestrator.controllers import (
+    LlmEnqueueCommand,
+    LlmInspectTaskCommand,
+    LlmListTasksCommand,
+    LlmMutateTaskCommand,
+    LlmSmokeCommand,
+    LlmWorkerCommand,
+    OrchestratorCliController,
+)
 
 click.rich_click.USE_MARKDOWN = True
 INGESTION_CONTROLLER = IngestionCliController()
+ORCHESTRATOR_CONTROLLER = OrchestratorCliController()
 
 
 @click.group()
@@ -247,6 +257,267 @@ def ingest_prune(
             ),
         ),
     )
+
+
+@news_recap.group()
+def llm() -> None:
+    """Orchestrator queue and worker commands."""
+
+
+@llm.command("enqueue-test")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option("--task-type", default="highlights", show_default=True, help="Task type.")
+@click.option(
+    "--prompt",
+    default="Summarize top updates with source mapping.",
+    show_default=True,
+    help="Prompt text for demo task.",
+)
+@click.option(
+    "--source-id",
+    "source_ids",
+    multiple=True,
+    help="Allowed source id for strict mapping. Can be repeated.",
+)
+@click.option(
+    "--priority",
+    type=click.IntRange(min=0, max=1000),
+    default=100,
+    show_default=True,
+    help="Lower number means higher priority.",
+)
+@click.option(
+    "--max-attempts",
+    type=click.IntRange(min=1, max=10),
+    default=3,
+    show_default=True,
+    help="Max execution attempts including first run.",
+)
+@click.option(
+    "--timeout-seconds",
+    type=click.IntRange(min=10, max=3600),
+    default=600,
+    show_default=True,
+    help="Execution timeout per attempt.",
+)
+def llm_enqueue_test(  # noqa: PLR0913
+    db_path: Path | None,
+    task_type: str,
+    prompt: str,
+    source_ids: tuple[str, ...],
+    priority: int,
+    max_attempts: int,
+    timeout_seconds: int,
+) -> None:
+    """Enqueue a demo task for orchestrator testing."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.enqueue_demo(
+            LlmEnqueueCommand(
+                db_path=db_path,
+                task_type=task_type,
+                prompt=prompt,
+                source_ids=source_ids,
+                priority=priority,
+                max_attempts=max_attempts,
+                timeout_seconds=timeout_seconds,
+            ),
+        ),
+    )
+
+
+@llm.command("worker")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--once/--loop",
+    default=True,
+    show_default=True,
+    help="Run one claim-execute cycle or loop until idle.",
+)
+@click.option(
+    "--max-tasks",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Optional cap for processed tasks in loop mode.",
+)
+def llm_worker(
+    db_path: Path | None,
+    once: bool,
+    max_tasks: int | None,
+) -> None:
+    """Run LLM task worker."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.run_worker(
+            LlmWorkerCommand(
+                db_path=db_path,
+                once=once,
+                max_tasks=max_tasks,
+            ),
+        ),
+    )
+
+
+@llm.command("tasks")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--status",
+    type=click.Choice(
+        ["queued", "running", "succeeded", "failed", "timeout", "canceled"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Optional status filter.",
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1, max=500),
+    default=50,
+    show_default=True,
+    help="Max tasks to print.",
+)
+def llm_tasks(
+    db_path: Path | None,
+    status: str | None,
+    limit: int,
+) -> None:
+    """List orchestrator tasks."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.list_tasks(
+            LlmListTasksCommand(
+                db_path=db_path,
+                status=status,
+                limit=limit,
+            ),
+        ),
+    )
+
+
+@llm.command("inspect")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option("--task-id", required=True, help="Task id.")
+def llm_inspect(db_path: Path | None, task_id: str) -> None:
+    """Inspect one task with event history."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.inspect_task(
+            LlmInspectTaskCommand(
+                db_path=db_path,
+                task_id=task_id,
+            ),
+        ),
+    )
+
+
+@llm.command("retry")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option("--task-id", required=True, help="Task id.")
+def llm_retry(db_path: Path | None, task_id: str) -> None:
+    """Manually re-queue a failed/timeout/canceled task."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.retry_task(
+            LlmMutateTaskCommand(
+                db_path=db_path,
+                task_id=task_id,
+            ),
+        ),
+    )
+
+
+@llm.command("cancel")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option("--task-id", required=True, help="Task id.")
+def llm_cancel(db_path: Path | None, task_id: str) -> None:
+    """Cancel a queued or running task."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.cancel_task(
+            LlmMutateTaskCommand(
+                db_path=db_path,
+                task_id=task_id,
+            ),
+        ),
+    )
+
+
+@llm.command("smoke")
+@click.option(
+    "--agent",
+    "agents",
+    multiple=True,
+    type=click.Choice(["claude", "codex", "antigravity"], case_sensitive=False),
+    help="Agent to test. Repeat to test multiple; defaults to NEWS_RECAP_LLM_DEFAULT_AGENT.",
+)
+@click.option(
+    "--prompt",
+    default="Reply with exactly: OK",
+    show_default=True,
+    help="Synthetic prompt used for run check.",
+)
+@click.option(
+    "--expect-substring",
+    default="OK",
+    show_default=True,
+    help="Substring required in stdout for successful run check.",
+)
+@click.option(
+    "--timeout-seconds",
+    type=click.IntRange(min=1, max=300),
+    default=45,
+    show_default=True,
+    help="Timeout for probe/run commands.",
+)
+@click.option(
+    "--claude-command",
+    default=None,
+    help=(
+        "Run template for Claude CLI. Supports {prompt} and {prompt_file}. "
+        "If omitted, NEWS_RECAP_LLM_SMOKE_CLAUDE_COMMAND is used."
+    ),
+)
+@click.option(
+    "--codex-command",
+    default=None,
+    help=(
+        "Run template for Codex CLI. Supports {prompt} and {prompt_file}. "
+        "If omitted, NEWS_RECAP_LLM_SMOKE_CODEX_COMMAND is used."
+    ),
+)
+@click.option(
+    "--antigravity-command",
+    default=None,
+    help=(
+        "Run template for Antigravity CLI. Supports {prompt} and {prompt_file}. "
+        "If omitted, NEWS_RECAP_LLM_SMOKE_ANTIGRAVITY_COMMAND is used."
+    ),
+)
+def llm_smoke(  # noqa: PLR0913
+    agents: tuple[str, ...],
+    prompt: str,
+    expect_substring: str,
+    timeout_seconds: int,
+    claude_command: str | None,
+    codex_command: str | None,
+    antigravity_command: str | None,
+) -> None:
+    """Run lightweight direct smoke checks for external CLI agents (no DB queue)."""
+
+    result = ORCHESTRATOR_CONTROLLER.smoke(
+        LlmSmokeCommand(
+            agents=tuple(agent.lower() for agent in agents),
+            prompt=prompt,
+            expect_substring=expect_substring,
+            timeout_seconds=timeout_seconds,
+            claude_command=claude_command,
+            codex_command=codex_command,
+            antigravity_command=antigravity_command,
+        ),
+    )
+    _emit_lines(result.lines)
+    if not result.success:
+        raise click.ClickException("LLM smoke check failed.")
 
 
 def _emit_lines(lines: list[str]) -> None:

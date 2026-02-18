@@ -62,6 +62,37 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 news-recap ingest duplicates --run-id <run_id>
 ```
 
+## LLM Agent Smoke Checks
+
+Run direct checks (without DB queue):
+
+```bash
+news-recap llm smoke
+```
+
+Force specific agents:
+
+```bash
+news-recap llm smoke --agent codex --agent claude --agent antigravity
+```
+
+Default command templates (fixed from real CLI experiments):
+
+- `codex`: `codex exec {prompt}`
+- `claude`: `claude -p --permission-mode bypassPermissions {prompt}`
+- `antigravity`: `antigravity chat --mode agent {prompt}`
+
+You can override them with:
+
+- `NEWS_RECAP_LLM_DEFAULT_AGENT`
+- `NEWS_RECAP_LLM_CODEX_COMMAND`
+- `NEWS_RECAP_LLM_CLAUDE_COMMAND`
+- `NEWS_RECAP_LLM_ANTIGRAVITY_COMMAND`
+
+Note:
+- `antigravity chat` is currently UI-oriented and may not produce reliable non-interactive
+  stdout/file-output behavior in headless automation.
+
 ## Retention Cleanup
 
 Delete old user-linked articles by `discovered_at`:

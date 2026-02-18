@@ -17,4 +17,19 @@ def test_alembic_schema_is_initialized_to_head(tmp_path: Path) -> None:
         "SELECT user_id FROM users WHERE user_id = 'default_user'"
     ).fetchone()
     assert user is not None
+
+    llm_tables = repository._connection.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name IN ('llm_tasks', 'llm_task_events', 'llm_task_artifacts')
+        ORDER BY name
+        """
+    ).fetchall()
+    assert [str(row["name"]) for row in llm_tables] == [
+        "llm_task_artifacts",
+        "llm_task_events",
+        "llm_tasks",
+    ]
     repository.close()
