@@ -31,13 +31,13 @@
 | src/news\_recap/orchestrator/controllers.py              |      134 |       12 |     91% |157, 180-183, 186-189, 196, 251, 267 |
 | src/news\_recap/orchestrator/models.py                   |       71 |        0 |    100% |           |
 | src/news\_recap/orchestrator/repair.py                   |       14 |        2 |     86% |    30, 35 |
-| src/news\_recap/orchestrator/repository.py               |      194 |       30 |     85% |78-85, 147, 170-171, 190-204, 224-225, 289, 393, 427-428, 455, 459, 476-477, 523, 574-582, 617 |
+| src/news\_recap/orchestrator/repository.py               |      194 |       29 |     85% |78-85, 147, 170-171, 190-204, 224-225, 289, 393, 401, 455, 459, 476-477, 523, 574-582, 617 |
 | src/news\_recap/orchestrator/services.py                 |       25 |        0 |    100% |           |
-| src/news\_recap/orchestrator/smoke.py                    |       93 |       26 |     72% |71-84, 87-100, 135-138, 145, 163-173, 188, 190, 199-202, 207, 209, 222 |
+| src/news\_recap/orchestrator/smoke.py                    |      109 |       40 |     63% |71-88, 91-104, 144-147, 154, 173-187, 202, 205, 214-217, 222, 224, 234-249, 256 |
 | src/news\_recap/orchestrator/validator.py                |       37 |        8 |     78% |31, 40-41, 49, 57, 65, 74, 89 |
 | src/news\_recap/orchestrator/workdir.py                  |       30 |        0 |    100% |           |
 | src/news\_recap/orchestrator/worker.py                   |      160 |       73 |     54% |73-74, 82-92, 102-134, 136-152, 155-185, 201-210, 231-237, 253-269, 324-347, 350-354 |
-| **TOTAL**                                                | **3097** |  **458** | **85%** |           |
+| **TOTAL**                                                | **3113** |  **471** | **85%** |           |
 
 
 ## Setup coverage badge
