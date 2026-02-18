@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -203,3 +203,58 @@ def test_ingest_duplicates_command_shows_duplicate_examples(tmp_path: Path) -> N
     assert "cluster=cluster:1 size=2" in result.output
     assert "France issues red flood alerts" in result.output
     assert "France flood warnings after heavy rain" in result.output
+
+
+def test_ingest_prune_command_deletes_articles_older_than_days(tmp_path: Path) -> None:
+    db_path = tmp_path / "prune.db"
+    repo = SQLiteRepository(db_path)
+    repo.init_schema()
+    run_id = repo.start_run(source="rss")
+
+    now = datetime.now(tz=UTC)
+    old_published_at = now - timedelta(days=40)
+    fresh_published_at = now - timedelta(days=3)
+
+    repo.upsert_article(
+        article=_article(
+            external_id="old-ext",
+            title="Old article",
+            url="https://example.com/news/old",
+            published_at=old_published_at,
+        ),
+        run_id=run_id,
+    )
+    repo.upsert_article(
+        article=_article(
+            external_id="fresh-ext",
+            title="Fresh article",
+            url="https://example.com/news/fresh",
+            published_at=fresh_published_at,
+        ),
+        run_id=run_id,
+    )
+    repo.close()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        news_recap,
+        [
+            "ingest",
+            "prune",
+            "--db-path",
+            str(db_path),
+            "--days",
+            "30",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Retention prune completed: days=30 dry_run=no" in result.output
+    assert "Articles deleted: 1" in result.output
+
+    reopened = SQLiteRepository(db_path)
+    reopened.init_schema()
+    remaining = reopened._connection.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
+    assert remaining is not None
+    assert int(remaining["cnt"]) == 1
+    reopened.close()

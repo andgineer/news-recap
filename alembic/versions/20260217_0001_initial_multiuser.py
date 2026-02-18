@@ -1,4 +1,4 @@
-"""Initial single-tenant multi-user ingestion schema."""
+"""Initial single-tenant multi-user ingestion schema (squashed baseline)."""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column("source", sa.String(), nullable=False),
         sa.Column("status", sa.String(), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("heartbeat_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("ingested_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("updated_count", sa.Integer(), nullable=False, server_default="0"),
@@ -56,6 +57,45 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["run_id"], ["ingestion_runs.run_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("gap_id"),
+    )
+
+    op.create_table(
+        "rss_feed_states",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("source_name", sa.String(), nullable=False),
+        sa.Column("feed_url", sa.String(), nullable=False),
+        sa.Column("etag", sa.String(), nullable=True),
+        sa.Column("last_modified", sa.String(), nullable=True),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "user_id",
+            "source_name",
+            "feed_url",
+            name="uq_rss_feed_states_scope_source_url",
+        ),
+    )
+
+    op.create_table(
+        "rss_processing_snapshots",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("source_name", sa.String(), nullable=False),
+        sa.Column("feed_set_hash", sa.String(), nullable=False),
+        sa.Column("snapshot_json", sa.Text(), nullable=False),
+        sa.Column("next_cursor", sa.String(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "user_id",
+            "source_name",
+            "feed_set_hash",
+            name="uq_rss_processing_snapshots_scope_source_feed_set",
+        ),
     )
 
     op.create_table(
@@ -209,6 +249,13 @@ def upgrade() -> None:
         ["user_id", "source_name", "url_hash", "published_at"],
     )
     op.create_index(
+        "uq_ingestion_runs_scope_source_running",
+        "ingestion_runs",
+        ["user_id", "source"],
+        unique=True,
+        sqlite_where=sa.text("status = 'running'"),
+    )
+    op.create_index(
         "uq_articles_scope_fallback_key",
         "articles",
         ["user_id", "source_name", "fallback_key"],
@@ -233,6 +280,7 @@ def downgrade() -> None:
     op.drop_index("idx_article_dedup_scope_run", table_name="article_dedup")
     op.drop_index("idx_dedup_clusters_scope_run", table_name="dedup_clusters")
     op.drop_index("uq_articles_scope_fallback_key", table_name="articles")
+    op.drop_index("uq_ingestion_runs_scope_source_running", table_name="ingestion_runs")
     op.drop_index("idx_articles_scope_hash_published", table_name="articles")
     op.drop_table("article_dedup")
     op.drop_table("dedup_clusters")
@@ -240,6 +288,8 @@ def downgrade() -> None:
     op.drop_table("article_external_ids")
     op.drop_table("articles")
     op.drop_table("articles_raw")
+    op.drop_table("rss_processing_snapshots")
+    op.drop_table("rss_feed_states")
     op.drop_table("ingestion_gaps")
     op.drop_table("ingestion_runs")
     op.drop_table("users")

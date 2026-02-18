@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from news_recap.config import Settings
+from news_recap.ingestion.models import RetentionPruneResult
 from news_recap.ingestion.pipeline import run_daily_ingestion
 from news_recap.ingestion.repository import SQLiteRepository
 from news_recap.ingestion.sources.rss import RssSource, RssSourceConfig
@@ -58,6 +59,15 @@ class IngestionDuplicatesCommand:
     members_per_cluster: int
 
 
+@dataclass(slots=True)
+class IngestionPruneCommand:
+    """CLI inputs for retention prune command."""
+
+    db_path: Path | None
+    days: int | None
+    dry_run: bool
+
+
 class IngestionCliController:
     """Coordinates ingestion command execution."""
 
@@ -82,6 +92,11 @@ class IngestionCliController:
             )
             summary = run_daily_ingestion(settings=settings, repository=repository, source=source)
             fetch_stats = source.get_last_run_fetch_stats()
+            prune_result = _prune_for_retention(
+                repository=repository,
+                retention_days=settings.ingestion.article_retention_days,
+                dry_run=False,
+            )
 
         lines = [
             "Ingestion run completed: "
@@ -113,6 +128,16 @@ class IngestionCliController:
                 f"if_modified_since={'yes' if feed.sent_if_modified_since else 'no'} "
                 f"etag={'yes' if feed.received_etag else 'no'} "
                 f"last_modified={'yes' if feed.received_last_modified else 'no'}",
+            )
+        if prune_result is None:
+            lines.append("Retention prune: disabled (NEWS_RECAP_ARTICLE_RETENTION_DAYS=0)")
+        else:
+            lines.append(
+                "Retention prune: "
+                f"days={settings.ingestion.article_retention_days} "
+                f"cutoff={prune_result.cutoff.isoformat()} "
+                f"articles_deleted={prune_result.articles_deleted} "
+                f"raw_deleted={prune_result.raw_payloads_deleted}",
             )
         return lines
 
@@ -250,6 +275,32 @@ class IngestionCliController:
                 )
         return lines
 
+    def prune(self, command: IngestionPruneCommand) -> list[str]:
+        settings = Settings.from_env(db_path=command.db_path)
+        days = settings.ingestion.article_retention_days if command.days is None else command.days
+        if days < 0:
+            raise ValueError("--days must be >= 0.")
+        with _repository(settings) as repository:
+            prune_result = _prune_for_retention(
+                repository=repository,
+                retention_days=days,
+                dry_run=command.dry_run,
+            )
+
+        if prune_result is None:
+            return [
+                "Retention prune skipped: days=0.",
+                "Set NEWS_RECAP_ARTICLE_RETENTION_DAYS > 0 or pass --days.",
+            ]
+
+        return [
+            "Retention prune completed: "
+            f"days={days} dry_run={'yes' if command.dry_run else 'no'} "
+            f"cutoff={prune_result.cutoff.isoformat()}",
+            f"Articles deleted: {prune_result.articles_deleted}",
+            f"Raw payload rows deleted: {prune_result.raw_payloads_deleted}",
+        ]
+
     @staticmethod
     def _resolve_run_id(
         *,
@@ -300,3 +351,15 @@ def _snapshot_max_age_seconds(hours: int) -> int | None:
     if hours <= 0:
         return None
     return hours * 3600
+
+
+def _prune_for_retention(
+    *,
+    repository: SQLiteRepository,
+    retention_days: int,
+    dry_run: bool,
+) -> RetentionPruneResult | None:
+    if retention_days <= 0:
+        return None
+    cutoff = datetime.now(tz=UTC) - timedelta(days=retention_days)
+    return repository.prune_articles(cutoff=cutoff, dry_run=dry_run)

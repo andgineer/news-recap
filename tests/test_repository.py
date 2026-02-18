@@ -8,6 +8,8 @@ import pytest
 
 from news_recap.ingestion.cleaning import canonicalize_url, extract_domain, url_hash
 from news_recap.ingestion.models import (
+    ClusterMember,
+    DedupCluster,
     IngestionRunCounters,
     NormalizedArticle,
     RunStatus,
@@ -480,4 +482,139 @@ def test_processing_snapshot_state_is_persisted_and_can_be_advanced(tmp_path: Pa
         is False
     )
 
+    repo.close()
+
+
+def test_prune_articles_removes_old_content_and_related_rows(tmp_path: Path) -> None:
+    repo = SQLiteRepository(tmp_path / "retention-prune.db")
+    repo.init_schema()
+    run_id = repo.start_run(source="rss")
+
+    now = datetime.now(tz=UTC)
+    old_published_at = now - timedelta(days=45)
+    fresh_published_at = now - timedelta(days=2)
+
+    old_inserted = repo.upsert_article(
+        article=_article(
+            external_id="old-ext",
+            text="old text",
+            title="Old title",
+            published_at=old_published_at,
+        ),
+        run_id=run_id,
+    )
+    fresh_inserted = repo.upsert_article(
+        article=_article(
+            external_id="fresh-ext",
+            text="fresh text",
+            title="Fresh title",
+            published_at=fresh_published_at,
+        ),
+        run_id=run_id,
+    )
+
+    repo.upsert_raw_article(
+        source_name="inoreader",
+        external_id="old-ext",
+        raw_payload={"id": "old-ext"},
+    )
+    repo.upsert_raw_article(
+        source_name="inoreader",
+        external_id="fresh-ext",
+        raw_payload={"id": "fresh-ext"},
+    )
+    repo._connection.execute(
+        "UPDATE articles_raw SET first_seen_at = ? WHERE source_name = ? AND external_id = ?",
+        (old_published_at.isoformat(), "inoreader", "old-ext"),
+    )
+    repo._connection.commit()
+
+    repo.save_dedup_clusters(
+        run_id=run_id,
+        model_name="hashing-test",
+        threshold=0.95,
+        clusters=[
+            DedupCluster(
+                cluster_id="cluster:old",
+                representative_article_id=old_inserted.article_id,
+                alt_sources=[],
+                members=[
+                    ClusterMember(
+                        article_id=old_inserted.article_id,
+                        similarity_to_representative=1.0,
+                        is_representative=True,
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    result = repo.prune_articles(cutoff=now - timedelta(days=30))
+    assert result.articles_deleted == 1
+    assert result.raw_payloads_deleted == 1
+
+    article_count = repo._connection.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
+    assert article_count is not None
+    assert int(article_count["cnt"]) == 1
+
+    remaining_article = repo._connection.execute(
+        "SELECT article_id, external_id FROM articles LIMIT 1"
+    ).fetchone()
+    assert remaining_article is not None
+    assert remaining_article["article_id"] == fresh_inserted.article_id
+    assert remaining_article["external_id"] == "fresh-ext"
+
+    dedup_cluster_count = repo._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM dedup_clusters"
+    ).fetchone()
+    assert dedup_cluster_count is not None
+    assert int(dedup_cluster_count["cnt"]) == 0
+
+    dedup_member_count = repo._connection.execute(
+        "SELECT COUNT(*) AS cnt FROM article_dedup"
+    ).fetchone()
+    assert dedup_member_count is not None
+    assert int(dedup_member_count["cnt"]) == 0
+
+    raw_count = repo._connection.execute("SELECT COUNT(*) AS cnt FROM articles_raw").fetchone()
+    assert raw_count is not None
+    assert int(raw_count["cnt"]) == 1
+    repo.close()
+
+
+def test_prune_articles_keeps_raw_when_article_is_recent_even_if_raw_is_old(tmp_path: Path) -> None:
+    repo = SQLiteRepository(tmp_path / "retention-raw-kept.db")
+    repo.init_schema()
+    run_id = repo.start_run(source="rss")
+
+    now = datetime.now(tz=UTC)
+    fresh_published_at = now - timedelta(days=2)
+
+    repo.upsert_article(
+        article=_article(
+            external_id="fresh-ext",
+            text="fresh text",
+            title="Fresh title",
+            published_at=fresh_published_at,
+        ),
+        run_id=run_id,
+    )
+    repo.upsert_raw_article(
+        source_name="inoreader",
+        external_id="fresh-ext",
+        raw_payload={"id": "fresh-ext"},
+    )
+    repo._connection.execute(
+        "UPDATE articles_raw SET first_seen_at = ? WHERE source_name = ? AND external_id = ?",
+        ((now - timedelta(days=90)).isoformat(), "inoreader", "fresh-ext"),
+    )
+    repo._connection.commit()
+
+    result = repo.prune_articles(cutoff=now - timedelta(days=30))
+    assert result.articles_deleted == 0
+    assert result.raw_payloads_deleted == 0
+
+    row = repo._connection.execute("SELECT COUNT(*) AS cnt FROM articles_raw").fetchone()
+    assert row is not None
+    assert int(row["cnt"]) == 1
     repo.close()

@@ -221,3 +221,13 @@ class ClusterListResult:
     total_clusters: int
     total_articles: int
     clusters: list[ClusterPreview]
+
+
+@dataclass(slots=True)
+class RetentionPruneResult:
+    """Result of retention cleanup for article-related records."""
+
+    cutoff: datetime
+    dry_run: bool
+    articles_deleted: int
+    raw_payloads_deleted: int

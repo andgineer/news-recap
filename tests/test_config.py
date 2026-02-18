@@ -63,6 +63,16 @@ def test_validate_for_rss_rejects_non_positive_active_run_stale_after_seconds() 
         settings.validate_for_rss()
 
 
+def test_validate_for_rss_rejects_negative_article_retention_days() -> None:
+    settings = Settings(
+        ingestion=IngestionSettings(article_retention_days=-1),
+        rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
+    )
+
+    with pytest.raises(ValueError, match="ARTICLE_RETENTION_DAYS"):
+        settings.validate_for_rss()
+
+
 def test_from_env_parses_per_feed_items(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "NEWS_RECAP_RSS_FEED_URLS", "https://a.example/feed.xml,https://b.example/feed.xml"
@@ -84,3 +94,9 @@ def test_from_env_parses_per_feed_items(monkeypatch: pytest.MonkeyPatch) -> None
     environ.pop("NEWS_RECAP_RSS_FEED_URLS", None)
     environ.pop("NEWS_RECAP_RSS_FEED_ITEMS", None)
     environ.pop("NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED", None)
+
+
+def test_from_env_parses_article_retention_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NEWS_RECAP_ARTICLE_RETENTION_DAYS", "14")
+    settings = Settings.from_env()
+    assert settings.ingestion.article_retention_days == 14

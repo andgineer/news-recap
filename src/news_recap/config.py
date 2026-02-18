@@ -17,6 +17,7 @@ class IngestionSettings:
     active_run_stale_after_seconds: int = 1_800
     backfill_max_gaps: int = 10
     clean_text_max_chars: int = 12_000
+    article_retention_days: int = 30
 
 
 @dataclass(slots=True)
@@ -86,6 +87,7 @@ class Settings:
                 ),
                 backfill_max_gaps=int(os.getenv("NEWS_RECAP_BACKFILL_MAX_GAPS", "10")),
                 clean_text_max_chars=int(os.getenv("NEWS_RECAP_CLEAN_TEXT_MAX_CHARS", "12000")),
+                article_retention_days=int(os.getenv("NEWS_RECAP_ARTICLE_RETENTION_DAYS", "30")),
             ),
             dedup=DedupSettings(
                 threshold=float(os.getenv("NEWS_RECAP_DEDUP_THRESHOLD", "0.95")),
@@ -128,6 +130,8 @@ class Settings:
 
         if self.ingestion.active_run_stale_after_seconds <= 0:
             raise ValueError("NEWS_RECAP_ACTIVE_RUN_STALE_AFTER_SECONDS must be > 0.")
+        if self.ingestion.article_retention_days < 0:
+            raise ValueError("NEWS_RECAP_ARTICLE_RETENTION_DAYS must be >= 0.")
 
         effective_feed_urls = _normalize_feed_urls(override_feed_urls or self.rss.feed_urls)
         if not effective_feed_urls:

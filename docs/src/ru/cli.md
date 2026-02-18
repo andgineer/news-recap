@@ -62,6 +62,23 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 news-recap ingest duplicates --run-id <run_id>
 ```
 
+## Очистка по retention
+
+Удалить старые статьи по `published_at`:
+
+```bash
+news-recap ingest prune --days 30
+```
+
+Режим dry-run (без изменений в БД):
+
+```bash
+news-recap ingest prune --days 30 --dry-run
+```
+
+Автоочистка также запускается после `news-recap ingest daily`, если
+`NEWS_RECAP_ARTICLE_RETENTION_DAYS > 0`.
+
 ## Полезные переменные окружения
 
 - `NEWS_RECAP_DB_PATH`
@@ -69,6 +86,7 @@ news-recap ingest duplicates --run-id <run_id>
 - `NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED`
 - `NEWS_RECAP_RSS_FEED_ITEMS` (`<feed_url>|<items>,...`)
 - `NEWS_RECAP_DEDUP_MODEL_NAME`
+- `NEWS_RECAP_ARTICLE_RETENTION_DAYS`
 
 ## Help
 
@@ -79,4 +97,5 @@ news-recap ingest daily --help
 news-recap ingest stats --help
 news-recap ingest clusters --help
 news-recap ingest duplicates --help
+news-recap ingest prune --help
 ```

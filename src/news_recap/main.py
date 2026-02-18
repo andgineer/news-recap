@@ -10,6 +10,7 @@ from news_recap.ingestion.controllers import (
     IngestionCliController,
     IngestionClustersCommand,
     IngestionDuplicatesCommand,
+    IngestionPruneCommand,
     IngestionStatsCommand,
 )
 
@@ -208,6 +209,41 @@ def ingest_duplicates(  # noqa: PLR0913
                 hours=hours,
                 limit_clusters=limit_clusters,
                 members_per_cluster=members_per_cluster,
+            ),
+        ),
+    )
+
+
+@ingest.command("prune")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--days",
+    type=click.IntRange(min=0),
+    default=None,
+    help=(
+        "Delete articles older than this many days by published_at. "
+        "Defaults to NEWS_RECAP_ARTICLE_RETENTION_DAYS."
+    ),
+)
+@click.option(
+    "--dry-run/--no-dry-run",
+    default=False,
+    show_default=True,
+    help="Show deletion counts without modifying the database.",
+)
+def ingest_prune(
+    db_path: Path | None,
+    days: int | None,
+    dry_run: bool,
+) -> None:
+    """Delete old articles according to retention policy."""
+
+    _emit_lines(
+        INGESTION_CONTROLLER.prune(
+            IngestionPruneCommand(
+                db_path=db_path,
+                days=days,
+                dry_run=dry_run,
             ),
         ),
     )

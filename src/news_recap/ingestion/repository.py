@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import event, or_
+from sqlalchemy import event, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, create_engine, delete, select
 
@@ -27,6 +27,7 @@ from news_recap.ingestion.models import (
     IngestionRunView,
     IngestionWindowStats,
     NormalizedArticle,
+    RetentionPruneResult,
     RunStatus,
     UpsertAction,
     UpsertResult,
@@ -431,6 +432,69 @@ class SQLiteRepository:
                     ),
                 )
                 session.commit()
+
+    def prune_articles(
+        self,
+        *,
+        cutoff: datetime,
+        dry_run: bool = False,
+    ) -> RetentionPruneResult:
+        cutoff_db = _to_db_datetime(cutoff)
+        raw_matches_deleted_article = (
+            select(1)
+            .where(
+                col(Article.user_id) == col(ArticleRaw.user_id),
+                col(Article.source_name) == col(ArticleRaw.source_name),
+                col(Article.external_id) == col(ArticleRaw.external_id),
+                col(Article.published_at) < cutoff_db,
+            )
+            .exists()
+        )
+        with Session(self.engine) as session:
+            articles_deleted = int(
+                session.exec(
+                    select(func.count())
+                    .select_from(Article)
+                    .where(
+                        Article.user_id == self.user_id,
+                        Article.published_at < cutoff_db,
+                    ),
+                ).one(),
+            )
+            raw_payloads_deleted = int(
+                session.exec(
+                    select(func.count())
+                    .select_from(ArticleRaw)
+                    .where(
+                        ArticleRaw.user_id == self.user_id,
+                        raw_matches_deleted_article,
+                    ),
+                ).one(),
+            )
+
+            if not dry_run:
+                if raw_payloads_deleted > 0:
+                    session.exec(
+                        delete(ArticleRaw).where(
+                            col(ArticleRaw.user_id) == self.user_id,
+                            raw_matches_deleted_article,
+                        ),
+                    )
+                if articles_deleted > 0:
+                    session.exec(
+                        delete(Article).where(
+                            col(Article.user_id) == self.user_id,
+                            col(Article.published_at) < cutoff_db,
+                        ),
+                    )
+                session.commit()
+
+            return RetentionPruneResult(
+                cutoff=_to_utc_aware_datetime(cutoff_db),
+                dry_run=dry_run,
+                articles_deleted=articles_deleted,
+                raw_payloads_deleted=raw_payloads_deleted,
+            )
 
     def upsert_article(self, article: NormalizedArticle, run_id: str) -> UpsertResult:
         with Session(self.engine) as session:
