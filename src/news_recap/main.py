@@ -17,12 +17,15 @@ from news_recap.ingestion.controllers import (
 )
 from news_recap.orchestrator.controllers import (
     LlmBenchmarkCommand,
+    LlmCostCommand,
     LlmEnqueueCommand,
+    LlmFailuresCommand,
     LlmInspectTaskCommand,
     LlmListTasksCommand,
     LlmMutateTaskCommand,
     LlmSmokeCommand,
     LlmStatsCommand,
+    LlmUsageCommand,
     LlmWorkerCommand,
     OrchestratorCliController,
 )
@@ -442,6 +445,121 @@ def llm_stats(db_path: Path | None, hours: int) -> None:
             LlmStatsCommand(
                 db_path=db_path,
                 hours=hours,
+            ),
+        ),
+    )
+
+
+@llm.command("failures")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--hours",
+    type=click.IntRange(min=1, max=24 * 30),
+    default=24,
+    show_default=True,
+    help="Rolling window for failed attempt listing.",
+)
+@click.option("--task-type", default=None, help="Optional task type filter.")
+@click.option(
+    "--agent",
+    type=click.Choice(["claude", "codex", "gemini"], case_sensitive=False),
+    default=None,
+    help="Optional agent filter.",
+)
+@click.option("--model", default=None, help="Optional model filter.")
+@click.option(
+    "--failure-class",
+    type=click.Choice(
+        [
+            "timeout",
+            "backend_transient",
+            "backend_non_retryable",
+            "billing_or_quota",
+            "access_or_auth",
+            "model_not_available",
+            "output_invalid_json",
+            "source_mapping_failed",
+            "input_contract_error",
+        ],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Optional normalized failure class filter.",
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1, max=500),
+    default=50,
+    show_default=True,
+    help="Max failed attempts to print.",
+)
+def llm_failures(  # noqa: PLR0913
+    db_path: Path | None,
+    hours: int,
+    task_type: str | None,
+    agent: str | None,
+    model: str | None,
+    failure_class: str | None,
+    limit: int,
+) -> None:
+    """List failed attempts with failure diagnostics."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.failures(
+            LlmFailuresCommand(
+                db_path=db_path,
+                hours=hours,
+                task_type=task_type,
+                agent=agent.lower() if agent is not None else None,
+                model=model,
+                failure_class=failure_class.lower() if failure_class is not None else None,
+                limit=limit,
+            ),
+        ),
+    )
+
+
+@llm.command("usage")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option("--task-id", required=True, help="Task id.")
+def llm_usage(db_path: Path | None, task_id: str) -> None:
+    """Show per-attempt token usage and estimated cost for one task."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.usage(
+            LlmUsageCommand(
+                db_path=db_path,
+                task_id=task_id,
+            ),
+        ),
+    )
+
+
+@llm.command("cost")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--hours",
+    type=click.IntRange(min=1, max=24 * 30),
+    default=24,
+    show_default=True,
+    help="Rolling window for grouped cost report.",
+)
+@click.option(
+    "--group-by",
+    type=click.Choice(["agent", "model", "task_type"], case_sensitive=False),
+    default="model",
+    show_default=True,
+    help="Grouping dimension for aggregated cost report.",
+)
+def llm_cost(db_path: Path | None, hours: int, group_by: str) -> None:
+    """Show grouped token/cost usage summary for recent attempts."""
+
+    _emit_lines(
+        ORCHESTRATOR_CONTROLLER.cost(
+            LlmCostCommand(
+                db_path=db_path,
+                hours=hours,
+                group_by=group_by.lower(),
             ),
         ),
     )

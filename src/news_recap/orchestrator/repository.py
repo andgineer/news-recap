@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import and_, event, or_
+from sqlalchemy import and_, event, func, or_
 from sqlalchemy import update as sa_update
 from sqlmodel import Session, col, create_engine, delete, select
 
@@ -22,6 +22,7 @@ from news_recap.ingestion.storage.sqlmodel_models import (
     DailyStorySnapshot,
     LlmTask,
     LlmTaskArtifact,
+    LlmTaskAttempt,
     LlmTaskEvent,
     MonitorQuestion,
     OutputCitationSnapshot,
@@ -37,7 +38,11 @@ from news_recap.orchestrator.models import (
     DailyStorySnapshotView,
     DailyStorySnapshotWrite,
     FailureClass,
+    LlmCostAggregateView,
     LlmTaskArtifactWrite,
+    LlmTaskAttemptFinish,
+    LlmTaskAttemptStart,
+    LlmTaskAttemptView,
     LlmTaskCreate,
     LlmTaskDetails,
     LlmTaskEventView,
@@ -721,6 +726,231 @@ class OrchestratorRepository:
             )
             session.add(row)
             session.commit()
+
+    def upsert_task_attempt_start(self, payload: LlmTaskAttemptStart) -> None:
+        """Create or refresh running attempt telemetry row."""
+
+        now = utc_now()
+        with Session(self.engine) as session:
+            row = session.exec(
+                select(LlmTaskAttempt).where(
+                    col(LlmTaskAttempt.user_id) == self.user_id,
+                    col(LlmTaskAttempt.task_id) == payload.task_id,
+                    col(LlmTaskAttempt.attempt_no) == payload.attempt_no,
+                ),
+            ).one_or_none()
+            if row is None:
+                row = LlmTaskAttempt(
+                    task_id=payload.task_id,
+                    user_id=self.user_id,
+                    attempt_no=payload.attempt_no,
+                    task_type=payload.task_type,
+                    status=payload.status,
+                    started_at=_to_db_datetime(payload.started_at),
+                    finished_at=None,
+                    duration_ms=None,
+                    worker_id=payload.worker_id,
+                    agent=payload.agent,
+                    model=payload.model,
+                    profile=payload.profile,
+                    command_template_hash=payload.command_template_hash,
+                    timed_out=False,
+                    created_at=now,
+                )
+            else:
+                row.task_type = payload.task_type
+                row.status = payload.status
+                row.started_at = _to_db_datetime(payload.started_at)
+                row.finished_at = None
+                row.duration_ms = None
+                row.worker_id = payload.worker_id
+                row.agent = payload.agent
+                row.model = payload.model
+                row.profile = payload.profile
+                row.command_template_hash = payload.command_template_hash
+                row.timed_out = False
+            session.add(row)
+            session.commit()
+
+    def finalize_task_attempt(self, payload: LlmTaskAttemptFinish) -> None:
+        """Finalize telemetry row for one attempt."""
+
+        with Session(self.engine) as session:
+            row = session.exec(
+                select(LlmTaskAttempt).where(
+                    col(LlmTaskAttempt.user_id) == self.user_id,
+                    col(LlmTaskAttempt.task_id) == payload.task_id,
+                    col(LlmTaskAttempt.attempt_no) == payload.attempt_no,
+                ),
+            ).one_or_none()
+            if row is None:
+                task = session.exec(
+                    select(LlmTask).where(
+                        col(LlmTask.user_id) == self.user_id,
+                        col(LlmTask.task_id) == payload.task_id,
+                    ),
+                ).one_or_none()
+                if task is None:
+                    raise RuntimeError(f"Task not found: {payload.task_id}")
+                row = LlmTaskAttempt(
+                    task_id=payload.task_id,
+                    user_id=self.user_id,
+                    attempt_no=payload.attempt_no,
+                    task_type=task.task_type,
+                    status=payload.status,
+                    started_at=_to_db_datetime(payload.finished_at),
+                    created_at=utc_now(),
+                )
+
+            finished_at_db = _to_db_datetime(payload.finished_at)
+            started_utc = _to_utc_aware_datetime(row.started_at)
+            duration_ms = max(
+                0,
+                int(
+                    (_to_utc_aware_datetime(payload.finished_at) - started_utc).total_seconds()
+                    * 1000,
+                ),
+            )
+
+            row.status = payload.status
+            row.finished_at = finished_at_db
+            row.duration_ms = duration_ms
+            row.exit_code = payload.exit_code
+            row.timed_out = payload.timed_out
+            row.failure_class = (
+                payload.failure_class.value if payload.failure_class is not None else None
+            )
+            row.attempt_failure_code = payload.attempt_failure_code
+            row.error_summary_sanitized = payload.error_summary_sanitized
+            row.stdout_preview_sanitized = payload.stdout_preview_sanitized
+            row.stderr_preview_sanitized = payload.stderr_preview_sanitized
+            row.output_chars = payload.output_chars
+            row.prompt_tokens = payload.prompt_tokens
+            row.completion_tokens = payload.completion_tokens
+            row.total_tokens = payload.total_tokens
+            row.usage_status = payload.usage_status
+            row.usage_source = payload.usage_source
+            row.usage_parser_version = payload.usage_parser_version
+            row.estimated_cost_usd = payload.estimated_cost_usd
+            session.add(row)
+            session.commit()
+
+    def list_task_attempts(self, *, task_id: str) -> list[LlmTaskAttemptView]:
+        """List attempts for one task ordered by attempt number."""
+
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(LlmTaskAttempt)
+                .where(
+                    col(LlmTaskAttempt.user_id) == self.user_id,
+                    col(LlmTaskAttempt.task_id) == task_id,
+                )
+                .order_by(col(LlmTaskAttempt.attempt_no).asc()),
+            ).all()
+        return [_to_task_attempt_view(row) for row in rows]
+
+    def list_attempt_failures(  # noqa: PLR0913
+        self,
+        *,
+        since: datetime,
+        task_type: str | None = None,
+        agent: str | None = None,
+        model: str | None = None,
+        failure_class: FailureClass | None = None,
+        limit: int = 50,
+    ) -> list[LlmTaskAttemptView]:
+        """List failed attempts with deterministic ordering and filters."""
+
+        with Session(self.engine) as session:
+            statement = (
+                select(LlmTaskAttempt)
+                .where(
+                    col(LlmTaskAttempt.user_id) == self.user_id,
+                    col(LlmTaskAttempt.created_at) >= _to_db_datetime(since),
+                    col(LlmTaskAttempt.status).in_(("failed", "timeout")),
+                )
+                .order_by(
+                    func.coalesce(  # type: ignore[arg-type]
+                        col(LlmTaskAttempt.finished_at),
+                        col(LlmTaskAttempt.started_at),
+                        col(LlmTaskAttempt.created_at),
+                    ).desc(),
+                    col(LlmTaskAttempt.task_id).asc(),
+                    col(LlmTaskAttempt.attempt_no).desc(),
+                )
+                .limit(max(1, limit))
+            )
+            if task_type is not None:
+                statement = statement.where(col(LlmTaskAttempt.task_type) == task_type)
+            if agent is not None:
+                statement = statement.where(col(LlmTaskAttempt.agent) == agent)
+            if model is not None:
+                statement = statement.where(col(LlmTaskAttempt.model) == model)
+            if failure_class is not None:
+                statement = statement.where(
+                    col(LlmTaskAttempt.failure_class) == failure_class.value,
+                )
+            rows = session.exec(statement).all()
+        return [_to_task_attempt_view(row) for row in rows]
+
+    def aggregate_attempt_costs(
+        self,
+        *,
+        since: datetime,
+        group_by: str,
+    ) -> list[LlmCostAggregateView]:
+        """Aggregate attempt usage/cost metrics."""
+
+        attempts = self._list_attempts_for_window(since=since)
+        grouped: dict[str, LlmCostAggregateView] = {}
+
+        for attempt in attempts:
+            if group_by == "agent":
+                group_key = attempt.agent or "-"
+            elif group_by == "task_type":
+                group_key = attempt.task_type
+            else:
+                group_key = attempt.model or "-"
+
+            bucket = grouped.setdefault(
+                group_key,
+                LlmCostAggregateView(
+                    group_key=group_key,
+                    attempts=0,
+                    succeeded=0,
+                    failed=0,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    estimated_cost_usd=0.0,
+                    unknown_usage=0,
+                ),
+            )
+            bucket.attempts += 1
+            if attempt.status == "succeeded":
+                bucket.succeeded += 1
+            if attempt.status in {"failed", "timeout"}:
+                bucket.failed += 1
+            bucket.prompt_tokens += int(attempt.prompt_tokens or 0)
+            bucket.completion_tokens += int(attempt.completion_tokens or 0)
+            bucket.total_tokens += int(attempt.total_tokens or 0)
+            bucket.estimated_cost_usd += float(attempt.estimated_cost_usd or 0.0)
+            if attempt.usage_status != "reported":
+                bucket.unknown_usage += 1
+
+        return sorted(grouped.values(), key=lambda item: item.group_key)
+
+    def _list_attempts_for_window(self, *, since: datetime) -> list[LlmTaskAttemptView]:
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(LlmTaskAttempt)
+                .where(
+                    col(LlmTaskAttempt.user_id) == self.user_id,
+                    col(LlmTaskAttempt.created_at) >= _to_db_datetime(since),
+                )
+                .order_by(col(LlmTaskAttempt.created_at).desc()),
+            ).all()
+        return [_to_task_attempt_view(row) for row in rows]
 
     def list_user_retrieval_articles(
         self,
@@ -1627,6 +1857,49 @@ def _to_task_event_view(row: LlmTaskEvent) -> LlmTaskEventView:
         status_to=LlmTaskStatus(row.status_to) if row.status_to is not None else None,
         created_at=_to_utc_aware_datetime(row.created_at),
         details=details,
+    )
+
+
+def _to_task_attempt_view(row: LlmTaskAttempt) -> LlmTaskAttemptView:
+    failure_class: FailureClass | None = None
+    if row.failure_class is not None:
+        try:
+            failure_class = FailureClass(row.failure_class)
+        except ValueError:
+            failure_class = None
+    return LlmTaskAttemptView(
+        attempt_id=row.attempt_id or 0,
+        task_id=row.task_id,
+        user_id=row.user_id,
+        attempt_no=row.attempt_no,
+        task_type=row.task_type,
+        status=row.status,
+        started_at=_to_utc_aware_datetime(row.started_at),
+        finished_at=(
+            _to_utc_aware_datetime(row.finished_at) if row.finished_at is not None else None
+        ),
+        duration_ms=row.duration_ms,
+        worker_id=row.worker_id,
+        agent=row.agent,
+        model=row.model,
+        profile=row.profile,
+        command_template_hash=row.command_template_hash,
+        exit_code=row.exit_code,
+        timed_out=row.timed_out,
+        failure_class=failure_class,
+        attempt_failure_code=row.attempt_failure_code,
+        error_summary_sanitized=row.error_summary_sanitized,
+        stdout_preview_sanitized=row.stdout_preview_sanitized,
+        stderr_preview_sanitized=row.stderr_preview_sanitized,
+        output_chars=row.output_chars,
+        prompt_tokens=row.prompt_tokens,
+        completion_tokens=row.completion_tokens,
+        total_tokens=row.total_tokens,
+        usage_status=row.usage_status,
+        usage_source=row.usage_source,
+        usage_parser_version=row.usage_parser_version,
+        estimated_cost_usd=row.estimated_cost_usd,
+        created_at=_to_utc_aware_datetime(row.created_at),
     )
 
 

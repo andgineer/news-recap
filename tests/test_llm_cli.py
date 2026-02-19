@@ -126,6 +126,50 @@ def test_llm_cli_enqueue_worker_and_inspect(tmp_path: Path, monkeypatch) -> None
     assert inspect.exit_code == 0
     assert "Status: succeeded" in inspect.output
 
+    usage = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "usage",
+            "--db-path",
+            str(db_path),
+            "--task-id",
+            task_id,
+        ],
+    )
+    assert usage.exit_code == 0
+    assert "Attempts telemetry: 1" in usage.output
+
+    failures = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "failures",
+            "--db-path",
+            str(db_path),
+            "--hours",
+            "24",
+        ],
+    )
+    assert failures.exit_code == 0
+    assert "Failed attempts:" in failures.output
+
+    cost = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "cost",
+            "--db-path",
+            str(db_path),
+            "--hours",
+            "24",
+            "--group-by",
+            "model",
+        ],
+    )
+    assert cost.exit_code == 0
+    assert "Cost summary:" in cost.output
+
 
 def test_llm_cli_stats_reports_queue_and_validation_metrics(
     tmp_path: Path,

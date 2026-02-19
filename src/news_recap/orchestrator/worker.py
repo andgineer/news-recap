@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import random
 import time
 from dataclasses import dataclass
@@ -20,16 +22,24 @@ from news_recap.orchestrator.contracts import (
     read_articles_index,
     read_manifest,
     read_task_input,
+    write_agent_output,
 )
 from news_recap.orchestrator.failure_classifier import classify_backend_failure
 from news_recap.orchestrator.models import (
     FailureClass,
+    LlmTaskAttemptFinish,
+    LlmTaskAttemptStart,
     LlmTaskStatus,
     LlmTaskView,
     OutputCitationSnapshotWrite,
     UserOutputBlockWrite,
     UserOutputUpsert,
 )
+from news_recap.orchestrator.output_fallback import (
+    STDOUT_PARSER_VERSION,
+    recover_output_contract_from_stdout,
+)
+from news_recap.orchestrator.pricing import estimate_cost_usd
 from news_recap.orchestrator.repair import decide_repair
 from news_recap.orchestrator.repository import OrchestratorRepository
 from news_recap.orchestrator.routing import (
@@ -37,6 +47,8 @@ from news_recap.orchestrator.routing import (
     RoutingDefaults,
     resolve_routing_for_execution,
 )
+from news_recap.orchestrator.sanitization import sanitize_preview
+from news_recap.orchestrator.usage import extract_usage
 from news_recap.orchestrator.validator import validate_output_contract
 
 
@@ -94,12 +106,37 @@ class OrchestratorWorker:
             return summary
 
         summary.processed = 1
+        attempt_started_at = task.started_at or utc_now()
+        self.repository.upsert_task_attempt_start(
+            LlmTaskAttemptStart(
+                task_id=task.task_id,
+                attempt_no=task.attempt,
+                task_type=task.task_type,
+                status=LlmTaskStatus.RUNNING.value,
+                started_at=attempt_started_at,
+                worker_id=self.worker_id,
+                agent="unknown",
+                model="unknown",
+                profile="unknown",
+                command_template_hash=None,
+            ),
+        )
         manifest_path = Path(task.input_manifest_path)
         try:
             manifest = read_manifest(manifest_path)
             task_input = read_task_input(Path(manifest.task_input_path))
             article_entries = read_articles_index(Path(manifest.articles_index_path))
         except Exception as error:  # noqa: BLE001
+            self._finalize_attempt(
+                task=task,
+                status=LlmTaskStatus.FAILED,
+                failure_class=FailureClass.INPUT_CONTRACT_ERROR,
+                attempt_failure_code="input_manifest_invalid",
+                error_summary=f"Input contract error: {error}",
+                execution=None,
+                routing=None,
+                output_path=None,
+            )
             failed = self.repository.fail_task(
                 task_id=task.task_id,
                 status=LlmTaskStatus.FAILED,
@@ -117,6 +154,16 @@ class OrchestratorWorker:
             task_input_metadata=task_input.metadata,
         )
         if artifact_error is not None:
+            self._finalize_attempt(
+                task=task,
+                status=LlmTaskStatus.FAILED,
+                failure_class=FailureClass.INPUT_CONTRACT_ERROR,
+                attempt_failure_code="input_required_artifact_missing",
+                error_summary=artifact_error,
+                execution=None,
+                routing=None,
+                output_path=Path(manifest.output_result_path),
+            )
             failed = self.repository.fail_task(
                 task_id=task.task_id,
                 status=LlmTaskStatus.FAILED,
@@ -133,6 +180,20 @@ class OrchestratorWorker:
             task_input=task_input,
             task_type=task.task_type,
             defaults=self.routing_defaults,
+        )
+        self.repository.upsert_task_attempt_start(
+            LlmTaskAttemptStart(
+                task_id=task.task_id,
+                attempt_no=task.attempt,
+                task_type=task.task_type,
+                status=LlmTaskStatus.RUNNING.value,
+                started_at=attempt_started_at,
+                worker_id=self.worker_id,
+                agent=routing.agent,
+                model=routing.model,
+                profile=routing.profile,
+                command_template_hash=_command_template_hash(routing.command_template),
+            ),
         )
         if fallback_reason is not None:
             self.repository.add_task_event(
@@ -165,6 +226,16 @@ class OrchestratorWorker:
                 "resolved_model": routing.model,
                 "resolved_profile": routing.profile,
             }
+            self._finalize_attempt(
+                task=task,
+                status=LlmTaskStatus.FAILED,
+                failure_class=failure_class,
+                attempt_failure_code=f"{routing.agent}_backend_run_error",
+                error_summary=str(error),
+                execution=None,
+                routing=routing,
+                output_path=Path(manifest.output_result_path),
+            )
             if failure_class == FailureClass.BACKEND_TRANSIENT:
                 outcome = self._handle_retry_or_fail(
                     task_id=task.task_id,
@@ -195,6 +266,16 @@ class OrchestratorWorker:
                 summary.failed = 1
             return summary
         if execution.timed_out:
+            self._finalize_attempt(
+                task=task,
+                status=LlmTaskStatus.TIMEOUT,
+                failure_class=FailureClass.TIMEOUT,
+                attempt_failure_code="process_timeout",
+                error_summary="Task timed out.",
+                execution=execution,
+                routing=routing,
+                output_path=Path(manifest.output_result_path),
+            )
             timeout_seconds = min(int(task.timeout_seconds * 1.5), self.timeout_retry_cap_seconds)
             outcome = self._handle_retry_or_fail(
                 task_id=task.task_id,
@@ -214,8 +295,8 @@ class OrchestratorWorker:
             return summary
 
         if execution.exit_code != 0:
-            stdout_preview = self._read_preview(execution.stdout_path)
-            stderr_preview = self._read_preview(execution.stderr_path)
+            stdout_preview = sanitize_preview(self._read_preview(execution.stdout_path))
+            stderr_preview = sanitize_preview(self._read_preview(execution.stderr_path))
             classification = classify_backend_failure(
                 agent=routing.agent,
                 exit_code=execution.exit_code,
@@ -230,6 +311,18 @@ class OrchestratorWorker:
             failure_details["resolved_profile"] = routing.profile
             failure_details["stdout_preview"] = stdout_preview
             failure_details["stderr_preview"] = stderr_preview
+            self._finalize_attempt(
+                task=task,
+                status=LlmTaskStatus.FAILED,
+                failure_class=classification.failure_class,
+                attempt_failure_code=classification.reason_code,
+                error_summary=(
+                    f"{classification.reason_code}: backend exited with code {execution.exit_code}."
+                ),
+                execution=execution,
+                routing=routing,
+                output_path=Path(manifest.output_result_path),
+            )
             if classification.failure_class == FailureClass.BACKEND_TRANSIENT:
                 outcome = self._handle_retry_or_fail(
                     task_id=task.task_id,
@@ -286,6 +379,16 @@ class OrchestratorWorker:
                     validation_payload=validation.payload,
                 )
             except Exception as error:  # noqa: BLE001
+                self._finalize_attempt(
+                    task=task,
+                    status=LlmTaskStatus.FAILED,
+                    failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                    attempt_failure_code="citation_snapshot_persist_failed",
+                    error_summary=f"Citation snapshot persist failed: {error}",
+                    execution=execution,
+                    routing=routing,
+                    output_path=Path(manifest.output_result_path),
+                )
                 failed = self.repository.fail_task(
                     task_id=task.task_id,
                     status=LlmTaskStatus.FAILED,
@@ -307,7 +410,28 @@ class OrchestratorWorker:
                 ),
             )
             if completed:
+                self._finalize_attempt(
+                    task=task,
+                    status=LlmTaskStatus.SUCCEEDED,
+                    failure_class=None,
+                    attempt_failure_code="completed",
+                    error_summary=None,
+                    execution=execution,
+                    routing=routing,
+                    output_path=Path(manifest.output_result_path),
+                )
                 summary.succeeded = 1
+            else:
+                self._finalize_attempt(
+                    task=task,
+                    status=LlmTaskStatus.CANCELED,
+                    failure_class=None,
+                    attempt_failure_code="state_transition_conflict",
+                    error_summary="Task state changed concurrently before completion.",
+                    execution=execution,
+                    routing=routing,
+                    output_path=Path(manifest.output_result_path),
+                )
             return summary
 
         self.repository.add_task_event(
@@ -320,7 +444,99 @@ class OrchestratorWorker:
                 "error_summary": validation.error_summary or "Unknown validation failure.",
             },
         )
+        if validation.failure_class == FailureClass.OUTPUT_INVALID_JSON:
+            parser_recovered = self._try_stdout_parser_recovery(
+                task_id=task.task_id,
+                output_path=Path(manifest.output_result_path),
+                stdout_path=execution.stdout_path,
+                allowed_source_ids=allowed_source_ids,
+            )
+            if parser_recovered:
+                recovered_validation = validate_output_contract(
+                    output_path=Path(manifest.output_result_path),
+                    allowed_source_ids=allowed_source_ids,
+                )
+                if recovered_validation.is_valid:
+                    self.repository.add_task_event(
+                        task_id=task.task_id,
+                        event_type="stdout_parser_recovered",
+                        status_from=LlmTaskStatus.RUNNING,
+                        status_to=LlmTaskStatus.RUNNING,
+                        details={"parser_version": STDOUT_PARSER_VERSION},
+                    )
+                    try:
+                        citations = self._build_output_citation_snapshots(
+                            article_entries=article_entries,
+                            validation_payload=recovered_validation.payload,
+                        )
+                    except Exception as error:  # noqa: BLE001
+                        self._finalize_attempt(
+                            task=task,
+                            status=LlmTaskStatus.FAILED,
+                            failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                            attempt_failure_code="citation_snapshot_persist_failed",
+                            error_summary=f"Citation snapshot persist failed: {error}",
+                            execution=execution,
+                            routing=routing,
+                            output_path=Path(manifest.output_result_path),
+                        )
+                        failed = self.repository.fail_task(
+                            task_id=task.task_id,
+                            status=LlmTaskStatus.FAILED,
+                            failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                            error_summary=f"Citation snapshot persist failed: {error}",
+                            last_exit_code=execution.exit_code,
+                        )
+                        if failed:
+                            summary.failed = 1
+                        return summary
+                    completed = self.repository.complete_task(
+                        task_id=task.task_id,
+                        output_path=manifest.output_result_path,
+                        citations=citations,
+                        user_output=_build_user_output_upsert(
+                            task_input_metadata=task_input.metadata,
+                            validation_payload=recovered_validation.payload,
+                            task_id=task.task_id,
+                        ),
+                    )
+                    if completed:
+                        self._finalize_attempt(
+                            task=task,
+                            status=LlmTaskStatus.SUCCEEDED,
+                            failure_class=None,
+                            attempt_failure_code="stdout_parser_recovered",
+                            error_summary=None,
+                            execution=execution,
+                            routing=routing,
+                            output_path=Path(manifest.output_result_path),
+                        )
+                        summary.succeeded = 1
+                    else:
+                        self._finalize_attempt(
+                            task=task,
+                            status=LlmTaskStatus.CANCELED,
+                            failure_class=None,
+                            attempt_failure_code="state_transition_conflict",
+                            error_summary="Task state changed concurrently before completion.",
+                            execution=execution,
+                            routing=routing,
+                            output_path=Path(manifest.output_result_path),
+                        )
+                    return summary
+                validation = recovered_validation
+
         if validation.failure_class is None or validation.error_summary is None:
+            self._finalize_attempt(
+                task=task,
+                status=LlmTaskStatus.FAILED,
+                failure_class=FailureClass.OUTPUT_INVALID_JSON,
+                attempt_failure_code="output_contract_unknown",
+                error_summary="Unknown validation failure.",
+                execution=execution,
+                routing=routing,
+                output_path=Path(manifest.output_result_path),
+            )
             failed = self.repository.fail_task(
                 task_id=task.task_id,
                 status=LlmTaskStatus.FAILED,
@@ -346,6 +562,7 @@ class OrchestratorWorker:
                     routing=routing,
                     repair_mode=True,
                 )
+                execution = repair_execution
                 if repair_execution.exit_code == 0 and not repair_execution.timed_out:
                     repaired = validate_output_contract(
                         output_path=Path(manifest.output_result_path),
@@ -358,6 +575,16 @@ class OrchestratorWorker:
                                 validation_payload=repaired.payload,
                             )
                         except Exception as error:  # noqa: BLE001
+                            self._finalize_attempt(
+                                task=task,
+                                status=LlmTaskStatus.FAILED,
+                                failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                                attempt_failure_code="citation_snapshot_persist_failed",
+                                error_summary=f"Citation snapshot persist failed: {error}",
+                                execution=repair_execution,
+                                routing=routing,
+                                output_path=Path(manifest.output_result_path),
+                            )
                             failed = self.repository.fail_task(
                                 task_id=task.task_id,
                                 status=LlmTaskStatus.FAILED,
@@ -379,9 +606,44 @@ class OrchestratorWorker:
                             ),
                         )
                         if completed:
+                            self._finalize_attempt(
+                                task=task,
+                                status=LlmTaskStatus.SUCCEEDED,
+                                failure_class=None,
+                                attempt_failure_code="repair_recovered",
+                                error_summary=None,
+                                execution=repair_execution,
+                                routing=routing,
+                                output_path=Path(manifest.output_result_path),
+                            )
                             summary.succeeded = 1
+                        else:
+                            self._finalize_attempt(
+                                task=task,
+                                status=LlmTaskStatus.CANCELED,
+                                failure_class=None,
+                                attempt_failure_code="state_transition_conflict",
+                                error_summary="Task state changed concurrently before completion.",
+                                execution=repair_execution,
+                                routing=routing,
+                                output_path=Path(manifest.output_result_path),
+                            )
                         return summary
 
+        attempt_failure_code = _attempt_failure_code_from_validation(
+            failure_class=validation.failure_class,
+            error_summary=validation.error_summary,
+        )
+        self._finalize_attempt(
+            task=task,
+            status=LlmTaskStatus.FAILED,
+            failure_class=validation.failure_class,
+            attempt_failure_code=attempt_failure_code,
+            error_summary=validation.error_summary,
+            execution=execution,
+            routing=routing,
+            output_path=Path(manifest.output_result_path),
+        )
         failed = self.repository.fail_task(
             task_id=task.task_id,
             status=LlmTaskStatus.FAILED,
@@ -437,6 +699,97 @@ class OrchestratorWorker:
         self._record_artifacts(task_id=task_id, execution=execution)
         return execution
 
+    def _try_stdout_parser_recovery(
+        self,
+        *,
+        task_id: str,
+        output_path: Path,
+        stdout_path: Path,
+        allowed_source_ids: set[str],
+    ) -> bool:
+        stdout_text = self._read_text(stdout_path)
+        recovered = recover_output_contract_from_stdout(
+            stdout_text=stdout_text,
+            allowed_source_ids=allowed_source_ids,
+        )
+        if recovered is None:
+            return False
+        write_agent_output(output_path, recovered)
+        self.repository.add_task_event(
+            task_id=task_id,
+            event_type="stdout_parser_applied",
+            status_from=LlmTaskStatus.RUNNING,
+            status_to=LlmTaskStatus.RUNNING,
+            details={
+                "parser_version": STDOUT_PARSER_VERSION,
+                "stdout_chars": len(stdout_text),
+            },
+        )
+        return True
+
+    def _finalize_attempt(  # noqa: PLR0913
+        self,
+        *,
+        task: LlmTaskView,
+        status: LlmTaskStatus,
+        failure_class: FailureClass | None,
+        attempt_failure_code: str | None,
+        error_summary: str | None,
+        execution: object | None,
+        routing: FrozenRouting | None,
+        output_path: Path | None,
+    ) -> None:
+        stdout_text = ""
+        stderr_text = ""
+        exit_code: int | None = None
+        timed_out = False
+        if execution is not None:
+            stdout_path = Path(getattr(execution, "stdout_path", ""))
+            stderr_path = Path(getattr(execution, "stderr_path", ""))
+            stdout_text = self._read_text(stdout_path)
+            stderr_text = self._read_text(stderr_path)
+            exit_code_raw = getattr(execution, "exit_code", None)
+            exit_code = int(exit_code_raw) if isinstance(exit_code_raw, int) else None
+            timed_out = bool(getattr(execution, "timed_out", False))
+
+        agent = routing.agent if routing is not None else "unknown"
+        model = routing.model if routing is not None else "unknown"
+        usage = extract_usage(agent=agent, stdout=stdout_text, stderr=stderr_text)
+        estimated_cost = estimate_cost_usd(
+            agent=agent,
+            model=model,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+        )
+
+        self.repository.finalize_task_attempt(
+            LlmTaskAttemptFinish(
+                task_id=task.task_id,
+                attempt_no=task.attempt,
+                status=status.value,
+                finished_at=utc_now(),
+                exit_code=exit_code,
+                timed_out=timed_out,
+                failure_class=failure_class,
+                attempt_failure_code=attempt_failure_code,
+                error_summary_sanitized=sanitize_preview(error_summary or ""),
+                stdout_preview_sanitized=sanitize_preview(stdout_text),
+                stderr_preview_sanitized=sanitize_preview(stderr_text),
+                output_chars=_output_chars(
+                    output_path=output_path,
+                    fallback_stdout=stdout_text,
+                ),
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                usage_status=usage.usage_status,
+                usage_source=usage.usage_source,
+                usage_parser_version=usage.parser_version,
+                estimated_cost_usd=estimated_cost,
+            ),
+        )
+
     def _record_artifacts(self, *, task_id: str, execution: object) -> None:
         stdout_path = getattr(execution, "stdout_path", None)
         stderr_path = getattr(execution, "stderr_path", None)
@@ -468,6 +821,11 @@ class OrchestratorWorker:
         if len(compact) <= limit:
             return compact
         return compact[:limit]
+
+    def _read_text(self, path: Path) -> str:
+        if not path.exists():
+            return ""
+        return path.read_text("utf-8", errors="replace")
 
     def _handle_retry_or_fail(  # noqa: PLR0913
         self,
@@ -547,6 +905,49 @@ def _failure_class_value(value: FailureClass | None) -> str:
     if value is None:
         return "unknown"
     return value.value
+
+
+def _command_template_hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()  # noqa: S324
+
+
+def _attempt_failure_code_from_validation(
+    *,
+    failure_class: FailureClass,
+    error_summary: str,
+) -> str:
+    if failure_class == FailureClass.SOURCE_MAPPING_FAILED:
+        return "source_mapping_violation"
+    if failure_class == FailureClass.OUTPUT_INVALID_JSON:
+        lowered = error_summary.lower()
+        if "not found" in lowered:
+            return "output_contract_missing_file"
+        if "json parse error" in lowered:
+            return "output_contract_unreadable"
+        return "output_contract_schema_invalid"
+    return "validation_failed"
+
+
+def _output_chars(*, output_path: Path | None, fallback_stdout: str) -> int:
+    if output_path is None or not output_path.exists():
+        return len(fallback_stdout)
+    try:
+        payload = json.loads(output_path.read_text("utf-8"))
+    except json.JSONDecodeError:
+        return len(fallback_stdout)
+    if not isinstance(payload, dict):
+        return len(fallback_stdout)
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, list):
+        return len(fallback_stdout)
+    total = 0
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        text = block.get("text")
+        if isinstance(text, str):
+            total += len(text)
+    return total
 
 
 def _parse_optional_datetime(value: str | None) -> datetime | None:

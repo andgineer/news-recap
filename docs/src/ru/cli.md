@@ -132,6 +132,37 @@ news-recap llm worker --loop --max-tasks 100
 news-recap llm stats --hours 24
 ```
 
+### `llm failures`
+Список неуспешных попыток с санитизированной диагностикой.
+
+```bash
+news-recap llm failures --hours 24
+news-recap llm failures --failure-class output_invalid_json --agent codex
+```
+
+Ключевые опции:
+- `--hours`
+- `--task-type`
+- `--agent`
+- `--model`
+- `--failure-class`
+- `--limit`
+
+### `llm usage`
+Показать per-attempt usage telemetry для одной задачи.
+
+```bash
+news-recap llm usage --task-id <task_id>
+```
+
+### `llm cost`
+Показать grouped token/cost summary за окно.
+
+```bash
+news-recap llm cost --hours 24 --group-by model
+news-recap llm cost --hours 24 --group-by agent
+```
+
 ### `llm benchmark`
 Детерминированный benchmark очереди с отчетом.
 
@@ -347,6 +378,7 @@ news-recap insights outputs --kind highlights --date 2026-02-18
 - `NEWS_RECAP_LLM_CODEX_MODEL_FAST` / `NEWS_RECAP_LLM_CODEX_MODEL_QUALITY`
 - `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` / `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY`
 - `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` / `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY`
+- `NEWS_RECAP_LLM_PRICING` (`agent:model:input_per_1m:output_per_1m`, через запятую)
 - `NEWS_RECAP_QA_LOOKBACK_DAYS`
 - `NEWS_RECAP_RETRIEVAL_TOP_K`
 - `NEWS_RECAP_RETRIEVAL_MAX_ARTICLES`

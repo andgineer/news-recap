@@ -106,6 +106,83 @@ class LlmTaskDetails:
 
 
 @dataclass(slots=True)
+class LlmTaskAttemptView:
+    """Per-attempt execution telemetry."""
+
+    attempt_id: int
+    task_id: str
+    user_id: str
+    attempt_no: int
+    task_type: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None
+    duration_ms: int | None
+    worker_id: str | None
+    agent: str | None
+    model: str | None
+    profile: str | None
+    command_template_hash: str | None
+    exit_code: int | None
+    timed_out: bool
+    failure_class: FailureClass | None
+    attempt_failure_code: str | None
+    error_summary_sanitized: str | None
+    stdout_preview_sanitized: str | None
+    stderr_preview_sanitized: str | None
+    output_chars: int | None
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+    usage_status: str | None
+    usage_source: str | None
+    usage_parser_version: str | None
+    estimated_cost_usd: float | None
+    created_at: datetime
+
+
+@dataclass(slots=True)
+class LlmTaskAttemptStart:
+    """Input to create/update running attempt row at execution start."""
+
+    task_id: str
+    attempt_no: int
+    task_type: str
+    status: str
+    started_at: datetime
+    worker_id: str | None
+    agent: str
+    model: str
+    profile: str
+    command_template_hash: str | None
+
+
+@dataclass(slots=True)
+class LlmTaskAttemptFinish:
+    """Input to finalize one attempt row."""
+
+    task_id: str
+    attempt_no: int
+    status: str
+    finished_at: datetime
+    exit_code: int | None
+    timed_out: bool
+    failure_class: FailureClass | None
+    attempt_failure_code: str | None
+    error_summary_sanitized: str | None
+    stdout_preview_sanitized: str | None
+    stderr_preview_sanitized: str | None
+    output_chars: int | None
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+    usage_status: str | None
+    usage_source: str | None
+    usage_parser_version: str | None
+    estimated_cost_usd: float | None
+
+
+@dataclass(slots=True)
 class SourceCorpusEntry:
     """User-scoped source entry resolved from shared articles via user link."""
 
@@ -308,3 +385,18 @@ class OutputFeedbackWrite:
     output_block_id: int | None = None
     value: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class LlmCostAggregateView:
+    """Grouped attempt usage/cost summary row."""
+
+    group_key: str
+    attempts: int
+    succeeded: int
+    failed: int
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    estimated_cost_usd: float
+    unknown_usage: int

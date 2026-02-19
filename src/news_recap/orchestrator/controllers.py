@@ -17,7 +17,7 @@ from news_recap.orchestrator.metrics import (
     render_benchmark_report,
     render_stats_lines,
 )
-from news_recap.orchestrator.models import LlmTaskStatus
+from news_recap.orchestrator.models import FailureClass, LlmTaskStatus
 from news_recap.orchestrator.repository import OrchestratorRepository
 from news_recap.orchestrator.routing import SUPPORTED_AGENTS, RoutingDefaults
 from news_recap.orchestrator.services import EnqueueDemoTask, OrchestratorService
@@ -94,6 +94,36 @@ class LlmMutateTaskCommand:
 
     db_path: Path | None
     task_id: str
+
+
+@dataclass(slots=True)
+class LlmFailuresCommand:
+    """CLI input for failed attempt listing."""
+
+    db_path: Path | None
+    hours: int
+    task_type: str | None
+    agent: str | None
+    model: str | None
+    failure_class: str | None
+    limit: int
+
+
+@dataclass(slots=True)
+class LlmUsageCommand:
+    """CLI input for per-task usage report."""
+
+    db_path: Path | None
+    task_id: str
+
+
+@dataclass(slots=True)
+class LlmCostCommand:
+    """CLI input for windowed cost report."""
+
+    db_path: Path | None
+    hours: int
+    group_by: str
 
 
 @dataclass(slots=True)
@@ -364,6 +394,109 @@ class OrchestratorCliController:
         with _repository(settings) as repository:
             repository.cancel_task(task_id=command.task_id)
         return [f"Task canceled: {command.task_id}"]
+
+    def failures(self, command: LlmFailuresCommand) -> list[str]:
+        """List failed attempts in a rolling window."""
+
+        settings = Settings.from_env(db_path=command.db_path)
+        cutoff = datetime.now(tz=UTC) - timedelta(hours=max(1, command.hours))
+        if command.failure_class is not None:
+            try:
+                failure_filter = FailureClass(command.failure_class)
+            except ValueError as error:
+                raise ValueError(
+                    f"Unsupported failure class: {command.failure_class!r}",
+                ) from error
+        else:
+            failure_filter = None
+
+        with _repository(settings) as repository:
+            attempts = repository.list_attempt_failures(
+                since=cutoff,
+                task_type=command.task_type,
+                agent=command.agent,
+                model=command.model,
+                failure_class=failure_filter,
+                limit=command.limit,
+            )
+
+        lines = [f"Failed attempts: {len(attempts)} (window={command.hours}h)"]
+        for attempt in attempts:
+            lines.append(
+                "  "
+                f"task_id={attempt.task_id} attempt={attempt.attempt_no} "
+                f"task_type={attempt.task_type} status={attempt.status} "
+                f"agent={attempt.agent or '-'} model={attempt.model or '-'} "
+                f"failure_class={attempt.failure_class.value if attempt.failure_class else '-'} "
+                f"attempt_failure_code={attempt.attempt_failure_code or '-'} "
+                f"duration_ms={attempt.duration_ms if attempt.duration_ms is not None else '-'} "
+                f"exit_code={attempt.exit_code if attempt.exit_code is not None else '-'} "
+                f"error={attempt.error_summary_sanitized or '-'}",
+            )
+        return lines
+
+    def usage(self, command: LlmUsageCommand) -> list[str]:
+        """Show per-attempt usage for one task."""
+
+        settings = Settings.from_env(db_path=command.db_path)
+        with _repository(settings) as repository:
+            details = repository.get_task_details(task_id=command.task_id)
+            attempts = repository.list_task_attempts(task_id=command.task_id)
+        if details is None:
+            return [f"Task not found: {command.task_id}"]
+
+        lines = [
+            f"Task: {details.task.task_id}",
+            f"Type: {details.task.task_type}",
+            f"Status: {details.task.status.value}",
+            f"Attempts telemetry: {len(attempts)}",
+        ]
+        for attempt in attempts:
+            prompt_tokens = attempt.prompt_tokens if attempt.prompt_tokens is not None else "-"
+            completion_tokens = (
+                attempt.completion_tokens if attempt.completion_tokens is not None else "-"
+            )
+            total_tokens = attempt.total_tokens if attempt.total_tokens is not None else "-"
+            estimated_cost = (
+                attempt.estimated_cost_usd if attempt.estimated_cost_usd is not None else "-"
+            )
+            lines.append(
+                "  "
+                f"attempt={attempt.attempt_no} status={attempt.status} "
+                f"agent={attempt.agent or '-'} model={attempt.model or '-'} "
+                f"prompt_tokens={prompt_tokens} "
+                f"completion_tokens={completion_tokens} "
+                f"total_tokens={total_tokens} "
+                f"usage_status={attempt.usage_status or '-'} "
+                f"usage_source={attempt.usage_source or '-'} "
+                f"parser_version={attempt.usage_parser_version or '-'} "
+                f"estimated_cost_usd={estimated_cost}",
+            )
+        return lines
+
+    def cost(self, command: LlmCostCommand) -> list[str]:
+        """Show grouped cost/usage summary for window."""
+
+        settings = Settings.from_env(db_path=command.db_path)
+        cutoff = datetime.now(tz=UTC) - timedelta(hours=max(1, command.hours))
+        with _repository(settings) as repository:
+            rows = repository.aggregate_attempt_costs(since=cutoff, group_by=command.group_by)
+
+        lines = [f"Cost summary: groups={len(rows)} window={command.hours}h"]
+        lines.append(f"group_by={command.group_by}")
+        for row in rows:
+            attempts = row.attempts
+            unknown_usage = row.unknown_usage
+            unknown_ratio = (unknown_usage / attempts) if attempts else 0.0
+            lines.append(
+                "  "
+                f"{row.group_key}: attempts={attempts} succeeded={row.succeeded} "
+                f"failed={row.failed} prompt_tokens={row.prompt_tokens} "
+                f"completion_tokens={row.completion_tokens} total_tokens={row.total_tokens} "
+                f"estimated_cost_usd={row.estimated_cost_usd:.6f} "
+                f"unknown_usage_ratio={unknown_ratio:.2%}",
+            )
+        return lines
 
     def smoke(self, command: LlmSmokeCommand) -> LlmSmokeResult:  # noqa: C901
         settings = Settings.from_env()

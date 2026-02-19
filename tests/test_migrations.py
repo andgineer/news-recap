@@ -18,7 +18,7 @@ def test_alembic_schema_is_initialized_to_head(tmp_path: Path) -> None:
         "SELECT version_num FROM alembic_version LIMIT 1"
     ).fetchone()
     assert row is not None
-    assert str(row["version_num"]) == "20260217_0001"
+    assert str(row["version_num"]) == "20260219_0002"
 
     user = repository._connection.execute(
         "SELECT user_id FROM users WHERE user_id = 'default_user'"
@@ -30,12 +30,13 @@ def test_alembic_schema_is_initialized_to_head(tmp_path: Path) -> None:
         SELECT name
         FROM sqlite_master
         WHERE type = 'table'
-          AND name IN ('llm_tasks', 'llm_task_events', 'llm_task_artifacts')
+          AND name IN ('llm_tasks', 'llm_task_events', 'llm_task_artifacts', 'llm_task_attempts')
         ORDER BY name
         """
     ).fetchall()
     assert [str(row["name"]) for row in llm_tables] == [
         "llm_task_artifacts",
+        "llm_task_attempts",
         "llm_task_events",
         "llm_tasks",
     ]

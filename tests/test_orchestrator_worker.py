@@ -115,9 +115,128 @@ def test_worker_executes_task_successfully_with_echo_agent(tmp_path: Path) -> No
     assert details.task.status == LlmTaskStatus.SUCCEEDED
     assert any(event.event_type == "first_pass_validation_passed" for event in details.events)
     assert details.task.output_path is not None
+    attempts = repository.list_task_attempts(task_id=task.task_id)
+    assert len(attempts) == 1
+    assert attempts[0].status == "succeeded"
+    assert attempts[0].attempt_failure_code == "completed"
     citations = repository.list_output_citations(task_id=task.task_id)
     assert len(citations) == 1
     assert citations[0].source_id == source_id
+    repository.close()
+
+
+def test_worker_recovers_missing_output_file_from_stdout(tmp_path: Path) -> None:
+    db_path = tmp_path / "worker-stdout-recovery.db"
+    source_id = _seed_source_id(db_path, external_id="worker-stdout-recovery")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    stdout_only_agent = tmp_path / "stdout_only_agent.py"
+    stdout_only_agent.write_text(
+        """
+print("Recovered from stdout parser")
+""".strip(),
+        "utf-8",
+    )
+    command_template = f"{sys.executable} {stdout_only_agent}"
+    routing_defaults = _routing_defaults(command_template)
+
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Recover from stdout.",
+            source_ids=(source_id,),
+        ),
+    )
+
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+    )
+    summary = worker.run_once()
+    assert summary.processed == 1
+    assert summary.succeeded == 1
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert details.task.status == LlmTaskStatus.SUCCEEDED
+    assert any(event.event_type == "stdout_parser_recovered" for event in details.events)
+
+    attempts = repository.list_task_attempts(task_id=task.task_id)
+    assert len(attempts) == 1
+    assert attempts[0].attempt_failure_code == "stdout_parser_recovered"
+    assert attempts[0].output_chars is not None
+    assert attempts[0].output_chars > 0
+    repository.close()
+
+
+def test_worker_extracts_token_usage_into_attempt_telemetry(tmp_path: Path) -> None:
+    db_path = tmp_path / "worker-usage.db"
+    source_id = _seed_source_id(db_path, external_id="worker-usage")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    usage_agent = tmp_path / "usage_agent.py"
+    usage_agent.write_text(
+        """
+import argparse
+import sys
+from pathlib import Path
+from news_recap.orchestrator.contracts import read_manifest, read_articles_index
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--task-manifest", required=True)
+args = parser.parse_args()
+manifest = read_manifest(Path(args.task_manifest))
+articles = read_articles_index(Path(manifest.articles_index_path))
+source_id = articles[0].source_id if articles else "article:missing"
+Path(manifest.output_result_path).write_text(
+    '{"blocks":[{"text":"ok","source_ids":["' + source_id + '"]}]}',
+    "utf-8",
+)
+sys.stderr.write("tokens used\\n12,345\\n")
+""".strip(),
+        "utf-8",
+    )
+    command_template = f"{sys.executable} {usage_agent} --task-manifest {{task_manifest}}"
+    routing_defaults = _routing_defaults(command_template)
+
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Collect usage.",
+            source_ids=(source_id,),
+        ),
+    )
+
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+    )
+    summary = worker.run_once()
+    assert summary.succeeded == 1
+
+    attempts = repository.list_task_attempts(task_id=task.task_id)
+    assert len(attempts) == 1
+    attempt = attempts[0]
+    assert attempt.total_tokens == 12345
+    assert attempt.usage_status == "reported"
+    assert attempt.usage_source in {"agent_stderr", "agent_stdout"}
+    assert attempt.usage_parser_version == "v1"
     repository.close()
 
 

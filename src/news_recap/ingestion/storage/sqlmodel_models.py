@@ -413,6 +413,66 @@ class LlmTask(SQLModel, table=True):
     updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
+class LlmTaskAttempt(SQLModel, table=True):
+    __tablename__ = "llm_task_attempts"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "task_id",
+            "attempt_no",
+            name="uq_llm_task_attempts_task_attempt_no",
+        ),
+        Index("idx_llm_task_attempts_scope_time", "user_id", "created_at"),
+        Index("idx_llm_task_attempts_task_type_time", "task_type", "created_at"),
+        Index("idx_llm_task_attempts_failure_time", "failure_class", "created_at"),
+        Index("idx_llm_task_attempts_agent_model_time", "agent", "model", "created_at"),
+    )
+
+    attempt_id: int | None = Field(default=None, primary_key=True)
+    task_id: str = Field(
+        sa_column=Column(
+            ForeignKey("llm_tasks.task_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    attempt_no: int = Field(index=True)
+    task_type: str = Field(index=True)
+    status: str = Field(index=True)
+    started_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    finished_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    duration_ms: int | None = None
+    worker_id: str | None = Field(default=None, index=True)
+    agent: str | None = Field(default=None, index=True)
+    model: str | None = Field(default=None, index=True)
+    profile: str | None = Field(default=None, index=True)
+    command_template_hash: str | None = None
+    exit_code: int | None = None
+    timed_out: bool = Field(default=False)
+    failure_class: str | None = Field(default=None, index=True)
+    attempt_failure_code: str | None = Field(default=None, index=True)
+    error_summary_sanitized: str | None = Field(default=None, sa_column=Column(Text))
+    stdout_preview_sanitized: str | None = Field(default=None, sa_column=Column(Text))
+    stderr_preview_sanitized: str | None = Field(default=None, sa_column=Column(Text))
+    output_chars: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    usage_status: str | None = Field(default=None, index=True)
+    usage_source: str | None = Field(default=None)
+    usage_parser_version: str | None = Field(default=None)
+    estimated_cost_usd: float | None = None
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
 class LlmTaskEvent(SQLModel, table=True):
     __tablename__ = "llm_task_events"  # type: ignore[bad-override]
     __table_args__ = (Index("idx_llm_task_events_task_time", "task_id", "created_at"),)
