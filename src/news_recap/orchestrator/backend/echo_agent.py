@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--task-manifest", required=True)
-    args = parser.parse_args(argv)
+    args, _ = parser.parse_known_args(argv)
 
     manifest_path = Path(args.task_manifest)
     manifest = read_manifest(manifest_path)

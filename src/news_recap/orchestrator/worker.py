@@ -592,10 +592,7 @@ class OrchestratorWorker:
                 "error_summary": validation.error_summary or "Unknown validation failure.",
             },
         )
-        if (
-            validation.failure_class == FailureClass.OUTPUT_INVALID_JSON
-            and loaded.output_path.exists()
-        ):
+        if validation.failure_class == FailureClass.OUTPUT_INVALID_JSON:
             parser_recovered = self._try_stdout_parser_recovery(
                 task_id=task.task_id,
                 output_path=loaded.output_path,

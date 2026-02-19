@@ -10,7 +10,11 @@ import time
 from pathlib import Path
 
 from news_recap.orchestrator.backend.base import BackendRunRequest, BackendRunResult
-from news_recap.orchestrator.contracts import read_manifest, read_task_input
+from news_recap.orchestrator.contracts import (
+    TaskManifest,
+    read_manifest,
+    read_task_input,
+)
 
 
 class BackendRunError(RuntimeError):
@@ -32,14 +36,19 @@ class CliAgentBackend:
         stdout_path.parent.mkdir(parents=True, exist_ok=True)
         stderr_path.parent.mkdir(parents=True, exist_ok=True)
 
+        enriched_prompt = _build_enriched_prompt(
+            base_prompt=task_input.prompt,
+            manifest=manifest,
+        )
+
         prompt_file = Path(manifest.workdir) / "input" / "task_prompt.txt"
         prompt_file.parent.mkdir(parents=True, exist_ok=True)
-        prompt_file.write_text(task_input.prompt, "utf-8")
+        prompt_file.write_text(enriched_prompt, "utf-8")
 
         run_args, command_head = _build_run_args(
             command_template=request.command_template,
             model=request.model,
-            prompt=task_input.prompt,
+            prompt=enriched_prompt,
             prompt_file=prompt_file,
             manifest_path=request.manifest_path,
         )
@@ -78,6 +87,45 @@ class CliAgentBackend:
             ) from error
 
 
+_OUTPUT_SCHEMA_EXAMPLE = """\
+{
+  "blocks": [
+    {
+      "text": "<highlight or analysis text>",
+      "source_ids": ["article:<id>"]
+    }
+  ],
+  "metadata": {}
+}"""
+
+
+def _build_enriched_prompt(
+    *,
+    base_prompt: str,
+    manifest: TaskManifest,
+) -> str:
+    """Wrap the task prompt with manifest path and output contract."""
+
+    manifest_path = f"{manifest.workdir}/meta/task_manifest.json"
+
+    return (
+        f"{base_prompt}\n"
+        f"\n"
+        f"Your task manifest is at: {manifest_path}\n"
+        f"\n"
+        f"Steps:\n"
+        f"1. Read the manifest JSON — it contains paths to all input/output files.\n"
+        f"2. Read articles_index_path from the manifest — each article has a source_id,\n"
+        f"   title, url, and source. Use these as your source material.\n"
+        f"3. Write the result to output_result_path from the manifest.\n"
+        f"4. The output file must follow this JSON schema exactly:\n"
+        f"{_OUTPUT_SCHEMA_EXAMPLE}\n"
+        f"5. Each block.source_ids must only reference source_ids from articles_index.\n"
+        f"\n"
+        f"Do not search the web. Write only the output JSON file.\n"
+    )
+
+
 def _build_run_args(  # noqa: PLR0913
     *,
     command_template: str,
@@ -90,9 +138,9 @@ def _build_run_args(  # noqa: PLR0913
     stripped = command_template.strip()
     if not stripped:
         raise BackendRunError("CLI backend command template is empty.", transient=False)
-    if "{task_manifest}" not in stripped:
+    if "{prompt}" not in stripped:
         raise BackendRunError(
-            "CLI backend command template must include {task_manifest}.",
+            "CLI backend command template must include {prompt}.",
             transient=False,
         )
 

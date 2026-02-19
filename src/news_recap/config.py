@@ -186,20 +186,23 @@ class Settings:
                     "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
                     "codex exec --sandbox workspace-write "
                     "-c sandbox_workspace_write.network_access=true "
-                    "-c model_reasoning_effort=high --model {model} "
-                    '"task_manifest={task_manifest}\\n{prompt}"',
+                    "-c model_reasoning_effort=high "
+                    "--model {model} {prompt}",
                 ),
                 claude_command_template=os.getenv(
                     "NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE",
-                    "claude -p --model {model} --permission-mode dontAsk "
+                    "claude -p --model {model} "
+                    "--output-format text "
+                    "--permission-mode bypassPermissions "
                     '--allowed-tools "Read,Write,Edit,WebFetch,'
                     'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
-                    '-- "task_manifest={task_manifest}\\n{prompt}"',
+                    "-- {prompt}",
                 ),
                 gemini_command_template=os.getenv(
                     "NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE",
-                    "gemini --model {model} --approval-mode auto_edit "
-                    '--prompt "task_manifest={task_manifest}\\n{prompt}"',
+                    "gemini --model {model} "
+                    "--approval-mode auto_edit "
+                    "--prompt {prompt}",
                 ),
                 codex_model_fast=os.getenv(
                     "NEWS_RECAP_LLM_CODEX_MODEL_FAST",
@@ -219,11 +222,11 @@ class Settings:
                 ),
                 gemini_model_fast=os.getenv(
                     "NEWS_RECAP_LLM_GEMINI_MODEL_FAST",
-                    "gemini-2.5-flash",
+                    "gemini-2.5-flash-lite",
                 ),
                 gemini_model_quality=os.getenv(
                     "NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY",
-                    "gemini-2.5-pro",
+                    "gemini-2.5-flash",
                 ),
                 worker_id=os.getenv("NEWS_RECAP_LLM_WORKER_ID", "worker-default"),
                 poll_interval_seconds=float(
@@ -516,8 +519,8 @@ def _validate_command_template(*, env_key: str, template: str) -> None:
         raise ValueError(
             f"{env_key} must include at least one placeholder from: {', '.join(sorted(allowed))}",
         )
-    if "task_manifest" not in seen_fields:
-        raise ValueError(f"{env_key} must include required placeholder {{task_manifest}}.")
+    if "prompt" not in seen_fields:
+        raise ValueError(f"{env_key} must include required placeholder {{prompt}}.")
 
     rendered = stripped.format(
         model="model-id",
