@@ -25,8 +25,7 @@ def test_build_run_args_windows_avoids_nested_quoting_in_quoted_payload() -> Non
     assert isinstance(run_args, str)
     assert command_head == "codex"
     assert (
-        run_args
-        == 'codex exec --model gpt-5-codex "task_manifest=m file.json\\nhello \\"world\\""'
+        run_args == 'codex exec --model gpt-5-codex "task_manifest=m file.json\\nhello \\"world\\""'
     )
 
 
