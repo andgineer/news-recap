@@ -140,7 +140,7 @@ def test_llm_smoke_resolves_model_profile_for_template(tmp_path: Path, monkeypat
     _write_fake_agent(bin_dir / "codex", "codex")
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
     monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
+        "NEWS_RECAP_LLM_SMOKE_CODEX_COMMAND",
         "codex --model {model} --prompt-file {prompt_file}",
     )
     monkeypatch.setenv("NEWS_RECAP_LLM_CODEX_MODEL_QUALITY", "codex-quality-test")

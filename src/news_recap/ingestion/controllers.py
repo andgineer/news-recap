@@ -345,6 +345,7 @@ def _repository(settings: Settings) -> Iterator[SQLiteRepository]:
         settings.db_path,
         user_id=settings.user_context.user_id,
         user_name=settings.user_context.user_name,
+        sqlite_busy_timeout_ms=settings.sqlite_busy_timeout_ms,
     )
     try:
         repository.init_schema()

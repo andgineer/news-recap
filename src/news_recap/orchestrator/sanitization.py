@@ -21,7 +21,7 @@ _REPLACEMENTS: tuple[tuple[re.Pattern[str], _Replacement], ...] = (
     (
         re.compile(
             r"(?i)\b(news_recap|openai|anthropic|gemini|hf|huggingface)[a-z0-9_]*_?(api_)?(key|token)\b"
-            r"\s*[:=]\s*['\"]?[^'\" \n\r\t]+['\"]?"
+            r"\s*[:=]\s*['\"]?[^'\" \n\r\t]+['\"]?",
         ),
         "[redacted-secret]",
     ),

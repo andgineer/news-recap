@@ -57,6 +57,7 @@ def _extract_structured(*, stdout: str, stderr: str) -> UsageExtraction | None:
         prompt = _extract_int(_JSON_PROMPT_TOKENS, text)
         completion = _extract_int(_JSON_COMPLETION_TOKENS, text)
         total = _extract_int(_JSON_TOTAL_TOKENS, text)
+        total_was_reported = total is not None
         if prompt is None and completion is None and total is None:
             continue
         if total is None:
@@ -66,45 +67,65 @@ def _extract_structured(*, stdout: str, stderr: str) -> UsageExtraction | None:
             prompt_tokens=prompt,
             completion_tokens=completion,
             total_tokens=total,
-            usage_status="reported",
+            usage_status="reported" if total_was_reported else "estimated",
             usage_source=source_name,
             parser_version=USAGE_PARSER_VERSION,
         )
     return None
 
 
-def _extract_textual(*, agent: str, stdout: str, stderr: str) -> UsageExtraction | None:
-    prompt = None
-    completion = None
-    total = None
+def _extract_textual(*, agent: str, stdout: str, stderr: str) -> UsageExtraction | None:  # noqa: C901
+    prompt: int | None = None
+    completion: int | None = None
+    total: int | None = None
+    total_was_reported = False
+    sources_used: list[str] = []
 
     for source_name, text in (("agent_stderr", stderr), ("agent_stdout", stdout)):
+        source_used = False
         if total is None:
-            total = _extract_int(_TOTAL_TOKENS, text)
+            parsed_total = _extract_int(_TOTAL_TOKENS, text)
+            if parsed_total is not None:
+                total = parsed_total
+                total_was_reported = True
+                source_used = True
         if prompt is None:
-            prompt = _extract_int(_INPUT_TOKENS, text)
+            parsed_prompt = _extract_int(_INPUT_TOKENS, text)
+            if parsed_prompt is not None:
+                prompt = parsed_prompt
+                source_used = True
         if completion is None:
-            completion = _extract_int(_OUTPUT_TOKENS, text)
-
+            parsed_completion = _extract_int(_OUTPUT_TOKENS, text)
+            if parsed_completion is not None:
+                completion = parsed_completion
+                source_used = True
         if total is None and agent == "codex":
-            total = _extract_int(_CODEx_TOKENS_USED, text)
+            codex_total = _extract_int(_CODEx_TOKENS_USED, text)
+            if codex_total is not None:
+                total = codex_total
+                total_was_reported = True
+                source_used = True
+        if source_used:
+            sources_used.append(source_name)
 
-        if prompt is None and completion is None and total is None:
-            continue
+    if prompt is None and completion is None and total is None:
+        return None
 
-        if total is None:
-            known = [value for value in (prompt, completion) if value is not None]
-            total = sum(known) if known else None
+    if total is None:
+        known = [value for value in (prompt, completion) if value is not None]
+        total = sum(known) if known else None
 
-        return UsageExtraction(
-            prompt_tokens=prompt,
-            completion_tokens=completion,
-            total_tokens=total,
-            usage_status="reported" if total is not None else "estimated",
-            usage_source=source_name,
-            parser_version=USAGE_PARSER_VERSION,
-        )
-    return None
+    usage_source = (
+        "both" if len(set(sources_used)) > 1 else (sources_used[0] if sources_used else "none")
+    )
+    return UsageExtraction(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        total_tokens=total,
+        usage_status="reported" if total_was_reported else "estimated",
+        usage_source=usage_source,
+        parser_version=USAGE_PARSER_VERSION,
+    )
 
 
 def _extract_int(pattern: re.Pattern[str], text: str) -> int | None:

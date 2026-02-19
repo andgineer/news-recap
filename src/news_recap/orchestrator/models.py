@@ -163,6 +163,7 @@ class LlmTaskAttemptFinish:
 
     task_id: str
     attempt_no: int
+    started_at: datetime | None
     status: str
     finished_at: datetime
     exit_code: int | None

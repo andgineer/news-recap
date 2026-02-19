@@ -5,7 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import signal
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -15,10 +18,13 @@ from news_recap.ingestion.storage.common import utc_now
 from news_recap.orchestrator.backend import (
     BackendRunError,
     BackendRunRequest,
+    BackendRunResult,
     CliAgentBackend,
 )
 from news_recap.orchestrator.contracts import (
     ArticleIndexEntry,
+    TaskInputContract,
+    TaskManifest,
     read_articles_index,
     read_manifest,
     read_task_input,
@@ -69,6 +75,35 @@ class RetryOutcome(NamedTuple):
     failed: bool
 
 
+@dataclass(slots=True)
+class LoadInputsResult:
+    """Loaded manifest/input/index with upfront validation result."""
+
+    ok: bool
+    manifest_path: Path | None
+    manifest: TaskManifest | None
+    task_input: TaskInputContract | None
+    article_entries: list[ArticleIndexEntry]
+    allowed_source_ids: set[str]
+    error_summary: str | None
+    failure_class: FailureClass | None
+    attempt_failure_code: str | None
+    output_path: Path | None
+
+
+@dataclass(slots=True)
+class ExecutionAttemptResult:
+    """Execution phase result after routing and backend invocation."""
+
+    ok: bool
+    routing: FrozenRouting | None
+    execution: BackendRunResult | None
+    failure_class: FailureClass | None
+    attempt_failure_code: str | None
+    error_summary: str | None
+    details: dict[str, object] | None
+
+
 class OrchestratorWorker:
     """Consumes queued tasks and executes them via backend."""
 
@@ -84,6 +119,8 @@ class OrchestratorWorker:
         retry_max_seconds: int = 900,
         timeout_retry_cap_seconds: int = 1800,
         transient_exit_codes: tuple[int, ...] = (137, 143),
+        stale_attempt_seconds: int = 1800,
+        graceful_shutdown_seconds: int = 30,
     ) -> None:
         self.repository = repository
         self.backend = backend
@@ -94,18 +131,31 @@ class OrchestratorWorker:
         self.retry_max_seconds = retry_max_seconds
         self.timeout_retry_cap_seconds = timeout_retry_cap_seconds
         self.transient_exit_codes = transient_exit_codes
+        self.stale_attempt_seconds = stale_attempt_seconds
+        self.graceful_shutdown_seconds = graceful_shutdown_seconds
         self._random = random.Random()  # noqa: S311
+        self._stop_requested = False
+        self._stop_signal_name: str | None = None
+        self._current_task_id: str | None = None
+        self._shutdown_task_id: str | None = None
+        self._shutdown_completed_emitted = False
 
-    def run_once(self) -> WorkerRunSummary:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def run_once(self) -> WorkerRunSummary:
         """Process at most one task from the queue."""
 
         summary = WorkerRunSummary()
-        task = self.repository.claim_next_ready_task(worker_id=self.worker_id)
+        if self._stop_requested:
+            summary.idle_polls = 1
+            return summary
+
+        task = self._claim_task()
         if task is None:
             summary.idle_polls = 1
             return summary
 
         summary.processed = 1
+        self._current_task_id = task.task_id
+        self._shutdown_completed_emitted = False
         attempt_started_at = task.started_at or utc_now()
         self.repository.upsert_task_attempt_start(
             LlmTaskAttemptStart(
@@ -121,32 +171,97 @@ class OrchestratorWorker:
                 command_template_hash=None,
             ),
         )
+
+        try:
+            loaded = self._load_and_validate_inputs(task=task)
+            if not loaded.ok:
+                if self._handle_input_error(task=task, loaded=loaded):
+                    summary.failed = 1
+                return summary
+
+            execution_result = self._execute_attempt(
+                task=task,
+                loaded=loaded,
+                attempt_started_at=attempt_started_at,
+            )
+            if not execution_result.ok:
+                self._handle_execution_error(
+                    task=task,
+                    loaded=loaded,
+                    execution_result=execution_result,
+                    summary=summary,
+                )
+                return summary
+
+            self._process_attempt_result(
+                task=task,
+                loaded=loaded,
+                execution_result=execution_result,
+                summary=summary,
+            )
+            return summary
+        finally:
+            self._current_task_id = None
+            self._emit_shutdown_completed_if_ready()
+
+    def run_loop(self, *, max_tasks: int | None = None) -> WorkerRunSummary:
+        """Run worker loop until queue is idle or max_tasks reached."""
+
+        aggregate = WorkerRunSummary()
+        with self._signal_handlers():
+            while True:
+                if self._stop_requested:
+                    return aggregate
+                if max_tasks is not None and aggregate.processed >= max_tasks:
+                    return aggregate
+
+                summary = self.run_once()
+                aggregate.processed += summary.processed
+                aggregate.succeeded += summary.succeeded
+                aggregate.failed += summary.failed
+                aggregate.retried += summary.retried
+                aggregate.timeouts += summary.timeouts
+                aggregate.idle_polls += summary.idle_polls
+
+                if summary.processed == 0:
+                    return aggregate
+                if self._stop_requested:
+                    return aggregate
+                if max_tasks is None and self.poll_interval_seconds > 0:
+                    self._sleep_with_stop(self.poll_interval_seconds)
+
+    def _claim_task(self) -> LlmTaskView | None:
+        self._recover_stale_attempts()
+        if self._stop_requested:
+            return None
+        return self.repository.claim_next_ready_task(worker_id=self.worker_id)
+
+    def _recover_stale_attempts(self) -> None:
+        if self.stale_attempt_seconds <= 0:
+            return
+        self.repository.recover_stale_running_tasks(
+            stale_after=timedelta(seconds=self.stale_attempt_seconds),
+        )
+
+    def _load_and_validate_inputs(self, *, task: LlmTaskView) -> LoadInputsResult:
         manifest_path = Path(task.input_manifest_path)
         try:
             manifest = read_manifest(manifest_path)
             task_input = read_task_input(Path(manifest.task_input_path))
             article_entries = read_articles_index(Path(manifest.articles_index_path))
         except Exception as error:  # noqa: BLE001
-            self._finalize_attempt(
-                task=task,
-                status=LlmTaskStatus.FAILED,
+            return LoadInputsResult(
+                ok=False,
+                manifest_path=manifest_path,
+                manifest=None,
+                task_input=None,
+                article_entries=[],
+                allowed_source_ids=set(),
+                error_summary=f"Input contract error: {error}",
                 failure_class=FailureClass.INPUT_CONTRACT_ERROR,
                 attempt_failure_code="input_manifest_invalid",
-                error_summary=f"Input contract error: {error}",
-                execution=None,
-                routing=None,
                 output_path=None,
             )
-            failed = self.repository.fail_task(
-                task_id=task.task_id,
-                status=LlmTaskStatus.FAILED,
-                failure_class=FailureClass.INPUT_CONTRACT_ERROR,
-                error_summary=f"Input contract error: {error}",
-                last_exit_code=None,
-            )
-            if failed:
-                summary.failed = 1
-            return summary
 
         artifact_error = _validate_required_artifacts(
             task_type=task.task_type,
@@ -154,30 +269,65 @@ class OrchestratorWorker:
             task_input_metadata=task_input.metadata,
         )
         if artifact_error is not None:
-            self._finalize_attempt(
-                task=task,
-                status=LlmTaskStatus.FAILED,
+            return LoadInputsResult(
+                ok=False,
+                manifest_path=manifest_path,
+                manifest=manifest,
+                task_input=task_input,
+                article_entries=article_entries,
+                allowed_source_ids={entry.source_id for entry in article_entries},
+                error_summary=artifact_error,
                 failure_class=FailureClass.INPUT_CONTRACT_ERROR,
                 attempt_failure_code="input_required_artifact_missing",
-                error_summary=artifact_error,
-                execution=None,
-                routing=None,
                 output_path=Path(manifest.output_result_path),
             )
-            failed = self.repository.fail_task(
-                task_id=task.task_id,
-                status=LlmTaskStatus.FAILED,
-                failure_class=FailureClass.INPUT_CONTRACT_ERROR,
-                error_summary=artifact_error,
-                last_exit_code=None,
-            )
-            if failed:
-                summary.failed = 1
-            return summary
 
-        allowed_source_ids = {entry.source_id for entry in article_entries}
-        routing, fallback_reason = resolve_routing_for_execution(
+        return LoadInputsResult(
+            ok=True,
+            manifest_path=manifest_path,
+            manifest=manifest,
             task_input=task_input,
+            article_entries=article_entries,
+            allowed_source_ids={entry.source_id for entry in article_entries},
+            error_summary=None,
+            failure_class=None,
+            attempt_failure_code=None,
+            output_path=Path(manifest.output_result_path),
+        )
+
+    def _handle_input_error(self, *, task: LlmTaskView, loaded: LoadInputsResult) -> bool:
+        if loaded.failure_class is None or loaded.error_summary is None:
+            raise RuntimeError("Input error must include failure_class and error_summary.")
+        self._finalize_attempt(
+            task=task,
+            status=LlmTaskStatus.FAILED,
+            failure_class=loaded.failure_class,
+            attempt_failure_code=loaded.attempt_failure_code,
+            error_summary=loaded.error_summary,
+            execution=None,
+            routing=None,
+            output_path=loaded.output_path,
+        )
+        return self.repository.fail_task(
+            task_id=task.task_id,
+            status=LlmTaskStatus.FAILED,
+            failure_class=loaded.failure_class,
+            error_summary=loaded.error_summary,
+            last_exit_code=None,
+        )
+
+    def _execute_attempt(
+        self,
+        *,
+        task: LlmTaskView,
+        loaded: LoadInputsResult,
+        attempt_started_at: datetime,
+    ) -> ExecutionAttemptResult:
+        if loaded.task_input is None or loaded.manifest is None or loaded.manifest_path is None:
+            raise RuntimeError("Loaded inputs are missing task_input/manifest data.")
+
+        routing, fallback_reason = resolve_routing_for_execution(
+            task_input=loaded.task_input,
             task_type=task.task_type,
             defaults=self.routing_defaults,
         )
@@ -210,7 +360,7 @@ class OrchestratorWorker:
         try:
             execution = self._execute_backend(
                 task_id=task.task_id,
-                manifest_path=manifest_path,
+                manifest_path=loaded.manifest_path,
                 task=task,
                 routing=routing,
             )
@@ -220,51 +370,98 @@ class OrchestratorWorker:
                 if error.transient
                 else FailureClass.BACKEND_NON_RETRYABLE
             )
-            failure_details: dict[str, object] = {
-                "reason_code": f"{routing.agent}_backend_run_error",
-                "resolved_agent": routing.agent,
-                "resolved_model": routing.model,
-                "resolved_profile": routing.profile,
-            }
-            self._finalize_attempt(
-                task=task,
-                status=LlmTaskStatus.FAILED,
+            return ExecutionAttemptResult(
+                ok=False,
+                routing=routing,
+                execution=None,
                 failure_class=failure_class,
                 attempt_failure_code=f"{routing.agent}_backend_run_error",
                 error_summary=str(error),
-                execution=None,
-                routing=routing,
-                output_path=Path(manifest.output_result_path),
+                details={
+                    "reason_code": f"{routing.agent}_backend_run_error",
+                    "resolved_agent": routing.agent,
+                    "resolved_model": routing.model,
+                    "resolved_profile": routing.profile,
+                },
             )
-            if failure_class == FailureClass.BACKEND_TRANSIENT:
-                outcome = self._handle_retry_or_fail(
-                    task_id=task.task_id,
-                    task_attempt=task.attempt,
-                    max_attempts=task.max_attempts,
-                    failure_class=failure_class,
-                    error_summary=str(error),
-                    last_exit_code=None,
-                    timeout_seconds=task.timeout_seconds,
-                    status_on_final=LlmTaskStatus.FAILED,
-                    details=failure_details,
-                )
-                if outcome.retried:
-                    summary.retried = 1
-                elif outcome.failed:
-                    summary.failed = 1
-                return summary
+        return ExecutionAttemptResult(
+            ok=True,
+            routing=routing,
+            execution=execution,
+            failure_class=None,
+            attempt_failure_code=None,
+            error_summary=None,
+            details=None,
+        )
 
-            failed = self.repository.fail_task(
+    def _handle_execution_error(
+        self,
+        *,
+        task: LlmTaskView,
+        loaded: LoadInputsResult,
+        execution_result: ExecutionAttemptResult,
+        summary: WorkerRunSummary,
+    ) -> None:
+        if execution_result.failure_class is None or execution_result.error_summary is None:
+            raise RuntimeError("Execution error must include failure_class and error_summary.")
+        self._finalize_attempt(
+            task=task,
+            status=LlmTaskStatus.FAILED,
+            failure_class=execution_result.failure_class,
+            attempt_failure_code=execution_result.attempt_failure_code,
+            error_summary=execution_result.error_summary,
+            execution=execution_result.execution,
+            routing=execution_result.routing,
+            output_path=loaded.output_path,
+        )
+        if execution_result.failure_class == FailureClass.BACKEND_TRANSIENT:
+            outcome = self._handle_retry_or_fail(
                 task_id=task.task_id,
-                status=LlmTaskStatus.FAILED,
-                failure_class=failure_class,
-                error_summary=str(error),
+                task_attempt=task.attempt,
+                max_attempts=task.max_attempts,
+                failure_class=execution_result.failure_class,
+                error_summary=execution_result.error_summary,
                 last_exit_code=None,
-                details=failure_details,
+                timeout_seconds=task.timeout_seconds,
+                status_on_final=LlmTaskStatus.FAILED,
+                details=execution_result.details,
             )
-            if failed:
+            if outcome.retried:
+                summary.retried = 1
+            elif outcome.failed:
                 summary.failed = 1
-            return summary
+            return
+
+        failed = self.repository.fail_task(
+            task_id=task.task_id,
+            status=LlmTaskStatus.FAILED,
+            failure_class=execution_result.failure_class,
+            error_summary=execution_result.error_summary,
+            last_exit_code=None,
+            details=execution_result.details,
+        )
+        if failed:
+            summary.failed = 1
+
+    def _process_attempt_result(  # noqa: C901, PLR0911, PLR0912, PLR0915
+        self,
+        *,
+        task: LlmTaskView,
+        loaded: LoadInputsResult,
+        execution_result: ExecutionAttemptResult,
+        summary: WorkerRunSummary,
+    ) -> None:
+        if loaded.manifest is None or loaded.task_input is None or loaded.output_path is None:
+            raise RuntimeError("Loaded inputs are incomplete for execution processing.")
+        if execution_result.execution is None or execution_result.routing is None:
+            raise RuntimeError("Execution result is incomplete for processing.")
+
+        manifest = loaded.manifest
+        task_input = loaded.task_input
+        execution = execution_result.execution
+        routing = execution_result.routing
+        allowed_source_ids = loaded.allowed_source_ids
+
         if execution.timed_out:
             self._finalize_attempt(
                 task=task,
@@ -274,7 +471,7 @@ class OrchestratorWorker:
                 error_summary="Task timed out.",
                 execution=execution,
                 routing=routing,
-                output_path=Path(manifest.output_result_path),
+                output_path=loaded.output_path,
             )
             timeout_seconds = min(int(task.timeout_seconds * 1.5), self.timeout_retry_cap_seconds)
             outcome = self._handle_retry_or_fail(
@@ -292,7 +489,7 @@ class OrchestratorWorker:
             elif outcome.failed:
                 summary.failed = 1
                 summary.timeouts = 1
-            return summary
+            return
 
         if execution.exit_code != 0:
             stdout_preview = sanitize_preview(self._read_preview(execution.stdout_path))
@@ -321,7 +518,7 @@ class OrchestratorWorker:
                 ),
                 execution=execution,
                 routing=routing,
-                output_path=Path(manifest.output_result_path),
+                output_path=loaded.output_path,
             )
             if classification.failure_class == FailureClass.BACKEND_TRANSIENT:
                 outcome = self._handle_retry_or_fail(
@@ -342,7 +539,7 @@ class OrchestratorWorker:
                     summary.retried = 1
                 elif outcome.failed:
                     summary.failed = 1
-                return summary
+                return
 
             failed = self.repository.fail_task(
                 task_id=task.task_id,
@@ -356,7 +553,7 @@ class OrchestratorWorker:
             )
             if failed:
                 summary.failed = 1
-            return summary
+            return
 
         validation = validate_output_contract(
             output_path=Path(manifest.output_result_path),
@@ -373,66 +570,17 @@ class OrchestratorWorker:
                     "source_mapping_valid": True,
                 },
             )
-            try:
-                citations = self._build_output_citation_snapshots(
-                    article_entries=article_entries,
-                    validation_payload=validation.payload,
-                )
-            except Exception as error:  # noqa: BLE001
-                self._finalize_attempt(
-                    task=task,
-                    status=LlmTaskStatus.FAILED,
-                    failure_class=FailureClass.BACKEND_NON_RETRYABLE,
-                    attempt_failure_code="citation_snapshot_persist_failed",
-                    error_summary=f"Citation snapshot persist failed: {error}",
-                    execution=execution,
-                    routing=routing,
-                    output_path=Path(manifest.output_result_path),
-                )
-                failed = self.repository.fail_task(
-                    task_id=task.task_id,
-                    status=LlmTaskStatus.FAILED,
-                    failure_class=FailureClass.BACKEND_NON_RETRYABLE,
-                    error_summary=f"Citation snapshot persist failed: {error}",
-                    last_exit_code=execution.exit_code,
-                )
-                if failed:
-                    summary.failed = 1
-                return summary
-            completed = self.repository.complete_task(
-                task_id=task.task_id,
-                output_path=manifest.output_result_path,
-                citations=citations,
-                user_output=_build_user_output_upsert(
-                    task_input_metadata=task_input.metadata,
-                    validation_payload=validation.payload,
-                    task_id=task.task_id,
-                ),
+            self._persist_success(
+                task=task,
+                execution=execution,
+                routing=routing,
+                loaded=loaded,
+                validation_payload=validation.payload,
+                task_input_metadata=task_input.metadata,
+                summary=summary,
+                attempt_failure_code="completed",
             )
-            if completed:
-                self._finalize_attempt(
-                    task=task,
-                    status=LlmTaskStatus.SUCCEEDED,
-                    failure_class=None,
-                    attempt_failure_code="completed",
-                    error_summary=None,
-                    execution=execution,
-                    routing=routing,
-                    output_path=Path(manifest.output_result_path),
-                )
-                summary.succeeded = 1
-            else:
-                self._finalize_attempt(
-                    task=task,
-                    status=LlmTaskStatus.CANCELED,
-                    failure_class=None,
-                    attempt_failure_code="state_transition_conflict",
-                    error_summary="Task state changed concurrently before completion.",
-                    execution=execution,
-                    routing=routing,
-                    output_path=Path(manifest.output_result_path),
-                )
-            return summary
+            return
 
         self.repository.add_task_event(
             task_id=task.task_id,
@@ -444,16 +592,19 @@ class OrchestratorWorker:
                 "error_summary": validation.error_summary or "Unknown validation failure.",
             },
         )
-        if validation.failure_class == FailureClass.OUTPUT_INVALID_JSON:
+        if (
+            validation.failure_class == FailureClass.OUTPUT_INVALID_JSON
+            and loaded.output_path.exists()
+        ):
             parser_recovered = self._try_stdout_parser_recovery(
                 task_id=task.task_id,
-                output_path=Path(manifest.output_result_path),
+                output_path=loaded.output_path,
                 stdout_path=execution.stdout_path,
                 allowed_source_ids=allowed_source_ids,
             )
             if parser_recovered:
                 recovered_validation = validate_output_contract(
-                    output_path=Path(manifest.output_result_path),
+                    output_path=loaded.output_path,
                     allowed_source_ids=allowed_source_ids,
                 )
                 if recovered_validation.is_valid:
@@ -464,66 +615,17 @@ class OrchestratorWorker:
                         status_to=LlmTaskStatus.RUNNING,
                         details={"parser_version": STDOUT_PARSER_VERSION},
                     )
-                    try:
-                        citations = self._build_output_citation_snapshots(
-                            article_entries=article_entries,
-                            validation_payload=recovered_validation.payload,
-                        )
-                    except Exception as error:  # noqa: BLE001
-                        self._finalize_attempt(
-                            task=task,
-                            status=LlmTaskStatus.FAILED,
-                            failure_class=FailureClass.BACKEND_NON_RETRYABLE,
-                            attempt_failure_code="citation_snapshot_persist_failed",
-                            error_summary=f"Citation snapshot persist failed: {error}",
-                            execution=execution,
-                            routing=routing,
-                            output_path=Path(manifest.output_result_path),
-                        )
-                        failed = self.repository.fail_task(
-                            task_id=task.task_id,
-                            status=LlmTaskStatus.FAILED,
-                            failure_class=FailureClass.BACKEND_NON_RETRYABLE,
-                            error_summary=f"Citation snapshot persist failed: {error}",
-                            last_exit_code=execution.exit_code,
-                        )
-                        if failed:
-                            summary.failed = 1
-                        return summary
-                    completed = self.repository.complete_task(
-                        task_id=task.task_id,
-                        output_path=manifest.output_result_path,
-                        citations=citations,
-                        user_output=_build_user_output_upsert(
-                            task_input_metadata=task_input.metadata,
-                            validation_payload=recovered_validation.payload,
-                            task_id=task.task_id,
-                        ),
+                    self._persist_success(
+                        task=task,
+                        execution=execution,
+                        routing=routing,
+                        loaded=loaded,
+                        validation_payload=recovered_validation.payload,
+                        task_input_metadata=task_input.metadata,
+                        summary=summary,
+                        attempt_failure_code="stdout_parser_recovered",
                     )
-                    if completed:
-                        self._finalize_attempt(
-                            task=task,
-                            status=LlmTaskStatus.SUCCEEDED,
-                            failure_class=None,
-                            attempt_failure_code="stdout_parser_recovered",
-                            error_summary=None,
-                            execution=execution,
-                            routing=routing,
-                            output_path=Path(manifest.output_result_path),
-                        )
-                        summary.succeeded = 1
-                    else:
-                        self._finalize_attempt(
-                            task=task,
-                            status=LlmTaskStatus.CANCELED,
-                            failure_class=None,
-                            attempt_failure_code="state_transition_conflict",
-                            error_summary="Task state changed concurrently before completion.",
-                            execution=execution,
-                            routing=routing,
-                            output_path=Path(manifest.output_result_path),
-                        )
-                    return summary
+                    return
                 validation = recovered_validation
 
         if validation.failure_class is None or validation.error_summary is None:
@@ -535,7 +637,7 @@ class OrchestratorWorker:
                 error_summary="Unknown validation failure.",
                 execution=execution,
                 routing=routing,
-                output_path=Path(manifest.output_result_path),
+                output_path=loaded.output_path,
             )
             failed = self.repository.fail_task(
                 task_id=task.task_id,
@@ -546,7 +648,7 @@ class OrchestratorWorker:
             )
             if failed:
                 summary.failed = 1
-            return summary
+            return
 
         decision = decide_repair(
             failure_class=validation.failure_class,
@@ -557,7 +659,7 @@ class OrchestratorWorker:
             if marked:
                 repair_execution = self._execute_backend(
                     task_id=task.task_id,
-                    manifest_path=manifest_path,
+                    manifest_path=loaded.manifest_path or Path(task.input_manifest_path),
                     task=task,
                     routing=routing,
                     repair_mode=True,
@@ -565,70 +667,21 @@ class OrchestratorWorker:
                 execution = repair_execution
                 if repair_execution.exit_code == 0 and not repair_execution.timed_out:
                     repaired = validate_output_contract(
-                        output_path=Path(manifest.output_result_path),
+                        output_path=loaded.output_path,
                         allowed_source_ids=allowed_source_ids,
                     )
                     if repaired.is_valid:
-                        try:
-                            citations = self._build_output_citation_snapshots(
-                                article_entries=article_entries,
-                                validation_payload=repaired.payload,
-                            )
-                        except Exception as error:  # noqa: BLE001
-                            self._finalize_attempt(
-                                task=task,
-                                status=LlmTaskStatus.FAILED,
-                                failure_class=FailureClass.BACKEND_NON_RETRYABLE,
-                                attempt_failure_code="citation_snapshot_persist_failed",
-                                error_summary=f"Citation snapshot persist failed: {error}",
-                                execution=repair_execution,
-                                routing=routing,
-                                output_path=Path(manifest.output_result_path),
-                            )
-                            failed = self.repository.fail_task(
-                                task_id=task.task_id,
-                                status=LlmTaskStatus.FAILED,
-                                failure_class=FailureClass.BACKEND_NON_RETRYABLE,
-                                error_summary=f"Citation snapshot persist failed: {error}",
-                                last_exit_code=repair_execution.exit_code,
-                            )
-                            if failed:
-                                summary.failed = 1
-                            return summary
-                        completed = self.repository.complete_task(
-                            task_id=task.task_id,
-                            output_path=manifest.output_result_path,
-                            citations=citations,
-                            user_output=_build_user_output_upsert(
-                                task_input_metadata=task_input.metadata,
-                                validation_payload=repaired.payload,
-                                task_id=task.task_id,
-                            ),
+                        self._persist_success(
+                            task=task,
+                            execution=repair_execution,
+                            routing=routing,
+                            loaded=loaded,
+                            validation_payload=repaired.payload,
+                            task_input_metadata=task_input.metadata,
+                            summary=summary,
+                            attempt_failure_code="repair_recovered",
                         )
-                        if completed:
-                            self._finalize_attempt(
-                                task=task,
-                                status=LlmTaskStatus.SUCCEEDED,
-                                failure_class=None,
-                                attempt_failure_code="repair_recovered",
-                                error_summary=None,
-                                execution=repair_execution,
-                                routing=routing,
-                                output_path=Path(manifest.output_result_path),
-                            )
-                            summary.succeeded = 1
-                        else:
-                            self._finalize_attempt(
-                                task=task,
-                                status=LlmTaskStatus.CANCELED,
-                                failure_class=None,
-                                attempt_failure_code="state_transition_conflict",
-                                error_summary="Task state changed concurrently before completion.",
-                                execution=repair_execution,
-                                routing=routing,
-                                output_path=Path(manifest.output_result_path),
-                            )
-                        return summary
+                        return
 
         attempt_failure_code = _attempt_failure_code_from_validation(
             failure_class=validation.failure_class,
@@ -642,7 +695,7 @@ class OrchestratorWorker:
             error_summary=validation.error_summary,
             execution=execution,
             routing=routing,
-            output_path=Path(manifest.output_result_path),
+            output_path=loaded.output_path,
         )
         failed = self.repository.fail_task(
             task_id=task.task_id,
@@ -653,28 +706,159 @@ class OrchestratorWorker:
         )
         if failed:
             summary.failed = 1
-        return summary
 
-    def run_loop(self, *, max_tasks: int | None = None) -> WorkerRunSummary:
-        """Run worker loop until queue is idle or max_tasks reached."""
+    def _persist_success(  # noqa: PLR0913
+        self,
+        *,
+        task: LlmTaskView,
+        execution: BackendRunResult,
+        routing: FrozenRouting,
+        loaded: LoadInputsResult,
+        validation_payload: dict[str, object] | None,
+        task_input_metadata: dict[str, object],
+        summary: WorkerRunSummary,
+        attempt_failure_code: str,
+    ) -> None:
+        try:
+            citations = self._build_output_citation_snapshots(
+                article_entries=loaded.article_entries,
+                validation_payload=validation_payload,
+            )
+        except Exception as error:  # noqa: BLE001
+            self._finalize_attempt(
+                task=task,
+                status=LlmTaskStatus.FAILED,
+                failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                attempt_failure_code="citation_snapshot_persist_failed",
+                error_summary=f"Citation snapshot persist failed: {error}",
+                execution=execution,
+                routing=routing,
+                output_path=loaded.output_path,
+            )
+            failed = self.repository.fail_task(
+                task_id=task.task_id,
+                status=LlmTaskStatus.FAILED,
+                failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                error_summary=f"Citation snapshot persist failed: {error}",
+                last_exit_code=getattr(execution, "exit_code", None),
+            )
+            if failed:
+                summary.failed = 1
+            return
 
-        aggregate = WorkerRunSummary()
-        while True:
-            if max_tasks is not None and aggregate.processed >= max_tasks:
-                return aggregate
+        completed = self.repository.complete_task(
+            task_id=task.task_id,
+            output_path=str(loaded.output_path),
+            citations=citations,
+            user_output=_build_user_output_upsert(
+                task_input_metadata=task_input_metadata,
+                validation_payload=validation_payload,
+                task_id=task.task_id,
+            ),
+        )
+        if completed:
+            self._finalize_attempt(
+                task=task,
+                status=LlmTaskStatus.SUCCEEDED,
+                failure_class=None,
+                attempt_failure_code=attempt_failure_code,
+                error_summary=None,
+                execution=execution,
+                routing=routing,
+                output_path=loaded.output_path,
+            )
+            summary.succeeded = 1
+            return
 
-            summary = self.run_once()
-            aggregate.processed += summary.processed
-            aggregate.succeeded += summary.succeeded
-            aggregate.failed += summary.failed
-            aggregate.retried += summary.retried
-            aggregate.timeouts += summary.timeouts
-            aggregate.idle_polls += summary.idle_polls
+        self._finalize_attempt(
+            task=task,
+            status=LlmTaskStatus.CANCELED,
+            failure_class=None,
+            attempt_failure_code="state_transition_conflict",
+            error_summary="Task state changed concurrently before completion.",
+            execution=execution,
+            routing=routing,
+            output_path=loaded.output_path,
+        )
 
-            if summary.processed == 0:
-                return aggregate
-            if max_tasks is None and self.poll_interval_seconds > 0:
-                time.sleep(self.poll_interval_seconds)
+    def _sleep_with_stop(self, seconds: float) -> None:
+        deadline = time.monotonic() + seconds
+        while not self._stop_requested and time.monotonic() < deadline:
+            time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+
+    @contextmanager
+    def _signal_handlers(self) -> Iterator[None]:
+        if not hasattr(signal, "SIGINT"):
+            yield
+            return
+
+        original_sigint = signal.getsignal(signal.SIGINT)
+        original_sigterm = signal.getsignal(signal.SIGTERM)
+
+        def _handler(signum: int, _: object | None) -> None:
+            try:
+                name = signal.Signals(signum).name
+            except ValueError:
+                name = str(signum)
+            self._request_stop(signal_name=name)
+
+        try:
+            signal.signal(signal.SIGINT, _handler)
+            signal.signal(signal.SIGTERM, _handler)
+            yield
+        except ValueError:
+            # Signal handlers can only be installed in main thread.
+            yield
+        finally:
+            try:
+                signal.signal(signal.SIGINT, original_sigint)
+                signal.signal(signal.SIGTERM, original_sigterm)
+            except ValueError:
+                pass
+
+    def _request_stop(self, *, signal_name: str) -> None:
+        self._stop_requested = True
+        self._stop_signal_name = signal_name
+        if self._current_task_id is None:
+            return
+        if self._shutdown_task_id == self._current_task_id:
+            return
+        self._shutdown_task_id = self._current_task_id
+        try:
+            self.repository.add_task_event(
+                task_id=self._current_task_id,
+                event_type="shutdown_requested",
+                status_from=LlmTaskStatus.RUNNING,
+                status_to=LlmTaskStatus.RUNNING,
+                details={
+                    "signal": signal_name,
+                    "graceful_shutdown_seconds": self.graceful_shutdown_seconds,
+                },
+            )
+        except (RuntimeError, ValueError):  # pragma: no cover - best effort
+            return
+
+    def _emit_shutdown_completed_if_ready(self) -> None:
+        if not self._stop_requested:
+            return
+        if self._shutdown_completed_emitted:
+            return
+        if self._shutdown_task_id is None:
+            return
+        self._shutdown_completed_emitted = True
+        try:
+            self.repository.add_task_event(
+                task_id=self._shutdown_task_id,
+                event_type="shutdown_completed",
+                status_from=None,
+                status_to=None,
+                details={
+                    "signal": self._stop_signal_name or "unknown",
+                    "graceful_shutdown_seconds": self.graceful_shutdown_seconds,
+                },
+            )
+        except (RuntimeError, ValueError):  # pragma: no cover - best effort
+            return
 
     def _execute_backend(
         self,
@@ -684,7 +868,7 @@ class OrchestratorWorker:
         task: LlmTaskView,
         routing: FrozenRouting,
         repair_mode: bool = False,
-    ):
+    ) -> BackendRunResult:
         execution = self.backend.run(
             BackendRunRequest(
                 manifest_path=manifest_path,
@@ -694,6 +878,8 @@ class OrchestratorWorker:
                 model=routing.model,
                 command_template=routing.command_template,
                 repair_mode=repair_mode,
+                shutdown_requested=lambda: self._stop_requested,
+                graceful_shutdown_seconds=self.graceful_shutdown_seconds,
             ),
         )
         self._record_artifacts(task_id=task_id, execution=execution)
@@ -735,7 +921,7 @@ class OrchestratorWorker:
         failure_class: FailureClass | None,
         attempt_failure_code: str | None,
         error_summary: str | None,
-        execution: object | None,
+        execution: BackendRunResult | None,
         routing: FrozenRouting | None,
         output_path: Path | None,
     ) -> None:
@@ -744,13 +930,10 @@ class OrchestratorWorker:
         exit_code: int | None = None
         timed_out = False
         if execution is not None:
-            stdout_path = Path(getattr(execution, "stdout_path", ""))
-            stderr_path = Path(getattr(execution, "stderr_path", ""))
-            stdout_text = self._read_text(stdout_path)
-            stderr_text = self._read_text(stderr_path)
-            exit_code_raw = getattr(execution, "exit_code", None)
-            exit_code = int(exit_code_raw) if isinstance(exit_code_raw, int) else None
-            timed_out = bool(getattr(execution, "timed_out", False))
+            stdout_text = self._read_text(execution.stdout_path)
+            stderr_text = self._read_text(execution.stderr_path)
+            exit_code = execution.exit_code
+            timed_out = execution.timed_out
 
         agent = routing.agent if routing is not None else "unknown"
         model = routing.model if routing is not None else "unknown"
@@ -767,6 +950,7 @@ class OrchestratorWorker:
             LlmTaskAttemptFinish(
                 task_id=task.task_id,
                 attempt_no=task.attempt,
+                started_at=task.started_at,
                 status=status.value,
                 finished_at=utc_now(),
                 exit_code=exit_code,
@@ -790,7 +974,7 @@ class OrchestratorWorker:
             ),
         )
 
-    def _record_artifacts(self, *, task_id: str, execution: object) -> None:
+    def _record_artifacts(self, *, task_id: str, execution: BackendRunResult) -> None:
         stdout_path = getattr(execution, "stdout_path", None)
         stderr_path = getattr(execution, "stderr_path", None)
         if stdout_path is not None and Path(stdout_path).exists():

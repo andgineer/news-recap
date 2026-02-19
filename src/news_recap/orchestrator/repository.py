@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import and_, event, func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy import update as sa_update
-from sqlmodel import Session, col, create_engine, delete, select
+from sqlmodel import Session, col, delete, select
 
 from news_recap.ingestion.storage.alembic_runner import upgrade_head
-from news_recap.ingestion.storage.common import utc_now
+from news_recap.ingestion.storage.common import (
+    build_sqlite_engine,
+    connect_sqlite_with_policy,
+    utc_now,
+)
 from news_recap.ingestion.storage.sqlmodel_models import (
     DEFAULT_USER_ID,
     AppUser,
@@ -74,18 +77,28 @@ class OrchestratorRepository:
         *,
         user_id: str = DEFAULT_USER_ID,
         user_name: str = "Default User",
+        sqlite_busy_timeout_ms: int = 5_000,
     ) -> None:
         self.db_path = db_path
         self.user_id = user_id
         self.user_name = user_name
+        self.sqlite_busy_timeout_ms = sqlite_busy_timeout_ms
 
-        db_url = f"sqlite:///{db_path}"
-        self.engine = create_engine(db_url, connect_args={"check_same_thread": False})
-        event.listen(self.engine, "connect", _enable_sqlite_foreign_keys)
+        # Intentional trade-off: this repository owns its own SQLAlchemy engine
+        # even when other repositories target the same SQLite file.
+        # Operational consistency is enforced via shared SQLite policy
+        # (WAL + busy_timeout + foreign_keys), which is sufficient for the
+        # current single-machine CLI deployment while keeping repository
+        # construction independent.
+        self.engine = build_sqlite_engine(
+            db_path=db_path,
+            busy_timeout_ms=sqlite_busy_timeout_ms,
+        )
 
-        self._connection = sqlite3.connect(db_path)
-        self._connection.row_factory = sqlite3.Row
-        self._connection.execute("PRAGMA foreign_keys = ON")
+        self._connection = connect_sqlite_with_policy(
+            db_path=db_path,
+            busy_timeout_ms=sqlite_busy_timeout_ms,
+        )
 
     def close(self) -> None:
         """Close underlying DB resources."""
@@ -97,8 +110,6 @@ class OrchestratorRepository:
         """Run schema migrations and ensure actor context exists."""
 
         upgrade_head(self.db_path)
-        self._connection.execute("PRAGMA foreign_keys = ON")
-        self._connection.commit()
         self._ensure_actor_context()
 
     def _ensure_actor_context(self) -> None:
@@ -216,6 +227,96 @@ class OrchestratorRepository:
                 )
                 session.commit()
                 return _to_task_view(claimed)
+
+    def recover_stale_running_tasks(
+        self,
+        *,
+        stale_after: timedelta,
+        limit: int = 100,
+    ) -> int:
+        """Recover stale running tasks using timeout+grace policy with CAS guard."""
+
+        if stale_after.total_seconds() <= 0:
+            raise ValueError("stale_after must be > 0")
+
+        now = utc_now()
+        recovered = 0
+        with Session(self.engine) as session:
+            # NOTE: stale filtering is intentionally done in Python after loading
+            # the oldest RUNNING rows (up to `limit`), not in SQL. This keeps the
+            # query simple for the current low-concurrency deployment.
+            # In a future multi-worker/high-cardinality setup, move stale
+            # predicate logic into SQL WHERE to avoid potential starvation for
+            # stale rows beyond this limited scan window.
+            running_rows = session.exec(
+                select(LlmTask)
+                .where(
+                    LlmTask.user_id == self.user_id,
+                    LlmTask.status == LlmTaskStatus.RUNNING.value,
+                )
+                .order_by(col(LlmTask.started_at).asc())
+                .limit(limit),
+            ).all()
+
+            for row in running_rows:
+                started_at = row.started_at or row.updated_at or row.created_at
+                stale_deadline = (
+                    _to_utc_aware_datetime(started_at)
+                    + timedelta(
+                        seconds=int(row.timeout_seconds),
+                    )
+                    + stale_after
+                )
+                if now <= stale_deadline:
+                    continue
+
+                predicates = [
+                    col(LlmTask.task_id) == row.task_id,
+                    col(LlmTask.user_id) == self.user_id,
+                    col(LlmTask.status) == LlmTaskStatus.RUNNING.value,
+                    col(LlmTask.started_at) == row.started_at,
+                ]
+                if row.worker_id is None:
+                    predicates.append(col(LlmTask.worker_id).is_(None))
+                else:
+                    predicates.append(col(LlmTask.worker_id) == row.worker_id)
+
+                result = session.exec(
+                    sa_update(LlmTask)
+                    .where(*predicates)
+                    .values(
+                        status=LlmTaskStatus.QUEUED.value,
+                        run_after=_to_db_datetime(now),
+                        started_at=None,
+                        heartbeat_at=None,
+                        finished_at=None,
+                        failure_class=None,
+                        error_summary=None,
+                        last_exit_code=None,
+                        repair_attempted_at=None,
+                        worker_id=None,
+                        updated_at=_to_db_datetime(now),
+                    ),
+                )
+                if result.rowcount != 1:
+                    continue
+
+                self._add_event(
+                    session=session,
+                    task_id=row.task_id,
+                    event_type="stale_recovered",
+                    status_from=LlmTaskStatus.RUNNING,
+                    status_to=LlmTaskStatus.QUEUED,
+                    details={
+                        "observed_worker_id": row.worker_id,
+                        "observed_started_at": _to_utc_aware_datetime(started_at).isoformat(),
+                        "stale_after_seconds": int(stale_after.total_seconds()),
+                    },
+                )
+                recovered += 1
+
+            session.commit()
+        return recovered
 
     def touch_task(self, *, task_id: str) -> None:
         """Update heartbeat for a running task."""
@@ -792,13 +893,18 @@ class OrchestratorRepository:
                 ).one_or_none()
                 if task is None:
                     raise RuntimeError(f"Task not found: {payload.task_id}")
+                fallback_started_at = payload.started_at
+                if fallback_started_at is None and task.started_at is not None:
+                    fallback_started_at = _to_utc_aware_datetime(task.started_at)
+                if fallback_started_at is None:
+                    fallback_started_at = payload.finished_at
                 row = LlmTaskAttempt(
                     task_id=payload.task_id,
                     user_id=self.user_id,
                     attempt_no=payload.attempt_no,
                     task_type=task.task_type,
                     status=payload.status,
-                    started_at=_to_db_datetime(payload.finished_at),
+                    started_at=_to_db_datetime(fallback_started_at),
                     created_at=utc_now(),
                 )
 
@@ -1789,12 +1895,6 @@ class OrchestratorRepository:
                 created_at=utc_now(),
             ),
         )
-
-
-def _enable_sqlite_foreign_keys(dbapi_connection: sqlite3.Connection, _: object) -> None:
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
 
 
 def _to_db_datetime(value: datetime) -> datetime:

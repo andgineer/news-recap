@@ -15,6 +15,7 @@ from news_recap.ingestion.models import NormalizedArticle
 from news_recap.ingestion.repository import SQLiteRepository
 from news_recap.orchestrator.models import (
     FailureClass,
+    LlmTaskAttemptFinish,
     LlmTaskCreate,
     LlmTaskStatus,
     OutputFeedbackWrite,
@@ -235,6 +236,94 @@ def test_schedule_retry_resets_repair_marker_for_next_attempt(tmp_path: Path) ->
     assert claimed_again is not None
     assert claimed_again.attempt == 2
     assert claimed_again.repair_attempted_at is None
+    repository.close()
+
+
+def test_recover_stale_running_tasks_requeues_with_event(tmp_path: Path) -> None:
+    repository = OrchestratorRepository(tmp_path / "orchestrator-stale-running.db")
+    repository.init_schema()
+
+    task = repository.enqueue_task(
+        LlmTaskCreate(
+            task_type="highlights",
+            run_after=datetime.now(tz=UTC),
+            timeout_seconds=60,
+            input_manifest_path=str(tmp_path / "manifest.json"),
+        ),
+    )
+    claimed = repository.claim_next_ready_task(worker_id="worker-a")
+    assert claimed is not None
+    assert claimed.status == LlmTaskStatus.RUNNING
+
+    stale_started_at = (datetime.now(tz=UTC) - timedelta(hours=2)).replace(tzinfo=None)
+    repository._connection.execute(
+        "UPDATE llm_tasks SET started_at = ?, heartbeat_at = ? WHERE task_id = ?",
+        (
+            stale_started_at.isoformat(sep=" "),
+            stale_started_at.isoformat(sep=" "),
+            task.task_id,
+        ),
+    )
+    repository._connection.commit()
+
+    recovered = repository.recover_stale_running_tasks(stale_after=timedelta(seconds=30))
+    assert recovered == 1
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert details.task.status == LlmTaskStatus.QUEUED
+    assert any(event.event_type == "stale_recovered" for event in details.events)
+    repository.close()
+
+
+def test_finalize_task_attempt_fallback_preserves_non_zero_duration(tmp_path: Path) -> None:
+    repository = OrchestratorRepository(tmp_path / "orchestrator-attempt-fallback.db")
+    repository.init_schema()
+
+    task = repository.enqueue_task(
+        LlmTaskCreate(
+            task_type="highlights",
+            run_after=datetime.now(tz=UTC),
+            timeout_seconds=120,
+            input_manifest_path=str(tmp_path / "manifest.json"),
+        ),
+    )
+    claimed = repository.claim_next_ready_task(worker_id="worker-a")
+    assert claimed is not None
+
+    started_at = claimed.started_at
+    assert started_at is not None
+    finished_at = started_at + timedelta(seconds=2)
+
+    repository.finalize_task_attempt(
+        LlmTaskAttemptFinish(
+            task_id=task.task_id,
+            attempt_no=claimed.attempt,
+            started_at=started_at,
+            status="failed",
+            finished_at=finished_at,
+            exit_code=2,
+            timed_out=False,
+            failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+            attempt_failure_code="fallback_row_created",
+            error_summary_sanitized="fallback finalize",
+            stdout_preview_sanitized="",
+            stderr_preview_sanitized="",
+            output_chars=None,
+            prompt_tokens=None,
+            completion_tokens=None,
+            total_tokens=None,
+            usage_status="unknown",
+            usage_source="none",
+            usage_parser_version="v1",
+            estimated_cost_usd=None,
+        ),
+    )
+
+    attempts = repository.list_task_attempts(task_id=task.task_id)
+    assert len(attempts) == 1
+    assert attempts[0].duration_ms is not None
+    assert attempts[0].duration_ms >= 2000
     repository.close()
 
 

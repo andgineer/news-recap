@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+PRICING_SPEC_PARTS = 4
+
 
 @dataclass(slots=True)
 class ModelPricing:
@@ -29,13 +31,13 @@ def estimate_cost_usd(
         return None
 
     if prompt_tokens is not None and completion_tokens is not None:
-        return (
-            (prompt_tokens / 1_000_000) * pricing.input_per_1m
-            + (completion_tokens / 1_000_000) * pricing.output_per_1m
-        )
+        return (prompt_tokens / 1_000_000) * pricing.input_per_1m + (
+            completion_tokens / 1_000_000
+        ) * pricing.output_per_1m
 
     if total_tokens is not None:
-        return (total_tokens / 1_000_000) * pricing.input_per_1m
+        average_per_1m = (pricing.input_per_1m + pricing.output_per_1m) / 2
+        return (total_tokens / 1_000_000) * average_per_1m
     return None
 
 
@@ -73,13 +75,15 @@ def _parse_pricing_mapping(raw: str) -> dict[tuple[str, str], ModelPricing]:
         if not value:
             continue
         parts = [part.strip() for part in value.split(":")]
-        if len(parts) != 4:
+        if len(parts) != PRICING_SPEC_PARTS:
             continue
         agent, model, input_price, output_price = parts
         try:
             input_per_1m = float(input_price)
             output_per_1m = float(output_price)
         except ValueError:
+            continue
+        if input_per_1m < 0 or output_per_1m < 0:
             continue
         parsed[(agent.lower(), model)] = ModelPricing(
             input_per_1m=input_per_1m,

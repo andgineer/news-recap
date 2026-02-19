@@ -124,17 +124,17 @@ def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatc
     assert settings.orchestrator.codex_command_template == (
         "codex exec --sandbox workspace-write "
         "-c sandbox_workspace_write.network_access=true "
-        "-c model_reasoning_effort=high --model {model} {prompt}"
+        '-c model_reasoning_effort=high --model {model} "task_manifest={task_manifest}\\n{prompt}"'
     )
     assert settings.orchestrator.claude_command_template == (
         "claude -p --model {model} --permission-mode dontAsk "
         '--allowed-tools "Read,Write,Edit,WebFetch,'
         'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
-        "-- {prompt}"
+        '-- "task_manifest={task_manifest}\\n{prompt}"'
     )
     assert (
         settings.orchestrator.gemini_command_template
-        == "gemini --model {model} --approval-mode auto_edit --prompt {prompt}"
+        == 'gemini --model {model} --approval-mode auto_edit --prompt "task_manifest={task_manifest}\\n{prompt}"'
     )
     assert settings.orchestrator.gemini_model_fast == "gemini-2.5-flash"
     assert settings.orchestrator.gemini_model_quality == "gemini-2.5-pro"
@@ -158,4 +158,48 @@ def test_from_env_rejects_invalid_task_type_profile_map_value(
 ) -> None:
     monkeypatch.setenv("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP", "highlights=cheap")
     with pytest.raises(ValueError, match="expected fast or quality"):
+        Settings.from_env()
+
+
+def test_from_env_parses_sqlite_busy_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NEWS_RECAP_SQLITE_BUSY_TIMEOUT_MS", "12345")
+    settings = Settings.from_env()
+    assert settings.sqlite_busy_timeout_ms == 12345
+
+
+def test_from_env_rejects_non_positive_sqlite_busy_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NEWS_RECAP_SQLITE_BUSY_TIMEOUT_MS", "0")
+    with pytest.raises(ValueError, match="SQLITE_BUSY_TIMEOUT_MS"):
+        Settings.from_env()
+
+
+def test_from_env_rejects_unsupported_command_template_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE", "codex exec {unknown}")
+    with pytest.raises(ValueError, match="unsupported placeholder"):
+        Settings.from_env()
+
+
+def test_from_env_rejects_command_template_without_placeholders(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE", "gemini --help")
+    with pytest.raises(ValueError, match="must include at least one placeholder"):
+        Settings.from_env()
+
+
+def test_from_env_rejects_command_template_without_task_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE", "codex --model {model} {prompt}")
+    with pytest.raises(ValueError, match="required placeholder \\{task_manifest\\}"):
+        Settings.from_env()
+
+
+def test_from_env_rejects_empty_worker_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NEWS_RECAP_LLM_WORKER_ID", "   ")
+    with pytest.raises(ValueError, match="WORKER_ID"):
         Settings.from_env()

@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import struct
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import and_, case, event, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, col, create_engine, delete, select
+from sqlmodel import Session, col, delete, select
 
 from news_recap.ingestion.models import (
     ClusterListResult,
@@ -37,7 +36,11 @@ from news_recap.ingestion.models import (
     DedupCluster as DomainDedupCluster,
 )
 from news_recap.ingestion.storage.alembic_runner import upgrade_head
-from news_recap.ingestion.storage.common import utc_now
+from news_recap.ingestion.storage.common import (
+    build_sqlite_engine,
+    connect_sqlite_with_policy,
+    utc_now,
+)
 from news_recap.ingestion.storage.sqlmodel_models import (
     DEFAULT_USER_ID,
     AppUser,
@@ -70,19 +73,29 @@ class SQLiteRepository:
         *,
         user_id: str = DEFAULT_USER_ID,
         user_name: str = "Default User",
+        sqlite_busy_timeout_ms: int = 5_000,
     ) -> None:
         self.db_path = db_path
         self.user_id = user_id
         self.user_name = user_name
+        self.sqlite_busy_timeout_ms = sqlite_busy_timeout_ms
 
-        db_url = f"sqlite:///{db_path}"
-        self.engine = create_engine(db_url, connect_args={"check_same_thread": False})
-        event.listen(self.engine, "connect", _enable_sqlite_foreign_keys)
+        # Intentional trade-off: this repository owns its own SQLAlchemy engine
+        # even when other repositories point to the same SQLite file.
+        # We standardize behavior through a shared SQLite policy
+        # (WAL + busy_timeout + foreign_keys) instead of cross-repository
+        # engine DI. This keeps repository lifecycle independent and is
+        # adequate for the current single-machine runtime.
+        self.engine = build_sqlite_engine(
+            db_path=db_path,
+            busy_timeout_ms=sqlite_busy_timeout_ms,
+        )
 
         # Keep low-level connection for tests and ad-hoc debugging queries.
-        self._connection = sqlite3.connect(db_path)
-        self._connection.row_factory = sqlite3.Row
-        self._connection.execute("PRAGMA foreign_keys = ON")
+        self._connection = connect_sqlite_with_policy(
+            db_path=db_path,
+            busy_timeout_ms=sqlite_busy_timeout_ms,
+        )
 
     def close(self) -> None:
         self._connection.close()
@@ -90,8 +103,6 @@ class SQLiteRepository:
 
     def init_schema(self) -> None:
         upgrade_head(self.db_path)
-        self._connection.execute("PRAGMA foreign_keys = ON")
-        self._connection.commit()
         self._ensure_actor_context()
 
     def start_run(
@@ -1350,12 +1361,6 @@ def _pack_vector(vector: list[float]) -> bytes:
 def _unpack_vector(blob: bytes, dim: int) -> list[float]:
     unpacked = struct.unpack(f"{dim}f", blob)
     return list(unpacked)
-
-
-def _enable_sqlite_foreign_keys(dbapi_connection: sqlite3.Connection, _: object) -> None:
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
 
 
 def _to_db_datetime(value: datetime) -> datetime:

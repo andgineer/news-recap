@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import shlex
+import string
 import subprocess
+import time
 from pathlib import Path
 
 from news_recap.orchestrator.backend.base import BackendRunRequest, BackendRunResult
@@ -53,27 +55,17 @@ class CliAgentBackend:
                 stdout_path.open("w", encoding="utf-8") as stdout_handle,
                 stderr_path.open("w", encoding="utf-8") as stderr_handle,
             ):
-                completed = subprocess.run(  # noqa: S603
-                    run_args,
-                    check=False,
+                return _run_subprocess_with_shutdown(
+                    run_args=run_args,
                     env=env,
-                    timeout=request.timeout_seconds,
-                    stdout=stdout_handle,
-                    stderr=stderr_handle,
+                    timeout_seconds=request.timeout_seconds,
+                    stdout_handle=stdout_handle,
+                    stderr_handle=stderr_handle,
+                    shutdown_requested=request.shutdown_requested,
+                    graceful_shutdown_seconds=request.graceful_shutdown_seconds,
+                    stdout_path=stdout_path,
+                    stderr_path=stderr_path,
                 )
-            return BackendRunResult(
-                exit_code=completed.returncode,
-                timed_out=False,
-                stdout_path=stdout_path,
-                stderr_path=stderr_path,
-            )
-        except subprocess.TimeoutExpired:
-            return BackendRunResult(
-                exit_code=124,
-                timed_out=True,
-                stdout_path=stdout_path,
-                stderr_path=stderr_path,
-            )
         except FileNotFoundError as error:
             raise BackendRunError(
                 f"CLI backend command not found: {command_head}",
@@ -93,18 +85,28 @@ def _build_run_args(  # noqa: PLR0913
     prompt: str,
     prompt_file: Path,
     manifest_path: Path,
+    os_name: str | None = None,
 ) -> tuple[str | list[str], str]:
     stripped = command_template.strip()
     if not stripped:
         raise BackendRunError("CLI backend command template is empty.", transient=False)
+    if "{task_manifest}" not in stripped:
+        raise BackendRunError(
+            "CLI backend command template must include {task_manifest}.",
+            transient=False,
+        )
 
+    current_os_name = os_name or os.name
     try:
-        if os.name == "nt":
-            rendered = stripped.format(
-                model=subprocess.list2cmdline([model]),
-                prompt=subprocess.list2cmdline([prompt]),
-                prompt_file=subprocess.list2cmdline([str(prompt_file)]),
-                task_manifest=subprocess.list2cmdline([str(manifest_path)]),
+        if current_os_name == "nt":
+            rendered = _render_windows_command_template(
+                template=stripped,
+                values={
+                    "model": model,
+                    "prompt": prompt,
+                    "prompt_file": str(prompt_file),
+                    "task_manifest": str(manifest_path),
+                },
             ).strip()
             if not rendered:
                 raise BackendRunError(
@@ -133,3 +135,141 @@ def _build_run_args(  # noqa: PLR0913
             transient=False,
         )
     return argv, argv[0]
+
+
+def _render_windows_command_template(*, template: str, values: dict[str, str]) -> str:
+    formatter = string.Formatter()
+    rendered_parts: list[str] = []
+    in_double_quotes = False
+
+    for literal_text, field_name, format_spec, conversion in formatter.parse(template):
+        rendered_parts.append(literal_text)
+        in_double_quotes = _advance_windows_quote_state(literal_text, in_double_quotes)
+        if field_name is None:
+            continue
+
+        try:
+            value = values[field_name]
+        except KeyError as error:
+            raise KeyError(field_name) from error
+
+        value_text = _apply_string_conversion(value, conversion, format_spec)
+        if in_double_quotes:
+            rendered_parts.append(_escape_windows_embedded_quote_value(value_text))
+            continue
+
+        rendered_parts.append(subprocess.list2cmdline([value_text]))
+
+    return "".join(rendered_parts)
+
+
+def _apply_string_conversion(
+    value: str,
+    conversion: str | None,
+    format_spec: str | None,
+) -> str:
+    converted: str
+    if conversion == "r":
+        converted = repr(value)
+    elif conversion == "a":
+        converted = ascii(value)
+    elif conversion in (None, "", "s"):
+        converted = str(value)
+    else:
+        raise ValueError(f"Unsupported format conversion: !{conversion}")
+
+    if format_spec:
+        return format(converted, format_spec)
+    return converted
+
+
+def _advance_windows_quote_state(literal_text: str, in_double_quotes: bool) -> bool:
+    for index, char in enumerate(literal_text):
+        if char != '"':
+            continue
+        backslashes = 0
+        scan_index = index - 1
+        while scan_index >= 0 and literal_text[scan_index] == "\\":
+            backslashes += 1
+            scan_index -= 1
+        if backslashes % 2 == 1:
+            continue
+        in_double_quotes = not in_double_quotes
+    return in_double_quotes
+
+
+def _escape_windows_embedded_quote_value(value: str) -> str:
+    return value.replace('"', '\\"')
+
+
+def _run_subprocess_with_shutdown(  # noqa: PLR0913
+    *,
+    run_args: str | list[str],
+    env: dict[str, str],
+    timeout_seconds: int,
+    stdout_handle,
+    stderr_handle,
+    shutdown_requested,
+    graceful_shutdown_seconds: int | None,
+    stdout_path: Path,
+    stderr_path: Path,
+) -> BackendRunResult:
+    process = subprocess.Popen(  # noqa: S603
+        run_args,
+        env=env,
+        stdout=stdout_handle,
+        stderr=stderr_handle,
+        text=True,
+    )
+    start_monotonic = time.monotonic()
+    shutdown_deadline: float | None = None
+    graceful_seconds = max(0, graceful_shutdown_seconds or 0)
+
+    while True:
+        returncode = process.poll()
+        if returncode is not None:
+            return BackendRunResult(
+                exit_code=returncode,
+                timed_out=False,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+            )
+
+        now = time.monotonic()
+        if now - start_monotonic >= timeout_seconds:
+            _terminate_process(process)
+            return BackendRunResult(
+                exit_code=124,
+                timed_out=True,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+            )
+
+        if shutdown_requested is not None and shutdown_requested():
+            if shutdown_deadline is None:
+                shutdown_deadline = now + graceful_seconds
+            if now >= shutdown_deadline:
+                _terminate_process(process)
+                return BackendRunResult(
+                    exit_code=124,
+                    timed_out=True,
+                    stdout_path=stdout_path,
+                    stderr_path=stderr_path,
+                )
+
+        time.sleep(0.1)
+
+
+def _terminate_process(process: subprocess.Popen[str] | subprocess.Popen[bytes]) -> None:
+    try:
+        process.terminate()
+    except OSError:
+        return
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+        except OSError:
+            return
+        process.wait(timeout=2)

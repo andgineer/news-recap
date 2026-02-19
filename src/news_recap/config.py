@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import string
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
@@ -68,16 +69,17 @@ class OrchestratorSettings:
     codex_command_template: str = (
         "codex exec --sandbox workspace-write "
         "-c sandbox_workspace_write.network_access=true "
-        "-c model_reasoning_effort=high --model {model} {prompt}"
+        '-c model_reasoning_effort=high --model {model} "task_manifest={task_manifest}\\n{prompt}"'
     )
     claude_command_template: str = (
         "claude -p --model {model} --permission-mode dontAsk "
         '--allowed-tools "Read,Write,Edit,WebFetch,'
         'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
-        "-- {prompt}"
+        '-- "task_manifest={task_manifest}\\n{prompt}"'
     )
     gemini_command_template: str = (
-        "gemini --model {model} --approval-mode auto_edit --prompt {prompt}"
+        "gemini --model {model} --approval-mode auto_edit "
+        '--prompt "task_manifest={task_manifest}\\n{prompt}"'
     )
     codex_model_fast: str = "gpt-5-codex-mini"
     codex_model_quality: str = "gpt-5-codex"
@@ -89,6 +91,8 @@ class OrchestratorSettings:
     poll_interval_seconds: float = 2.0
     retry_base_seconds: int = 30
     retry_max_seconds: int = 900
+    worker_stale_attempt_seconds: int = 1_800
+    worker_graceful_shutdown_seconds: int = 30
     qa_lookback_days: int = 3
     retrieval_top_k: int = 40
     retrieval_max_articles: int = 80
@@ -106,13 +110,14 @@ class Settings:
     rss: RssSettings = field(default_factory=RssSettings)
     user_context: UserContextSettings = field(default_factory=UserContextSettings)
     orchestrator: OrchestratorSettings = field(default_factory=OrchestratorSettings)
+    sqlite_busy_timeout_ms: int = 5_000
 
     @classmethod
     def from_env(cls, db_path: Path | None = None) -> Settings:
         """Load settings from environment with sane defaults for local development."""
 
         rss_urls = _collect_feed_urls()
-        return cls(
+        settings = cls(
             db_path=db_path or Path(os.getenv("NEWS_RECAP_DB_PATH", ".news_recap.db")),
             ingestion=IngestionSettings(
                 page_size=int(
@@ -181,18 +186,20 @@ class Settings:
                     "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
                     "codex exec --sandbox workspace-write "
                     "-c sandbox_workspace_write.network_access=true "
-                    "-c model_reasoning_effort=high --model {model} {prompt}",
+                    "-c model_reasoning_effort=high --model {model} "
+                    '"task_manifest={task_manifest}\\n{prompt}"',
                 ),
                 claude_command_template=os.getenv(
                     "NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE",
                     "claude -p --model {model} --permission-mode dontAsk "
                     '--allowed-tools "Read,Write,Edit,WebFetch,'
                     'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
-                    "-- {prompt}",
+                    '-- "task_manifest={task_manifest}\\n{prompt}"',
                 ),
                 gemini_command_template=os.getenv(
                     "NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE",
-                    "gemini --model {model} --approval-mode auto_edit --prompt {prompt}",
+                    "gemini --model {model} --approval-mode auto_edit "
+                    '--prompt "task_manifest={task_manifest}\\n{prompt}"',
                 ),
                 codex_model_fast=os.getenv(
                     "NEWS_RECAP_LLM_CODEX_MODEL_FAST",
@@ -228,6 +235,12 @@ class Settings:
                 retry_max_seconds=int(
                     os.getenv("NEWS_RECAP_LLM_RETRY_MAX_SECONDS", "900"),
                 ),
+                worker_stale_attempt_seconds=int(
+                    os.getenv("NEWS_RECAP_WORKER_STALE_ATTEMPT_SECONDS", "1800"),
+                ),
+                worker_graceful_shutdown_seconds=int(
+                    os.getenv("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS", "30"),
+                ),
                 qa_lookback_days=int(os.getenv("NEWS_RECAP_QA_LOOKBACK_DAYS", "3")),
                 retrieval_top_k=int(os.getenv("NEWS_RECAP_RETRIEVAL_TOP_K", "40")),
                 retrieval_max_articles=int(
@@ -240,7 +253,93 @@ class Settings:
                     os.getenv("NEWS_RECAP_RETRIEVAL_CHAR_BUDGET", "60000"),
                 ),
             ),
+            sqlite_busy_timeout_ms=int(
+                os.getenv("NEWS_RECAP_SQLITE_BUSY_TIMEOUT_MS", "5000"),
+            ),
         )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        """Validate cross-domain runtime settings and fail fast on invalid config."""
+
+        self._validate_storage_and_ingestion()
+        self._validate_orchestrator_routing()
+        self._validate_orchestrator_runtime_limits()
+
+    def _validate_storage_and_ingestion(self) -> None:
+        if self.sqlite_busy_timeout_ms <= 0:
+            raise ValueError("NEWS_RECAP_SQLITE_BUSY_TIMEOUT_MS must be > 0.")
+        if self.ingestion.active_run_stale_after_seconds <= 0:
+            raise ValueError("NEWS_RECAP_ACTIVE_RUN_STALE_AFTER_SECONDS must be > 0.")
+        if self.ingestion.article_retention_days < 0:
+            raise ValueError("NEWS_RECAP_ARTICLE_RETENTION_DAYS must be >= 0.")
+        if not (0.0 < self.dedup.threshold <= 1.0):
+            raise ValueError("NEWS_RECAP_DEDUP_THRESHOLD must be in (0, 1].")
+
+    def _validate_orchestrator_routing(self) -> None:
+        supported_agents = {"codex", "claude", "gemini"}
+        default_agent = self.orchestrator.default_agent.strip().lower()
+        if default_agent not in supported_agents:
+            raise ValueError(
+                "NEWS_RECAP_LLM_DEFAULT_AGENT must be one of: codex, claude, gemini.",
+            )
+
+        for task_type, profile in self.orchestrator.task_type_profile_map.items():
+            normalized_task_type = task_type.strip().lower()
+            normalized_profile = profile.strip().lower()
+            if not normalized_task_type:
+                raise ValueError("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP contains empty task_type.")
+            if normalized_profile not in {"fast", "quality"}:
+                raise ValueError(
+                    f"Unsupported model profile for task_type={task_type!r}: {profile!r}",
+                )
+
+        for key, template in (
+            ("NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE", self.orchestrator.codex_command_template),
+            ("NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE", self.orchestrator.claude_command_template),
+            ("NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE", self.orchestrator.gemini_command_template),
+        ):
+            _validate_command_template(env_key=key, template=template)
+
+        for env_key, model_id in (
+            ("NEWS_RECAP_LLM_CODEX_MODEL_FAST", self.orchestrator.codex_model_fast),
+            ("NEWS_RECAP_LLM_CODEX_MODEL_QUALITY", self.orchestrator.codex_model_quality),
+            ("NEWS_RECAP_LLM_CLAUDE_MODEL_FAST", self.orchestrator.claude_model_fast),
+            ("NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY", self.orchestrator.claude_model_quality),
+            ("NEWS_RECAP_LLM_GEMINI_MODEL_FAST", self.orchestrator.gemini_model_fast),
+            ("NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY", self.orchestrator.gemini_model_quality),
+        ):
+            if not model_id.strip():
+                raise ValueError(f"{env_key} must not be empty.")
+
+    def _validate_orchestrator_runtime_limits(self) -> None:  # noqa: C901
+        if not self.orchestrator.worker_id.strip():
+            raise ValueError("NEWS_RECAP_LLM_WORKER_ID must not be empty.")
+        if self.orchestrator.poll_interval_seconds < 0:
+            raise ValueError("NEWS_RECAP_LLM_POLL_INTERVAL_SECONDS must be >= 0.")
+        if self.orchestrator.retry_base_seconds < 0:
+            raise ValueError("NEWS_RECAP_LLM_RETRY_BASE_SECONDS must be >= 0.")
+        if self.orchestrator.retry_max_seconds < 0:
+            raise ValueError("NEWS_RECAP_LLM_RETRY_MAX_SECONDS must be >= 0.")
+        if self.orchestrator.retry_max_seconds < self.orchestrator.retry_base_seconds:
+            raise ValueError(
+                "NEWS_RECAP_LLM_RETRY_MAX_SECONDS must be >= NEWS_RECAP_LLM_RETRY_BASE_SECONDS.",
+            )
+        if self.orchestrator.worker_stale_attempt_seconds <= 0:
+            raise ValueError("NEWS_RECAP_WORKER_STALE_ATTEMPT_SECONDS must be > 0.")
+        if self.orchestrator.worker_graceful_shutdown_seconds <= 0:
+            raise ValueError("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS must be > 0.")
+        if self.orchestrator.qa_lookback_days <= 0:
+            raise ValueError("NEWS_RECAP_QA_LOOKBACK_DAYS must be > 0.")
+        if self.orchestrator.retrieval_top_k <= 0:
+            raise ValueError("NEWS_RECAP_RETRIEVAL_TOP_K must be > 0.")
+        if self.orchestrator.retrieval_max_articles <= 0:
+            raise ValueError("NEWS_RECAP_RETRIEVAL_MAX_ARTICLES must be > 0.")
+        if self.orchestrator.retrieval_token_budget <= 0:
+            raise ValueError("NEWS_RECAP_RETRIEVAL_TOKEN_BUDGET must be > 0.")
+        if self.orchestrator.retrieval_char_budget <= 0:
+            raise ValueError("NEWS_RECAP_RETRIEVAL_CHAR_BUDGET must be > 0.")
 
     def validate_for_rss(self, override_feed_urls: tuple[str, ...] = ()) -> None:
         """Raise configuration error if RSS feed URLs are missing or invalid."""
@@ -392,3 +491,39 @@ def _env_bool(name: str, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"Invalid boolean value for {name}: {value!r}")
+
+
+def _validate_command_template(*, env_key: str, template: str) -> None:
+    stripped = template.strip()
+    if not stripped:
+        raise ValueError(f"{env_key} must not be empty.")
+
+    formatter = string.Formatter()
+    allowed = {"model", "prompt", "prompt_file", "task_manifest"}
+    seen_fields: set[str] = set()
+
+    for _, field_name, _, _ in formatter.parse(stripped):
+        if field_name is None:
+            continue
+        if field_name not in allowed:
+            raise ValueError(
+                f"{env_key} uses unsupported placeholder {{{field_name}}}. "
+                f"Allowed: {', '.join(sorted(allowed))}",
+            )
+        seen_fields.add(field_name)
+
+    if not seen_fields:
+        raise ValueError(
+            f"{env_key} must include at least one placeholder from: {', '.join(sorted(allowed))}",
+        )
+    if "task_manifest" not in seen_fields:
+        raise ValueError(f"{env_key} must include required placeholder {{task_manifest}}.")
+
+    rendered = stripped.format(
+        model="model-id",
+        prompt="prompt-text",
+        prompt_file="prompt.txt",
+        task_manifest="task_manifest.json",
+    ).strip()
+    if not rendered:
+        raise ValueError(f"{env_key} rendered an empty command.")

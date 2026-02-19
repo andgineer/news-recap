@@ -24,6 +24,21 @@ from news_recap.orchestrator.services import EnqueueDemoTask, OrchestratorServic
 from news_recap.orchestrator.smoke import AgentSmokeSpec, run_smoke_checks
 from news_recap.orchestrator.worker import OrchestratorWorker
 
+DEFAULT_SMOKE_COMMAND_TEMPLATES = {
+    "codex": (
+        "codex exec --sandbox workspace-write "
+        "-c sandbox_workspace_write.network_access=true "
+        "-c model_reasoning_effort=high --model {model} {prompt}"
+    ),
+    "claude": (
+        "claude -p --model {model} --permission-mode dontAsk "
+        '--allowed-tools "Read,Write,Edit,WebFetch,'
+        'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
+        "-- {prompt}"
+    ),
+    "gemini": "gemini --model {model} --approval-mode auto_edit --prompt {prompt}",
+}
+
 
 @dataclass(slots=True)
 class LlmEnqueueCommand:
@@ -193,6 +208,8 @@ class OrchestratorCliController:
                 poll_interval_seconds=settings.orchestrator.poll_interval_seconds,
                 retry_base_seconds=settings.orchestrator.retry_base_seconds,
                 retry_max_seconds=settings.orchestrator.retry_max_seconds,
+                stale_attempt_seconds=settings.orchestrator.worker_stale_attempt_seconds,
+                graceful_shutdown_seconds=settings.orchestrator.worker_graceful_shutdown_seconds,
             )
             summary = (
                 worker.run_once() if command.once else worker.run_loop(max_tasks=command.max_tasks)
@@ -285,6 +302,8 @@ class OrchestratorCliController:
                 retry_base_seconds=0,
                 retry_max_seconds=0,
                 timeout_retry_cap_seconds=1,
+                stale_attempt_seconds=settings.orchestrator.worker_stale_attempt_seconds,
+                graceful_shutdown_seconds=settings.orchestrator.worker_graceful_shutdown_seconds,
             )
             worker_summary = worker.run_loop(max_tasks=None)
             task_ids = tuple(matrix_task_ids)
@@ -532,13 +551,13 @@ class OrchestratorCliController:
         command_templates = {
             "claude": command.claude_command
             or os.getenv("NEWS_RECAP_LLM_SMOKE_CLAUDE_COMMAND")
-            or settings.orchestrator.claude_command_template,
+            or DEFAULT_SMOKE_COMMAND_TEMPLATES["claude"],
             "codex": command.codex_command
             or os.getenv("NEWS_RECAP_LLM_SMOKE_CODEX_COMMAND")
-            or settings.orchestrator.codex_command_template,
+            or DEFAULT_SMOKE_COMMAND_TEMPLATES["codex"],
             "gemini": command.gemini_command
             or os.getenv("NEWS_RECAP_LLM_SMOKE_GEMINI_COMMAND")
-            or settings.orchestrator.gemini_command_template,
+            or DEFAULT_SMOKE_COMMAND_TEMPLATES["gemini"],
         }
         selected_models: dict[str, str] = {}
         for agent in selected:
@@ -645,6 +664,7 @@ def _repository(settings: Settings) -> Iterator[OrchestratorRepository]:
         db_path=settings.db_path,
         user_id=settings.user_context.user_id,
         user_name=settings.user_context.user_name,
+        sqlite_busy_timeout_ms=settings.sqlite_busy_timeout_ms,
     )
     repository.init_schema()
     try:

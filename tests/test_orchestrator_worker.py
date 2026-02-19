@@ -125,7 +125,7 @@ def test_worker_executes_task_successfully_with_echo_agent(tmp_path: Path) -> No
     repository.close()
 
 
-def test_worker_recovers_missing_output_file_from_stdout(tmp_path: Path) -> None:
+def test_worker_recovers_invalid_output_file_from_stdout(tmp_path: Path) -> None:
     db_path = tmp_path / "worker-stdout-recovery.db"
     source_id = _seed_source_id(db_path, external_id="worker-stdout-recovery")
     repository = OrchestratorRepository(db_path)
@@ -134,11 +134,20 @@ def test_worker_recovers_missing_output_file_from_stdout(tmp_path: Path) -> None
     stdout_only_agent = tmp_path / "stdout_only_agent.py"
     stdout_only_agent.write_text(
         """
+import argparse
+from pathlib import Path
+from news_recap.orchestrator.contracts import read_manifest
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--task-manifest", required=True)
+args = parser.parse_args()
+manifest = read_manifest(Path(args.task_manifest))
+Path(manifest.output_result_path).write_text('{"blocks":[', "utf-8")
 print("Recovered from stdout parser")
 """.strip(),
         "utf-8",
     )
-    command_template = f"{sys.executable} {stdout_only_agent}"
+    command_template = f"{sys.executable} {stdout_only_agent} --task-manifest {{task_manifest}}"
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -296,6 +305,95 @@ Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_i
     repository.close()
 
 
+def test_worker_fails_fast_when_command_template_has_no_task_manifest_placeholder(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "worker-missing-task-manifest.db"
+    source_id = _seed_source_id(db_path, external_id="worker-missing-task-manifest")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    command_template = "echo {prompt}"
+    routing_defaults = _routing_defaults(command_template)
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Should fail fast.",
+            source_ids=(source_id,),
+            max_attempts=1,
+        ),
+    )
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+    )
+    summary = worker.run_once()
+    assert summary.failed == 1
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert details.task.status == LlmTaskStatus.FAILED
+    assert details.task.failure_class is not None
+    assert details.task.failure_class.value == "backend_non_retryable"
+    assert details.task.error_summary is not None
+    assert "must include {task_manifest}" in details.task.error_summary
+    repository.close()
+
+
+def test_worker_does_not_stdout_recover_when_output_file_is_missing(tmp_path: Path) -> None:
+    db_path = tmp_path / "worker-missing-output-no-recover.db"
+    source_id = _seed_source_id(db_path, external_id="worker-missing-output-no-recover")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    missing_output_agent = tmp_path / "missing_output_agent.py"
+    missing_output_agent.write_text(
+        """
+print("Parser candidate text that should not auto-recover missing output file.")
+""".strip(),
+        "utf-8",
+    )
+    command_template = f"{sys.executable} {missing_output_agent} {{task_manifest}}"
+    routing_defaults = _routing_defaults(command_template)
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="No output file should not recover.",
+            source_ids=(source_id,),
+        ),
+    )
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+    )
+    summary = worker.run_once()
+    assert summary.failed == 1
+    assert summary.succeeded == 0
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert details.task.status == LlmTaskStatus.FAILED
+    assert details.task.failure_class is not None
+    assert details.task.failure_class.value == "output_invalid_json"
+    event_types = [event.event_type for event in details.events]
+    assert "stdout_parser_recovered" not in event_types
+    repository.close()
+
+
 def test_worker_does_not_override_canceled_task_with_success(tmp_path: Path) -> None:
     db_path = tmp_path / "worker-cancel.db"
     source_id = _seed_source_id(db_path, external_id="worker-cancel")
@@ -385,6 +483,172 @@ Path(manifest.output_result_path).write_text(
     repository.close()
 
 
+def test_worker_graceful_stop_emits_shutdown_events_and_stops_new_claims(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "worker-graceful-stop.db"
+    source_id = _seed_source_id(db_path, external_id="worker-graceful-stop")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    slow_agent = tmp_path / "slow_graceful_agent.py"
+    slow_agent.write_text(
+        """
+import argparse
+import time
+from pathlib import Path
+from news_recap.orchestrator.contracts import read_manifest, read_articles_index
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--task-manifest", required=True)
+args = parser.parse_args()
+manifest = read_manifest(Path(args.task_manifest))
+articles = read_articles_index(Path(manifest.articles_index_path))
+time.sleep(1.0)
+source_id = articles[0].source_id if articles else "source:demo"
+Path(manifest.output_result_path).write_text(
+    '{"blocks":[{"text":"ok","source_ids":["' + source_id + '"]}]}',
+    "utf-8",
+)
+""".strip(),
+        "utf-8",
+    )
+
+    command_template = f"{sys.executable} {slow_agent} --task-manifest {{task_manifest}}"
+    routing_defaults = _routing_defaults(command_template)
+
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    first_task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="First task.",
+            source_ids=(source_id,),
+        ),
+    )
+    second_task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Second task should stay queued.",
+            source_ids=(source_id,),
+        ),
+    )
+
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+        poll_interval_seconds=0.0,
+    )
+
+    worker_thread = threading.Thread(target=worker.run_loop)
+    worker_thread.start()
+
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        details = repository.get_task_details(task_id=first_task.task_id)
+        if details is not None and details.task.status == LlmTaskStatus.RUNNING:
+            break
+        time.sleep(0.02)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("First task never reached running state before shutdown request.")
+
+    worker._request_stop(signal_name="SIGTERM")
+    worker_thread.join(timeout=10)
+    assert worker_thread.is_alive() is False
+
+    first_details = repository.get_task_details(task_id=first_task.task_id)
+    assert first_details is not None
+    first_events = [event.event_type for event in first_details.events]
+    assert "shutdown_requested" in first_events
+    assert "shutdown_completed" in first_events
+
+    second_details = repository.get_task_details(task_id=second_task.task_id)
+    assert second_details is not None
+    assert second_details.task.status == LlmTaskStatus.QUEUED
+    repository.close()
+
+
+def test_worker_graceful_shutdown_timeout_interrupts_long_running_backend(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "worker-graceful-timeout.db"
+    source_id = _seed_source_id(db_path, external_id="worker-graceful-timeout")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    very_slow_agent = tmp_path / "very_slow_agent.py"
+    very_slow_agent.write_text(
+        """
+import argparse
+import time
+from pathlib import Path
+from news_recap.orchestrator.contracts import read_manifest
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--task-manifest", required=True)
+args = parser.parse_args()
+manifest = read_manifest(Path(args.task_manifest))
+time.sleep(10.0)
+Path(manifest.output_result_path).write_text("{}", "utf-8")
+""".strip(),
+        "utf-8",
+    )
+    command_template = f"{sys.executable} {very_slow_agent} --task-manifest {{task_manifest}}"
+    routing_defaults = _routing_defaults(command_template)
+
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Long task interrupted by graceful shutdown.",
+            source_ids=(source_id,),
+            timeout_seconds=30,
+            max_attempts=1,
+        ),
+    )
+
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+        poll_interval_seconds=0.0,
+        graceful_shutdown_seconds=1,
+    )
+    started = time.monotonic()
+    worker_thread = threading.Thread(target=worker.run_loop)
+    worker_thread.start()
+
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        details = repository.get_task_details(task_id=task.task_id)
+        if details is not None and details.task.status == LlmTaskStatus.RUNNING:
+            break
+        time.sleep(0.02)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Task did not enter running state before stop request.")
+
+    worker._request_stop(signal_name="SIGTERM")
+    worker_thread.join(timeout=5)
+    elapsed = time.monotonic() - started
+    assert worker_thread.is_alive() is False
+    assert elapsed < 7.0
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert details.task.status == LlmTaskStatus.TIMEOUT
+    repository.close()
+
+
 def test_worker_applies_routing_fallback_for_legacy_task(tmp_path: Path) -> None:
     db_path = tmp_path / "worker-legacy-routing.db"
     source_id = _seed_source_id(db_path, external_id="worker-legacy")
@@ -429,6 +693,274 @@ def test_worker_applies_routing_fallback_for_legacy_task(tmp_path: Path) -> None
     final_details = repository.get_task_details(task_id=task.task_id)
     assert final_details is not None
     assert any(event.event_type == "routing_fallback_applied" for event in final_details.events)
+    repository.close()
+
+
+def test_worker_timeout_schedules_retry(tmp_path: Path) -> None:
+    db_path = tmp_path / "worker-timeout-retry.db"
+    source_id = _seed_source_id(db_path, external_id="worker-timeout-retry")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    timeout_agent = tmp_path / "timeout_agent.py"
+    timeout_agent.write_text(
+        """
+import argparse
+import time
+from pathlib import Path
+from news_recap.orchestrator.contracts import read_manifest
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--task-manifest", required=True)
+args = parser.parse_args()
+manifest = read_manifest(Path(args.task_manifest))
+time.sleep(2.0)
+Path(manifest.output_result_path).write_text("{}", "utf-8")
+""".strip(),
+        "utf-8",
+    )
+    command_template = f"{sys.executable} {timeout_agent} --task-manifest {{task_manifest}}"
+    routing_defaults = _routing_defaults(command_template)
+
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Timeout and retry.",
+            source_ids=(source_id,),
+            max_attempts=2,
+            timeout_seconds=1,
+        ),
+    )
+
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+        retry_base_seconds=0,
+        retry_max_seconds=0,
+    )
+    summary = worker.run_once()
+    assert summary.processed == 1
+    assert summary.retried == 1
+    assert summary.failed == 0
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert details.task.status == LlmTaskStatus.QUEUED
+    assert any(event.event_type == "retry_scheduled" for event in details.events)
+    repository.close()
+
+
+def test_worker_transient_retry_then_success(tmp_path: Path) -> None:
+    db_path = tmp_path / "worker-transient-retry.db"
+    source_id = _seed_source_id(db_path, external_id="worker-transient-retry")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    transient_agent = tmp_path / "transient_agent.py"
+    transient_agent.write_text(
+        """
+import argparse
+import sys
+from pathlib import Path
+from news_recap.orchestrator.contracts import read_manifest, read_articles_index
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--task-manifest", required=True)
+args = parser.parse_args()
+manifest = read_manifest(Path(args.task_manifest))
+state_path = Path(manifest.workdir) / "state.txt"
+if not state_path.exists():
+    state_path.write_text("1", "utf-8")
+    sys.stderr.write("HTTP 429 too many requests\\n")
+    raise SystemExit(1)
+
+articles = read_articles_index(Path(manifest.articles_index_path))
+source_id = articles[0].source_id if articles else "article:missing"
+Path(manifest.output_result_path).write_text(
+    '{"blocks":[{"text":"ok","source_ids":["' + source_id + '"]}]}',
+    "utf-8",
+)
+""".strip(),
+        "utf-8",
+    )
+    command_template = f"{sys.executable} {transient_agent} --task-manifest {{task_manifest}}"
+    routing_defaults = _routing_defaults(command_template)
+
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Transient then success.",
+            source_ids=(source_id,),
+            max_attempts=2,
+            timeout_seconds=60,
+        ),
+    )
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+        retry_base_seconds=0,
+        retry_max_seconds=0,
+    )
+
+    first = worker.run_once()
+    assert first.retried == 1
+    second = worker.run_once()
+    assert second.succeeded == 1
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert details.task.status == LlmTaskStatus.SUCCEEDED
+    assert any(event.event_type == "retry_scheduled" for event in details.events)
+    assert any(event.event_type == "succeeded" for event in details.events)
+    repository.close()
+
+
+def test_worker_repair_path_recovers_on_second_backend_call(tmp_path: Path) -> None:
+    db_path = tmp_path / "worker-repair-success.db"
+    source_id = _seed_source_id(db_path, external_id="worker-repair-success")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    repair_agent = tmp_path / "repair_agent.py"
+    repair_agent.write_text(
+        """
+import argparse
+import os
+from pathlib import Path
+from news_recap.orchestrator.contracts import read_manifest, read_articles_index
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--task-manifest", required=True)
+args = parser.parse_args()
+manifest = read_manifest(Path(args.task_manifest))
+if os.getenv("NEWS_RECAP_REPAIR_MODE", "0") != "1":
+    Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_ids":[]}]}', "utf-8")
+    raise SystemExit(0)
+
+articles = read_articles_index(Path(manifest.articles_index_path))
+source_id = articles[0].source_id if articles else "article:missing"
+Path(manifest.output_result_path).write_text(
+    '{"blocks":[{"text":"repaired","source_ids":["' + source_id + '"]}]}',
+    "utf-8",
+)
+""".strip(),
+        "utf-8",
+    )
+    command_template = f"{sys.executable} {repair_agent} --task-manifest {{task_manifest}}"
+    routing_defaults = _routing_defaults(command_template)
+
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Repair path test.",
+            source_ids=(source_id,),
+        ),
+    )
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+    )
+
+    summary = worker.run_once()
+    assert summary.succeeded == 1
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert any(event.event_type == "repair_attempted" for event in details.events)
+    attempts = repository.list_task_attempts(task_id=task.task_id)
+    assert attempts[0].attempt_failure_code == "repair_recovered"
+    repository.close()
+
+
+def test_worker_skips_repair_when_already_repaired_in_attempt(tmp_path: Path) -> None:
+    db_path = tmp_path / "worker-repair-already.db"
+    source_id = _seed_source_id(db_path, external_id="worker-repair-already")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    no_repair_agent = tmp_path / "no_repair_agent.py"
+    no_repair_agent.write_text(
+        """
+import argparse
+import os
+from pathlib import Path
+from news_recap.orchestrator.contracts import read_manifest, read_articles_index
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--task-manifest", required=True)
+args = parser.parse_args()
+manifest = read_manifest(Path(args.task_manifest))
+marker = Path(manifest.workdir) / "repair_mode_called.txt"
+if os.getenv("NEWS_RECAP_REPAIR_MODE", "0") == "1":
+    marker.write_text("called", "utf-8")
+    articles = read_articles_index(Path(manifest.articles_index_path))
+    source_id = articles[0].source_id if articles else "article:missing"
+    Path(manifest.output_result_path).write_text(
+        '{"blocks":[{"text":"repair","source_ids":["' + source_id + '"]}]}',
+        "utf-8",
+    )
+else:
+    Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_ids":[]}]}', "utf-8")
+""".strip(),
+        "utf-8",
+    )
+    command_template = f"{sys.executable} {no_repair_agent} --task-manifest {{task_manifest}}"
+    routing_defaults = _routing_defaults(command_template)
+
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Already repaired marker.",
+            source_ids=(source_id,),
+        ),
+    )
+
+    repository._connection.execute(
+        "UPDATE llm_tasks SET repair_attempted_at = ? WHERE task_id = ?",
+        (datetime.now(tz=UTC).replace(tzinfo=None).isoformat(sep=" "), task.task_id),
+    )
+    repository._connection.commit()
+
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+    )
+    summary = worker.run_once()
+    assert summary.failed == 1
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert details.task.status == LlmTaskStatus.FAILED
+    manifest = read_manifest(Path(details.task.input_manifest_path))
+    repair_marker = Path(manifest.workdir) / "repair_mode_called.txt"
+    assert repair_marker.exists() is False
     repository.close()
 
 

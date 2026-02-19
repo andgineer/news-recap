@@ -77,7 +77,7 @@ def _try_load_dict(raw: str) -> dict[str, object] | None:
     return parsed
 
 
-def _normalize_payload(
+def _normalize_payload(  # noqa: C901
     *,
     payload: dict[str, object],
     allowed_source_ids: set[str],

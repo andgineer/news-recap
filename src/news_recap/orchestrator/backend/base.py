@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -18,6 +19,8 @@ class BackendRunRequest:
     model: str
     command_template: str
     repair_mode: bool = False
+    shutdown_requested: Callable[[], bool] | None = None
+    graceful_shutdown_seconds: int | None = None
 
 
 @dataclass(slots=True)
