@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
@@ -27,6 +27,8 @@ from news_recap.orchestrator.models import (
     LlmTaskStatus,
     LlmTaskView,
     OutputCitationSnapshotWrite,
+    UserOutputBlockWrite,
+    UserOutputUpsert,
 )
 from news_recap.orchestrator.repair import decide_repair
 from news_recap.orchestrator.repository import OrchestratorRepository
@@ -103,6 +105,23 @@ class OrchestratorWorker:
                 status=LlmTaskStatus.FAILED,
                 failure_class=FailureClass.INPUT_CONTRACT_ERROR,
                 error_summary=f"Input contract error: {error}",
+                last_exit_code=None,
+            )
+            if failed:
+                summary.failed = 1
+            return summary
+
+        artifact_error = _validate_required_artifacts(
+            task_type=task.task_type,
+            manifest=manifest,
+            task_input_metadata=task_input.metadata,
+        )
+        if artifact_error is not None:
+            failed = self.repository.fail_task(
+                task_id=task.task_id,
+                status=LlmTaskStatus.FAILED,
+                failure_class=FailureClass.INPUT_CONTRACT_ERROR,
+                error_summary=artifact_error,
                 last_exit_code=None,
             )
             if failed:
@@ -281,6 +300,11 @@ class OrchestratorWorker:
                 task_id=task.task_id,
                 output_path=manifest.output_result_path,
                 citations=citations,
+                user_output=_build_user_output_upsert(
+                    task_input_metadata=task_input.metadata,
+                    validation_payload=validation.payload,
+                    task_id=task.task_id,
+                ),
             )
             if completed:
                 summary.succeeded = 1
@@ -348,6 +372,11 @@ class OrchestratorWorker:
                             task_id=task.task_id,
                             output_path=manifest.output_result_path,
                             citations=citations,
+                            user_output=_build_user_output_upsert(
+                                task_input_metadata=task_input.metadata,
+                                validation_payload=repaired.payload,
+                                task_id=task.task_id,
+                            ),
                         )
                         if completed:
                             summary.succeeded = 1
@@ -580,3 +609,102 @@ def _build_citation_writes(
             ),
         )
     return citations
+
+
+def _build_user_output_upsert(
+    *,
+    task_input_metadata: dict[str, object],
+    validation_payload: dict[str, object] | None,
+    task_id: str,
+) -> UserOutputUpsert | None:
+    target = task_input_metadata.get("output_target")
+    if not isinstance(target, dict):
+        return None
+
+    kind = target.get("kind")
+    if not isinstance(kind, str) or not kind.strip():
+        return None
+
+    business_date_raw = target.get("business_date")
+    business_date_value: date
+    if isinstance(business_date_raw, str) and business_date_raw.strip():
+        try:
+            business_date_value = date.fromisoformat(business_date_raw)
+        except ValueError:
+            business_date_value = utc_now().date()
+    else:
+        business_date_value = utc_now().date()
+
+    blocks_payload = _validated_blocks(validation_payload or {"blocks": []})
+    blocks: list[UserOutputBlockWrite] = []
+    for index, block in enumerate(blocks_payload):
+        block_text = block.get("text", "")
+        source_ids_raw = block.get("source_ids", [])
+        if not isinstance(source_ids_raw, list):
+            source_ids_raw = []
+        source_ids = tuple(
+            source_id
+            for source_id in source_ids_raw
+            if isinstance(source_id, str) and source_id.strip()
+        )
+        blocks.append(
+            UserOutputBlockWrite(
+                block_order=index,
+                text=str(block_text),
+                source_ids=source_ids,
+            ),
+        )
+
+    payload_dict: dict[str, object] = {} if validation_payload is None else validation_payload
+    status = target.get("status")
+    status_value = str(status) if isinstance(status, str) and status.strip() else "ready"
+    return UserOutputUpsert(
+        kind=kind.strip(),
+        business_date=business_date_value,
+        status=status_value,
+        payload=payload_dict,
+        blocks=blocks,
+        story_id=target.get("story_id") if isinstance(target.get("story_id"), str) else None,
+        monitor_id=(
+            target.get("monitor_id") if isinstance(target.get("monitor_id"), str) else None
+        ),
+        request_id=(
+            target.get("request_id") if isinstance(target.get("request_id"), str) else None
+        ),
+        task_id=task_id,
+        title=target.get("title") if isinstance(target.get("title"), str) else None,
+    )
+
+
+def _validate_required_artifacts(
+    *,
+    task_type: str,
+    manifest: object,
+    task_input_metadata: dict[str, object],
+) -> str | None:
+    output_target = task_input_metadata.get("output_target")
+    output_target_routed = isinstance(output_target, dict)
+    required_paths_by_task_type: dict[str, tuple[str, ...]] = {
+        "story_details": ("story_context_path",),
+        "monitor_answer": ("retrieval_context_path",),
+    }
+    if output_target_routed:
+        required_paths_by_task_type = {
+            **required_paths_by_task_type,
+            "highlights": ("story_context_path",),
+            "qa": ("retrieval_context_path",),
+        }
+    required = required_paths_by_task_type.get(task_type, ())
+    for field_name in required:
+        field_value = getattr(manifest, field_name, None)
+        if not isinstance(field_value, str) or not field_value.strip():
+            return (
+                f"Input contract error: missing required manifest artifact "
+                f"{field_name} for task_type={task_type}."
+            )
+        if not Path(field_value).exists():
+            return (
+                f"Input contract error: required manifest artifact does not exist "
+                f"({field_name}={field_value})."
+            )
+    return None

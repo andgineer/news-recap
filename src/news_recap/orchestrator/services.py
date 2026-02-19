@@ -30,6 +30,11 @@ class EnqueueDemoTask:
     model_profile: str | None = None
     model: str | None = None
     metadata: dict[str, object] | None = None
+    article_entries: list[SourceCorpusEntry] | None = None
+    continuity_summary: dict[str, object] | None = None
+    retrieval_context: dict[str, object] | None = None
+    story_context: dict[str, object] | None = None
+    output_target: dict[str, object] | None = None
 
 
 class OrchestratorService:
@@ -50,7 +55,9 @@ class OrchestratorService:
         """Enqueue a test/spike task with deterministic file contracts."""
 
         task_id = str(uuid4())
-        article_entries = self._resolve_article_entries(source_ids=command.source_ids)
+        article_entries = command.article_entries or self._resolve_article_entries(
+            source_ids=command.source_ids,
+        )
         routing = resolve_routing_for_enqueue(
             defaults=self.routing_defaults,
             task_type=command.task_type,
@@ -65,6 +72,7 @@ class OrchestratorService:
                 task_type=command.task_type,
                 prompt=command.prompt,
                 metadata={
+                    **({"output_target": command.output_target} if command.output_target else {}),
                     "routing": routing.to_metadata(),
                     **(command.metadata or {}),
                 },
@@ -79,6 +87,9 @@ class OrchestratorService:
                 )
                 for entry in article_entries
             ],
+            continuity_summary=command.continuity_summary,
+            retrieval_context=command.retrieval_context,
+            story_context=command.story_context,
         )
         task = self.repository.enqueue_task(
             LlmTaskCreate(

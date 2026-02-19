@@ -48,6 +48,7 @@ class AgentOutputContract:
 class TaskManifest:
     """Manifest stored with each queued task."""
 
+    contract_version: int
     task_id: str
     task_type: str
     workdir: str
@@ -56,6 +57,9 @@ class TaskManifest:
     output_result_path: str
     output_stdout_path: str
     output_stderr_path: str
+    continuity_summary_path: str | None = None
+    retrieval_context_path: str | None = None
+    story_context_path: str | None = None
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -164,8 +168,25 @@ def read_manifest(path: Path) -> TaskManifest:
     missing = [key for key in sorted(required) if key not in raw]
     if missing:
         raise ValueError(f"Manifest missing required fields: {', '.join(missing)}")
+
+    contract_version_raw = raw.get("contract_version", 1)
+    if not isinstance(contract_version_raw, int) or contract_version_raw < 1:
+        raise ValueError("task_manifest.contract_version must be an integer >= 1")
+
+    continuity_summary_path = raw.get("continuity_summary_path")
+    retrieval_context_path = raw.get("retrieval_context_path")
+    story_context_path = raw.get("story_context_path")
+    for field_name, field_value in (
+        ("continuity_summary_path", continuity_summary_path),
+        ("retrieval_context_path", retrieval_context_path),
+        ("story_context_path", story_context_path),
+    ):
+        if field_value is not None and not isinstance(field_value, str):
+            raise ValueError(f"task_manifest.{field_name} must be a string when provided")
+
     try:
         return TaskManifest(
+            contract_version=int(contract_version_raw),
             task_id=str(raw["task_id"]),
             task_type=str(raw["task_type"]),
             workdir=str(raw["workdir"]),
@@ -174,6 +195,13 @@ def read_manifest(path: Path) -> TaskManifest:
             output_result_path=str(raw["output_result_path"]),
             output_stdout_path=str(raw["output_stdout_path"]),
             output_stderr_path=str(raw["output_stderr_path"]),
+            continuity_summary_path=(
+                str(continuity_summary_path) if continuity_summary_path is not None else None
+            ),
+            retrieval_context_path=(
+                str(retrieval_context_path) if retrieval_context_path is not None else None
+            ),
+            story_context_path=str(story_context_path) if story_context_path is not None else None,
         )
     except Exception as error:  # noqa: BLE001
         raise ValueError(f"Invalid task manifest at {path}") from error

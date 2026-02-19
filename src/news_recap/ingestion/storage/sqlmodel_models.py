@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     Column,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -507,4 +508,359 @@ class OutputCitationSnapshot(SQLModel, table=True):
     url: str
     source: str = ""
     published_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class UserStoryDefinition(SQLModel, table=True):
+    __tablename__ = "user_story_definitions"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "name",
+            name="uq_user_story_definitions_scope_name",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "story_id",
+            name="uq_user_story_definitions_scope_story",
+        ),
+    )
+
+    story_id: str = Field(primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    name: str = Field(index=True)
+    target_language: str = Field(default="en", index=True)
+    description: str = Field(sa_column=Column(Text, nullable=False))
+    priority: int = Field(default=100, index=True)
+    enabled: bool = Field(default=True, index=True)
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class StoryAssignment(SQLModel, table=True):
+    __tablename__ = "story_assignments"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "business_date",
+            "article_id",
+            name="uq_story_assignments_scope_date_article",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "story_id"],
+            ["user_story_definitions.user_id", "user_story_definitions.story_id"],
+            ondelete="SET NULL",
+            name="fk_story_assignments_story_scope",
+        ),
+        Index("idx_story_assignments_scope_story", "user_id", "business_date", "story_key"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    business_date: date = Field(sa_column=Column(Date, nullable=False, index=True))
+    article_id: str = Field(
+        sa_column=Column(
+            ForeignKey("articles.article_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    story_id: str | None = Field(default=None, index=True)
+    story_key: str = Field(index=True)
+    assignment_type: str = Field(index=True)
+    score: float = 0.0
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class DailyStorySnapshot(SQLModel, table=True):
+    __tablename__ = "daily_story_snapshots"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "business_date",
+            "story_key",
+            name="uq_daily_story_snapshots_scope_date_key",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "story_id"],
+            ["user_story_definitions.user_id", "user_story_definitions.story_id"],
+            ondelete="SET NULL",
+            name="fk_daily_story_snapshots_story_scope",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    business_date: date = Field(sa_column=Column(Date, nullable=False, index=True))
+    story_id: str | None = Field(default=None, index=True)
+    story_key: str = Field(index=True)
+    title: str
+    continuity_key: str | None = Field(default=None, index=True)
+    summary_json: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class MonitorQuestion(SQLModel, table=True):
+    __tablename__ = "monitor_questions"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "monitor_id",
+            name="uq_monitor_questions_scope_monitor",
+        ),
+    )
+
+    monitor_id: str = Field(primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    name: str = Field(index=True)
+    prompt: str = Field(sa_column=Column(Text, nullable=False))
+    cadence: str = Field(default="daily", index=True)
+    enabled: bool = Field(default=True, index=True)
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class UserOutput(SQLModel, table=True):
+    __tablename__ = "user_outputs"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "output_id",
+            name="uq_user_outputs_scope_output",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "kind",
+            "request_id",
+            name="uq_user_outputs_scope_kind_request",
+        ),
+        Index(
+            "uq_user_outputs_daily_highlights",
+            "user_id",
+            "kind",
+            "business_date",
+            unique=True,
+            sqlite_where=text(
+                "kind = 'highlights' "
+                "AND story_id IS NULL "
+                "AND monitor_id IS NULL "
+                "AND request_id IS NULL",
+            ),
+        ),
+        Index(
+            "uq_user_outputs_story_detail",
+            "user_id",
+            "kind",
+            "business_date",
+            "story_id",
+            unique=True,
+            sqlite_where=text("story_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_user_outputs_monitor_answer",
+            "user_id",
+            "kind",
+            "business_date",
+            "monitor_id",
+            unique=True,
+            sqlite_where=text("monitor_id IS NOT NULL"),
+        ),
+    )
+
+    output_id: str = Field(primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    kind: str = Field(index=True)
+    business_date: date = Field(
+        default_factory=lambda: datetime.now(tz=UTC).date(),
+        sa_column=Column(Date, nullable=False, index=True),
+    )
+    story_id: str | None = Field(default=None, index=True)
+    monitor_id: str | None = Field(default=None, index=True)
+    request_id: str | None = Field(default=None, index=True)
+    task_id: str | None = Field(
+        default=None,
+        sa_column=Column(ForeignKey("llm_tasks.task_id", ondelete="SET NULL"), nullable=True),
+    )
+    status: str = Field(index=True)
+    title: str | None = None
+    payload_json: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class UserOutputBlock(SQLModel, table=True):
+    __tablename__ = "user_output_blocks"  # type: ignore[bad-override]
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "block_id",
+            name="uq_user_output_blocks_scope_block",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "output_id",
+            "block_id",
+            name="uq_user_output_blocks_scope_output_block",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "output_id",
+            "block_order",
+            name="uq_user_output_blocks_scope_order",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "output_id"],
+            ["user_outputs.user_id", "user_outputs.output_id"],
+            ondelete="CASCADE",
+            name="fk_user_output_blocks_output_scope",
+        ),
+        Index("idx_user_output_blocks_scope_output", "user_id", "output_id"),
+    )
+
+    block_id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    output_id: str = Field(index=True)
+    block_order: int = Field(index=True)
+    text: str = Field(sa_column=Column(Text, nullable=False))
+    source_ids_json: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class ReadStateEvent(SQLModel, table=True):
+    __tablename__ = "read_state_events"  # type: ignore[bad-override]
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "output_id"],
+            ["user_outputs.user_id", "user_outputs.output_id"],
+            ondelete="CASCADE",
+            name="fk_read_state_events_output_scope",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "output_block_id"],
+            ["user_output_blocks.user_id", "user_output_blocks.block_id"],
+            ondelete="CASCADE",
+            name="fk_read_state_events_block_scope",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "output_id", "output_block_id"],
+            [
+                "user_output_blocks.user_id",
+                "user_output_blocks.output_id",
+                "user_output_blocks.block_id",
+            ],
+            ondelete="CASCADE",
+            name="fk_read_state_events_output_block_scope",
+        ),
+        Index("idx_read_state_events_scope_time", "user_id", "created_at"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    output_id: str = Field(index=True)
+    output_block_id: int | None = Field(default=None, index=True)
+    event_type: str = Field(index=True)
+    details_json: str | None = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class OutputFeedback(SQLModel, table=True):
+    __tablename__ = "output_feedback"  # type: ignore[bad-override]
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "output_id"],
+            ["user_outputs.user_id", "user_outputs.output_id"],
+            ondelete="CASCADE",
+            name="fk_output_feedback_output_scope",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "output_block_id"],
+            ["user_output_blocks.user_id", "user_output_blocks.block_id"],
+            ondelete="CASCADE",
+            name="fk_output_feedback_block_scope",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "output_id", "output_block_id"],
+            [
+                "user_output_blocks.user_id",
+                "user_output_blocks.output_id",
+                "user_output_blocks.block_id",
+            ],
+            ondelete="CASCADE",
+            name="fk_output_feedback_output_block_scope",
+        ),
+        Index("idx_output_feedback_scope_time", "user_id", "created_at"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(
+        default=DEFAULT_USER_ID,
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            server_default=DEFAULT_USER_ID,
+            index=True,
+        ),
+    )
+    output_id: str = Field(index=True)
+    output_block_id: int | None = Field(default=None, index=True)
+    feedback_type: str = Field(index=True)
+    value: str | None = None
+    details_json: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))

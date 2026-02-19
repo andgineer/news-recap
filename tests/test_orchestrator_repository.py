@@ -4,7 +4,7 @@ import multiprocessing
 import os
 import queue
 import threading
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import allure
@@ -17,7 +17,11 @@ from news_recap.orchestrator.models import (
     FailureClass,
     LlmTaskCreate,
     LlmTaskStatus,
+    OutputFeedbackWrite,
     OutputCitationSnapshotWrite,
+    ReadStateEventWrite,
+    UserOutputBlockWrite,
+    UserOutputUpsert,
 )
 from news_recap.orchestrator.repository import OrchestratorRepository
 
@@ -489,6 +493,121 @@ def test_output_citation_snapshots_survive_global_article_gc(tmp_path: Path) -> 
     assert citations[0].url == "https://example.com/news/citation"
     verify.close()
     ingest.close()
+
+
+def test_read_state_and_feedback_reject_mismatched_output_block_scope(tmp_path: Path) -> None:
+    repository = OrchestratorRepository(tmp_path / "output-scope.db")
+    repository.init_schema()
+
+    output_a = repository.upsert_user_output(
+        UserOutputUpsert(
+            kind="highlights",
+            business_date=date(2026, 2, 18),
+            status="ready",
+            payload={"kind": "a"},
+            blocks=[
+                UserOutputBlockWrite(
+                    block_order=0,
+                    text="A",
+                    source_ids=("article:a",),
+                ),
+            ],
+        ),
+    )
+    output_b = repository.upsert_user_output(
+        UserOutputUpsert(
+            kind="qa_answer",
+            business_date=date(2026, 2, 18),
+            status="ready",
+            request_id="request-b",
+            payload={"kind": "b"},
+            blocks=[
+                UserOutputBlockWrite(
+                    block_order=0,
+                    text="B",
+                    source_ids=("article:b",),
+                ),
+            ],
+        ),
+    )
+
+    row_b = repository._connection.execute(
+        "SELECT block_id FROM user_output_blocks WHERE user_id = ? AND output_id = ? LIMIT 1",
+        (repository.user_id, output_b.output_id),
+    ).fetchone()
+    assert row_b is not None
+    block_b_id = int(row_b["block_id"])
+
+    with pytest.raises(ValueError, match="does not belong to output_id"):
+        repository.add_read_state_event(
+            ReadStateEventWrite(
+                output_id=output_a.output_id,
+                output_block_id=block_b_id,
+                event_type="open",
+            ),
+        )
+
+    with pytest.raises(ValueError, match="does not belong to output_id"):
+        repository.add_output_feedback(
+            OutputFeedbackWrite(
+                output_id=output_a.output_id,
+                output_block_id=block_b_id,
+                feedback_type="hide",
+            ),
+        )
+    repository.close()
+
+
+def test_list_recent_read_source_ids_respects_block_scope(tmp_path: Path) -> None:
+    repository = OrchestratorRepository(tmp_path / "read-state-scope.db")
+    repository.init_schema()
+
+    output = repository.upsert_user_output(
+        UserOutputUpsert(
+            kind="highlights",
+            business_date=date(2026, 2, 18),
+            status="ready",
+            payload={"summary": "test"},
+            blocks=[
+                UserOutputBlockWrite(
+                    block_order=0,
+                    text="Block 1",
+                    source_ids=("article:1",),
+                ),
+                UserOutputBlockWrite(
+                    block_order=1,
+                    text="Block 2",
+                    source_ids=("article:2",),
+                ),
+            ],
+        ),
+    )
+
+    rows = repository._connection.execute(
+        "SELECT block_id, block_order FROM user_output_blocks WHERE user_id = ? AND output_id = ? ORDER BY block_order",
+        (repository.user_id, output.output_id),
+    ).fetchall()
+    assert len(rows) == 2
+    first_block_id = int(rows[0]["block_id"])
+
+    repository.add_read_state_event(
+        ReadStateEventWrite(
+            output_id=output.output_id,
+            output_block_id=first_block_id,
+            event_type="open",
+        ),
+    )
+    repository.add_read_state_event(
+        ReadStateEventWrite(
+            output_id=output.output_id,
+            output_block_id=None,
+            event_type="open",
+        ),
+    )
+
+    seen = repository.list_recent_read_source_ids(days=3)
+    assert seen == {"article:1"}
+    repository.close()
 
 
 def test_list_tasks_for_metrics_uses_activity_window_and_status_filter(

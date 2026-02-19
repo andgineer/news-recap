@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import UTC, datetime
+from collections.abc import Sequence
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -18,13 +19,23 @@ from news_recap.ingestion.storage.sqlmodel_models import (
     DEFAULT_USER_ID,
     AppUser,
     Article,
+    DailyStorySnapshot,
     LlmTask,
     LlmTaskArtifact,
     LlmTaskEvent,
+    MonitorQuestion,
     OutputCitationSnapshot,
+    OutputFeedback,
+    ReadStateEvent,
+    StoryAssignment,
     UserArticle,
+    UserOutput,
+    UserOutputBlock,
+    UserStoryDefinition,
 )
 from news_recap.orchestrator.models import (
+    DailyStorySnapshotView,
+    DailyStorySnapshotWrite,
     FailureClass,
     LlmTaskArtifactWrite,
     LlmTaskCreate,
@@ -32,9 +43,20 @@ from news_recap.orchestrator.models import (
     LlmTaskEventView,
     LlmTaskStatus,
     LlmTaskView,
+    MonitorQuestionView,
+    MonitorQuestionWrite,
     OutputCitationSnapshotView,
     OutputCitationSnapshotWrite,
+    OutputFeedbackWrite,
+    ReadStateEventWrite,
     SourceCorpusEntry,
+    StoryAssignmentView,
+    StoryAssignmentWrite,
+    StoryDefinitionView,
+    StoryDefinitionWrite,
+    UserOutputBlockWrite,
+    UserOutputUpsert,
+    UserOutputView,
 )
 
 
@@ -246,6 +268,7 @@ class OrchestratorRepository:
         task_id: str,
         output_path: str,
         citations: list[OutputCitationSnapshotWrite] | None = None,
+        user_output: UserOutputUpsert | None = None,
     ) -> bool:
         """Mark a running task as succeeded."""
 
@@ -296,6 +319,23 @@ class OrchestratorRepository:
                         ),
                     )
 
+            if user_output is not None:
+                self._upsert_user_output_in_session(
+                    session=session,
+                    payload=UserOutputUpsert(
+                        kind=user_output.kind,
+                        business_date=user_output.business_date,
+                        status=user_output.status,
+                        payload=user_output.payload,
+                        blocks=user_output.blocks,
+                        story_id=user_output.story_id,
+                        monitor_id=user_output.monitor_id,
+                        request_id=user_output.request_id,
+                        task_id=task_id,
+                        title=user_output.title,
+                    ),
+                )
+
             self._add_event(
                 session=session,
                 task_id=task_id,
@@ -305,6 +345,7 @@ class OrchestratorRepository:
                 details={
                     "output_path": output_path,
                     "citation_count": len(citations or []),
+                    "output_persisted": user_output is not None,
                 },
             )
             session.commit()
@@ -685,21 +726,32 @@ class OrchestratorRepository:
         self,
         *,
         limit: int = 20,
+        since: datetime | None = None,
+        until: datetime | None = None,
         source_ids: tuple[str, ...] | None = None,
     ) -> list[SourceCorpusEntry]:
         """Resolve user-scoped retrieval corpus entries from `user_articles`."""
 
         with Session(self.engine) as session:
             if source_ids is None:
-                rows = session.exec(
+                statement = (
                     select(Article, UserArticle)
                     .join(
                         UserArticle,
                         col(UserArticle.article_id) == col(Article.article_id),
                     )
                     .where(UserArticle.user_id == self.user_id)
-                    .order_by(col(UserArticle.discovered_at).desc())
-                    .limit(max(1, limit)),
+                )
+                if since is not None:
+                    statement = statement.where(
+                        UserArticle.discovered_at >= _to_db_datetime(since),
+                    )
+                if until is not None:
+                    statement = statement.where(
+                        UserArticle.discovered_at < _to_db_datetime(until),
+                    )
+                rows = session.exec(
+                    statement.order_by(col(UserArticle.discovered_at).desc()).limit(max(1, limit)),
                 ).all()
                 return [
                     SourceCorpusEntry(
@@ -755,6 +807,496 @@ class OrchestratorRepository:
                     ),
                 )
             return resolved
+
+    def upsert_story_definition(self, payload: StoryDefinitionWrite) -> StoryDefinitionView:
+        """Create or update pinned story definition."""
+
+        now = utc_now()
+        story_id = payload.story_id or str(uuid4())
+        with Session(self.engine) as session:
+            row = session.exec(
+                select(UserStoryDefinition).where(
+                    UserStoryDefinition.story_id == story_id,
+                    UserStoryDefinition.user_id == self.user_id,
+                ),
+            ).one_or_none()
+            if row is None:
+                row = UserStoryDefinition(
+                    story_id=story_id,
+                    user_id=self.user_id,
+                    name=payload.name,
+                    description=payload.description,
+                    target_language=payload.target_language,
+                    priority=payload.priority,
+                    enabled=payload.enabled,
+                    created_at=now,
+                    updated_at=now,
+                )
+            else:
+                row.name = payload.name
+                row.description = payload.description
+                row.target_language = payload.target_language
+                row.priority = payload.priority
+                row.enabled = payload.enabled
+                row.updated_at = now
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return _to_story_definition_view(row)
+
+    def list_story_definitions(
+        self,
+        *,
+        include_disabled: bool = False,
+    ) -> list[StoryDefinitionView]:
+        """List user story definitions ordered by priority."""
+
+        with Session(self.engine) as session:
+            statement = (
+                select(UserStoryDefinition)
+                .where(col(UserStoryDefinition.user_id) == self.user_id)
+                .order_by(
+                    col(UserStoryDefinition.priority).asc(),
+                    col(UserStoryDefinition.created_at).asc(),
+                )
+            )
+            if not include_disabled:
+                statement = statement.where(col(UserStoryDefinition.enabled).is_(True))
+            rows = session.exec(statement).all()
+            return [_to_story_definition_view(row) for row in rows]
+
+    def upsert_monitor_question(self, payload: MonitorQuestionWrite) -> MonitorQuestionView:
+        """Create or update monitor prompt definition."""
+
+        now = utc_now()
+        monitor_id = payload.monitor_id or str(uuid4())
+        with Session(self.engine) as session:
+            row = session.exec(
+                select(MonitorQuestion).where(
+                    MonitorQuestion.monitor_id == monitor_id,
+                    MonitorQuestion.user_id == self.user_id,
+                ),
+            ).one_or_none()
+            if row is None:
+                row = MonitorQuestion(
+                    monitor_id=monitor_id,
+                    user_id=self.user_id,
+                    name=payload.name,
+                    prompt=payload.prompt,
+                    cadence=payload.cadence,
+                    enabled=payload.enabled,
+                    created_at=now,
+                    updated_at=now,
+                )
+            else:
+                row.name = payload.name
+                row.prompt = payload.prompt
+                row.cadence = payload.cadence
+                row.enabled = payload.enabled
+                row.updated_at = now
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return _to_monitor_question_view(row)
+
+    def list_monitor_questions(
+        self,
+        *,
+        include_disabled: bool = False,
+    ) -> list[MonitorQuestionView]:
+        """List monitor prompts for current user."""
+
+        with Session(self.engine) as session:
+            statement = (
+                select(MonitorQuestion)
+                .where(col(MonitorQuestion.user_id) == self.user_id)
+                .order_by(col(MonitorQuestion.created_at).asc())
+            )
+            if not include_disabled:
+                statement = statement.where(col(MonitorQuestion.enabled).is_(True))
+            rows = session.exec(statement).all()
+            return [_to_monitor_question_view(row) for row in rows]
+
+    def replace_story_assignments(
+        self,
+        *,
+        business_date: date,
+        assignments: list[StoryAssignmentWrite],
+    ) -> int:
+        """Replace full assignment set for one user/date (idempotent rerun)."""
+
+        with Session(self.engine) as session:
+            session.exec(
+                delete(StoryAssignment).where(
+                    col(StoryAssignment.user_id) == self.user_id,
+                    col(StoryAssignment.business_date) == business_date,
+                ),
+            )
+            for assignment in assignments:
+                session.add(
+                    StoryAssignment(
+                        user_id=self.user_id,
+                        business_date=assignment.business_date,
+                        article_id=assignment.article_id,
+                        story_id=assignment.story_id,
+                        story_key=assignment.story_key,
+                        assignment_type=assignment.assignment_type,
+                        score=assignment.score,
+                        created_at=utc_now(),
+                    ),
+                )
+            session.commit()
+            return len(assignments)
+
+    def list_story_assignments(self, *, business_date: date) -> list[StoryAssignmentView]:
+        """List assignments for one business date."""
+
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(StoryAssignment)
+                .where(
+                    StoryAssignment.user_id == self.user_id,
+                    StoryAssignment.business_date == business_date,
+                )
+                .order_by(
+                    col(StoryAssignment.story_key).asc(),
+                    col(StoryAssignment.score).desc(),
+                    col(StoryAssignment.article_id).asc(),
+                ),
+            ).all()
+            return [
+                StoryAssignmentView(
+                    article_id=row.article_id,
+                    story_id=row.story_id,
+                    story_key=row.story_key,
+                    assignment_type=row.assignment_type,
+                    score=row.score,
+                )
+                for row in rows
+            ]
+
+    def replace_daily_story_snapshots(
+        self,
+        *,
+        business_date: date,
+        snapshots: list[DailyStorySnapshotWrite],
+    ) -> int:
+        """Replace full daily continuity snapshots for one date."""
+
+        now = utc_now()
+        with Session(self.engine) as session:
+            session.exec(
+                delete(DailyStorySnapshot).where(
+                    col(DailyStorySnapshot.user_id) == self.user_id,
+                    col(DailyStorySnapshot.business_date) == business_date,
+                ),
+            )
+            for snapshot in snapshots:
+                session.add(
+                    DailyStorySnapshot(
+                        user_id=self.user_id,
+                        business_date=snapshot.business_date,
+                        story_id=snapshot.story_id,
+                        story_key=snapshot.story_key,
+                        title=snapshot.title,
+                        continuity_key=snapshot.continuity_key,
+                        summary_json=json.dumps(
+                            snapshot.summary,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                )
+            session.commit()
+            return len(snapshots)
+
+    def list_daily_story_snapshots(self, *, business_date: date) -> list[DailyStorySnapshotView]:
+        """List persisted daily snapshots for one date."""
+
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(DailyStorySnapshot)
+                .where(
+                    col(DailyStorySnapshot.user_id) == self.user_id,
+                    col(DailyStorySnapshot.business_date) == business_date,
+                )
+                .order_by(col(DailyStorySnapshot.story_key).asc()),
+            ).all()
+            return [_to_daily_story_snapshot_view(row) for row in rows]
+
+    def get_latest_daily_story_snapshots_before(
+        self,
+        *,
+        business_date: date,
+    ) -> list[DailyStorySnapshotView]:
+        """Return latest prior-day snapshot set for continuity context."""
+
+        with Session(self.engine) as session:
+            latest_date = session.exec(
+                select(col(DailyStorySnapshot.business_date))
+                .where(
+                    col(DailyStorySnapshot.user_id) == self.user_id,
+                    col(DailyStorySnapshot.business_date) < business_date,
+                )
+                .order_by(col(DailyStorySnapshot.business_date).desc())
+                .limit(1),
+            ).one_or_none()
+            if latest_date is None:
+                return []
+            rows = session.exec(
+                select(DailyStorySnapshot)
+                .where(
+                    col(DailyStorySnapshot.user_id) == self.user_id,
+                    col(DailyStorySnapshot.business_date) == latest_date,
+                )
+                .order_by(col(DailyStorySnapshot.story_key).asc()),
+            ).all()
+            return [_to_daily_story_snapshot_view(row) for row in rows]
+
+    def upsert_user_output(self, payload: UserOutputUpsert) -> UserOutputView:
+        """Upsert stable business output row and replace its blocks."""
+
+        with Session(self.engine) as session:
+            row = self._upsert_user_output_in_session(session=session, payload=payload)
+            session.commit()
+
+            refreshed = session.exec(
+                select(UserOutput).where(
+                    col(UserOutput.user_id) == self.user_id,
+                    col(UserOutput.output_id) == row.output_id,
+                ),
+            ).one()
+            block_rows = session.exec(
+                select(UserOutputBlock)
+                .where(
+                    col(UserOutputBlock.user_id) == self.user_id,
+                    col(UserOutputBlock.output_id) == row.output_id,
+                )
+                .order_by(col(UserOutputBlock.block_order).asc()),
+            ).all()
+            return _to_user_output_view(refreshed, block_rows)
+
+    def get_user_output(self, *, output_id: str) -> UserOutputView | None:
+        """Fetch one output with ordered blocks."""
+
+        with Session(self.engine) as session:
+            row = session.exec(
+                select(UserOutput).where(
+                    col(UserOutput.user_id) == self.user_id,
+                    col(UserOutput.output_id) == output_id,
+                ),
+            ).one_or_none()
+            if row is None:
+                return None
+            blocks = session.exec(
+                select(UserOutputBlock)
+                .where(
+                    col(UserOutputBlock.user_id) == self.user_id,
+                    col(UserOutputBlock.output_id) == row.output_id,
+                )
+                .order_by(col(UserOutputBlock.block_order).asc()),
+            ).all()
+            return _to_user_output_view(row, blocks)
+
+    def list_user_outputs(
+        self,
+        *,
+        kind: str | None = None,
+        business_date: date | None = None,
+        limit: int = 50,
+    ) -> list[UserOutputView]:
+        """List recent outputs with blocks."""
+
+        with Session(self.engine) as session:
+            statement = (
+                select(UserOutput)
+                .where(col(UserOutput.user_id) == self.user_id)
+                .order_by(col(UserOutput.updated_at).desc())
+                .limit(max(1, limit))
+            )
+            if kind is not None:
+                statement = statement.where(col(UserOutput.kind) == kind)
+            if business_date is not None:
+                statement = statement.where(col(UserOutput.business_date) == business_date)
+            rows = session.exec(statement).all()
+            if not rows:
+                return []
+            output_ids = [row.output_id for row in rows]
+            block_rows = session.exec(
+                select(UserOutputBlock).where(
+                    col(UserOutputBlock.user_id) == self.user_id,
+                    col(UserOutputBlock.output_id).in_(output_ids),
+                ),
+            ).all()
+            blocks_by_output: dict[str, list[UserOutputBlock]] = {}
+            for block in block_rows:
+                blocks_by_output.setdefault(block.output_id, []).append(block)
+            for values in blocks_by_output.values():
+                values.sort(key=lambda row: row.block_order)
+            return [
+                _to_user_output_view(row, blocks_by_output.get(row.output_id, [])) for row in rows
+            ]
+
+    def add_read_state_event(self, payload: ReadStateEventWrite) -> None:
+        """Persist read/open event for output or output block."""
+
+        with Session(self.engine) as session:
+            self._ensure_user_output_exists(session=session, output_id=payload.output_id)
+            if payload.output_block_id is not None:
+                self._ensure_block_matches_output(
+                    session=session,
+                    output_id=payload.output_id,
+                    output_block_id=payload.output_block_id,
+                )
+            session.add(
+                ReadStateEvent(
+                    user_id=self.user_id,
+                    output_id=payload.output_id,
+                    output_block_id=payload.output_block_id,
+                    event_type=payload.event_type,
+                    details_json=(
+                        json.dumps(payload.details, ensure_ascii=False, sort_keys=True)
+                        if payload.details
+                        else None
+                    ),
+                    created_at=utc_now(),
+                ),
+            )
+            session.commit()
+
+    def add_output_feedback(self, payload: OutputFeedbackWrite) -> None:
+        """Persist feedback against output or block."""
+
+        with Session(self.engine) as session:
+            self._ensure_user_output_exists(session=session, output_id=payload.output_id)
+            if payload.output_block_id is not None:
+                self._ensure_block_matches_output(
+                    session=session,
+                    output_id=payload.output_id,
+                    output_block_id=payload.output_block_id,
+                )
+            session.add(
+                OutputFeedback(
+                    user_id=self.user_id,
+                    output_id=payload.output_id,
+                    output_block_id=payload.output_block_id,
+                    feedback_type=payload.feedback_type,
+                    value=payload.value,
+                    details_json=(
+                        json.dumps(payload.details, ensure_ascii=False, sort_keys=True)
+                        if payload.details
+                        else None
+                    ),
+                    created_at=utc_now(),
+                ),
+            )
+            session.commit()
+
+    def list_recent_read_source_ids(self, *, days: int = 3) -> set[str]:
+        """Return source ids from output blocks that were marked as viewed/opened recently."""
+
+        cutoff = _to_db_datetime(utc_now() - timedelta(days=max(1, days)))
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(col(UserOutputBlock.source_ids_json))
+                .join(
+                    ReadStateEvent,
+                    and_(
+                        col(ReadStateEvent.user_id) == col(UserOutputBlock.user_id),
+                        col(ReadStateEvent.output_id) == col(UserOutputBlock.output_id),
+                        col(ReadStateEvent.output_block_id) == col(UserOutputBlock.block_id),
+                    ),
+                )
+                .where(
+                    col(UserOutputBlock.user_id) == self.user_id,
+                    col(ReadStateEvent.created_at) >= cutoff,
+                    col(ReadStateEvent.output_block_id).is_not(None),
+                    col(ReadStateEvent.event_type).in_(("open", "view", "expand")),
+                ),
+            ).all()
+
+        source_ids: set[str] = set()
+        for row in rows:
+            source_ids_json = row if isinstance(row, str) else str(row)
+            try:
+                parsed = json.loads(source_ids_json)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(parsed, list):
+                continue
+            for item in parsed:
+                if isinstance(item, str) and item:
+                    source_ids.add(item)
+        return source_ids
+
+    def intelligence_stats_snapshot(self, *, since: datetime) -> dict[str, int]:
+        """Aggregate domain counters for observability windows."""
+
+        since_date = _to_utc_aware_datetime(since).date().isoformat()
+        since_dt = _to_utc_aware_datetime(since).replace(tzinfo=None).isoformat(sep=" ")
+
+        queries = {
+            "stories_total": (
+                "SELECT COUNT(*) AS value FROM user_story_definitions WHERE user_id = ?",
+                (self.user_id,),
+            ),
+            "stories_enabled": (
+                "SELECT COUNT(*) AS value FROM user_story_definitions "
+                "WHERE user_id = ? AND enabled = 1",
+                (self.user_id,),
+            ),
+            "story_assignments_window": (
+                "SELECT COUNT(*) AS value FROM story_assignments "
+                "WHERE user_id = ? AND business_date >= ?",
+                (self.user_id, since_date),
+            ),
+            "story_snapshots_window": (
+                "SELECT COUNT(*) AS value FROM daily_story_snapshots "
+                "WHERE user_id = ? AND business_date >= ?",
+                (self.user_id, since_date),
+            ),
+            "outputs_window": (
+                "SELECT COUNT(*) AS value FROM user_outputs WHERE user_id = ? AND updated_at >= ?",
+                (self.user_id, since_dt),
+            ),
+            "outputs_highlights_window": (
+                "SELECT COUNT(*) AS value FROM user_outputs "
+                "WHERE user_id = ? AND kind = 'highlights' AND updated_at >= ?",
+                (self.user_id, since_dt),
+            ),
+            "outputs_story_details_window": (
+                "SELECT COUNT(*) AS value FROM user_outputs "
+                "WHERE user_id = ? AND kind = 'story_details' AND updated_at >= ?",
+                (self.user_id, since_dt),
+            ),
+            "outputs_monitor_window": (
+                "SELECT COUNT(*) AS value FROM user_outputs "
+                "WHERE user_id = ? AND kind = 'monitor_answer' AND updated_at >= ?",
+                (self.user_id, since_dt),
+            ),
+            "outputs_qa_window": (
+                "SELECT COUNT(*) AS value FROM user_outputs "
+                "WHERE user_id = ? AND kind = 'qa_answer' AND updated_at >= ?",
+                (self.user_id, since_dt),
+            ),
+            "read_state_events_window": (
+                "SELECT COUNT(*) AS value FROM read_state_events "
+                "WHERE user_id = ? AND created_at >= ?",
+                (self.user_id, since_dt),
+            ),
+            "feedback_events_window": (
+                "SELECT COUNT(*) AS value FROM output_feedback "
+                "WHERE user_id = ? AND created_at >= ?",
+                (self.user_id, since_dt),
+            ),
+        }
+        result: dict[str, int] = {}
+        for key, (query, params) in queries.items():
+            row = self._connection.execute(query, params).fetchone()
+            result[key] = int(row["value"]) if row is not None else 0
+        return result
 
     def validate_user_source_ids(
         self,
@@ -847,6 +1389,141 @@ class OrchestratorRepository:
             )
             for row in rows
         ]
+
+    def _resolve_existing_user_output(
+        self,
+        *,
+        session: Session,
+        payload: UserOutputUpsert,
+    ) -> UserOutput | None:
+        if payload.request_id is not None:
+            return session.exec(
+                select(UserOutput).where(
+                    col(UserOutput.user_id) == self.user_id,
+                    col(UserOutput.kind) == payload.kind,
+                    col(UserOutput.request_id) == payload.request_id,
+                ),
+            ).one_or_none()
+        if payload.monitor_id is not None:
+            return session.exec(
+                select(UserOutput).where(
+                    col(UserOutput.user_id) == self.user_id,
+                    col(UserOutput.kind) == payload.kind,
+                    col(UserOutput.business_date) == payload.business_date,
+                    col(UserOutput.monitor_id) == payload.monitor_id,
+                ),
+            ).one_or_none()
+        if payload.story_id is not None:
+            return session.exec(
+                select(UserOutput).where(
+                    col(UserOutput.user_id) == self.user_id,
+                    col(UserOutput.kind) == payload.kind,
+                    col(UserOutput.business_date) == payload.business_date,
+                    col(UserOutput.story_id) == payload.story_id,
+                ),
+            ).one_or_none()
+        return session.exec(
+            select(UserOutput).where(
+                col(UserOutput.user_id) == self.user_id,
+                col(UserOutput.kind) == payload.kind,
+                col(UserOutput.business_date) == payload.business_date,
+                col(UserOutput.story_id).is_(None),
+                col(UserOutput.monitor_id).is_(None),
+                col(UserOutput.request_id).is_(None),
+            ),
+        ).one_or_none()
+
+    def _ensure_user_output_exists(self, *, session: Session, output_id: str) -> None:
+        row = session.exec(
+            select(col(UserOutput.output_id)).where(
+                col(UserOutput.user_id) == self.user_id,
+                col(UserOutput.output_id) == output_id,
+            ),
+        ).one_or_none()
+        if row is None:
+            raise ValueError(f"Unknown output_id for user scope: {output_id}")
+
+    def _ensure_block_matches_output(
+        self,
+        *,
+        session: Session,
+        output_id: str,
+        output_block_id: int,
+    ) -> None:
+        block = session.exec(
+            select(UserOutputBlock).where(
+                col(UserOutputBlock.user_id) == self.user_id,
+                col(UserOutputBlock.block_id) == output_block_id,
+            ),
+        ).one_or_none()
+        if block is None:
+            raise ValueError(f"Unknown output_block_id for user scope: {output_block_id}")
+        if block.output_id != output_id:
+            raise ValueError(
+                "output_block_id does not belong to output_id in current user scope "
+                f"(output_id={output_id}, output_block_id={output_block_id}).",
+            )
+
+    def _upsert_user_output_in_session(
+        self,
+        *,
+        session: Session,
+        payload: UserOutputUpsert,
+    ) -> UserOutput:
+        now = utc_now()
+        row = self._resolve_existing_user_output(session=session, payload=payload)
+        if row is None:
+            row = UserOutput(
+                output_id=str(uuid4()),
+                user_id=self.user_id,
+                kind=payload.kind,
+                business_date=payload.business_date,
+                story_id=payload.story_id,
+                monitor_id=payload.monitor_id,
+                request_id=payload.request_id,
+                task_id=payload.task_id,
+                status=payload.status,
+                title=payload.title,
+                payload_json=json.dumps(payload.payload, ensure_ascii=False, sort_keys=True),
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(row)
+            session.flush()
+        else:
+            row.business_date = payload.business_date
+            row.story_id = payload.story_id
+            row.monitor_id = payload.monitor_id
+            row.request_id = payload.request_id
+            row.task_id = payload.task_id
+            row.status = payload.status
+            row.title = payload.title
+            row.payload_json = json.dumps(payload.payload, ensure_ascii=False, sort_keys=True)
+            row.updated_at = now
+            session.add(row)
+
+        session.exec(
+            delete(UserOutputBlock).where(
+                col(UserOutputBlock.user_id) == self.user_id,
+                col(UserOutputBlock.output_id) == row.output_id,
+            ),
+        )
+        for block in payload.blocks:
+            session.add(
+                UserOutputBlock(
+                    user_id=self.user_id,
+                    output_id=row.output_id,
+                    block_order=block.block_order,
+                    text=block.text,
+                    source_ids_json=json.dumps(
+                        list(block.source_ids),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    created_at=now,
+                ),
+            )
+        return row
 
     def _get_task_row_for_update(self, *, session: Session, task_id: str) -> LlmTask:
         row = session.exec(
@@ -950,6 +1627,97 @@ def _to_task_event_view(row: LlmTaskEvent) -> LlmTaskEventView:
         status_to=LlmTaskStatus(row.status_to) if row.status_to is not None else None,
         created_at=_to_utc_aware_datetime(row.created_at),
         details=details,
+    )
+
+
+def _to_story_definition_view(row: UserStoryDefinition) -> StoryDefinitionView:
+    return StoryDefinitionView(
+        story_id=row.story_id,
+        user_id=row.user_id,
+        name=row.name,
+        description=row.description,
+        target_language=row.target_language,
+        priority=row.priority,
+        enabled=row.enabled,
+        created_at=_to_utc_aware_datetime(row.created_at),
+        updated_at=_to_utc_aware_datetime(row.updated_at),
+    )
+
+
+def _to_monitor_question_view(row: MonitorQuestion) -> MonitorQuestionView:
+    return MonitorQuestionView(
+        monitor_id=row.monitor_id,
+        user_id=row.user_id,
+        name=row.name,
+        prompt=row.prompt,
+        cadence=row.cadence,
+        enabled=row.enabled,
+        created_at=_to_utc_aware_datetime(row.created_at),
+        updated_at=_to_utc_aware_datetime(row.updated_at),
+    )
+
+
+def _to_daily_story_snapshot_view(row: DailyStorySnapshot) -> DailyStorySnapshotView:
+    summary: dict[str, object] = {}
+    try:
+        parsed = json.loads(row.summary_json)
+        if isinstance(parsed, dict):
+            summary = parsed
+    except json.JSONDecodeError:
+        summary = {}
+    return DailyStorySnapshotView(
+        business_date=row.business_date,
+        story_id=row.story_id,
+        story_key=row.story_key,
+        title=row.title,
+        continuity_key=row.continuity_key,
+        summary=summary,
+        updated_at=_to_utc_aware_datetime(row.updated_at),
+    )
+
+
+def _to_user_output_view(
+    row: UserOutput,
+    block_rows: Sequence[UserOutputBlock],
+) -> UserOutputView:
+    payload: dict[str, object] = {}
+    try:
+        parsed_payload = json.loads(row.payload_json)
+        if isinstance(parsed_payload, dict):
+            payload = parsed_payload
+    except json.JSONDecodeError:
+        payload = {}
+    blocks: list[UserOutputBlockWrite] = []
+    for block_row in block_rows:
+        try:
+            parsed_source_ids = json.loads(block_row.source_ids_json)
+        except json.JSONDecodeError:
+            parsed_source_ids = []
+        source_ids = tuple(
+            value for value in parsed_source_ids if isinstance(value, str) and value.strip()
+        )
+        blocks.append(
+            UserOutputBlockWrite(
+                block_order=block_row.block_order,
+                text=block_row.text,
+                source_ids=source_ids,
+            ),
+        )
+    return UserOutputView(
+        output_id=row.output_id,
+        user_id=row.user_id,
+        kind=row.kind,
+        business_date=row.business_date,
+        status=row.status,
+        story_id=row.story_id,
+        monitor_id=row.monitor_id,
+        request_id=row.request_id,
+        task_id=row.task_id,
+        title=row.title,
+        payload=payload,
+        created_at=_to_utc_aware_datetime(row.created_at),
+        updated_at=_to_utc_aware_datetime(row.updated_at),
+        blocks=blocks,
     )
 
 

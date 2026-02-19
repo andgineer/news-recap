@@ -89,6 +89,11 @@ class OrchestratorSettings:
     poll_interval_seconds: float = 2.0
     retry_base_seconds: int = 30
     retry_max_seconds: int = 900
+    qa_lookback_days: int = 3
+    retrieval_top_k: int = 40
+    retrieval_max_articles: int = 80
+    retrieval_token_budget: int = 12_000
+    retrieval_char_budget: int = 60_000
 
 
 @dataclass(slots=True)
@@ -222,6 +227,17 @@ class Settings:
                 ),
                 retry_max_seconds=int(
                     os.getenv("NEWS_RECAP_LLM_RETRY_MAX_SECONDS", "900"),
+                ),
+                qa_lookback_days=int(os.getenv("NEWS_RECAP_QA_LOOKBACK_DAYS", "3")),
+                retrieval_top_k=int(os.getenv("NEWS_RECAP_RETRIEVAL_TOP_K", "40")),
+                retrieval_max_articles=int(
+                    os.getenv("NEWS_RECAP_RETRIEVAL_MAX_ARTICLES", "80"),
+                ),
+                retrieval_token_budget=int(
+                    os.getenv("NEWS_RECAP_RETRIEVAL_TOKEN_BUDGET", "12000"),
+                ),
+                retrieval_char_budget=int(
+                    os.getenv("NEWS_RECAP_RETRIEVAL_CHAR_BUDGET", "60000"),
                 ),
             ),
         )

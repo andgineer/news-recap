@@ -1,332 +1,370 @@
-# CLI (Current MVP)
+# CLI
 
-In Epic 1, the product is operated through CLI commands.
+`news-recap` is operated from CLI commands grouped by workflow stage.
 
-## Main Command
+## Command Map
 
-Run one ingestion cycle:
+- `ingest`: source import, stats, dedup inspection, retention cleanup.
+- `llm`: task queue, worker runtime, retries, smoke checks, benchmark.
+- `stories`: pinned story definitions and daily story assignment build.
+- `highlights`: enqueue daily highlights generation.
+- `story-details`: enqueue detailed output for one story.
+- `monitors`: define/list/run scheduled monitor prompts.
+- `qa`: enqueue ad-hoc question answering tasks.
+- `read-state`: mark outputs/blocks as viewed/opened.
+- `feedback`: attach like/dislike/hide/pin feedback.
+- `insights`: domain-level stats and output listing.
+
+## Common Notes
+
+- Most commands support `--db-path` to point to a specific SQLite file.
+- Source IDs must use format `article:<article_id>`.
+- Queue tasks are executed by `news-recap llm worker`.
+
+## Ingestion Commands
+
+### `ingest daily`
+Run one ingestion cycle from RSS/Atom feeds.
 
 ```bash
 news-recap ingest daily
+news-recap ingest daily --feed-url https://example.com/feed.xml
 ```
 
-Common options:
+Key options:
+- `--feed-url` (repeatable)
+- `--db-path`
 
-- `--db-path PATH` — SQLite file path.
-- `--feed-url TEXT` — RSS/Atom feed URL (repeatable).
+If `--feed-url` is omitted, feeds are loaded from:
+- `NEWS_RECAP_RSS_FEED_URLS`
+- `NEWS_RECAP_RSS_FEED_URL`
 
-If `--feed-url` is not provided, feeds are read from:
-
-- `NEWS_RECAP_RSS_FEED_URLS` (comma-separated),
-- optionally `NEWS_RECAP_RSS_FEED_URL`.
-
-## How to Get an Inoreader RSS URL
-
-1. In Inoreader, open the folder or tag (label) you want to ingest.
-2. Open that folder/tag menu and find the RSS publishing option
-   (`Create output feed`, `Output RSS`, or a similar label).
-3. Create the output feed and copy the generated URL like
-   `https://www.inoreader.com/stream/user/...`.
-4. Pass this URL to the app:
+### `ingest stats`
+Show ingestion and dedup metrics in a rolling window.
 
 ```bash
-export NEWS_RECAP_RSS_FEED_URLS="https://www.inoreader.com/stream/user/..."
-news-recap ingest daily
+news-recap ingest stats --hours 24 --recent-runs 5
 ```
 
-Important:
-- Output feed URLs are usually personal. Do not expose them publicly.
-- You do not need to manually add `?n=...` to the URL. The app appends item limits via
-  `NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED` (default `10000`) or
-  `NEWS_RECAP_RSS_FEED_ITEMS` for per-feed overrides.
+Key options:
+- `--hours`
+- `--source`
+- `--recent-runs`
 
-## Observability Commands
-
-Show run and dedup stats:
-
-```bash
-news-recap ingest stats --hours 24
-```
-
-Inspect clusters:
+### `ingest clusters`
+Inspect dedup cluster distribution for a run.
 
 ```bash
 news-recap ingest clusters --hours 24 --limit 20
 news-recap ingest clusters --run-id <run_id> --show-members
 ```
 
-Inspect duplicate examples:
+Key options:
+- `--run-id` or `--hours`/`--source` for run resolution
+- `--min-size`
+- `--members-per-cluster`
+- `--show-members`
+
+### `ingest duplicates`
+Print duplicate cluster examples (cluster size >= 2).
 
 ```bash
 news-recap ingest duplicates --hours 24 --limit-clusters 10
-news-recap ingest duplicates --run-id <run_id>
 ```
 
-## LLM Queue Runtime
+Key options:
+- `--run-id` or `--hours`/`--source`
+- `--limit-clusters`
+- `--members-per-cluster`
 
-Enqueue a demo task:
-
-```bash
-news-recap llm enqueue-test --task-type highlights --prompt "Top updates"
-```
-
-Process queued tasks:
-
-```bash
-news-recap llm worker --once
-news-recap llm worker --loop --max-tasks 100
-```
-
-Inspect queue/task state:
-
-```bash
-news-recap llm tasks --status queued
-news-recap llm inspect --task-id <task_id>
-news-recap llm retry --task-id <task_id>
-news-recap llm cancel --task-id <task_id>
-```
-
-Operator observability (no DB shell required):
-
-```bash
-news-recap llm stats --hours 24
-```
-
-The stats command prints:
-
-- queue health by status/type/priority,
-- validation failure counters (`output_invalid_json`, `source_mapping_failed`),
-- retry metrics by failure class and retry success ratio,
-- latency percentiles by task type.
-
-Deterministic benchmark matrix for Epic 2:
-
-```bash
-news-recap llm benchmark --tasks-per-type 10
-```
-
-Default output report path:
-
-- `docs/reports/epic2_orchestrator_benchmark.md`
-
-## LLM Agent Smoke Checks
-
-Run direct checks (without DB queue):
-
-```bash
-news-recap llm smoke
-```
-
-Force specific agents:
-
-```bash
-news-recap llm smoke --agent codex --agent claude --agent gemini
-```
-
-Switch model profile (`fast` vs `quality`) at runtime:
-
-```bash
-news-recap llm smoke --agent codex --model-profile quality
-news-recap llm smoke --agent claude --model-profile fast
-```
-
-Use a concrete model override:
-
-```bash
-news-recap llm smoke --agent codex --model gpt-5-codex-mini
-```
-
-For `llm enqueue-test`, every `--source-id` must belong to the current user corpus and use
-format `article:<article_id>`; source IDs are validated through `user_articles`.
-
-Default command templates (fixed from research run on February 18, 2026):
-
-- `codex`: `codex exec --sandbox workspace-write -c sandbox_workspace_write.network_access=true -c model_reasoning_effort=high --model {model} {prompt}`
-- `claude`: `claude -p --model {model} --permission-mode dontAsk --allowed-tools "Read,Write,Edit,WebFetch,Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" -- {prompt}`
-- `gemini`: `gemini --model {model} --approval-mode auto_edit --prompt {prompt}`
-
-For Gemini file+web tasks in non-interactive mode, use this safer explicit template:
-
-```bash
-NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE='gemini --model {model} --approval-mode auto_edit --include-directories . --allowed-tools read_file,write_file,replace,web_fetch,list_directory --prompt {prompt}'
-```
-
-You can override them with:
-
-- `NEWS_RECAP_LLM_DEFAULT_AGENT`
-- `NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP` (`highlights=fast,story=quality,qa=fast`)
-- `NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE`
-- `NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE`
-- `NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE`
-- `NEWS_RECAP_LLM_CODEX_MODEL_FAST` / `NEWS_RECAP_LLM_CODEX_MODEL_QUALITY`
-- `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` / `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY`
-- `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` / `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY`
-
-Note:
-- `codex` default stays sandboxed (`workspace-write`) and does not use `danger-full-access`.
-- Network is enabled explicitly via `sandbox_workspace_write.network_access=true` so file+web tasks
-  work in non-interactive CLI runs.
-- `antigravity` is not supported in non-interactive orchestrator runtime.
-- Model IDs and command flags are known-good defaults as of February 18, 2026; if provider CLIs
-  change, update them through env overrides.
-- Gemini non-interactive mode in this project uses Gemini CLI auth session; `GEMINI_API_KEY`
-  is not required for the default CLI flow.
-
-### Automated Model Refresh Runbook
-
-When to run model refresh:
-
-- immediately if error class is `model_not_available`;
-- immediately if smoke fails for the same `agent/profile` twice in a row;
-- after CLI agent version change (`codex --version`, `claude --version`, `gemini --version`);
-- planned weekly.
-
-When **not** to change model mapping:
-
-- `access_or_auth` errors;
-- `billing_or_quota` errors.
-- probe/runtime timeout errors (`Probe timed out`, `Synthetic task timed out`).
-
-In these cases, fix auth or billing first.
-
-Recommended maintenance prompt for an agent:
-
-```text
-You are the LLM model-maintenance agent for this repo.
-
-Goal:
-Validate current model routing for codex/claude/gemini and update model mappings only if needed.
-
-Rules:
-1) Work only in this repo.
-2) Run smoke matrix for agents x profiles (fast, quality).
-3) Treat auth/quota failures as non-model issues; do NOT change model mapping for them.
-4) Change mapping only when failure indicates model drift (not found/deprecated/unsupported).
-5) After each candidate change, re-run smoke for that exact agent/profile.
-6) Keep edits minimal and deterministic.
-
-Commands to use:
-- news-recap llm smoke --agent codex --model-profile fast
-- news-recap llm smoke --agent codex --model-profile quality
-- news-recap llm smoke --agent claude --model-profile fast
-- news-recap llm smoke --agent claude --model-profile quality
-- news-recap llm smoke --agent gemini --model-profile fast
-- news-recap llm smoke --agent gemini --model-profile quality
-
-If a model drift is confirmed:
-- Update env defaults/mapping in config.
-- Update docs with new known-good defaults.
-- Update tests that assert defaults.
-- Run:
-  - uv run pytest -q
-  - source ./activate.sh && pre-commit run --verbose --all-files --
-
-Output:
-1) A short report with before/after matrix.
-2) Exact files changed.
-3) Unresolved blockers (if any).
-```
-
-Watchdog script (recommended automation entrypoint):
-
-```bash
-scripts/model_watchdog.sh
-scripts/model_watchdog.sh --run-refresh --refresh-agent codex
-```
-
-Exit codes:
-
-- `0` checks passed (or refresh executed successfully);
-- `10` refresh is recommended (triggers detected, `--run-refresh` not used);
-- `11` refresh was attempted and failed;
-- `12` blocking auth/quota/timeout failures detected.
-
-## Worker Operations Runbook
-
-Runtime model:
-
-- One worker process claims one `queued` task atomically and marks it `running`.
-- `--once` processes at most one task; `--loop` keeps polling until idle (or `--max-tasks`).
-- Task lifecycle: `queued -> running -> {succeeded|failed|timeout|canceled}`.
-- `cancel` is terminal from `queued|running`; worker cannot later overwrite canceled tasks.
-- Manual `retry` is allowed from `failed|timeout|canceled` and returns task to `queued`.
-
-Retry/repair behavior:
-
-- Retryable classes: `timeout`, `backend_transient`.
-- Non-retryable classes: `backend_non_retryable`, `billing_or_quota`, `access_or_auth`,
-  `model_not_available`, `input_contract_error`.
-- Validation failures (`output_invalid_json`, `source_mapping_failed`) trigger one repair pass
-  per attempt before terminal failure.
-
-Failure class troubleshooting map:
-
-- `billing_or_quota`: restore billing/quota, then `llm retry`.
-- `access_or_auth`: fix auth/session/permissions for selected CLI agent, then `llm retry`.
-- `model_not_available`: update model mapping/profile (`llm smoke`, then env/config update), retry.
-- `backend_transient`: inspect stdout/stderr artifacts; transient network/rate-limit usually auto-retries.
-- `output_invalid_json` / `source_mapping_failed`: inspect output schema/source mapping, tighten prompt
-  or backend command, then retry.
-- `input_contract_error`: broken manifest/index/input; re-enqueue task after fixing generator path.
-
-Artifacts and cleanup:
-
-- Per task workdir contains input manifest, task input, articles index, result JSON, stdout/stderr logs.
-- DB tracks artifact metadata in `llm_task_artifacts`.
-- Cleanup policy: keep artifacts for recent audit/debug window; remove old workdirs together with old DB
-  tasks using your retention policy and backup requirements.
-
-## Retention Cleanup
-
-Delete old user-linked articles by `discovered_at`:
+### `ingest prune`
+Delete old user-article links by retention age (`discovered_at`).
 
 ```bash
 news-recap ingest prune --days 30
-```
-
-Dry-run mode (no DB changes):
-
-```bash
 news-recap ingest prune --days 30 --dry-run
 ```
 
-Automatic cleanup also runs after `news-recap ingest daily` when
-`NEWS_RECAP_ARTICLE_RETENTION_DAYS > 0`.
+Key options:
+- `--days`
+- `--dry-run/--no-dry-run`
 
-Run global GC for shared records that are no longer referenced by any user:
+### `ingest gc`
+Delete globally unreferenced shared records.
 
 ```bash
 news-recap ingest gc
 news-recap ingest gc --dry-run
 ```
 
-Recommended order for periodic maintenance:
-1. Run per-user prune (`ingest prune`) for each user scope/schedule.
-2. Run global shared-record GC (`ingest gc`).
+Key options:
+- `--dry-run/--no-dry-run`
 
-## Helpful Environment Variables
+## LLM Queue Commands
+
+### `llm enqueue-test`
+Enqueue one queue task with optional routing overrides.
+
+```bash
+news-recap llm enqueue-test --task-type highlights --prompt "Top updates"
+```
+
+Key options:
+- `--task-type`
+- `--prompt`
+- `--source-id` (repeatable)
+- `--priority`
+- `--agent`, `--model-profile`, `--model`
+- `--max-attempts`, `--timeout-seconds`
+
+### `llm worker`
+Run queue worker once or in loop mode.
+
+```bash
+news-recap llm worker --once
+news-recap llm worker --loop --max-tasks 100
+```
+
+### `llm stats`
+Show queue health, validation/retry metrics, and latency.
+
+```bash
+news-recap llm stats --hours 24
+```
+
+### `llm benchmark`
+Run deterministic queue benchmark and write report.
+
+```bash
+news-recap llm benchmark --tasks-per-type 10
+news-recap llm benchmark --task-type highlights --task-type qa --use-configured-agent
+```
+
+Key options:
+- `--task-type` (repeatable)
+- `--tasks-per-type`
+- `--source-id` (repeatable)
+- `--output`
+- `--use-benchmark-agent/--use-configured-agent`
+
+### `llm tasks`
+List recent tasks, optionally filtered by status.
+
+```bash
+news-recap llm tasks --status queued --limit 50
+```
+
+### `llm inspect`
+Show one task with event timeline.
+
+```bash
+news-recap llm inspect --task-id <task_id>
+```
+
+### `llm retry`
+Manually re-queue failed/timeout/canceled task.
+
+```bash
+news-recap llm retry --task-id <task_id>
+```
+
+### `llm cancel`
+Cancel queued/running task.
+
+```bash
+news-recap llm cancel --task-id <task_id>
+```
+
+### `llm smoke`
+Run direct agent smoke checks without DB queue.
+
+```bash
+news-recap llm smoke
+news-recap llm smoke --agent codex --model-profile quality
+news-recap llm smoke --agent gemini --model gemini-2.5-flash
+```
+
+Key options:
+- `--agent` (repeatable)
+- `--model-profile` (`fast` or `quality`)
+- `--model`
+- `--prompt`, `--expect-substring`, `--timeout-seconds`
+- `--claude-command`, `--codex-command`, `--gemini-command`
+
+## Story and Output Generation Commands
+
+### `stories define`
+Create or update a pinned story definition.
+
+```bash
+news-recap stories define --name "Serbia updates" --description "Politics and economy" --target-language sr
+```
+
+Key options:
+- `--story-id` (update existing)
+- `--name`
+- `--description`
+- `--target-language`
+- `--priority`
+- `--enabled/--disabled`
+
+### `stories list`
+List pinned stories.
+
+```bash
+news-recap stories list
+news-recap stories list --all
+```
+
+### `stories build`
+Build pinned + auto assignments for one business date.
+
+```bash
+news-recap stories build
+news-recap stories build --date 2026-02-18
+```
+
+### `highlights generate`
+Enqueue highlights generation task for one date.
+
+```bash
+news-recap highlights generate --date 2026-02-18
+```
+
+Key options:
+- `--date`
+- `--priority`
+- `--agent`, `--model-profile`, `--model`
+- `--max-attempts`, `--timeout-seconds`
+
+### `story-details generate`
+Enqueue detailed generation for one pinned story.
+
+```bash
+news-recap story-details generate --story-id <story_id> --date 2026-02-18
+```
+
+Key options:
+- `--story-id`
+- `--date`
+- routing/attempt/timeout options (same as highlights)
+
+## Monitor and Q&A Commands
+
+### `monitors define`
+Create or update monitor prompt.
+
+```bash
+news-recap monitors define --name "Macro risks" --prompt "What changed in macro risk today?"
+```
+
+Key options:
+- `--monitor-id` (update existing)
+- `--name`
+- `--prompt`
+- `--cadence`
+- `--enabled/--disabled`
+
+### `monitors list`
+List monitor definitions.
+
+```bash
+news-recap monitors list
+news-recap monitors list --all
+```
+
+### `monitors run`
+Enqueue monitor-answer tasks for enabled monitors.
+
+```bash
+news-recap monitors run --date 2026-02-18
+```
+
+Key options:
+- `--date`
+- routing/attempt/timeout options
+
+### `qa ask`
+Enqueue ad-hoc QA task with bounded retrieval context.
+
+```bash
+news-recap qa ask --prompt "What were the top geopolitical updates today?"
+news-recap qa ask --prompt "What changed in energy markets?" --lookback-days 7
+```
+
+Key options:
+- `--prompt`
+- `--lookback-days`
+- routing/attempt/timeout options
+
+## Read-state and Feedback Commands
+
+### `read-state mark`
+Record read/open interaction for output or output block.
+
+```bash
+news-recap read-state mark --output-id <output_id> --event-type open
+news-recap read-state mark --output-id <output_id> --event-type view --output-block-id 3
+```
+
+### `feedback add`
+Attach feedback to output or one block.
+
+```bash
+news-recap feedback add --output-id <output_id> --feedback-type like
+news-recap feedback add --output-id <output_id> --feedback-type hide --output-block-id 2
+```
+
+## Insights Commands
+
+### `insights stats`
+Show domain counters for stories, outputs, and engagement.
+
+```bash
+news-recap insights stats --hours 24
+```
+
+### `insights outputs`
+List persisted business outputs.
+
+```bash
+news-recap insights outputs --limit 20
+news-recap insights outputs --kind highlights --date 2026-02-18
+```
+
+## Important Environment Variables
 
 - `NEWS_RECAP_DB_PATH`
 - `NEWS_RECAP_RSS_FEED_URLS`
 - `NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED`
 - `NEWS_RECAP_RSS_FEED_ITEMS` (`<feed_url>|<items>,...`)
-- `NEWS_RECAP_DEDUP_MODEL_NAME`
 - `NEWS_RECAP_ARTICLE_RETENTION_DAYS`
+- `NEWS_RECAP_LLM_DEFAULT_AGENT`
+- `NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP`
+- `NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE`
+- `NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE`
+- `NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE`
+- `NEWS_RECAP_LLM_CODEX_MODEL_FAST` / `NEWS_RECAP_LLM_CODEX_MODEL_QUALITY`
+- `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` / `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY`
+- `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` / `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY`
+- `NEWS_RECAP_QA_LOOKBACK_DAYS`
+- `NEWS_RECAP_RETRIEVAL_TOP_K`
+- `NEWS_RECAP_RETRIEVAL_MAX_ARTICLES`
+- `NEWS_RECAP_RETRIEVAL_TOKEN_BUDGET`
+- `NEWS_RECAP_RETRIEVAL_CHAR_BUDGET`
 
 ## Help
 
 ```bash
 news-recap --help
 news-recap ingest --help
-news-recap ingest daily --help
-news-recap ingest stats --help
-news-recap ingest clusters --help
-news-recap ingest duplicates --help
-news-recap ingest prune --help
-news-recap ingest gc --help
 news-recap llm --help
-news-recap llm worker --help
-news-recap llm stats --help
-news-recap llm benchmark --help
-news-recap llm smoke --help
+news-recap stories --help
+news-recap highlights --help
+news-recap story-details --help
+news-recap monitors --help
+news-recap qa --help
+news-recap read-state --help
+news-recap feedback --help
+news-recap insights --help
 ```

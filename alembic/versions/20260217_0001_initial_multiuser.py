@@ -263,6 +263,106 @@ def upgrade() -> None:
     )
 
     op.create_table(
+        "user_story_definitions",
+        sa.Column("story_id", sa.String(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("target_language", sa.String(), nullable=False, server_default="en"),
+        sa.Column("description", sa.Text(), nullable=False),
+        sa.Column("priority", sa.Integer(), nullable=False, server_default="100"),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("story_id"),
+        sa.UniqueConstraint(
+            "user_id",
+            "name",
+            name="uq_user_story_definitions_scope_name",
+        ),
+        sa.UniqueConstraint(
+            "user_id",
+            "story_id",
+            name="uq_user_story_definitions_scope_story",
+        ),
+    )
+
+    op.create_table(
+        "story_assignments",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("article_id", sa.String(), nullable=False),
+        sa.Column("story_id", sa.String(), nullable=True),
+        sa.Column("story_key", sa.String(), nullable=False),
+        sa.Column("assignment_type", sa.String(), nullable=False),
+        sa.Column("score", sa.Float(), nullable=False, server_default="0"),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["article_id"], ["articles.article_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["user_id", "story_id"],
+            ["user_story_definitions.user_id", "user_story_definitions.story_id"],
+            ondelete="SET NULL",
+            name="fk_story_assignments_story_scope",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "user_id",
+            "business_date",
+            "article_id",
+            name="uq_story_assignments_scope_date_article",
+        ),
+    )
+
+    op.create_table(
+        "daily_story_snapshots",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("story_id", sa.String(), nullable=True),
+        sa.Column("story_key", sa.String(), nullable=False),
+        sa.Column("title", sa.String(), nullable=False),
+        sa.Column("continuity_key", sa.String(), nullable=True),
+        sa.Column("summary_json", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["user_id", "story_id"],
+            ["user_story_definitions.user_id", "user_story_definitions.story_id"],
+            ondelete="SET NULL",
+            name="fk_daily_story_snapshots_story_scope",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "user_id",
+            "business_date",
+            "story_key",
+            name="uq_daily_story_snapshots_scope_date_key",
+        ),
+    )
+
+    op.create_table(
+        "monitor_questions",
+        sa.Column("monitor_id", sa.String(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("prompt", sa.Text(), nullable=False),
+        sa.Column("cadence", sa.String(), nullable=False, server_default="daily"),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("monitor_id"),
+        sa.UniqueConstraint(
+            "user_id",
+            "monitor_id",
+            name="uq_monitor_questions_scope_monitor",
+        ),
+    )
+
+    op.create_table(
         "llm_tasks",
         sa.Column("task_id", sa.String(), nullable=False),
         sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
@@ -342,6 +442,144 @@ def upgrade() -> None:
         ),
     )
 
+    op.create_table(
+        "user_outputs",
+        sa.Column("output_id", sa.String(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("kind", sa.String(), nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("story_id", sa.String(), nullable=True),
+        sa.Column("monitor_id", sa.String(), nullable=True),
+        sa.Column("request_id", sa.String(), nullable=True),
+        sa.Column("task_id", sa.String(), nullable=True),
+        sa.Column("status", sa.String(), nullable=False),
+        sa.Column("title", sa.String(), nullable=True),
+        sa.Column("payload_json", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["task_id"], ["llm_tasks.task_id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("output_id"),
+        sa.UniqueConstraint(
+            "user_id",
+            "output_id",
+            name="uq_user_outputs_scope_output",
+        ),
+        sa.UniqueConstraint(
+            "user_id",
+            "kind",
+            "request_id",
+            name="uq_user_outputs_scope_kind_request",
+        ),
+    )
+
+    op.create_table(
+        "user_output_blocks",
+        sa.Column("block_id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("output_id", sa.String(), nullable=False),
+        sa.Column("block_order", sa.Integer(), nullable=False),
+        sa.Column("text", sa.Text(), nullable=False),
+        sa.Column("source_ids_json", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["user_id", "output_id"],
+            ["user_outputs.user_id", "user_outputs.output_id"],
+            ondelete="CASCADE",
+            name="fk_user_output_blocks_output_scope",
+        ),
+        sa.PrimaryKeyConstraint("block_id"),
+        sa.UniqueConstraint(
+            "user_id",
+            "block_id",
+            name="uq_user_output_blocks_scope_block",
+        ),
+        sa.UniqueConstraint(
+            "user_id",
+            "output_id",
+            "block_id",
+            name="uq_user_output_blocks_scope_output_block",
+        ),
+        sa.UniqueConstraint(
+            "user_id",
+            "output_id",
+            "block_order",
+            name="uq_user_output_blocks_scope_order",
+        ),
+    )
+
+    op.create_table(
+        "read_state_events",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("output_id", sa.String(), nullable=False),
+        sa.Column("output_block_id", sa.Integer(), nullable=True),
+        sa.Column("event_type", sa.String(), nullable=False),
+        sa.Column("details_json", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["user_id", "output_id"],
+            ["user_outputs.user_id", "user_outputs.output_id"],
+            ondelete="CASCADE",
+            name="fk_read_state_events_output_scope",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id", "output_block_id"],
+            ["user_output_blocks.user_id", "user_output_blocks.block_id"],
+            ondelete="CASCADE",
+            name="fk_read_state_events_block_scope",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id", "output_id", "output_block_id"],
+            [
+                "user_output_blocks.user_id",
+                "user_output_blocks.output_id",
+                "user_output_blocks.block_id",
+            ],
+            ondelete="CASCADE",
+            name="fk_read_state_events_output_block_scope",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+
+    op.create_table(
+        "output_feedback",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
+        sa.Column("output_id", sa.String(), nullable=False),
+        sa.Column("output_block_id", sa.Integer(), nullable=True),
+        sa.Column("feedback_type", sa.String(), nullable=False),
+        sa.Column("value", sa.String(), nullable=True),
+        sa.Column("details_json", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["user_id", "output_id"],
+            ["user_outputs.user_id", "user_outputs.output_id"],
+            ondelete="CASCADE",
+            name="fk_output_feedback_output_scope",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id", "output_block_id"],
+            ["user_output_blocks.user_id", "user_output_blocks.block_id"],
+            ondelete="CASCADE",
+            name="fk_output_feedback_block_scope",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id", "output_id", "output_block_id"],
+            [
+                "user_output_blocks.user_id",
+                "user_output_blocks.output_id",
+                "user_output_blocks.block_id",
+            ],
+            ondelete="CASCADE",
+            name="fk_output_feedback_output_block_scope",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+
     op.create_index(
         "idx_articles_hash_published",
         "articles",
@@ -403,6 +641,52 @@ def upgrade() -> None:
         "output_citation_snapshots",
         ["user_id", "task_id"],
     )
+    op.create_index(
+        "idx_story_assignments_scope_story",
+        "story_assignments",
+        ["user_id", "business_date", "story_key"],
+    )
+    op.create_index(
+        "idx_user_output_blocks_scope_output",
+        "user_output_blocks",
+        ["user_id", "output_id"],
+    )
+    op.create_index(
+        "idx_read_state_events_scope_time",
+        "read_state_events",
+        ["user_id", "created_at"],
+    )
+    op.create_index(
+        "idx_output_feedback_scope_time",
+        "output_feedback",
+        ["user_id", "created_at"],
+    )
+    op.create_index(
+        "uq_user_outputs_daily_highlights",
+        "user_outputs",
+        ["user_id", "kind", "business_date"],
+        unique=True,
+        sqlite_where=sa.text(
+            "kind = 'highlights' "
+            "AND story_id IS NULL "
+            "AND monitor_id IS NULL "
+            "AND request_id IS NULL",
+        ),
+    )
+    op.create_index(
+        "uq_user_outputs_story_detail",
+        "user_outputs",
+        ["user_id", "kind", "business_date", "story_id"],
+        unique=True,
+        sqlite_where=sa.text("story_id IS NOT NULL"),
+    )
+    op.create_index(
+        "uq_user_outputs_monitor_answer",
+        "user_outputs",
+        ["user_id", "kind", "business_date", "monitor_id"],
+        unique=True,
+        sqlite_where=sa.text("monitor_id IS NOT NULL"),
+    )
 
     op.execute(
         sa.text(
@@ -416,6 +700,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("uq_user_outputs_monitor_answer", table_name="user_outputs")
+    op.drop_index("uq_user_outputs_story_detail", table_name="user_outputs")
+    op.drop_index("uq_user_outputs_daily_highlights", table_name="user_outputs")
+    op.drop_index("idx_output_feedback_scope_time", table_name="output_feedback")
+    op.drop_index("idx_read_state_events_scope_time", table_name="read_state_events")
+    op.drop_index("idx_user_output_blocks_scope_output", table_name="user_output_blocks")
+    op.drop_index("idx_story_assignments_scope_story", table_name="story_assignments")
     op.drop_index(
         "idx_output_citation_snapshots_scope_task",
         table_name="output_citation_snapshots",
@@ -432,6 +723,14 @@ def downgrade() -> None:
     op.drop_index("uq_articles_fallback_key", table_name="articles")
     op.drop_index("uq_ingestion_runs_scope_source_running", table_name="ingestion_runs")
     op.drop_index("idx_articles_hash_published", table_name="articles")
+    op.drop_table("output_feedback")
+    op.drop_table("read_state_events")
+    op.drop_table("user_output_blocks")
+    op.drop_table("user_outputs")
+    op.drop_table("monitor_questions")
+    op.drop_table("daily_story_snapshots")
+    op.drop_table("story_assignments")
+    op.drop_table("user_story_definitions")
     op.drop_table("llm_task_artifacts")
     op.drop_table("llm_task_events")
     op.drop_table("output_citation_snapshots")
