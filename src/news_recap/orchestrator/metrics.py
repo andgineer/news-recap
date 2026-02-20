@@ -6,7 +6,12 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from news_recap.orchestrator.models import LlmTaskEventView, LlmTaskStatus, LlmTaskView
+from news_recap.orchestrator.models import (
+    LlmTaskAttemptView,
+    LlmTaskEventView,
+    LlmTaskStatus,
+    LlmTaskView,
+)
 
 _TERMINAL_STATUSES = {
     LlmTaskStatus.SUCCEEDED,
@@ -68,6 +73,12 @@ class OrchestratorMetricsSnapshot:
     retry_metrics: list[RetryClassMetric]
     failure_class_counts: dict[str, int]
     latency_by_task_type: dict[str, LatencyPercentiles]
+    attempt_failure_code_counts: dict[str, int]
+    attempt_missing_output_count: int
+    attempt_total_count: int
+    attempt_repair_success_count: int
+    attempt_repair_total_count: int
+    attempt_failure_class_counts: dict[str, int]
 
 
 def build_orchestrator_metrics(  # noqa: C901, PLR0912, PLR0915
@@ -75,6 +86,7 @@ def build_orchestrator_metrics(  # noqa: C901, PLR0912, PLR0915
     active_tasks: list[LlmTaskView],
     window_tasks: list[LlmTaskView],
     window_events: list[LlmTaskEventView],
+    window_attempts: list[LlmTaskAttemptView] | None = None,
 ) -> OrchestratorMetricsSnapshot:
     """Build one metrics snapshot from task/event views."""
 
@@ -200,6 +212,26 @@ def build_orchestrator_metrics(  # noqa: C901, PLR0912, PLR0915
         for task_type, values in sorted(latency_values.items())
     }
 
+    attempt_failure_code_counts = Counter[str]()
+    attempt_missing_output_count = 0
+    attempt_total_count = 0
+    attempt_repair_success_count = 0
+    attempt_repair_total_count = 0
+    attempt_failure_class_counts = Counter[str]()
+
+    for attempt in window_attempts or []:
+        attempt_total_count += 1
+        if attempt.attempt_failure_code:
+            attempt_failure_code_counts[attempt.attempt_failure_code] += 1
+        if attempt.failure_class is not None:
+            attempt_failure_class_counts[attempt.failure_class.value] += 1
+        if attempt.output_chars is not None and attempt.output_chars == 0:
+            attempt_missing_output_count += 1
+        if attempt.attempt_failure_code and "repair" in attempt.attempt_failure_code:
+            attempt_repair_total_count += 1
+            if attempt.status == "succeeded":
+                attempt_repair_success_count += 1
+
     return OrchestratorMetricsSnapshot(
         active_status_counts=dict(sorted(active_status_counts.items())),
         active_type_status_counts=_sorted_nested_counter(active_type_status_counts),
@@ -223,6 +255,12 @@ def build_orchestrator_metrics(  # noqa: C901, PLR0912, PLR0915
         retry_metrics=retry_metrics,
         failure_class_counts=dict(sorted(failure_class_counts.items())),
         latency_by_task_type=latency_by_task_type,
+        attempt_failure_code_counts=dict(sorted(attempt_failure_code_counts.items())),
+        attempt_missing_output_count=attempt_missing_output_count,
+        attempt_total_count=attempt_total_count,
+        attempt_repair_success_count=attempt_repair_success_count,
+        attempt_repair_total_count=attempt_repair_total_count,
+        attempt_failure_class_counts=dict(sorted(attempt_failure_class_counts.items())),
     )
 
 
@@ -293,6 +331,30 @@ def render_stats_lines(*, snapshot: OrchestratorMetricsSnapshot, hours: int) -> 
             )
     else:
         lines.append("Latency percentiles: none")
+
+    if snapshot.attempt_total_count > 0:
+        missing_output_rate = snapshot.attempt_missing_output_count / snapshot.attempt_total_count
+        repair_rate = (
+            snapshot.attempt_repair_success_count / snapshot.attempt_repair_total_count
+            if snapshot.attempt_repair_total_count > 0
+            else None
+        )
+        lines.append(
+            f"Attempt-level metrics: total={snapshot.attempt_total_count} "
+            f"missing_output_rate={missing_output_rate:.2%} "
+            f"repair_success_rate={_fmt_ratio(repair_rate)}",
+        )
+        if snapshot.attempt_failure_code_counts:
+            lines.append(
+                "Attempt failure codes: " + _fmt_key_value(snapshot.attempt_failure_code_counts),
+            )
+        if snapshot.attempt_failure_class_counts:
+            lines.append(
+                "Attempt failure-class distribution: "
+                + _fmt_key_value(snapshot.attempt_failure_class_counts),
+            )
+    else:
+        lines.append("Attempt-level metrics: none")
 
     return lines
 

@@ -93,6 +93,7 @@ class OrchestratorSettings:
     retry_max_seconds: int = 900
     worker_stale_attempt_seconds: int = 1_800
     worker_graceful_shutdown_seconds: int = 30
+    backend_capability_mode: str = "manifest_native"
     qa_lookback_days: int = 3
     retrieval_top_k: int = 40
     retrieval_max_articles: int = 80
@@ -200,9 +201,7 @@ class Settings:
                 ),
                 gemini_command_template=os.getenv(
                     "NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE",
-                    "gemini --model {model} "
-                    "--approval-mode auto_edit "
-                    "--prompt {prompt}",
+                    "gemini --model {model} --approval-mode auto_edit --prompt {prompt}",
                 ),
                 codex_model_fast=os.getenv(
                     "NEWS_RECAP_LLM_CODEX_MODEL_FAST",
@@ -243,6 +242,10 @@ class Settings:
                 ),
                 worker_graceful_shutdown_seconds=int(
                     os.getenv("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS", "30"),
+                ),
+                backend_capability_mode=os.getenv(
+                    "NEWS_RECAP_BACKEND_CAPABILITY_MODE",
+                    "manifest_native",
                 ),
                 qa_lookback_days=int(os.getenv("NEWS_RECAP_QA_LOOKBACK_DAYS", "3")),
                 retrieval_top_k=int(os.getenv("NEWS_RECAP_RETRIEVAL_TOP_K", "40")),
@@ -315,6 +318,13 @@ class Settings:
         ):
             if not model_id.strip():
                 raise ValueError(f"{env_key} must not be empty.")
+
+        valid_capability_modes = {"manifest_native", "stdout_parser_fallback"}
+        if self.orchestrator.backend_capability_mode not in valid_capability_modes:
+            raise ValueError(
+                f"NEWS_RECAP_BACKEND_CAPABILITY_MODE must be one of {valid_capability_modes}, "
+                f"got {self.orchestrator.backend_capability_mode!r}.",
+            )
 
     def _validate_orchestrator_runtime_limits(self) -> None:  # noqa: C901
         if not self.orchestrator.worker_id.strip():

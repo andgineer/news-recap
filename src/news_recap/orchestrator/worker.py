@@ -121,6 +121,7 @@ class OrchestratorWorker:
         transient_exit_codes: tuple[int, ...] = (137, 143),
         stale_attempt_seconds: int = 1800,
         graceful_shutdown_seconds: int = 30,
+        backend_capability_mode: str = "manifest_native",
     ) -> None:
         self.repository = repository
         self.backend = backend
@@ -133,6 +134,7 @@ class OrchestratorWorker:
         self.transient_exit_codes = transient_exit_codes
         self.stale_attempt_seconds = stale_attempt_seconds
         self.graceful_shutdown_seconds = graceful_shutdown_seconds
+        self.backend_capability_mode = backend_capability_mode
         self._random = random.Random()  # noqa: S311
         self._stop_requested = False
         self._stop_signal_name: str | None = None
@@ -592,7 +594,10 @@ class OrchestratorWorker:
                 "error_summary": validation.error_summary or "Unknown validation failure.",
             },
         )
-        if validation.failure_class == FailureClass.OUTPUT_INVALID_JSON:
+        if (
+            validation.failure_class == FailureClass.OUTPUT_INVALID_JSON
+            and self.backend_capability_mode == "stdout_parser_fallback"
+        ):
             parser_recovered = self._try_stdout_parser_recovery(
                 task_id=task.task_id,
                 output_path=loaded.output_path,
@@ -743,6 +748,18 @@ class OrchestratorWorker:
                 summary.failed = 1
             return
 
+        # Finalize attempt telemetry FIRST (consistent with failure paths)
+        self._finalize_attempt(
+            task=task,
+            status=LlmTaskStatus.SUCCEEDED,
+            failure_class=None,
+            attempt_failure_code=attempt_failure_code,
+            error_summary=None,
+            execution=execution,
+            routing=routing,
+            output_path=loaded.output_path,
+        )
+
         completed = self.repository.complete_task(
             task_id=task.task_id,
             output_path=str(loaded.output_path),
@@ -754,16 +771,6 @@ class OrchestratorWorker:
             ),
         )
         if completed:
-            self._finalize_attempt(
-                task=task,
-                status=LlmTaskStatus.SUCCEEDED,
-                failure_class=None,
-                attempt_failure_code=attempt_failure_code,
-                error_summary=None,
-                execution=execution,
-                routing=routing,
-                output_path=loaded.output_path,
-            )
             summary.succeeded = 1
             return
 
@@ -772,7 +779,7 @@ class OrchestratorWorker:
             status=LlmTaskStatus.CANCELED,
             failure_class=None,
             attempt_failure_code="state_transition_conflict",
-            error_summary="Task state changed concurrently before completion.",
+            error_summary="Task was canceled concurrently before completion could be committed.",
             execution=execution,
             routing=routing,
             output_path=loaded.output_path,

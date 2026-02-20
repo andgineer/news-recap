@@ -788,6 +788,100 @@ def test_list_tasks_for_metrics_uses_activity_window_and_status_filter(
     repository.close()
 
 
+def test_complete_task_emits_rejection_event_on_cas_conflict(tmp_path: Path) -> None:
+    """complete_task emits state_transition_rejected when task is not RUNNING."""
+    repository = OrchestratorRepository(tmp_path / "rejection-complete.db")
+    repository.init_schema()
+    task = repository.enqueue_task(
+        LlmTaskCreate(
+            task_type="highlights",
+            run_after=datetime.now(tz=UTC),
+            input_manifest_path=str(tmp_path / "manifest.json"),
+        ),
+    )
+    claimed = repository.claim_next_ready_task(worker_id="worker-a")
+    assert claimed is not None
+    repository.cancel_task(task_id=task.task_id)
+
+    result = repository.complete_task(task_id=task.task_id, output_path="out.json")
+    assert result is False
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    rejection_events = [e for e in details.events if e.event_type == "state_transition_rejected"]
+    assert len(rejection_events) >= 1
+    last_rejection = rejection_events[-1]
+    assert last_rejection.details["operation"] == "complete_task"
+    assert last_rejection.details["expected_status"] == "running"
+    assert last_rejection.details["reason"] == "optimistic_lock_conflict"
+    repository.close()
+
+
+def test_fail_task_emits_rejection_event_on_cas_conflict(tmp_path: Path) -> None:
+    """fail_task emits state_transition_rejected when task is not RUNNING."""
+    repository = OrchestratorRepository(tmp_path / "rejection-fail.db")
+    repository.init_schema()
+    task = repository.enqueue_task(
+        LlmTaskCreate(
+            task_type="highlights",
+            run_after=datetime.now(tz=UTC),
+            input_manifest_path=str(tmp_path / "manifest.json"),
+        ),
+    )
+    claimed = repository.claim_next_ready_task(worker_id="worker-a")
+    assert claimed is not None
+    repository.cancel_task(task_id=task.task_id)
+
+    result = repository.fail_task(
+        task_id=task.task_id,
+        status=LlmTaskStatus.FAILED,
+        failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+        error_summary="should be rejected",
+        last_exit_code=1,
+    )
+    assert result is False
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    rejection_events = [e for e in details.events if e.event_type == "state_transition_rejected"]
+    assert len(rejection_events) >= 1
+    assert rejection_events[-1].details["operation"] == "fail_task"
+    repository.close()
+
+
+def test_schedule_retry_emits_rejection_event_on_cas_conflict(tmp_path: Path) -> None:
+    """schedule_retry emits state_transition_rejected when task is not RUNNING."""
+    repository = OrchestratorRepository(tmp_path / "rejection-retry.db")
+    repository.init_schema()
+    task = repository.enqueue_task(
+        LlmTaskCreate(
+            task_type="highlights",
+            run_after=datetime.now(tz=UTC),
+            input_manifest_path=str(tmp_path / "manifest.json"),
+        ),
+    )
+    claimed = repository.claim_next_ready_task(worker_id="worker-a")
+    assert claimed is not None
+    repository.cancel_task(task_id=task.task_id)
+
+    result = repository.schedule_retry(
+        task_id=task.task_id,
+        run_after=datetime.now(tz=UTC),
+        timeout_seconds=120,
+        failure_class=FailureClass.TIMEOUT,
+        error_summary="should be rejected",
+        last_exit_code=124,
+    )
+    assert result is False
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    rejection_events = [e for e in details.events if e.event_type == "state_transition_rejected"]
+    assert len(rejection_events) >= 1
+    assert rejection_events[-1].details["operation"] == "schedule_retry"
+    repository.close()
+
+
 @pytest.mark.skipif(
     os.getenv("NEWS_RECAP_RUN_STRESS_TESTS") != "1",
     reason="Set NEWS_RECAP_RUN_STRESS_TESTS=1 to run long concurrency stress tests.",

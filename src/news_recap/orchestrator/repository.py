@@ -234,7 +234,7 @@ class OrchestratorRepository:
         stale_after: timedelta,
         limit: int = 100,
     ) -> int:
-        """Recover stale running tasks using timeout+grace policy with CAS guard."""
+        """Recover stale running tasks with optimistic concurrency guard."""
 
         if stale_after.total_seconds() <= 0:
             raise ValueError("stale_after must be > 0")
@@ -397,6 +397,12 @@ class OrchestratorRepository:
             )
             if result.rowcount != 1:
                 session.rollback()
+                # Emit rejection event in fresh session
+                self._emit_transition_rejected(
+                    task_id=task_id,
+                    operation="complete_task",
+                    expected_status=LlmTaskStatus.RUNNING,
+                )
                 return False
 
             if citations is not None:
@@ -493,6 +499,12 @@ class OrchestratorRepository:
             )
             if result.rowcount != 1:
                 session.rollback()
+                # Emit rejection event in fresh session
+                self._emit_transition_rejected(
+                    task_id=task_id,
+                    operation="fail_task",
+                    expected_status=LlmTaskStatus.RUNNING,
+                )
                 return False
             self._add_event(
                 session=session,
@@ -549,6 +561,12 @@ class OrchestratorRepository:
             )
             if result.rowcount != 1:
                 session.rollback()
+                # Emit rejection event in fresh session
+                self._emit_transition_rejected(
+                    task_id=task_id,
+                    operation="schedule_retry",
+                    expected_status=LlmTaskStatus.RUNNING,
+                )
                 return False
             self._add_event(
                 session=session,
@@ -643,6 +661,12 @@ class OrchestratorRepository:
             )
             if result.rowcount != 1:
                 session.rollback()
+                # Emit rejection event in fresh session
+                self._emit_transition_rejected(
+                    task_id=task_id,
+                    operation="retry_task",
+                    expected_status=previous,
+                )
                 raise RuntimeError(
                     "Task state changed concurrently while retrying; "
                     f"please retry command (task_id={task_id}).",
@@ -692,6 +716,12 @@ class OrchestratorRepository:
             )
             if result.rowcount != 1:
                 session.rollback()
+                # Emit rejection event in fresh session
+                self._emit_transition_rejected(
+                    task_id=task_id,
+                    operation="cancel_task",
+                    expected_status=previous,
+                )
                 raise RuntimeError(
                     "Task state changed concurrently while canceling; "
                     f"please retry command (task_id={task_id}).",
@@ -1007,7 +1037,7 @@ class OrchestratorRepository:
     ) -> list[LlmCostAggregateView]:
         """Aggregate attempt usage/cost metrics."""
 
-        attempts = self._list_attempts_for_window(since=since)
+        attempts = self.list_attempts_for_window(since=since)
         grouped: dict[str, LlmCostAggregateView] = {}
 
         for attempt in attempts:
@@ -1046,7 +1076,7 @@ class OrchestratorRepository:
 
         return sorted(grouped.values(), key=lambda item: item.group_key)
 
-    def _list_attempts_for_window(self, *, since: datetime) -> list[LlmTaskAttemptView]:
+    def list_attempts_for_window(self, *, since: datetime) -> list[LlmTaskAttemptView]:
         with Session(self.engine) as session:
             rows = session.exec(
                 select(LlmTaskAttempt)
@@ -1871,6 +1901,39 @@ class OrchestratorRepository:
         if row is None:
             raise RuntimeError(f"Task not found: {task_id}")
         return row
+
+    def _emit_transition_rejected(
+        self,
+        *,
+        task_id: str,
+        operation: str,
+        expected_status: LlmTaskStatus,
+        worker_id: str | None = None,
+    ) -> None:
+        """Emit rejection event for failed optimistic-lock transition in a fresh session."""
+        with Session(self.engine) as session:
+            row = session.exec(
+                select(LlmTask).where(
+                    LlmTask.task_id == task_id,
+                    LlmTask.user_id == self.user_id,
+                ),
+            ).one_or_none()
+            observed_status = row.status if row is not None else "unknown"
+            self._add_event(
+                session=session,
+                task_id=task_id,
+                event_type="state_transition_rejected",
+                status_from=expected_status,
+                status_to=None,
+                details={
+                    "operation": operation,
+                    "expected_status": expected_status.value,
+                    "observed_status": observed_status,
+                    "worker_id": worker_id,
+                    "reason": "optimistic_lock_conflict",
+                },
+            )
+            session.commit()
 
     def _add_event(  # noqa: PLR0913
         self,

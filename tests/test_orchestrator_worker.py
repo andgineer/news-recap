@@ -147,7 +147,9 @@ print("Recovered from stdout parser")
 """.strip(),
         "utf-8",
     )
-    command_template = f"{sys.executable} {stdout_only_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = (
+        f"{sys.executable} {stdout_only_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    )
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -168,6 +170,7 @@ print("Recovered from stdout parser")
         backend=CliAgentBackend(),
         routing_defaults=routing_defaults,
         worker_id="test-worker",
+        backend_capability_mode="stdout_parser_fallback",
     )
     summary = worker.run_once()
     assert summary.processed == 1
@@ -214,7 +217,9 @@ sys.stderr.write("tokens used\\n12,345\\n")
 """.strip(),
         "utf-8",
     )
-    command_template = f"{sys.executable} {usage_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = (
+        f"{sys.executable} {usage_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    )
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -271,7 +276,9 @@ Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_i
         "utf-8",
     )
 
-    command_template = f"{sys.executable} {invalid_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = (
+        f"{sys.executable} {invalid_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    )
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -379,6 +386,7 @@ print("Parser candidate text that should auto-recover missing output file.")
         backend=CliAgentBackend(),
         routing_defaults=routing_defaults,
         worker_id="test-worker",
+        backend_capability_mode="stdout_parser_fallback",
     )
     summary = worker.run_once()
     assert summary.succeeded == 1
@@ -597,7 +605,9 @@ Path(manifest.output_result_path).write_text("{}", "utf-8")
 """.strip(),
         "utf-8",
     )
-    command_template = f"{sys.executable} {very_slow_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = (
+        f"{sys.executable} {very_slow_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    )
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -718,7 +728,9 @@ Path(manifest.output_result_path).write_text("{}", "utf-8")
 """.strip(),
         "utf-8",
     )
-    command_template = f"{sys.executable} {timeout_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = (
+        f"{sys.executable} {timeout_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    )
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -789,7 +801,9 @@ Path(manifest.output_result_path).write_text(
 """.strip(),
         "utf-8",
     )
-    command_template = f"{sys.executable} {transient_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = (
+        f"{sys.executable} {transient_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    )
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -859,7 +873,9 @@ Path(manifest.output_result_path).write_text(
 """.strip(),
         "utf-8",
     )
-    command_template = f"{sys.executable} {repair_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = (
+        f"{sys.executable} {repair_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    )
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -923,7 +939,9 @@ else:
 """.strip(),
         "utf-8",
     )
-    command_template = f"{sys.executable} {no_repair_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = (
+        f"{sys.executable} {no_repair_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    )
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -1021,4 +1039,106 @@ def test_enqueue_demo_task_rejects_unknown_user_source_ids(tmp_path: Path) -> No
         assert "Unknown source_ids for current user scope" in str(error)
     else:  # pragma: no cover - defensive
         raise AssertionError("Expected enqueue to fail for unknown source id.")
+    repository.close()
+
+
+def test_worker_finalizes_attempt_before_completing_task(tmp_path: Path) -> None:
+    """Attempt telemetry should be finalized before task status transitions to SUCCEEDED."""
+    db_path = tmp_path / "worker-finalize-order.db"
+    source_id = _seed_source_id(db_path, external_id="worker-finalize-order")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    command_template = (
+        f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
+        "--task-manifest {task_manifest} {prompt}"
+    )
+    routing_defaults = _routing_defaults(command_template)
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Test finalization ordering.",
+            source_ids=(source_id,),
+        ),
+    )
+
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+    )
+    summary = worker.run_once()
+    assert summary.succeeded == 1
+
+    attempts = repository.list_task_attempts(task_id=task.task_id)
+    assert len(attempts) == 1
+    attempt = attempts[0]
+    assert attempt.finished_at is not None
+    assert attempt.status == "succeeded"
+    assert attempt.duration_ms is not None
+    assert attempt.duration_ms >= 0
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    assert details.task.status == LlmTaskStatus.SUCCEEDED
+    repository.close()
+
+
+def test_worker_manifest_native_mode_skips_stdout_recovery(tmp_path: Path) -> None:
+    """In manifest_native mode (default), stdout parser fallback is not used."""
+    db_path = tmp_path / "worker-no-parser.db"
+    source_id = _seed_source_id(db_path, external_id="worker-no-parser")
+    repository = OrchestratorRepository(db_path)
+    repository.init_schema()
+
+    broken_agent = tmp_path / "broken_agent.py"
+    broken_agent.write_text(
+        "import argparse\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--task-manifest', required=True)\n"
+        "args, _ = parser.parse_known_args()\n"
+        "from pathlib import Path\n"
+        "from news_recap.orchestrator.contracts import read_manifest\n"
+        "manifest = read_manifest(Path(args.task_manifest))\n"
+        "Path(manifest.output_result_path).write_text('{\"blocks\":[', 'utf-8')\n"
+        "print('stdout recovery candidate')\n",
+        "utf-8",
+    )
+    command_template = (
+        f"{sys.executable} {broken_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    )
+    routing_defaults = _routing_defaults(command_template)
+    service = OrchestratorService(
+        repository=repository,
+        workdir_root=tmp_path / "workdir",
+        routing_defaults=routing_defaults,
+    )
+    task = service.enqueue_demo_task(
+        EnqueueDemoTask(
+            task_type="highlights",
+            prompt="Should not recover from stdout.",
+            source_ids=(source_id,),
+        ),
+    )
+
+    worker = OrchestratorWorker(
+        repository=repository,
+        backend=CliAgentBackend(),
+        routing_defaults=routing_defaults,
+        worker_id="test-worker",
+        backend_capability_mode="manifest_native",
+    )
+    summary = worker.run_once()
+    assert summary.succeeded == 0
+
+    details = repository.get_task_details(task_id=task.task_id)
+    assert details is not None
+    event_types = [event.event_type for event in details.events]
+    assert "stdout_parser_recovered" not in event_types
     repository.close()

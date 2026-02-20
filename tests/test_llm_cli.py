@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import sys
 from datetime import UTC, datetime
@@ -233,6 +234,8 @@ def test_llm_cli_stats_reports_queue_and_validation_metrics(
     assert "LLM queue health (window=24h)" in stats.output
     assert "Validation failures: output_invalid_json=0 source_mapping_failed=0" in stats.output
     assert "Latency percentiles" in stats.output
+    assert "Attempt-level metrics: total=1" in stats.output
+    assert "missing_output_rate=0.00%" in stats.output
 
 
 def test_llm_cli_benchmark_writes_report(tmp_path: Path, monkeypatch) -> None:
@@ -271,6 +274,14 @@ def test_llm_cli_benchmark_report_reflects_configured_agent_mode(
 ) -> None:
     db_path = tmp_path / "llm-cli-benchmark-configured.db"
     _seed_user_article(db_path)
+    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
+    monkeypatch.setenv(
+        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
+        (
+            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
+            "--task-manifest {task_manifest} {prompt}"
+        ),
+    )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
 
     report_path = tmp_path / "benchmark_report_configured.md"
@@ -295,3 +306,90 @@ def test_llm_cli_benchmark_report_reflects_configured_agent_mode(
 
     report_text = report_path.read_text("utf-8")
     assert "--use-configured-agent" in report_text
+
+
+def _extract_json(output: str) -> dict:
+    """Extract JSON object from CLI output that may include log lines."""
+    start = output.index("{")
+    return json.loads(output[start:])
+
+
+def test_llm_failures_json_format(tmp_path: Path, monkeypatch) -> None:
+    """llm failures --format json outputs valid JSON."""
+    db_path = tmp_path / "failures-json.db"
+    monkeypatch.setenv("NEWS_RECAP_DB_PATH", str(db_path))
+    runner = CliRunner()
+    result = runner.invoke(
+        news_recap, ["llm", "failures", "--format", "json", "--db-path", str(db_path)]
+    )
+    assert result.exit_code == 0
+    parsed = _extract_json(result.output)
+    assert "failures" in parsed
+    assert "window_hours" in parsed
+    assert "count" in parsed
+
+
+def test_llm_usage_json_format(tmp_path: Path, monkeypatch) -> None:
+    """llm usage --format json outputs valid JSON with attempt entries."""
+    db_path = tmp_path / "usage-json.db"
+    source_id = _seed_user_article(db_path)
+    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
+    monkeypatch.setenv(
+        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
+        (
+            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
+            "--task-manifest {task_manifest} {prompt}"
+        ),
+    )
+    monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
+
+    runner = CliRunner()
+    enqueue = runner.invoke(
+        news_recap,
+        [
+            "llm",
+            "enqueue-test",
+            "--db-path",
+            str(db_path),
+            "--task-type",
+            "highlights",
+            "--prompt",
+            "JSON usage test.",
+            "--source-id",
+            source_id,
+        ],
+    )
+    assert enqueue.exit_code == 0
+    match = re.search(r"task_id=([a-f0-9-]+)", enqueue.output)
+    assert match is not None
+    task_id = match.group(1)
+
+    worker = runner.invoke(news_recap, ["llm", "worker", "--db-path", str(db_path), "--once"])
+    assert worker.exit_code == 0
+
+    result = runner.invoke(
+        news_recap,
+        ["llm", "usage", "--format", "json", "--db-path", str(db_path), "--task-id", task_id],
+    )
+    assert result.exit_code == 0
+    parsed = _extract_json(result.output)
+    assert parsed["task_id"] == task_id
+    assert "attempts" in parsed
+    assert len(parsed["attempts"]) == 1
+    assert "status" in parsed
+    assert "task_type" in parsed
+
+
+def test_llm_cost_json_format(tmp_path: Path, monkeypatch) -> None:
+    """llm cost --format json outputs valid JSON."""
+    db_path = tmp_path / "cost-json.db"
+    monkeypatch.setenv("NEWS_RECAP_DB_PATH", str(db_path))
+    runner = CliRunner()
+    result = runner.invoke(
+        news_recap, ["llm", "cost", "--format", "json", "--db-path", str(db_path)]
+    )
+    assert result.exit_code == 0
+    parsed = _extract_json(result.output)
+    assert "groups" in parsed
+    assert "group_by" in parsed
+    assert "window_hours" in parsed

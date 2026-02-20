@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from collections.abc import Iterator
@@ -122,6 +123,7 @@ class LlmFailuresCommand:
     model: str | None
     failure_class: str | None
     limit: int
+    output_format: str = "table"
 
 
 @dataclass(slots=True)
@@ -130,6 +132,7 @@ class LlmUsageCommand:
 
     db_path: Path | None
     task_id: str
+    output_format: str = "table"
 
 
 @dataclass(slots=True)
@@ -139,6 +142,7 @@ class LlmCostCommand:
     db_path: Path | None
     hours: int
     group_by: str
+    output_format: str = "table"
 
 
 @dataclass(slots=True)
@@ -210,6 +214,7 @@ class OrchestratorCliController:
                 retry_max_seconds=settings.orchestrator.retry_max_seconds,
                 stale_attempt_seconds=settings.orchestrator.worker_stale_attempt_seconds,
                 graceful_shutdown_seconds=settings.orchestrator.worker_graceful_shutdown_seconds,
+                backend_capability_mode=settings.orchestrator.backend_capability_mode,
             )
             summary = (
                 worker.run_once() if command.once else worker.run_loop(max_tasks=command.max_tasks)
@@ -233,11 +238,13 @@ class OrchestratorCliController:
             )
             window_tasks = repository.list_tasks_for_metrics(since=cutoff)
             window_events = repository.list_task_events_for_metrics(since=cutoff)
+            window_attempts = repository.list_attempts_for_window(since=cutoff)
 
         snapshot = build_orchestrator_metrics(
             active_tasks=active_tasks,
             window_tasks=window_tasks,
             window_events=window_events,
+            window_attempts=window_attempts,
         )
         return render_stats_lines(snapshot=snapshot, hours=command.hours)
 
@@ -304,6 +311,7 @@ class OrchestratorCliController:
                 timeout_retry_cap_seconds=1,
                 stale_attempt_seconds=settings.orchestrator.worker_stale_attempt_seconds,
                 graceful_shutdown_seconds=settings.orchestrator.worker_graceful_shutdown_seconds,
+                backend_capability_mode=settings.orchestrator.backend_capability_mode,
             )
             worker_summary = worker.run_loop(max_tasks=None)
             task_ids = tuple(matrix_task_ids)
@@ -439,6 +447,38 @@ class OrchestratorCliController:
                 limit=command.limit,
             )
 
+        if command.output_format == "json":
+            entries = []
+            for attempt in attempts:
+                entries.append(
+                    {
+                        "task_id": attempt.task_id,
+                        "attempt_no": attempt.attempt_no,
+                        "task_type": attempt.task_type,
+                        "status": attempt.status,
+                        "agent": attempt.agent,
+                        "model": attempt.model,
+                        "failure_class": attempt.failure_class.value
+                        if attempt.failure_class
+                        else None,
+                        "attempt_failure_code": attempt.attempt_failure_code,
+                        "duration_ms": attempt.duration_ms,
+                        "exit_code": attempt.exit_code,
+                        "error_summary": attempt.error_summary_sanitized,
+                    },
+                )
+            return [
+                json.dumps(
+                    {
+                        "failures": entries,
+                        "window_hours": command.hours,
+                        "count": len(entries),
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+            ]
+
         lines = [f"Failed attempts: {len(attempts)} (window={command.hours}h)"]
         for attempt in attempts:
             lines.append(
@@ -463,6 +503,41 @@ class OrchestratorCliController:
             attempts = repository.list_task_attempts(task_id=command.task_id)
         if details is None:
             return [f"Task not found: {command.task_id}"]
+
+        if command.output_format == "json":
+            attempt_entries = []
+            for attempt in attempts:
+                attempt_entries.append(
+                    {
+                        "attempt_no": attempt.attempt_no,
+                        "status": attempt.status,
+                        "agent": attempt.agent,
+                        "model": attempt.model,
+                        "prompt_tokens": attempt.prompt_tokens,
+                        "completion_tokens": attempt.completion_tokens,
+                        "total_tokens": attempt.total_tokens,
+                        "usage_status": attempt.usage_status,
+                        "usage_source": attempt.usage_source,
+                        "parser_version": attempt.usage_parser_version,
+                        "estimated_cost_usd": (
+                            float(attempt.estimated_cost_usd)
+                            if attempt.estimated_cost_usd is not None
+                            else None
+                        ),
+                    },
+                )
+            return [
+                json.dumps(
+                    {
+                        "task_id": details.task.task_id,
+                        "task_type": details.task.task_type,
+                        "status": details.task.status.value,
+                        "attempts": attempt_entries,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+            ]
 
         lines = [
             f"Task: {details.task.task_id}",
@@ -500,6 +575,37 @@ class OrchestratorCliController:
         cutoff = datetime.now(tz=UTC) - timedelta(hours=max(1, command.hours))
         with _repository(settings) as repository:
             rows = repository.aggregate_attempt_costs(since=cutoff, group_by=command.group_by)
+
+        if command.output_format == "json":
+            groups = []
+            for row in rows:
+                attempts = row.attempts
+                unknown_usage = row.unknown_usage
+                unknown_ratio = (unknown_usage / attempts) if attempts else 0.0
+                groups.append(
+                    {
+                        "group_key": row.group_key,
+                        "attempts": attempts,
+                        "succeeded": row.succeeded,
+                        "failed": row.failed,
+                        "prompt_tokens": row.prompt_tokens,
+                        "completion_tokens": row.completion_tokens,
+                        "total_tokens": row.total_tokens,
+                        "estimated_cost_usd": float(row.estimated_cost_usd),
+                        "unknown_usage_ratio": unknown_ratio,
+                    },
+                )
+            return [
+                json.dumps(
+                    {
+                        "groups": groups,
+                        "group_by": command.group_by,
+                        "window_hours": command.hours,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+            ]
 
         lines = [f"Cost summary: groups={len(rows)} window={command.hours}h"]
         lines.append(f"group_by={command.group_by}")

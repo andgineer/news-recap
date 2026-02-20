@@ -493,6 +493,14 @@ def llm_stats(db_path: Path | None, hours: int) -> None:
     show_default=True,
     help="Max failed attempts to print.",
 )
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"], case_sensitive=False),
+    default="table",
+    show_default=True,
+    help="Output format.",
+)
 def llm_failures(  # noqa: PLR0913
     db_path: Path | None,
     hours: int,
@@ -501,6 +509,7 @@ def llm_failures(  # noqa: PLR0913
     model: str | None,
     failure_class: str | None,
     limit: int,
+    output_format: str,
 ) -> None:
     """List failed attempts with failure diagnostics."""
 
@@ -514,6 +523,7 @@ def llm_failures(  # noqa: PLR0913
                 model=model,
                 failure_class=failure_class.lower() if failure_class is not None else None,
                 limit=limit,
+                output_format=output_format.lower(),
             ),
         ),
     )
@@ -522,7 +532,15 @@ def llm_failures(  # noqa: PLR0913
 @llm.command("usage")
 @click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
 @click.option("--task-id", required=True, help="Task id.")
-def llm_usage(db_path: Path | None, task_id: str) -> None:
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"], case_sensitive=False),
+    default="table",
+    show_default=True,
+    help="Output format.",
+)
+def llm_usage(db_path: Path | None, task_id: str, output_format: str) -> None:
     """Show per-attempt token usage and estimated cost for one task."""
 
     _emit_lines(
@@ -530,6 +548,7 @@ def llm_usage(db_path: Path | None, task_id: str) -> None:
             LlmUsageCommand(
                 db_path=db_path,
                 task_id=task_id,
+                output_format=output_format.lower(),
             ),
         ),
     )
@@ -551,7 +570,15 @@ def llm_usage(db_path: Path | None, task_id: str) -> None:
     show_default=True,
     help="Grouping dimension for aggregated cost report.",
 )
-def llm_cost(db_path: Path | None, hours: int, group_by: str) -> None:
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"], case_sensitive=False),
+    default="table",
+    show_default=True,
+    help="Output format.",
+)
+def llm_cost(db_path: Path | None, hours: int, group_by: str, output_format: str) -> None:
     """Show grouped token/cost usage summary for recent attempts."""
 
     _emit_lines(
@@ -560,6 +587,7 @@ def llm_cost(db_path: Path | None, hours: int, group_by: str) -> None:
                 db_path=db_path,
                 hours=hours,
                 group_by=group_by.lower(),
+                output_format=output_format.lower(),
             ),
         ),
     )
