@@ -14,9 +14,12 @@ dependencies = [
     "alembic>=1.16.0",
     "click>=8.2.0",
     "defusedxml>=0.7.1",
+    "httpx>=0.28.0",
     "rich-click>=1.8.8",
     "sentence-transformers>=3.0.1",
     "sqlmodel>=0.0.22",
+    "trafilatura>=2.0.0",
+    "youtube-transcript-api>=1.0.0",
 ]
 [[project.authors]]
 name = "Andrey Sorokin"

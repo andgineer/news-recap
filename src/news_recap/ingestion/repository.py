@@ -1193,6 +1193,16 @@ class SQLiteRepository:
         if alias is not None:
             return session.get(Article, alias.article_id)
 
+        if article.url_canonical and _use_url_timestamp_fallback(article):
+            by_url = session.exec(
+                select(Article).where(
+                    Article.source_name == article.source_name,
+                    Article.url_canonical == article.url_canonical,
+                ),
+            ).first()
+            if by_url is not None:
+                return by_url
+
         fallback_key = _build_fallback_key(article)
         if _use_url_timestamp_fallback(article):
             return session.exec(

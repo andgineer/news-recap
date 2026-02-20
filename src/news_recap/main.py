@@ -1,5 +1,6 @@
 """CLI entrypoint for news-recap."""
 
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
@@ -44,11 +45,13 @@ from news_recap.orchestrator.intelligence import (
     StoryDetailsGenerateCommand,
     StoryListCommand,
 )
+from news_recap.recap.controllers import RecapCliController, RecapRunCommand, RecapStatusCommand
 
 click.rich_click.USE_MARKDOWN = True
 INGESTION_CONTROLLER = IngestionCliController()
 ORCHESTRATOR_CONTROLLER = OrchestratorCliController()
 INTELLIGENCE_CONTROLLER = IntelligenceCliController()
+RECAP_CONTROLLER = RecapCliController()
 
 
 @click.group()
@@ -410,10 +413,18 @@ def llm_enqueue_test(  # noqa: PLR0913
     default=None,
     help="Optional cap for processed tasks in loop mode.",
 )
+@click.option(
+    "--max-idle-polls",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="How many idle poll cycles before worker exits in loop mode.",
+)
 def llm_worker(
     db_path: Path | None,
     once: bool,
     max_tasks: int | None,
+    max_idle_polls: int,
 ) -> None:
     """Run LLM task worker."""
 
@@ -423,6 +434,7 @@ def llm_worker(
                 db_path=db_path,
                 once=once,
                 max_tasks=max_tasks,
+                max_idle_polls=max_idle_polls,
             ),
         ),
     )
@@ -1465,7 +1477,73 @@ def insights_outputs(
     )
 
 
-def _emit_lines(lines: list[str]) -> None:
+@news_recap.group()
+def recap() -> None:
+    """News digest pipeline commands."""
+
+
+@recap.command("run")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--date",
+    "business_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Business date in YYYY-MM-DD. Defaults to today (UTC).",
+)
+@click.option(
+    "--max-headline-chars",
+    type=click.IntRange(min=20, max=500),
+    default=120,
+    show_default=True,
+    help="Maximum characters for recap headlines.",
+)
+@click.option("--topics", default="", help="User topics of interest for filtering.")
+@click.option(
+    "--language",
+    default="ru",
+    show_default=True,
+    help="Output language.",
+)
+def recap_run(
+    db_path: Path | None,
+    business_date: datetime | None,
+    max_headline_chars: int,
+    topics: str,
+    language: str,
+) -> None:
+    """Run the full news digest pipeline."""
+
+    _emit_lines(
+        RECAP_CONTROLLER.run_pipeline(
+            RecapRunCommand(
+                db_path=db_path,
+                business_date=business_date.date() if business_date is not None else None,
+                max_headline_chars=max_headline_chars,
+                topics=topics,
+                language=language,
+            ),
+        ),
+    )
+
+
+@recap.command("status")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option("--pipeline-id", default=None, help="Pipeline run id.")
+def recap_status(db_path: Path | None, pipeline_id: str | None) -> None:
+    """Show status of a recap pipeline run."""
+
+    _emit_lines(
+        RECAP_CONTROLLER.pipeline_status(
+            RecapStatusCommand(
+                db_path=db_path,
+                pipeline_id=pipeline_id,
+            ),
+        ),
+    )
+
+
+def _emit_lines(lines: list[str] | Iterator[str]) -> None:
     for line in lines:
         click.echo(line)
 

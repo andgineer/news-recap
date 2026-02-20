@@ -18,7 +18,7 @@ def test_alembic_schema_is_initialized_to_head(tmp_path: Path) -> None:
         "SELECT version_num FROM alembic_version LIMIT 1"
     ).fetchone()
     assert row is not None
-    assert str(row["version_num"]) == "20260219_0002"
+    assert str(row["version_num"]) == "20260220_0003"
 
     user = repository._connection.execute(
         "SELECT user_id FROM users WHERE user_id = 'default_user'"

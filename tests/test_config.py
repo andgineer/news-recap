@@ -120,6 +120,12 @@ def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatc
         "highlights": "fast",
         "story": "quality",
         "qa": "fast",
+        "recap_classify": "fast",
+        "recap_enrich": "fast",
+        "recap_group": "fast",
+        "recap_enrich_full": "fast",
+        "recap_synthesize": "quality",
+        "recap_compose": "quality",
     }
     assert settings.orchestrator.codex_command_template == (
         "codex exec --sandbox workspace-write "

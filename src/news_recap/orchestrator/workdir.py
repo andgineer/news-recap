@@ -40,6 +40,8 @@ class TaskWorkdirManager:
         continuity_summary: dict[str, object] | None = None,
         retrieval_context: dict[str, object] | None = None,
         story_context: dict[str, object] | None = None,
+        extra_input_files: dict[str, str | bytes] | None = None,
+        output_schema_hint: str | None = None,
     ) -> MaterializedTask:
         base_dir = self.root_dir / task_id
         input_dir = base_dir / "input"
@@ -71,8 +73,25 @@ class TaskWorkdirManager:
             story_context_path = input_dir / "story_context.json"
             write_json(story_context_path, story_context)
 
+        input_resources_dir: Path | None = None
+        output_results_dir: Path | None = None
+
+        if extra_input_files:
+            input_resources_dir = input_dir / "resources"
+            input_resources_dir.mkdir(parents=True, exist_ok=True)
+            for filename, content in extra_input_files.items():
+                file_path = input_resources_dir / filename
+                if isinstance(content, bytes):
+                    file_path.write_bytes(content)
+                else:
+                    file_path.write_text(content, "utf-8")
+            output_results_dir = output_dir / "results"
+            output_results_dir.mkdir(parents=True, exist_ok=True)
+
+        contract_version = 3 if (input_resources_dir or output_schema_hint) else 2
+
         manifest = TaskManifest(
-            contract_version=2,
+            contract_version=contract_version,
             task_id=task_id,
             task_type=task_type,
             workdir=str(base_dir),
@@ -88,6 +107,13 @@ class TaskWorkdirManager:
                 str(retrieval_context_path) if retrieval_context_path is not None else None
             ),
             story_context_path=str(story_context_path) if story_context_path is not None else None,
+            input_resources_dir=(
+                str(input_resources_dir) if input_resources_dir is not None else None
+            ),
+            output_results_dir=(
+                str(output_results_dir) if output_results_dir is not None else None
+            ),
+            output_schema_hint=output_schema_hint,
         )
         write_manifest(manifest_path, manifest)
 

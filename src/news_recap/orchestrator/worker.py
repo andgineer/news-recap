@@ -206,10 +206,23 @@ class OrchestratorWorker:
             self._current_task_id = None
             self._emit_shutdown_completed_if_ready()
 
-    def run_loop(self, *, max_tasks: int | None = None) -> WorkerRunSummary:
-        """Run worker loop until queue is idle or max_tasks reached."""
+    def run_loop(
+        self,
+        *,
+        max_tasks: int | None = None,
+        max_idle_polls: int = 1,
+    ) -> WorkerRunSummary:
+        """Run worker loop until queue is idle or max_tasks reached.
+
+        Args:
+            max_tasks: Stop after processing this many tasks (None = unlimited).
+            max_idle_polls: How many consecutive empty polls before exiting.
+                Set to a higher value when running alongside a pipeline that
+                enqueues tasks asynchronously.
+        """
 
         aggregate = WorkerRunSummary()
+        consecutive_idle = 0
         with self._signal_handlers():
             while True:
                 if self._stop_requested:
@@ -226,7 +239,13 @@ class OrchestratorWorker:
                 aggregate.idle_polls += summary.idle_polls
 
                 if summary.processed == 0:
-                    return aggregate
+                    consecutive_idle += 1
+                    if consecutive_idle >= max_idle_polls:
+                        return aggregate
+                    self._sleep_with_stop(self.poll_interval_seconds)
+                    continue
+
+                consecutive_idle = 0
                 if self._stop_requested:
                     return aggregate
                 if max_tasks is None and self.poll_interval_seconds > 0:
@@ -560,6 +579,8 @@ class OrchestratorWorker:
         validation = validate_output_contract(
             output_path=Path(manifest.output_result_path),
             allowed_source_ids=allowed_source_ids,
+            task_type=task.task_type,
+            manifest=manifest,
         )
         if validation.is_valid:
             self.repository.add_task_event(
@@ -608,6 +629,8 @@ class OrchestratorWorker:
                 recovered_validation = validate_output_contract(
                     output_path=loaded.output_path,
                     allowed_source_ids=allowed_source_ids,
+                    task_type=task.task_type,
+                    manifest=manifest,
                 )
                 if recovered_validation.is_valid:
                     self.repository.add_task_event(
@@ -671,6 +694,8 @@ class OrchestratorWorker:
                     repaired = validate_output_contract(
                         output_path=loaded.output_path,
                         allowed_source_ids=allowed_source_ids,
+                        task_type=task.task_type,
+                        manifest=manifest,
                     )
                     if repaired.is_valid:
                         self._persist_success(
@@ -721,32 +746,37 @@ class OrchestratorWorker:
         summary: WorkerRunSummary,
         attempt_failure_code: str,
     ) -> None:
-        try:
-            citations = self._build_output_citation_snapshots(
-                article_entries=loaded.article_entries,
-                validation_payload=validation_payload,
-            )
-        except Exception as error:  # noqa: BLE001
-            self._finalize_attempt(
-                task=task,
-                status=LlmTaskStatus.FAILED,
-                failure_class=FailureClass.BACKEND_NON_RETRYABLE,
-                attempt_failure_code="citation_snapshot_persist_failed",
-                error_summary=f"Citation snapshot persist failed: {error}",
-                execution=execution,
-                routing=routing,
-                output_path=loaded.output_path,
-            )
-            failed = self.repository.fail_task(
-                task_id=task.task_id,
-                status=LlmTaskStatus.FAILED,
-                failure_class=FailureClass.BACKEND_NON_RETRYABLE,
-                error_summary=f"Citation snapshot persist failed: {error}",
-                last_exit_code=getattr(execution, "exit_code", None),
-            )
-            if failed:
-                summary.failed = 1
-            return
+        is_recap = task.task_type.startswith("recap_")
+
+        if is_recap:
+            citations: list[OutputCitationSnapshotWrite] = []
+        else:
+            try:
+                citations = self._build_output_citation_snapshots(
+                    article_entries=loaded.article_entries,
+                    validation_payload=validation_payload,
+                )
+            except Exception as error:  # noqa: BLE001
+                self._finalize_attempt(
+                    task=task,
+                    status=LlmTaskStatus.FAILED,
+                    failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                    attempt_failure_code="citation_snapshot_persist_failed",
+                    error_summary=f"Citation snapshot persist failed: {error}",
+                    execution=execution,
+                    routing=routing,
+                    output_path=loaded.output_path,
+                )
+                failed = self.repository.fail_task(
+                    task_id=task.task_id,
+                    status=LlmTaskStatus.FAILED,
+                    failure_class=FailureClass.BACKEND_NON_RETRYABLE,
+                    error_summary=f"Citation snapshot persist failed: {error}",
+                    last_exit_code=getattr(execution, "exit_code", None),
+                )
+                if failed:
+                    summary.failed = 1
+                return
 
         # Finalize attempt telemetry FIRST (consistent with failure paths)
         self._finalize_attempt(
@@ -760,15 +790,21 @@ class OrchestratorWorker:
             output_path=loaded.output_path,
         )
 
+        user_output = (
+            None
+            if is_recap
+            else _build_user_output_upsert(
+                task_input_metadata=task_input_metadata,
+                validation_payload=validation_payload,
+                task_id=task.task_id,
+            )
+        )
+
         completed = self.repository.complete_task(
             task_id=task.task_id,
             output_path=str(loaded.output_path),
             citations=citations,
-            user_output=_build_user_output_upsert(
-                task_input_metadata=task_input_metadata,
-                validation_payload=validation_payload,
-                task_id=task.task_id,
-            ),
+            user_output=user_output,
         )
         if completed:
             summary.succeeded = 1

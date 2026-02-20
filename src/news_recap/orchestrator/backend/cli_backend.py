@@ -108,6 +108,13 @@ def _build_enriched_prompt(
 
     manifest_path = f"{manifest.workdir}/meta/task_manifest.json"
 
+    if manifest.output_schema_hint or manifest.input_resources_dir:
+        return _build_v3_prompt(
+            base_prompt=base_prompt,
+            manifest=manifest,
+            manifest_path=manifest_path,
+        )
+
     return (
         f"{base_prompt}\n"
         f"\n"
@@ -124,6 +131,71 @@ def _build_enriched_prompt(
         f"\n"
         f"Do not search the web. Write only the output JSON file.\n"
     )
+
+
+def _build_v3_prompt(
+    *,
+    base_prompt: str,
+    manifest: TaskManifest,
+    manifest_path: str,
+) -> str:
+    """Build enriched prompt for contract v3 tasks with custom I/O."""
+
+    parts = [
+        base_prompt,
+        "",
+        f"Your task manifest is at: {manifest_path}",
+        "",
+        "Steps:",
+        "1. Read the manifest JSON — it contains paths to all input/output files.",
+    ]
+
+    step = 2
+    if manifest.input_resources_dir:
+        parts.append(
+            f"{step}. Read input files from input_resources_dir: {manifest.input_resources_dir}\n"
+            f"   Each file is a JSON document. Process all files in this directory."
+        )
+        step += 1
+    else:
+        parts.append(
+            f"{step}. Read articles_index_path from the manifest — each article has a source_id,\n"
+            f"   title, url, and source. Use these as your source material."
+        )
+        step += 1
+
+    parts.append(f"{step}. Write the result to output_result_path from the manifest.")
+    step += 1
+
+    if manifest.output_schema_hint:
+        parts.append(
+            f"{step}. The output file must follow this JSON schema:\n"
+            f"{manifest.output_schema_hint}"
+        )
+        step += 1
+    else:
+        parts.append(
+            f"{step}. The output file must follow this JSON schema exactly:\n"
+            f"{_OUTPUT_SCHEMA_EXAMPLE}"
+        )
+        step += 1
+
+    if manifest.output_results_dir:
+        parts.append(
+            f"{step}. If the task produces per-item results, write them as individual JSON files\n"
+            f"   to output_results_dir: {manifest.output_results_dir}"
+        )
+        step += 1
+
+    parts.append("")
+    parts.append("Do not search the web. Write only the output files.")
+    parts.append(
+        "Do NOT write or execute scripts (Python, shell, etc.) to process the data. "
+        "Read files directly using your built-in file access, analyse the content, "
+        "and write the JSON output."
+    )
+
+    return "\n".join(parts)
 
 
 def _build_run_args(  # noqa: PLR0913

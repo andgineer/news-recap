@@ -64,6 +64,12 @@ class OrchestratorSettings:
             "highlights": "fast",
             "story": "quality",
             "qa": "fast",
+            "recap_classify": "fast",
+            "recap_enrich": "fast",
+            "recap_group": "fast",
+            "recap_enrich_full": "fast",
+            "recap_synthesize": "quality",
+            "recap_compose": "quality",
         },
     )
     codex_command_template: str = (
@@ -431,15 +437,23 @@ def _collect_feed_item_overrides() -> dict[str, int]:
 
 
 def _collect_task_type_profile_map() -> dict[str, str]:
-    raw = os.getenv(
-        "NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP",
-        "highlights=fast,story=quality,qa=fast",
-    ).strip()
+    default_map = (
+        "highlights=fast,story=quality,qa=fast,"
+        "recap_classify=fast,recap_enrich=fast,recap_group=fast,"
+        "recap_enrich_full=fast,recap_synthesize=quality,recap_compose=quality"
+    )
+    raw = os.getenv("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP", default_map).strip()
     if not raw:
         return {
             "highlights": "fast",
             "story": "quality",
             "qa": "fast",
+            "recap_classify": "fast",
+            "recap_enrich": "fast",
+            "recap_group": "fast",
+            "recap_enrich_full": "fast",
+            "recap_synthesize": "quality",
+            "recap_compose": "quality",
         }
     mapping: dict[str, str] = {}
     for part in raw.split(","):

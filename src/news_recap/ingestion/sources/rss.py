@@ -653,8 +653,13 @@ def _atom_link(entry: ElementTree.Element) -> str | None:
 def _child_text(element: ElementTree.Element, name: str) -> str | None:
     target = name.lower()
     for child in element:
-        if _local_name(child.tag) == target and child.text and child.text.strip():
+        if _local_name(child.tag) != target:
+            continue
+        if child.text and child.text.strip():
             return child.text.strip()
+        full_text = "".join(child.itertext()).strip()
+        if full_text:
+            return full_text
     return None
 
 

@@ -64,6 +64,7 @@ class LlmWorkerCommand:
     db_path: Path | None
     once: bool
     max_tasks: int | None
+    max_idle_polls: int = 1
 
 
 @dataclass(slots=True)
@@ -217,7 +218,12 @@ class OrchestratorCliController:
                 backend_capability_mode=settings.orchestrator.backend_capability_mode,
             )
             summary = (
-                worker.run_once() if command.once else worker.run_loop(max_tasks=command.max_tasks)
+                worker.run_once()
+                if command.once
+                else worker.run_loop(
+                    max_tasks=command.max_tasks,
+                    max_idle_polls=command.max_idle_polls,
+                )
             )
 
         return [

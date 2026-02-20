@@ -1,0 +1,149 @@
+"""Tests for recap pipeline runner helper functions."""
+
+from __future__ import annotations
+
+from news_recap.orchestrator.contracts import ArticleIndexEntry
+from news_recap.recap.runner import (
+    _articles_needing_full_text,
+    _build_event_payloads,
+    _events_to_resource_files,
+    _merge_enriched_into_index,
+    _parse_classify_result,
+    _parse_enrich_result,
+    _parse_group_result,
+    _select_significant_events,
+)
+
+
+class TestParseClassifyResult:
+    def test_basic_classify(self):
+        payload = {
+            "articles": [
+                {"article_id": "a1", "decision": "keep", "needs_resource": True},
+                {"article_id": "a2", "decision": "discard", "needs_resource": False},
+                {"article_id": "a3", "decision": "keep", "needs_resource": False},
+            ]
+        }
+        kept, needs = _parse_classify_result(payload)
+        assert kept == ["a1", "a3"]
+        assert needs == ["a1"]
+
+    def test_empty_articles(self):
+        kept, needs = _parse_classify_result({"articles": []})
+        assert kept == []
+        assert needs == []
+
+    def test_missing_articles_key(self):
+        kept, needs = _parse_classify_result({})
+        assert kept == []
+        assert needs == []
+
+
+class TestParseEnrichResult:
+    def test_basic_enrich(self):
+        payload = {
+            "enriched": [
+                {"article_id": "a1", "new_title": "Better title", "clean_text": "Clean body"},
+            ]
+        }
+        result = _parse_enrich_result(payload)
+        assert "a1" in result
+        assert result["a1"]["new_title"] == "Better title"
+
+    def test_empty_enriched(self):
+        result = _parse_enrich_result({"enriched": []})
+        assert result == {}
+
+
+class TestParseGroupResult:
+    def test_basic_group(self):
+        payload = {"events": [{"event_id": "e1", "article_ids": ["a1"]}]}
+        result = _parse_group_result(payload)
+        assert len(result) == 1
+        assert result[0]["event_id"] == "e1"
+
+
+class TestSelectSignificantEvents:
+    def test_high_significance(self):
+        events = [
+            {"event_id": "e1", "significance": "high", "article_ids": ["a1"]},
+            {"event_id": "e2", "significance": "low", "article_ids": ["a2"]},
+        ]
+        result = _select_significant_events(events)
+        assert len(result) == 1
+        assert result[0]["event_id"] == "e1"
+
+    def test_multi_article_included(self):
+        events = [
+            {"event_id": "e1", "significance": "low", "article_ids": ["a1", "a2"]},
+        ]
+        result = _select_significant_events(events)
+        assert len(result) == 1
+
+    def test_single_low_excluded(self):
+        events = [
+            {"event_id": "e1", "significance": "low", "article_ids": ["a1"]},
+        ]
+        result = _select_significant_events(events)
+        assert len(result) == 0
+
+
+class TestMergeEnrichedIntoIndex:
+    def test_merge_updates_title(self):
+        entries = [
+            ArticleIndexEntry(source_id="a1", title="Old", url="http://ex.com", source="src"),
+        ]
+        enriched = {"a1": {"new_title": "New", "clean_text": "..."}}
+        result = _merge_enriched_into_index(entries, enriched)
+        assert result[0].title == "New"
+
+    def test_merge_keeps_original_if_no_enrichment(self):
+        entries = [
+            ArticleIndexEntry(source_id="a1", title="Original", url="http://ex.com", source="src"),
+        ]
+        result = _merge_enriched_into_index(entries, {})
+        assert result[0].title == "Original"
+
+
+class TestArticlesNeedingFullText:
+    def test_collects_unique_articles(self):
+        article_map = {
+            "a1": ArticleIndexEntry(source_id="a1", title="T1", url="u1", source="s1"),
+            "a2": ArticleIndexEntry(source_id="a2", title="T2", url="u2", source="s2"),
+        }
+        events = [
+            {"event_id": "e1", "article_ids": ["a1", "a2"]},
+            {"event_id": "e2", "article_ids": ["a1"]},
+        ]
+        result = _articles_needing_full_text(events, article_map)
+        assert len(result) == 2
+
+
+class TestBuildEventPayloads:
+    def test_merge_enriched_texts(self):
+        events = [{"event_id": "e1", "title": "Event", "article_ids": ["a1"], "significance": "high"}]
+        article_map = {
+            "a1": ArticleIndexEntry(source_id="a1", title="T", url="u", source="s"),
+        }
+        enriched = {"a1": {"new_title": "Enriched", "clean_text": "partial text"}}
+        enriched_full = {"a1": {"new_title": "Full Title", "clean_text": "full text"}}
+        result = _build_event_payloads(events, enriched, enriched_full, article_map)
+        assert result[0]["articles"][0]["text"] == "full text"
+        assert result[0]["articles"][0]["title"] == "Full Title"
+
+    def test_fallback_to_partial_enrichment(self):
+        events = [{"event_id": "e1", "title": "Event", "article_ids": ["a1"]}]
+        article_map = {
+            "a1": ArticleIndexEntry(source_id="a1", title="T", url="u", source="s"),
+        }
+        enriched = {"a1": {"new_title": "Partial", "clean_text": "partial text"}}
+        result = _build_event_payloads(events, enriched, {}, article_map)
+        assert result[0]["articles"][0]["text"] == "partial text"
+
+
+class TestEventsToResourceFiles:
+    def test_creates_json_files(self):
+        events = [{"event_id": "e1", "title": "Test"}]
+        result = _events_to_resource_files(events)
+        assert "event_e1.json" in result
+        assert '"event_id"' in result["event_e1.json"]

@@ -60,6 +60,9 @@ class TaskManifest:
     continuity_summary_path: str | None = None
     retrieval_context_path: str | None = None
     story_context_path: str | None = None
+    input_resources_dir: str | None = None
+    output_results_dir: str | None = None
+    output_schema_hint: str | None = None
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -173,16 +176,20 @@ def read_manifest(path: Path) -> TaskManifest:
     if not isinstance(contract_version_raw, int) or contract_version_raw < 1:
         raise ValueError("task_manifest.contract_version must be an integer >= 1")
 
-    continuity_summary_path = raw.get("continuity_summary_path")
-    retrieval_context_path = raw.get("retrieval_context_path")
-    story_context_path = raw.get("story_context_path")
-    for field_name, field_value in (
-        ("continuity_summary_path", continuity_summary_path),
-        ("retrieval_context_path", retrieval_context_path),
-        ("story_context_path", story_context_path),
-    ):
+    optional_str_fields = (
+        "continuity_summary_path",
+        "retrieval_context_path",
+        "story_context_path",
+        "input_resources_dir",
+        "output_results_dir",
+        "output_schema_hint",
+    )
+    optional_values: dict[str, str | None] = {}
+    for field_name in optional_str_fields:
+        field_value = raw.get(field_name)
         if field_value is not None and not isinstance(field_value, str):
             raise ValueError(f"task_manifest.{field_name} must be a string when provided")
+        optional_values[field_name] = str(field_value) if field_value is not None else None
 
     try:
         return TaskManifest(
@@ -195,13 +202,7 @@ def read_manifest(path: Path) -> TaskManifest:
             output_result_path=str(raw["output_result_path"]),
             output_stdout_path=str(raw["output_stdout_path"]),
             output_stderr_path=str(raw["output_stderr_path"]),
-            continuity_summary_path=(
-                str(continuity_summary_path) if continuity_summary_path is not None else None
-            ),
-            retrieval_context_path=(
-                str(retrieval_context_path) if retrieval_context_path is not None else None
-            ),
-            story_context_path=str(story_context_path) if story_context_path is not None else None,
+            **optional_values,
         )
     except Exception as error:  # noqa: BLE001
         raise ValueError(f"Invalid task manifest at {path}") from error
