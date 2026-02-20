@@ -942,4 +942,7 @@ def test_stress_concurrent_cancel_retry_complete(tmp_path: Path) -> None:
         else:
             assert citations == []
 
+        if status == LlmTaskStatus.QUEUED:
+            repository.cancel_task(task_id=task.task_id)
+
     repository.close()
