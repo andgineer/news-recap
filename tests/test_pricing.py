@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import allure
 
-from news_recap.orchestrator.pricing import estimate_cost_usd
+from news_recap.brain.pricing import estimate_cost_usd
 
 pytestmark = [
     allure.epic("LLM Runtime"),

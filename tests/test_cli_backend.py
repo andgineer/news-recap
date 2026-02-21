@@ -4,7 +4,7 @@ from pathlib import Path
 
 import allure
 
-from news_recap.orchestrator.backend.cli_backend import _build_run_args
+from news_recap.brain.backend.cli_backend import _build_run_args
 
 pytestmark = [
     allure.epic("LLM Runtime"),

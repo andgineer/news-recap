@@ -363,86 +363,6 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "llm_tasks",
-        sa.Column("task_id", sa.String(), nullable=False),
-        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
-        sa.Column("task_type", sa.String(), nullable=False),
-        sa.Column("priority", sa.Integer(), nullable=False, server_default="100"),
-        sa.Column("status", sa.String(), nullable=False),
-        sa.Column("attempt", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("max_attempts", sa.Integer(), nullable=False, server_default="3"),
-        sa.Column("timeout_seconds", sa.Integer(), nullable=False, server_default="600"),
-        sa.Column("run_after", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("heartbeat_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("failure_class", sa.String(), nullable=True),
-        sa.Column("last_exit_code", sa.Integer(), nullable=True),
-        sa.Column("repair_attempted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("worker_id", sa.String(), nullable=True),
-        sa.Column("input_manifest_path", sa.String(), nullable=False),
-        sa.Column("output_path", sa.String(), nullable=True),
-        sa.Column("error_summary", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("task_id"),
-    )
-
-    op.create_table(
-        "llm_task_events",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("task_id", sa.String(), nullable=False),
-        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
-        sa.Column("event_type", sa.String(), nullable=False),
-        sa.Column("status_from", sa.String(), nullable=True),
-        sa.Column("status_to", sa.String(), nullable=True),
-        sa.Column("details_json", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["task_id"], ["llm_tasks.task_id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-
-    op.create_table(
-        "llm_task_artifacts",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("task_id", sa.String(), nullable=False),
-        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
-        sa.Column("kind", sa.String(), nullable=False),
-        sa.Column("path", sa.String(), nullable=False),
-        sa.Column("size_bytes", sa.Integer(), nullable=False),
-        sa.Column("checksum_sha256", sa.String(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["task_id"], ["llm_tasks.task_id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-
-    op.create_table(
-        "output_citation_snapshots",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
-        sa.Column("task_id", sa.String(), nullable=False),
-        sa.Column("source_id", sa.String(), nullable=False),
-        sa.Column("article_id", sa.String(), nullable=True),
-        sa.Column("title", sa.String(), nullable=False),
-        sa.Column("url", sa.String(), nullable=False),
-        sa.Column("source", sa.String(), nullable=False, server_default=""),
-        sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["task_id"], ["llm_tasks.task_id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "user_id",
-            "task_id",
-            "source_id",
-            name="uq_output_citation_snapshots_scope_task_source",
-        ),
-    )
-
-    op.create_table(
         "user_outputs",
         sa.Column("output_id", sa.String(), nullable=False),
         sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
@@ -457,7 +377,6 @@ def upgrade() -> None:
         sa.Column("payload_json", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["task_id"], ["llm_tasks.task_id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("output_id"),
         sa.UniqueConstraint(
@@ -621,26 +540,7 @@ def upgrade() -> None:
     op.create_index("idx_article_resources_lookup", "article_resources", ["url_hash", "user_id"])
     op.create_index("idx_dedup_clusters_scope_run", "dedup_clusters", ["user_id", "run_id"])
     op.create_index("idx_article_dedup_scope_run", "article_dedup", ["user_id", "run_id"])
-    op.create_index(
-        "idx_llm_tasks_queue",
-        "llm_tasks",
-        ["user_id", "status", "priority", "run_after"],
-    )
-    op.create_index(
-        "idx_llm_task_events_task_time",
-        "llm_task_events",
-        ["task_id", "created_at"],
-    )
-    op.create_index(
-        "idx_llm_task_artifacts_task_kind",
-        "llm_task_artifacts",
-        ["task_id", "kind"],
-    )
-    op.create_index(
-        "idx_output_citation_snapshots_scope_task",
-        "output_citation_snapshots",
-        ["user_id", "task_id"],
-    )
+    op.create_index("idx_user_outputs_task_id", "user_outputs", ["task_id"])
     op.create_index(
         "idx_story_assignments_scope_story",
         "story_assignments",
@@ -656,72 +556,10 @@ def upgrade() -> None:
         "read_state_events",
         ["user_id", "created_at"],
     )
-    op.create_table(
-        "llm_task_attempts",
-        sa.Column("attempt_id", sa.Integer(), nullable=False),
-        sa.Column("task_id", sa.String(), nullable=False),
-        sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
-        sa.Column("attempt_no", sa.Integer(), nullable=False),
-        sa.Column("task_type", sa.String(), nullable=False),
-        sa.Column("status", sa.String(), nullable=False),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("duration_ms", sa.Integer(), nullable=True),
-        sa.Column("worker_id", sa.String(), nullable=True),
-        sa.Column("agent", sa.String(), nullable=True),
-        sa.Column("model", sa.String(), nullable=True),
-        sa.Column("profile", sa.String(), nullable=True),
-        sa.Column("command_template_hash", sa.String(), nullable=True),
-        sa.Column("exit_code", sa.Integer(), nullable=True),
-        sa.Column("timed_out", sa.Boolean(), nullable=False, server_default=sa.text("0")),
-        sa.Column("failure_class", sa.String(), nullable=True),
-        sa.Column("attempt_failure_code", sa.String(), nullable=True),
-        sa.Column("error_summary_sanitized", sa.Text(), nullable=True),
-        sa.Column("stdout_preview_sanitized", sa.Text(), nullable=True),
-        sa.Column("stderr_preview_sanitized", sa.Text(), nullable=True),
-        sa.Column("output_chars", sa.Integer(), nullable=True),
-        sa.Column("prompt_tokens", sa.Integer(), nullable=True),
-        sa.Column("completion_tokens", sa.Integer(), nullable=True),
-        sa.Column("total_tokens", sa.Integer(), nullable=True),
-        sa.Column("usage_status", sa.String(), nullable=True),
-        sa.Column("usage_source", sa.String(), nullable=True),
-        sa.Column("usage_parser_version", sa.String(), nullable=True),
-        sa.Column("estimated_cost_usd", sa.Float(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["task_id"], ["llm_tasks.task_id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("attempt_id"),
-        sa.UniqueConstraint(
-            "task_id",
-            "attempt_no",
-            name="uq_llm_task_attempts_task_attempt_no",
-        ),
-    )
-
     op.create_index(
         "idx_output_feedback_scope_time",
         "output_feedback",
         ["user_id", "created_at"],
-    )
-    op.create_index(
-        "idx_llm_task_attempts_scope_time",
-        "llm_task_attempts",
-        ["user_id", "created_at"],
-    )
-    op.create_index(
-        "idx_llm_task_attempts_task_type_time",
-        "llm_task_attempts",
-        ["task_type", "created_at"],
-    )
-    op.create_index(
-        "idx_llm_task_attempts_failure_time",
-        "llm_task_attempts",
-        ["failure_class", "created_at"],
-    )
-    op.create_index(
-        "idx_llm_task_attempts_agent_model_time",
-        "llm_task_attempts",
-        ["agent", "model", "created_at"],
     )
     op.create_index(
         "uq_user_outputs_daily_highlights",
@@ -762,10 +600,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("idx_llm_task_attempts_agent_model_time", table_name="llm_task_attempts")
-    op.drop_index("idx_llm_task_attempts_failure_time", table_name="llm_task_attempts")
-    op.drop_index("idx_llm_task_attempts_task_type_time", table_name="llm_task_attempts")
-    op.drop_index("idx_llm_task_attempts_scope_time", table_name="llm_task_attempts")
     op.drop_index("uq_user_outputs_monitor_answer", table_name="user_outputs")
     op.drop_index("uq_user_outputs_story_detail", table_name="user_outputs")
     op.drop_index("uq_user_outputs_daily_highlights", table_name="user_outputs")
@@ -773,13 +607,7 @@ def downgrade() -> None:
     op.drop_index("idx_read_state_events_scope_time", table_name="read_state_events")
     op.drop_index("idx_user_output_blocks_scope_output", table_name="user_output_blocks")
     op.drop_index("idx_story_assignments_scope_story", table_name="story_assignments")
-    op.drop_index(
-        "idx_output_citation_snapshots_scope_task",
-        table_name="output_citation_snapshots",
-    )
-    op.drop_index("idx_llm_task_artifacts_task_kind", table_name="llm_task_artifacts")
-    op.drop_index("idx_llm_task_events_task_time", table_name="llm_task_events")
-    op.drop_index("idx_llm_tasks_queue", table_name="llm_tasks")
+    op.drop_index("idx_user_outputs_task_id", table_name="user_outputs")
     op.drop_index("idx_article_dedup_scope_run", table_name="article_dedup")
     op.drop_index("idx_dedup_clusters_scope_run", table_name="dedup_clusters")
     op.drop_index("idx_article_resources_lookup", table_name="article_resources")
@@ -797,11 +625,6 @@ def downgrade() -> None:
     op.drop_table("daily_story_snapshots")
     op.drop_table("story_assignments")
     op.drop_table("user_story_definitions")
-    op.drop_table("llm_task_artifacts")
-    op.drop_table("llm_task_events")
-    op.drop_table("output_citation_snapshots")
-    op.drop_table("llm_task_attempts")
-    op.drop_table("llm_tasks")
     op.drop_table("article_dedup")
     op.drop_table("dedup_clusters")
     op.drop_table("article_resources")

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from news_recap.orchestrator.contracts import (
+from news_recap.brain.contracts import (
     ArticleIndexEntry,
     TaskInputContract,
     TaskManifest,

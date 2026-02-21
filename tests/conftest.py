@@ -10,7 +10,7 @@ import pytest
 from news_recap.config import Settings
 
 _ECHO_AGENT_COMMAND_TEMPLATE = (
-    f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent --prompt-file {{prompt_file}}"
+    f"{sys.executable} -m news_recap.brain.backend.echo_agent --prompt-file {{prompt_file}}"
 )
 
 

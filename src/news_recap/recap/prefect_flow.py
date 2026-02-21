@@ -7,7 +7,6 @@ subprocess execution wrapped in Prefect tasks.  Business-logic helpers
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from collections.abc import Callable
@@ -19,12 +18,17 @@ from uuid import uuid4
 
 from prefect import flow, task
 
-from news_recap.orchestrator.backend.base import BackendRunRequest
-from news_recap.orchestrator.backend.cli_backend import CliAgentBackend
-from news_recap.orchestrator.contracts import ArticleIndexEntry, TaskInputContract
-from news_recap.orchestrator.models import SourceCorpusEntry
-from news_recap.orchestrator.routing import RoutingDefaults, resolve_routing_for_enqueue
-from news_recap.orchestrator.workdir import TaskWorkdirManager
+from news_recap.agent_runtime import (
+    load_resources_step,
+    read_task_output,
+    task_results_dir,
+)
+from news_recap.brain.backend.base import BackendRunRequest
+from news_recap.brain.backend.cli_backend import CliAgentBackend
+from news_recap.brain.contracts import ArticleIndexEntry, TaskInputContract
+from news_recap.brain.models import SourceCorpusEntry
+from news_recap.brain.routing import RoutingDefaults, resolve_routing_for_enqueue
+from news_recap.brain.workdir import TaskWorkdirManager
 from news_recap.recap.prompts import PROMPTS_BY_TASK_TYPE
 from news_recap.recap.resource_loader import ResourceLoader
 from news_recap.recap.runner import (
@@ -51,30 +55,6 @@ _STEP_TIMEOUT = 600
 _STEP_RETRIES = 2
 _STEP_RETRY_DELAY = 30
 _GRACEFUL_SHUTDOWN = 30
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _read_task_output(workdir_root: Path, task_id: str) -> dict[str, Any]:
-    path = workdir_root / task_id / "output" / "agent_result.json"
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text("utf-8"))
-    except json.JSONDecodeError:
-        return {}
-
-
-def _task_results_dir(workdir_root: Path, task_id: str) -> Path:
-    return workdir_root / task_id / "output" / "results"
-
-
-# ---------------------------------------------------------------------------
-# Prefect tasks
-# ---------------------------------------------------------------------------
 
 
 @task(retries=_STEP_RETRIES, retry_delay_seconds=_STEP_RETRY_DELAY)
@@ -158,49 +138,6 @@ def run_agent_step(  # noqa: PLR0913
     return task_id
 
 
-@task
-def load_resources_step(
-    *,
-    entries: list[ArticleIndexEntry],
-    resource_loader: ResourceLoader | None,
-    emit: Callable[[str], None] = lambda _: None,
-) -> dict[str, bytes | str]:
-    """Load full article texts from URLs via ``ResourceLoader``."""
-    if not entries or resource_loader is None:
-        return {}
-
-    total = len(entries)
-    emit(f"Loading resources: {total} URLs to fetch")
-    resources: dict[str, bytes | str] = {}
-    ok = fail = 0
-    for i, entry in enumerate(entries, 1):
-        if not entry.url:
-            continue
-        loaded = resource_loader.load(entry.url)
-        if loaded.is_success and loaded.text:
-            safe_id = entry.source_id.replace(":", "_").replace("/", "_")
-            resources[f"{safe_id}.json"] = json.dumps(
-                {
-                    "article_id": entry.source_id,
-                    "title": entry.title,
-                    "url": entry.url,
-                    "source": entry.source,
-                    "text": loaded.text,
-                    "content_type": loaded.content_type,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            ok += 1
-        else:
-            fail += 1
-            logger.warning("Failed to load %s (%s): %s", entry.source_id, entry.url, loaded.error)
-        if i % 10 == 0 or i == total:
-            emit(f"Resource loading: {i}/{total} (ok={ok}, fail={fail})")
-
-    return resources
-
-
 # ---------------------------------------------------------------------------
 # Prefect flow
 # ---------------------------------------------------------------------------
@@ -237,10 +174,10 @@ class _FlowContext:
         )
 
     def read_output(self, task_id: str) -> dict[str, Any]:
-        return _read_task_output(self.workdir_root, task_id)
+        return read_task_output(self.workdir_root, task_id)
 
     def results_dir(self, task_id: str) -> Path:
-        return _task_results_dir(self.workdir_root, task_id)
+        return task_results_dir(self.workdir_root, task_id)
 
 
 def _run_classify_and_enrich(
@@ -266,7 +203,6 @@ def _run_classify_and_enrich(
     loaded = load_resources_step(
         entries=resource_entries,
         resource_loader=ctx.resource_loader,
-        emit=ctx.emit,
     )
     result.steps.append(PipelineStepResult("resource_load", None, "completed"))
 
@@ -301,7 +237,6 @@ def _run_group_and_deep_enrich(
     full_resources = load_resources_step(
         entries=articles_for_full,
         resource_loader=ctx.resource_loader,
-        emit=ctx.emit,
     )
 
     enrich_full_payload: dict[str, Any] = {"enriched": []}

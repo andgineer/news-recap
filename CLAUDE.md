@@ -27,27 +27,22 @@ RSS feeds → `RssSourceAdapter` (HTTP cache, pagination, defusedxml) → `Fetch
 
 Entry point: `IngestionOrchestrator.run_daily()` in `pipeline.py`.
 
-### LLM Orchestrator (`src/news_recap/orchestrator/`)
-Task queue system that enqueues LLM tasks → materializes per-task workdirs with JSON contracts → executes external CLI agents (`codex`/`claude`/`gemini`) as subprocesses → validates JSON output → persists results. Worker uses claim-execute-validate-commit cycle with failure classification and retry.
+### Intelligence Layer (`src/news_recap/brain/`)
+Synchronous Prefect `@flow` functions that run CLI LLM agents (`codex`/`claude`/`gemini`) via subprocess, validate JSON output, and persist results. Shared agent execution logic lives in `agent_runtime.py`.
 
-Agents use a **manifest-native** contract: the enriched prompt points the agent to `task_manifest.json`, which contains paths to all input/output files. Agents discover articles, write output JSON, and reference `source_ids` from the articles index — no IDs or file contents are passed on the command line.
+Agents use a **manifest-native** contract: the prompt points the agent to `task_manifest.json`, which contains paths to all input/output files. Agents discover articles, write output JSON, and reference `source_ids` from the articles index.
 
-Backend capability is policy-controlled via `NEWS_RECAP_BACKEND_CAPABILITY_MODE`: `manifest_native` (default, strict JSON contract) or `stdout_parser_fallback` (opt-in recovery from stdout).
+Flows: highlights, story details, monitors, Q&A — all run synchronously and return results to the CLI.
 
-Token usage is extracted from agent stdout/stderr (`usage.py`) and cost estimated via configurable pricing (`pricing.py`, `NEWS_RECAP_LLM_PRICING` env var).
+Token usage is extracted from agent stdout/stderr (`usage.py`) and cost estimated via configurable pricing (`pricing.py`).
 
-Entry point: `OrchestratorWorker.run()` in `worker.py`.
-
-**Intelligence layer** (`intelligence.py`): higher-level flows — stories, highlights, monitors, Q&A — that produce tasks for the orchestrator.
-
-Agent CLI command templates, model mappings, and troubleshooting: `dev/agent-setup.md`.
+Entry point: `IntelligenceCliController` in `brain/flows.py`.
 
 ### Key Patterns
 - **CLI-first, no HTTP API.** Commands go through `*CliController` classes that accept `*Command` dataclasses and return `Iterator[str]`.
-- **Repository pattern.** `SQLiteRepository` (ingestion) and `OrchestratorRepository` (orchestrator) own all SQL. No raw SQL in business logic.
-- **File-based contracts** (`contracts.py`): task I/O uses JSON files in per-task workdirs managed by `TaskWorkdirManager`. Manifest-native: agents read `task_manifest.json` to discover all paths.
-- **Routing** (`routing.py`): `FrozenRouting` resolves agent + profile (fast/quality) → concrete model at enqueue time.
-- **Optimistic concurrency** in repository: state transitions use `WHERE status = :expected` guards; rejected transitions emit `state_transition_rejected` events.
+- **Repository pattern.** `SQLiteRepository` owns all SQL (ingestion + intelligence). No raw SQL in business logic.
+- **File-based contracts** (`contracts.py`): task I/O uses JSON files in per-task workdirs managed by `TaskWorkdirManager`. Agents read `task_manifest.json` to discover all paths.
+- **Routing** (`routing.py`): `FrozenRouting` resolves agent + profile (fast/quality) → concrete model.
 - **All settings** via `Settings.from_env()` in `config.py` (dataclass + env vars, no config files).
 - **Alembic migrations** run programmatically via `AlembicRunner` at startup.
 

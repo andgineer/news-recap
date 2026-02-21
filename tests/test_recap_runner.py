@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from news_recap.orchestrator.contracts import ArticleIndexEntry
-from news_recap.orchestrator.models import SourceCorpusEntry
+from news_recap.brain.contracts import ArticleIndexEntry
+from news_recap.brain.models import SourceCorpusEntry
 from news_recap.recap.runner import (
     _safe_file_id,
     articles_needing_full_text,

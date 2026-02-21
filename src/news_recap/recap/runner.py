@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from news_recap.brain.contracts import ArticleIndexEntry
+from news_recap.brain.models import SourceCorpusEntry
+from news_recap.brain.routing import RoutingDefaults
 from news_recap.config import Settings
-from news_recap.orchestrator.contracts import ArticleIndexEntry
-from news_recap.orchestrator.models import SourceCorpusEntry
-from news_recap.orchestrator.routing import RoutingDefaults
 
 logger = logging.getLogger(__name__)
 

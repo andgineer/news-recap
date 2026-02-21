@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from news_recap.orchestrator.contracts import (
+from news_recap.brain.contracts import (
     AgentOutputBlock,
     AgentOutputContract,
     read_articles_index,

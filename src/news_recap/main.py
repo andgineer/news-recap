@@ -7,30 +7,7 @@ from pathlib import Path
 import rich_click as click
 
 from news_recap import __version__
-from news_recap.ingestion.controllers import (
-    DailyIngestionCommand,
-    IngestionCliController,
-    IngestionClustersCommand,
-    IngestionDuplicatesCommand,
-    IngestionGcCommand,
-    IngestionPruneCommand,
-    IngestionStatsCommand,
-)
-from news_recap.orchestrator.controllers import (
-    LlmBenchmarkCommand,
-    LlmCostCommand,
-    LlmEnqueueCommand,
-    LlmFailuresCommand,
-    LlmInspectTaskCommand,
-    LlmListTasksCommand,
-    LlmMutateTaskCommand,
-    LlmSmokeCommand,
-    LlmStatsCommand,
-    LlmUsageCommand,
-    LlmWorkerCommand,
-    OrchestratorCliController,
-)
-from news_recap.orchestrator.intelligence import (
+from news_recap.brain.flows import (
     FeedbackAddCommand,
     HighlightsGenerateCommand,
     IntelligenceCliController,
@@ -45,6 +22,15 @@ from news_recap.orchestrator.intelligence import (
     StoryDetailsGenerateCommand,
     StoryListCommand,
 )
+from news_recap.ingestion.controllers import (
+    DailyIngestionCommand,
+    IngestionCliController,
+    IngestionClustersCommand,
+    IngestionDuplicatesCommand,
+    IngestionGcCommand,
+    IngestionPruneCommand,
+    IngestionStatsCommand,
+)
 from news_recap.recap.controllers import (
     RecapCliController,
     RecapRunCommand,
@@ -52,7 +38,6 @@ from news_recap.recap.controllers import (
 
 click.rich_click.USE_MARKDOWN = True
 INGESTION_CONTROLLER = IngestionCliController()
-ORCHESTRATOR_CONTROLLER = OrchestratorCliController()
 INTELLIGENCE_CONTROLLER = IntelligenceCliController()
 RECAP_CONTROLLER = RecapCliController()
 
@@ -313,553 +298,6 @@ def ingest_gc(
 
 
 @news_recap.group()
-def llm() -> None:
-    """Orchestrator queue and worker commands."""
-
-
-@llm.command("enqueue-test")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option("--task-type", default="highlights", show_default=True, help="Task type.")
-@click.option(
-    "--prompt",
-    default="Summarize top updates with source mapping.",
-    show_default=True,
-    help="Prompt text for demo task.",
-)
-@click.option(
-    "--source-id",
-    "source_ids",
-    multiple=True,
-    help="Allowed source id for strict mapping. Can be repeated.",
-)
-@click.option(
-    "--priority",
-    type=click.IntRange(min=0, max=1000),
-    default=100,
-    show_default=True,
-    help="Lower number means higher priority.",
-)
-@click.option(
-    "--agent",
-    type=click.Choice(["claude", "codex", "gemini"], case_sensitive=False),
-    default=None,
-    help="Optional target agent override for this task.",
-)
-@click.option(
-    "--model-profile",
-    type=click.Choice(["fast", "quality"], case_sensitive=False),
-    default=None,
-    help="Optional model profile override (fast or quality).",
-)
-@click.option(
-    "--model",
-    default=None,
-    help="Optional concrete model override for this task.",
-)
-@click.option(
-    "--max-attempts",
-    type=click.IntRange(min=1, max=10),
-    default=3,
-    show_default=True,
-    help="Max execution attempts including first run.",
-)
-@click.option(
-    "--timeout-seconds",
-    type=click.IntRange(min=10, max=3600),
-    default=600,
-    show_default=True,
-    help="Execution timeout per attempt.",
-)
-def llm_enqueue_test(  # noqa: PLR0913
-    db_path: Path | None,
-    task_type: str,
-    prompt: str,
-    source_ids: tuple[str, ...],
-    priority: int,
-    agent: str | None,
-    model_profile: str | None,
-    model: str | None,
-    max_attempts: int,
-    timeout_seconds: int,
-) -> None:
-    """Enqueue a demo task for orchestrator testing."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.enqueue_demo(
-            LlmEnqueueCommand(
-                db_path=db_path,
-                task_type=task_type,
-                prompt=prompt,
-                source_ids=source_ids,
-                priority=priority,
-                max_attempts=max_attempts,
-                timeout_seconds=timeout_seconds,
-                agent=agent.lower() if agent is not None else None,
-                model_profile=model_profile.lower() if model_profile is not None else None,
-                model=model,
-            ),
-        ),
-    )
-
-
-@llm.command("worker")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option(
-    "--once/--loop",
-    default=True,
-    show_default=True,
-    help="Run one claim-execute cycle or loop until idle.",
-)
-@click.option(
-    "--max-tasks",
-    type=click.IntRange(min=1),
-    default=None,
-    help="Optional cap for processed tasks in loop mode.",
-)
-@click.option(
-    "--max-idle-polls",
-    type=click.IntRange(min=1),
-    default=1,
-    show_default=True,
-    help="How many idle poll cycles before worker exits in loop mode.",
-)
-def llm_worker(
-    db_path: Path | None,
-    once: bool,
-    max_tasks: int | None,
-    max_idle_polls: int,
-) -> None:
-    """Run LLM task worker."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.run_worker(
-            LlmWorkerCommand(
-                db_path=db_path,
-                once=once,
-                max_tasks=max_tasks,
-                max_idle_polls=max_idle_polls,
-            ),
-        ),
-    )
-
-
-@llm.command("stats")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option(
-    "--hours",
-    type=click.IntRange(min=1, max=24 * 30),
-    default=24,
-    show_default=True,
-    help="Rolling window for quality/latency metrics.",
-)
-def llm_stats(db_path: Path | None, hours: int) -> None:
-    """Show queue health, validation/retry metrics, and latency summary."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.stats(
-            LlmStatsCommand(
-                db_path=db_path,
-                hours=hours,
-            ),
-        ),
-    )
-
-
-@llm.command("failures")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option(
-    "--hours",
-    type=click.IntRange(min=1, max=24 * 30),
-    default=24,
-    show_default=True,
-    help="Rolling window for failed attempt listing.",
-)
-@click.option("--task-type", default=None, help="Optional task type filter.")
-@click.option(
-    "--agent",
-    type=click.Choice(["claude", "codex", "gemini"], case_sensitive=False),
-    default=None,
-    help="Optional agent filter.",
-)
-@click.option("--model", default=None, help="Optional model filter.")
-@click.option(
-    "--failure-class",
-    type=click.Choice(
-        [
-            "timeout",
-            "backend_transient",
-            "backend_non_retryable",
-            "billing_or_quota",
-            "access_or_auth",
-            "model_not_available",
-            "output_invalid_json",
-            "source_mapping_failed",
-            "input_contract_error",
-        ],
-        case_sensitive=False,
-    ),
-    default=None,
-    help="Optional normalized failure class filter.",
-)
-@click.option(
-    "--limit",
-    type=click.IntRange(min=1, max=500),
-    default=50,
-    show_default=True,
-    help="Max failed attempts to print.",
-)
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["table", "json"], case_sensitive=False),
-    default="table",
-    show_default=True,
-    help="Output format.",
-)
-def llm_failures(  # noqa: PLR0913
-    db_path: Path | None,
-    hours: int,
-    task_type: str | None,
-    agent: str | None,
-    model: str | None,
-    failure_class: str | None,
-    limit: int,
-    output_format: str,
-) -> None:
-    """List failed attempts with failure diagnostics."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.failures(
-            LlmFailuresCommand(
-                db_path=db_path,
-                hours=hours,
-                task_type=task_type,
-                agent=agent.lower() if agent is not None else None,
-                model=model,
-                failure_class=failure_class.lower() if failure_class is not None else None,
-                limit=limit,
-                output_format=output_format.lower(),
-            ),
-        ),
-    )
-
-
-@llm.command("usage")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option("--task-id", required=True, help="Task id.")
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["table", "json"], case_sensitive=False),
-    default="table",
-    show_default=True,
-    help="Output format.",
-)
-def llm_usage(db_path: Path | None, task_id: str, output_format: str) -> None:
-    """Show per-attempt token usage and estimated cost for one task."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.usage(
-            LlmUsageCommand(
-                db_path=db_path,
-                task_id=task_id,
-                output_format=output_format.lower(),
-            ),
-        ),
-    )
-
-
-@llm.command("cost")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option(
-    "--hours",
-    type=click.IntRange(min=1, max=24 * 30),
-    default=24,
-    show_default=True,
-    help="Rolling window for grouped cost report.",
-)
-@click.option(
-    "--group-by",
-    type=click.Choice(["agent", "model", "task_type"], case_sensitive=False),
-    default="model",
-    show_default=True,
-    help="Grouping dimension for aggregated cost report.",
-)
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["table", "json"], case_sensitive=False),
-    default="table",
-    show_default=True,
-    help="Output format.",
-)
-def llm_cost(db_path: Path | None, hours: int, group_by: str, output_format: str) -> None:
-    """Show grouped token/cost usage summary for recent attempts."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.cost(
-            LlmCostCommand(
-                db_path=db_path,
-                hours=hours,
-                group_by=group_by.lower(),
-                output_format=output_format.lower(),
-            ),
-        ),
-    )
-
-
-@llm.command("benchmark")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option(
-    "--task-type",
-    "task_types",
-    multiple=True,
-    help="Task type to benchmark. Repeatable. Defaults to highlights/story/qa.",
-)
-@click.option(
-    "--tasks-per-type",
-    type=click.IntRange(min=1, max=200),
-    default=10,
-    show_default=True,
-    help="How many tasks to enqueue per task type.",
-)
-@click.option(
-    "--source-id",
-    "source_ids",
-    multiple=True,
-    help="Optional source id filter (article:<article_id>). Defaults to recent user corpus.",
-)
-@click.option(
-    "--priority",
-    type=click.IntRange(min=0, max=1000),
-    default=100,
-    show_default=True,
-    help="Priority assigned to generated benchmark tasks.",
-)
-@click.option(
-    "--output",
-    "output_path",
-    type=click.Path(path_type=Path),
-    default=Path("docs/reports/epic2_orchestrator_benchmark.md"),
-    show_default=True,
-    help="Path for markdown benchmark report.",
-)
-@click.option(
-    "--use-benchmark-agent/--use-configured-agent",
-    default=True,
-    show_default=True,
-    help="Use deterministic built-in benchmark agent or configured external agent command.",
-)
-def llm_benchmark(  # noqa: PLR0913
-    db_path: Path | None,
-    task_types: tuple[str, ...],
-    tasks_per_type: int,
-    source_ids: tuple[str, ...],
-    priority: int,
-    output_path: Path,
-    use_benchmark_agent: bool,
-) -> None:
-    """Run deterministic orchestrator benchmark matrix and write report."""
-
-    resolved_task_types = (
-        tuple(dict.fromkeys(task_type.lower() for task_type in task_types))
-        if task_types
-        else ("highlights", "story", "qa")
-    )
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.benchmark(
-            LlmBenchmarkCommand(
-                db_path=db_path,
-                task_types=resolved_task_types,
-                tasks_per_type=tasks_per_type,
-                source_ids=source_ids,
-                priority=priority,
-                output_path=output_path,
-                use_benchmark_agent=use_benchmark_agent,
-            ),
-        ),
-    )
-
-
-@llm.command("tasks")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option(
-    "--status",
-    type=click.Choice(
-        ["queued", "running", "succeeded", "failed", "timeout", "canceled"],
-        case_sensitive=False,
-    ),
-    default=None,
-    help="Optional status filter.",
-)
-@click.option(
-    "--limit",
-    type=click.IntRange(min=1, max=500),
-    default=50,
-    show_default=True,
-    help="Max tasks to print.",
-)
-def llm_tasks(
-    db_path: Path | None,
-    status: str | None,
-    limit: int,
-) -> None:
-    """List orchestrator tasks."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.list_tasks(
-            LlmListTasksCommand(
-                db_path=db_path,
-                status=status,
-                limit=limit,
-            ),
-        ),
-    )
-
-
-@llm.command("inspect")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option("--task-id", required=True, help="Task id.")
-def llm_inspect(db_path: Path | None, task_id: str) -> None:
-    """Inspect one task with event history."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.inspect_task(
-            LlmInspectTaskCommand(
-                db_path=db_path,
-                task_id=task_id,
-            ),
-        ),
-    )
-
-
-@llm.command("retry")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option("--task-id", required=True, help="Task id.")
-def llm_retry(db_path: Path | None, task_id: str) -> None:
-    """Manually re-queue a failed/timeout/canceled task."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.retry_task(
-            LlmMutateTaskCommand(
-                db_path=db_path,
-                task_id=task_id,
-            ),
-        ),
-    )
-
-
-@llm.command("cancel")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option("--task-id", required=True, help="Task id.")
-def llm_cancel(db_path: Path | None, task_id: str) -> None:
-    """Cancel a queued or running task."""
-
-    _emit_lines(
-        ORCHESTRATOR_CONTROLLER.cancel_task(
-            LlmMutateTaskCommand(
-                db_path=db_path,
-                task_id=task_id,
-            ),
-        ),
-    )
-
-
-@llm.command("smoke")
-@click.option(
-    "--agent",
-    "agents",
-    multiple=True,
-    type=click.Choice(["claude", "codex", "gemini"], case_sensitive=False),
-    help="Agent to test. Repeat to test multiple; defaults to NEWS_RECAP_LLM_DEFAULT_AGENT.",
-)
-@click.option(
-    "--model-profile",
-    type=click.Choice(["fast", "quality"], case_sensitive=False),
-    default="fast",
-    show_default=True,
-    help="Select fast or quality model profile for selected agent(s).",
-)
-@click.option(
-    "--model",
-    default=None,
-    help="Optional explicit model id override for selected agent(s).",
-)
-@click.option(
-    "--prompt",
-    default="Reply with exactly: OK",
-    show_default=True,
-    help="Synthetic prompt used for run check.",
-)
-@click.option(
-    "--expect-substring",
-    default="OK",
-    show_default=True,
-    help="Substring required in stdout for successful run check.",
-)
-@click.option(
-    "--timeout-seconds",
-    type=click.IntRange(min=1, max=300),
-    default=45,
-    show_default=True,
-    help="Timeout for probe/run commands.",
-)
-@click.option(
-    "--claude-command",
-    default=None,
-    help=(
-        "Smoke run template for Claude CLI. Supports {model} and {prompt}. "
-        "If omitted, NEWS_RECAP_LLM_SMOKE_CLAUDE_COMMAND is used."
-    ),
-)
-@click.option(
-    "--codex-command",
-    default=None,
-    help=(
-        "Smoke run template for Codex CLI. Supports {model} and {prompt}. "
-        "If omitted, NEWS_RECAP_LLM_SMOKE_CODEX_COMMAND is used."
-    ),
-)
-@click.option(
-    "--gemini-command",
-    default=None,
-    help=(
-        "Smoke run template for Gemini CLI. Supports {model} and {prompt}. "
-        "If omitted, NEWS_RECAP_LLM_SMOKE_GEMINI_COMMAND is used."
-    ),
-)
-def llm_smoke(  # noqa: PLR0913
-    agents: tuple[str, ...],
-    model_profile: str,
-    model: str | None,
-    prompt: str,
-    expect_substring: str,
-    timeout_seconds: int,
-    claude_command: str | None,
-    codex_command: str | None,
-    gemini_command: str | None,
-) -> None:
-    """Run lightweight direct smoke checks for external CLI agents (no DB queue)."""
-
-    result = ORCHESTRATOR_CONTROLLER.smoke(
-        LlmSmokeCommand(
-            agents=tuple(agent.lower() for agent in agents),
-            model_profile=model_profile.lower(),
-            model=model,
-            prompt=prompt,
-            expect_substring=expect_substring,
-            timeout_seconds=timeout_seconds,
-            claude_command=claude_command,
-            codex_command=codex_command,
-            gemini_command=gemini_command,
-        ),
-    )
-    _emit_lines(result.lines)
-    if not result.success:
-        raise click.ClickException("LLM smoke check failed.")
-
-
-@news_recap.group()
 def stories() -> None:
     """Story definition and assignment commands."""
 
@@ -1016,7 +454,7 @@ def highlights_generate(  # noqa: PLR0913
     max_attempts: int,
     timeout_seconds: int,
 ) -> None:
-    """Enqueue highlights generation task for one business date."""
+    """Generate highlights for one business date."""
 
     _emit_lines(
         INTELLIGENCE_CONTROLLER.generate_highlights(
@@ -1094,7 +532,7 @@ def story_details_generate(  # noqa: PLR0913
     max_attempts: int,
     timeout_seconds: int,
 ) -> None:
-    """Enqueue story details task for one pinned story."""
+    """Generate detailed update for one pinned story."""
 
     _emit_lines(
         INTELLIGENCE_CONTROLLER.generate_story_details(
@@ -1234,7 +672,7 @@ def monitors_run(  # noqa: PLR0913
     max_attempts: int,
     timeout_seconds: int,
 ) -> None:
-    """Enqueue monitor answer tasks for enabled monitors."""
+    """Run enabled monitors and return answers."""
 
     _emit_lines(
         INTELLIGENCE_CONTROLLER.run_monitors(
@@ -1311,7 +749,7 @@ def qa_ask(  # noqa: PLR0913
     max_attempts: int,
     timeout_seconds: int,
 ) -> None:
-    """Enqueue ad-hoc QA task with bounded N-day retrieval."""
+    """Run ad-hoc QA with bounded N-day retrieval."""
 
     _emit_lines(
         INTELLIGENCE_CONTROLLER.ask_qa(

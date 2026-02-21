@@ -1,17 +1,24 @@
-"""Intelligence controllers: stories, continuity, highlights, monitors, and Q&A."""
+"""Intelligence flows: stories, highlights, monitors, and Q&A.
+
+Each LLM operation runs synchronously via Prefect ``@flow`` / ``@task``,
+calling CLI agents directly through ``agent_runtime.run_agent_task``.
+"""
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from uuid import uuid4
 
-from news_recap.config import Settings
-from news_recap.orchestrator.models import (
+from prefect import flow
+
+from news_recap.agent_runtime import AgentTaskResult, run_agent_task
+from news_recap.brain.contracts import ArticleIndexEntry
+from news_recap.brain.models import (
     DailyStorySnapshotWrite,
     MonitorQuestionWrite,
     OutputFeedbackWrite,
@@ -21,11 +28,19 @@ from news_recap.orchestrator.models import (
     StoryAssignmentWrite,
     StoryDefinitionView,
     StoryDefinitionWrite,
+    UserOutputBlockWrite,
+    UserOutputUpsert,
     UserOutputView,
 )
-from news_recap.orchestrator.repository import OrchestratorRepository
-from news_recap.orchestrator.routing import RoutingDefaults
-from news_recap.orchestrator.services import EnqueueDemoTask, OrchestratorService
+from news_recap.brain.pricing import estimate_cost_usd
+from news_recap.brain.routing import RoutingDefaults
+from news_recap.brain.sanitization import sanitize_preview
+from news_recap.brain.usage import extract_usage
+from news_recap.brain.workdir import TaskWorkdirManager
+from news_recap.config import Settings
+from news_recap.ingestion.repository import SQLiteRepository
+
+logger = logging.getLogger(__name__)
 
 MIN_KEYWORD_TOKEN_LENGTH = 4
 
@@ -143,7 +158,7 @@ class IntelligenceStatsCommand:
 
 
 class IntelligenceCliController:
-    """High-level intelligence operations on top of ingestion + orchestrator."""
+    """High-level intelligence operations using Prefect flows."""
 
     def define_story(self, command: StoryDefineCommand) -> list[str]:
         settings = Settings.from_env(db_path=command.db_path)
@@ -228,7 +243,6 @@ class IntelligenceCliController:
 
     def generate_highlights(self, command: HighlightsGenerateCommand) -> list[str]:
         settings = Settings.from_env(db_path=command.db_path)
-        routing_defaults = _routing_defaults(settings=settings)
         business_date = command.business_date or datetime.now(tz=UTC).date()
 
         with _repository(settings) as repository:
@@ -249,66 +263,34 @@ class IntelligenceCliController:
                 business_date=business_date,
             )
 
-            service = OrchestratorService(
-                repository=repository,
-                workdir_root=settings.orchestrator.workdir_root,
-                routing_defaults=routing_defaults,
+            article_index = _entries_to_article_index(filtered_entries)
+            result = _run_highlights_flow(
+                settings=settings,
+                business_date=business_date,
+                article_index=article_index,
+                snapshots=snapshots,
+                prior_snapshots=prior_snapshots,
+                seen_source_ids=seen_source_ids,
+                command=command,
             )
-            task = service.enqueue_demo_task(
-                EnqueueDemoTask(
-                    task_type="highlights",
-                    prompt=_highlights_prompt(business_date=business_date),
-                    source_ids=(),
-                    article_entries=filtered_entries,
-                    priority=command.priority,
-                    max_attempts=command.max_attempts,
-                    timeout_seconds=command.timeout_seconds,
-                    agent=command.agent,
-                    model_profile=command.model_profile,
-                    model=command.model,
-                    story_context={
-                        "business_date": business_date.isoformat(),
-                        "stories": [
-                            {
-                                "story_key": snapshot.story_key,
-                                "title": snapshot.title,
-                                "continuity_key": snapshot.continuity_key,
-                                "summary": snapshot.summary,
-                            }
-                            for snapshot in snapshots
-                        ],
-                        "seen_source_ids": sorted(seen_source_ids),
-                    },
-                    continuity_summary={
-                        "business_date": business_date.isoformat(),
-                        "yesterday": [
-                            {
-                                "story_key": snapshot.story_key,
-                                "title": snapshot.title,
-                                "continuity_key": snapshot.continuity_key,
-                                "summary": snapshot.summary,
-                            }
-                            for snapshot in prior_snapshots
-                        ],
-                    },
-                    output_target={
-                        "kind": "highlights",
-                        "business_date": business_date.isoformat(),
-                        "status": "ready",
-                        "title": f"Highlights for {business_date.isoformat()}",
-                    },
-                ),
+
+            _persist_output(
+                repository=repository,
+                task_result=result,
+                kind="highlights",
+                business_date=business_date,
+                title=f"Highlights for {business_date.isoformat()}",
+                article_entries=filtered_entries,
             )
 
         return [
-            "Highlights task enqueued: "
-            f"task_id={task.task_id} date={business_date.isoformat()} "
-            f"sources={len(filtered_entries)}",
+            "Highlights completed: "
+            f"task_id={result.task_id} date={business_date.isoformat()} "
+            f"sources={len(filtered_entries)} elapsed={result.elapsed_seconds:.1f}s",
         ]
 
     def generate_story_details(self, command: StoryDetailsGenerateCommand) -> list[str]:
         settings = Settings.from_env(db_path=command.db_path)
-        routing_defaults = _routing_defaults(settings=settings)
         business_date = command.business_date or datetime.now(tz=UTC).date()
 
         with _repository(settings) as repository:
@@ -337,7 +319,7 @@ class IntelligenceCliController:
             if snapshot is None:
                 title = f"Story {command.story_id}"
                 story_key = f"pinned:{command.story_id}"
-                summary = {}
+                summary: dict[str, object] = {}
             else:
                 title = snapshot.title
                 story_key = snapshot.story_key
@@ -346,61 +328,34 @@ class IntelligenceCliController:
                 business_date=business_date,
             )
 
-            service = OrchestratorService(
-                repository=repository,
-                workdir_root=settings.orchestrator.workdir_root,
-                routing_defaults=routing_defaults,
+            article_index = _entries_to_article_index(entries)
+            result = _run_story_details_flow(
+                settings=settings,
+                business_date=business_date,
+                article_index=article_index,
+                story_id=command.story_id,
+                story_key=story_key,
+                title=title,
+                summary=summary,
+                prior_snapshots=prior_snapshots,
+                command=command,
             )
-            task = service.enqueue_demo_task(
-                EnqueueDemoTask(
-                    task_type="story_details",
-                    prompt=(
-                        f"Produce detailed update for story {title!r} on "
-                        f"{business_date.isoformat()}."
-                    ),
-                    source_ids=(),
-                    article_entries=entries,
-                    priority=command.priority,
-                    max_attempts=command.max_attempts,
-                    timeout_seconds=command.timeout_seconds,
-                    agent=command.agent,
-                    model_profile=command.model_profile,
-                    model=command.model,
-                    story_context={
-                        "business_date": business_date.isoformat(),
-                        "story": {
-                            "story_id": command.story_id,
-                            "story_key": story_key,
-                            "title": title,
-                            "summary": summary,
-                        },
-                    },
-                    continuity_summary={
-                        "business_date": business_date.isoformat(),
-                        "yesterday": [
-                            {
-                                "story_key": item.story_key,
-                                "title": item.title,
-                                "continuity_key": item.continuity_key,
-                                "summary": item.summary,
-                            }
-                            for item in prior_snapshots
-                        ],
-                    },
-                    output_target={
-                        "kind": "story_details",
-                        "business_date": business_date.isoformat(),
-                        "story_id": command.story_id,
-                        "status": "ready",
-                        "title": title,
-                    },
-                ),
+
+            _persist_output(
+                repository=repository,
+                task_result=result,
+                kind="story_details",
+                business_date=business_date,
+                title=title,
+                article_entries=entries,
+                extra_meta={"story_id": command.story_id},
             )
 
         return [
-            "Story details task enqueued: "
-            f"task_id={task.task_id} story_id={command.story_id} "
-            f"date={business_date.isoformat()} sources={len(entries)}",
+            "Story details completed: "
+            f"task_id={result.task_id} story_id={command.story_id} "
+            f"date={business_date.isoformat()} sources={len(entries)} "
+            f"elapsed={result.elapsed_seconds:.1f}s",
         ]
 
     def upsert_monitor(self, command: MonitorUpsertCommand) -> list[str]:
@@ -435,7 +390,6 @@ class IntelligenceCliController:
 
     def run_monitors(self, command: MonitorRunCommand) -> list[str]:
         settings = Settings.from_env(db_path=command.db_path)
-        routing_defaults = _routing_defaults(settings=settings)
         business_date = command.business_date or datetime.now(tz=UTC).date()
         lines: list[str] = []
 
@@ -444,11 +398,6 @@ class IntelligenceCliController:
             if not monitors:
                 return ["No enabled monitors configured."]
 
-            service = OrchestratorService(
-                repository=repository,
-                workdir_root=settings.orchestrator.workdir_root,
-                routing_defaults=routing_defaults,
-            )
             for monitor in monitors:
                 retrieval_entries, retrieval_context = _build_retrieval_context(
                     repository=repository,
@@ -456,39 +405,37 @@ class IntelligenceCliController:
                     business_date=business_date,
                     lookback_days=settings.orchestrator.qa_lookback_days,
                 )
-                task = service.enqueue_demo_task(
-                    EnqueueDemoTask(
-                        task_type="monitor_answer",
-                        prompt=monitor.prompt,
-                        source_ids=(),
-                        article_entries=retrieval_entries,
-                        priority=command.priority,
-                        max_attempts=command.max_attempts,
-                        timeout_seconds=command.timeout_seconds,
-                        agent=command.agent,
-                        model_profile=command.model_profile,
-                        model=command.model,
-                        retrieval_context=retrieval_context,
-                        output_target={
-                            "kind": "monitor_answer",
-                            "business_date": business_date.isoformat(),
-                            "monitor_id": monitor.monitor_id,
-                            "status": "ready",
-                            "title": monitor.name,
-                        },
-                    ),
+
+                article_index = _entries_to_article_index(retrieval_entries)
+                result = _run_monitor_flow(
+                    settings=settings,
+                    business_date=business_date,
+                    monitor=monitor,
+                    article_index=article_index,
+                    retrieval_context=retrieval_context,
+                    command=command,
+                )
+
+                _persist_output(
+                    repository=repository,
+                    task_result=result,
+                    kind="monitor_answer",
+                    business_date=business_date,
+                    title=monitor.name,
+                    article_entries=retrieval_entries,
+                    extra_meta={"monitor_id": monitor.monitor_id},
                 )
                 lines.append(
-                    "Monitor task enqueued: "
-                    f"monitor_id={monitor.monitor_id} task_id={task.task_id} "
-                    f"sources={len(retrieval_entries)}",
+                    "Monitor completed: "
+                    f"monitor_id={monitor.monitor_id} task_id={result.task_id} "
+                    f"sources={len(retrieval_entries)} "
+                    f"elapsed={result.elapsed_seconds:.1f}s",
                 )
 
         return lines
 
     def ask_qa(self, command: QaAskCommand) -> list[str]:
         settings = Settings.from_env(db_path=command.db_path)
-        routing_defaults = _routing_defaults(settings=settings)
         business_date = datetime.now(tz=UTC).date()
         lookback_days = command.lookback_days or settings.orchestrator.qa_lookback_days
 
@@ -499,39 +446,32 @@ class IntelligenceCliController:
                 business_date=business_date,
                 lookback_days=lookback_days,
             )
-            service = OrchestratorService(
-                repository=repository,
-                workdir_root=settings.orchestrator.workdir_root,
-                routing_defaults=routing_defaults,
+
+            article_index = _entries_to_article_index(retrieval_entries)
+            result = _run_qa_flow(
+                settings=settings,
+                business_date=business_date,
+                prompt=command.prompt,
+                article_index=article_index,
+                retrieval_context=retrieval_context,
+                command=command,
             )
-            request_id = str(uuid4())
-            task = service.enqueue_demo_task(
-                EnqueueDemoTask(
-                    task_type="qa",
-                    prompt=command.prompt,
-                    source_ids=(),
-                    article_entries=retrieval_entries,
-                    priority=command.priority,
-                    max_attempts=command.max_attempts,
-                    timeout_seconds=command.timeout_seconds,
-                    agent=command.agent,
-                    model_profile=command.model_profile,
-                    model=command.model,
-                    retrieval_context=retrieval_context,
-                    output_target={
-                        "kind": "qa_answer",
-                        "business_date": business_date.isoformat(),
-                        "request_id": request_id,
-                        "status": "ready",
-                        "title": "Ad-hoc answer",
-                    },
-                ),
+
+            _persist_output(
+                repository=repository,
+                task_result=result,
+                kind="qa_answer",
+                business_date=business_date,
+                title="Ad-hoc answer",
+                article_entries=retrieval_entries,
+                request_id=result.task_id,
             )
 
         return [
-            "Q&A task enqueued: "
-            f"task_id={task.task_id} request_id={request_id} "
-            f"lookback_days={lookback_days} sources={len(retrieval_entries)}",
+            "Q&A completed: "
+            f"task_id={result.task_id} "
+            f"lookback_days={lookback_days} sources={len(retrieval_entries)} "
+            f"elapsed={result.elapsed_seconds:.1f}s",
         ]
 
     def mark_read_state(self, command: ReadStateMarkCommand) -> list[str]:
@@ -612,6 +552,294 @@ class IntelligenceCliController:
                 limit=limit,
             )
         return _render_outputs(outputs)
+
+
+# ---------------------------------------------------------------------------
+# Prefect intelligence flows
+# ---------------------------------------------------------------------------
+
+
+@flow(name="highlights_flow")
+def _run_highlights_flow(  # noqa: PLR0913
+    *,
+    settings: Settings,
+    business_date: date,
+    article_index: list[ArticleIndexEntry],
+    snapshots: list,
+    prior_snapshots: list,
+    seen_source_ids: set[str],
+    command: HighlightsGenerateCommand,
+) -> AgentTaskResult:
+    routing_defaults = _routing_defaults(settings=settings)
+    workdir_mgr = TaskWorkdirManager(settings.orchestrator.workdir_root)
+
+    return run_agent_task(
+        task_type="highlights",
+        prompt=_highlights_prompt(business_date=business_date),
+        workdir_mgr=workdir_mgr,
+        routing_defaults=routing_defaults,
+        article_entries=article_index,
+        agent_override=command.agent,
+        profile_override=command.model_profile,
+        model_override=command.model,
+        metadata={
+            "output_target": {
+                "kind": "highlights",
+                "business_date": business_date.isoformat(),
+                "status": "ready",
+                "title": f"Highlights for {business_date.isoformat()}",
+            },
+        },
+        story_context={
+            "business_date": business_date.isoformat(),
+            "stories": [
+                {
+                    "story_key": s.story_key,
+                    "title": s.title,
+                    "continuity_key": s.continuity_key,
+                    "summary": s.summary,
+                }
+                for s in snapshots
+            ],
+            "seen_source_ids": sorted(seen_source_ids),
+        },
+        continuity_summary={
+            "business_date": business_date.isoformat(),
+            "yesterday": [
+                {
+                    "story_key": s.story_key,
+                    "title": s.title,
+                    "continuity_key": s.continuity_key,
+                    "summary": s.summary,
+                }
+                for s in prior_snapshots
+            ],
+        },
+        timeout_seconds=command.timeout_seconds,
+    )
+
+
+@flow(name="story_details_flow")
+def _run_story_details_flow(  # noqa: PLR0913
+    *,
+    settings: Settings,
+    business_date: date,
+    article_index: list[ArticleIndexEntry],
+    story_id: str,
+    story_key: str,
+    title: str,
+    summary: dict[str, object],
+    prior_snapshots: list,
+    command: StoryDetailsGenerateCommand,
+) -> AgentTaskResult:
+    routing_defaults = _routing_defaults(settings=settings)
+    workdir_mgr = TaskWorkdirManager(settings.orchestrator.workdir_root)
+
+    return run_agent_task(
+        task_type="story_details",
+        prompt=(f"Produce detailed update for story {title!r} on {business_date.isoformat()}."),
+        workdir_mgr=workdir_mgr,
+        routing_defaults=routing_defaults,
+        article_entries=article_index,
+        agent_override=command.agent,
+        profile_override=command.model_profile,
+        model_override=command.model,
+        metadata={
+            "output_target": {
+                "kind": "story_details",
+                "business_date": business_date.isoformat(),
+                "story_id": story_id,
+                "status": "ready",
+                "title": title,
+            },
+        },
+        story_context={
+            "business_date": business_date.isoformat(),
+            "story": {
+                "story_id": story_id,
+                "story_key": story_key,
+                "title": title,
+                "summary": summary,
+            },
+        },
+        continuity_summary={
+            "business_date": business_date.isoformat(),
+            "yesterday": [
+                {
+                    "story_key": item.story_key,
+                    "title": item.title,
+                    "continuity_key": item.continuity_key,
+                    "summary": item.summary,
+                }
+                for item in prior_snapshots
+            ],
+        },
+        timeout_seconds=command.timeout_seconds,
+    )
+
+
+@flow(name="monitor_flow")
+def _run_monitor_flow(  # noqa: PLR0913
+    *,
+    settings: Settings,
+    business_date: date,
+    monitor: object,
+    article_index: list[ArticleIndexEntry],
+    retrieval_context: dict[str, object],
+    command: MonitorRunCommand,
+) -> AgentTaskResult:
+    routing_defaults = _routing_defaults(settings=settings)
+    workdir_mgr = TaskWorkdirManager(settings.orchestrator.workdir_root)
+
+    return run_agent_task(
+        task_type="monitor_answer",
+        prompt=monitor.prompt,  # type: ignore[attr-defined]
+        workdir_mgr=workdir_mgr,
+        routing_defaults=routing_defaults,
+        article_entries=article_index,
+        agent_override=command.agent,
+        profile_override=command.model_profile,
+        model_override=command.model,
+        retrieval_context=retrieval_context,
+        metadata={
+            "output_target": {
+                "kind": "monitor_answer",
+                "business_date": business_date.isoformat(),
+                "monitor_id": monitor.monitor_id,  # type: ignore[attr-defined]
+                "status": "ready",
+                "title": monitor.name,  # type: ignore[attr-defined]
+            },
+        },
+        timeout_seconds=command.timeout_seconds,
+    )
+
+
+@flow(name="qa_flow")
+def _run_qa_flow(  # noqa: PLR0913
+    *,
+    settings: Settings,
+    business_date: date,
+    prompt: str,
+    article_index: list[ArticleIndexEntry],
+    retrieval_context: dict[str, object],
+    command: QaAskCommand,
+) -> AgentTaskResult:
+    routing_defaults = _routing_defaults(settings=settings)
+    workdir_mgr = TaskWorkdirManager(settings.orchestrator.workdir_root)
+
+    return run_agent_task(
+        task_type="qa",
+        prompt=prompt,
+        workdir_mgr=workdir_mgr,
+        routing_defaults=routing_defaults,
+        article_entries=article_index,
+        agent_override=command.agent,
+        profile_override=command.model_profile,
+        model_override=command.model,
+        retrieval_context=retrieval_context,
+        metadata={
+            "output_target": {
+                "kind": "qa_answer",
+                "business_date": business_date.isoformat(),
+                "status": "ready",
+                "title": "Ad-hoc answer",
+            },
+        },
+        timeout_seconds=command.timeout_seconds,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Output persistence
+# ---------------------------------------------------------------------------
+
+
+def _persist_output(  # noqa: PLR0913
+    *,
+    repository: SQLiteRepository,
+    task_result: AgentTaskResult,
+    kind: str,
+    business_date: date,
+    title: str,
+    article_entries: list[SourceCorpusEntry],
+    extra_meta: dict[str, object] | None = None,
+    request_id: str | None = None,
+) -> None:
+    """Persist agent output to user_outputs with inlined citations."""
+    citations = [
+        {
+            "source_id": entry.source_id,
+            "title": entry.title,
+            "url": entry.url,
+            "source": entry.source,
+            "published_at": entry.published_at.isoformat(),
+        }
+        for entry in article_entries
+    ]
+
+    payload: dict[str, object] = {
+        **task_result.output,
+        "citations": citations,
+    }
+    if extra_meta:
+        payload.update(extra_meta)
+
+    _log_usage_artifact(task_result)
+
+    blocks = _extract_output_blocks(task_result.output)
+    repository.upsert_user_output(
+        UserOutputUpsert(
+            kind=kind,
+            business_date=business_date,
+            status="ready",
+            title=title,
+            payload=payload,
+            blocks=blocks,
+            request_id=request_id,
+        ),
+    )
+
+
+def _extract_output_blocks(output: dict[str, object]) -> list[UserOutputBlockWrite]:
+    """Extract structured blocks from agent output if present."""
+    raw_blocks = output.get("blocks")
+    if not isinstance(raw_blocks, list):
+        return []
+    result: list[UserOutputBlockWrite] = []
+    for i, block in enumerate(raw_blocks):
+        if not isinstance(block, dict):
+            continue
+        text = str(block.get("text", ""))
+        source_ids = tuple(str(sid) for sid in block.get("source_ids", ()))
+        result.append(UserOutputBlockWrite(block_order=i + 1, text=text, source_ids=source_ids))
+    return result
+
+
+def _log_usage_artifact(result: AgentTaskResult) -> None:
+    """Log usage and cost as Prefect artifact (best-effort)."""
+    try:
+        usage = extract_usage(agent=result.agent, stdout="", stderr="")
+        cost = estimate_cost_usd(
+            agent=result.agent,
+            model=result.model,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+        )
+        logger.info(
+            "Usage: agent=%s model=%s tokens=%s cost=%s",
+            sanitize_preview(result.agent),
+            sanitize_preview(result.model),
+            usage.total_tokens,
+            f"${cost:.6f}" if cost is not None else "n/a",
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("Usage extraction failed", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Story assignment helpers (unchanged business logic)
+# ---------------------------------------------------------------------------
 
 
 def _build_assignments(
@@ -724,9 +952,14 @@ def _build_daily_snapshots(
     return snapshots
 
 
+# ---------------------------------------------------------------------------
+# Source resolution / retrieval helpers
+# ---------------------------------------------------------------------------
+
+
 def _resolve_assignment_entries(
     *,
-    repository: OrchestratorRepository,
+    repository: SQLiteRepository,
     assignments: list[StoryAssignmentView],
 ) -> list[SourceCorpusEntry]:
     source_ids = tuple(f"article:{assignment.article_id}" for assignment in assignments)
@@ -740,7 +973,7 @@ def _resolve_assignment_entries(
 
 def _build_retrieval_context(
     *,
-    repository: OrchestratorRepository,
+    repository: SQLiteRepository,
     settings: Settings,
     business_date: date,
     lookback_days: int,
@@ -803,6 +1036,24 @@ def _build_retrieval_context(
     return bounded, retrieval_context
 
 
+def _entries_to_article_index(entries: list[SourceCorpusEntry]) -> list[ArticleIndexEntry]:
+    return [
+        ArticleIndexEntry(
+            source_id=entry.source_id,
+            title=entry.title,
+            url=entry.url,
+            source=entry.source,
+            published_at=entry.published_at.isoformat(),
+        )
+        for entry in entries
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Misc helpers
+# ---------------------------------------------------------------------------
+
+
 def _highlights_prompt(*, business_date: date) -> str:
     return (
         "Generate 5-10 concise highlights for the day with strict source mapping. "
@@ -812,7 +1063,9 @@ def _highlights_prompt(*, business_date: date) -> str:
 
 
 def _keyword_tokens(text: str) -> set[str]:
-    parts = [token.strip(".,:;!?()[]{}\"'`“”«»").lower() for token in text.split()]
+    parts = [
+        token.strip(".,:;!?()[]{}\"'`\u201c\u201d\u00ab\u00bb").lower() for token in text.split()
+    ]
     return {token for token in parts if len(token) >= MIN_KEYWORD_TOKEN_LENGTH}
 
 
@@ -833,8 +1086,8 @@ def _render_outputs(outputs: list[UserOutputView]) -> list[str]:
 
 
 @contextmanager
-def _repository(settings: Settings) -> Iterator[OrchestratorRepository]:
-    repository = OrchestratorRepository(
+def _repository(settings: Settings) -> Iterator[SQLiteRepository]:
+    repository = SQLiteRepository(
         settings.db_path,
         user_id=settings.user_context.user_id,
         user_name=settings.user_context.user_name,

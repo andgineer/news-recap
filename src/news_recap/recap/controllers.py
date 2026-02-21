@@ -13,7 +13,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from news_recap.config import Settings, configure_prefect_runtime, resolve_prefect_mode
-from news_recap.orchestrator.repository import OrchestratorRepository
+from news_recap.ingestion.repository import SQLiteRepository
 from news_recap.recap.prefect_flow import recap_flow
 from news_recap.recap.resource_loader import ResourceLoader
 from news_recap.recap.runner import (
@@ -129,8 +129,8 @@ def _format_run_result(result: PipelineRunResult) -> Iterator[str]:
 
 
 @contextmanager
-def _repository(settings: Settings) -> Iterator[OrchestratorRepository]:
-    repository = OrchestratorRepository(
+def _repository(settings: Settings) -> Iterator[SQLiteRepository]:
+    repository = SQLiteRepository(
         db_path=settings.db_path,
         user_id=settings.user_context.user_id,
         user_name=settings.user_context.user_name,

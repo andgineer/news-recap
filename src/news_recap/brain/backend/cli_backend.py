@@ -9,8 +9,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from news_recap.orchestrator.backend.base import BackendRunRequest, BackendRunResult
-from news_recap.orchestrator.contracts import (
+from news_recap.brain.backend.base import BackendRunRequest, BackendRunResult
+from news_recap.brain.contracts import (
     TaskManifest,
     read_manifest,
     read_task_input,
