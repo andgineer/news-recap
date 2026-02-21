@@ -31,7 +31,7 @@
 | src/news\_recap/ingestion/models.py                      |      161 |        0 |    100% |           |
 | src/news\_recap/ingestion/pipeline.py                    |       39 |        0 |    100% |           |
 | src/news\_recap/ingestion/repository.py                  |      748 |      133 |     82% |140, 169, 209, 234, 264, 280-285, 303, 332-342, 466, 489-491, 555-559, 627, 665, 771-773, 821, 852, 880, 903-906, 978-985, 1039-1059, 1227, 1249, 1308-1313, 1468-1476, 1483-1512, 1521-1530, 1560-1577, 1598, 1601, 1658-1673, 1703-1704, 1706, 1717-1779, 1798, 1807, 1834, 1882-1891, 2032-2034, 2062, 2145, 2179, 2197-2198, 2219-2220, 2225-2226, 2258, 2261 |
-| src/news\_recap/ingestion/services/dedup\_service.py     |       53 |        4 |     92% |30, 99-101 |
+| src/news\_recap/ingestion/services/dedup\_service.py     |       53 |        3 |     94% |    99-101 |
 | src/news\_recap/ingestion/services/fetch\_service.py     |       65 |        2 |     97% |   79, 120 |
 | src/news\_recap/ingestion/services/normalize\_service.py |       14 |        0 |    100% |           |
 | src/news\_recap/ingestion/sources/base.py                |       31 |        3 |     90% |46, 55, 64 |
@@ -46,7 +46,7 @@
 | src/news\_recap/recap/resource\_loader.py                |       43 |       21 |     51% |39-41, 46-48, 51-59, 68-90, 99-100, 103, 106 |
 | src/news\_recap/recap/runner.py                          |      124 |       16 |     87% |42-49, 78-79, 88, 109-113, 227, 265 |
 | src/news\_recap/recap/schemas.py                         |        8 |        0 |    100% |           |
-| **TOTAL**                                                | **4609** | **1018** | **78%** |           |
+| **TOTAL**                                                | **4609** | **1017** | **78%** |           |
 
 
 ## Setup coverage badge

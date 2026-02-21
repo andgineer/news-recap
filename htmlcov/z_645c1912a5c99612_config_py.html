@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_f17cf01cf5f4c2d3_fetcher_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-21 12:42 +0000
+            created at 2026-02-21 12:56 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -111,7 +111,7 @@
     <p class="run"><span class="n"><a id="t29" href="#t29">29</a></span><span class="t"><span class="key">class</span> <span class="nam">DedupSettings</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t30" href="#t30">30</a></span><span class="t">    <span class="str">"""Semantic deduplication settings."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t31" href="#t31">31</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t">    <span class="nam">enabled</span><span class="op">:</span> <span class="nam">bool</span> <span class="op">=</span> <span class="key">True</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t">    <span class="nam">enabled</span><span class="op">:</span> <span class="nam">bool</span> <span class="op">=</span> <span class="key">False</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t">    <span class="nam">threshold</span><span class="op">:</span> <span class="nam">float</span> <span class="op">=</span> <span class="num">0.95</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t">    <span class="nam">model_name</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"intfloat/multilingual-e5-small"</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t">    <span class="nam">allow_model_fallback</span><span class="op">:</span> <span class="nam">bool</span> <span class="op">=</span> <span class="key">False</span>&nbsp;</span><span class="r"></span></p>
@@ -234,7 +234,7 @@
     <p class="run run2"><span class="n"><a id="t152" href="#t152">152</a></span><span class="t">                <span class="nam">article_retention_days</span><span class="op">=</span><span class="nam">int</span><span class="op">(</span><span class="nam">os</span><span class="op">.</span><span class="nam">getenv</span><span class="op">(</span><span class="str">"NEWS_RECAP_ARTICLE_RETENTION_DAYS"</span><span class="op">,</span> <span class="str">"30"</span><span class="op">)</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t153" href="#t153">153</a></span><span class="t">            <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t154" href="#t154">154</a></span><span class="t">            <span class="nam">dedup</span><span class="op">=</span><span class="nam">DedupSettings</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t155" href="#t155">155</a></span><span class="t">                <span class="nam">enabled</span><span class="op">=</span><span class="nam">_env_bool</span><span class="op">(</span><span class="str">"NEWS_RECAP_DEDUP_ENABLED"</span><span class="op">,</span> <span class="nam">default</span><span class="op">=</span><span class="key">True</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t155" href="#t155">155</a></span><span class="t">                <span class="nam">enabled</span><span class="op">=</span><span class="nam">_env_bool</span><span class="op">(</span><span class="str">"NEWS_RECAP_DEDUP_ENABLED"</span><span class="op">,</span> <span class="nam">default</span><span class="op">=</span><span class="key">False</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t156" href="#t156">156</a></span><span class="t">                <span class="nam">threshold</span><span class="op">=</span><span class="nam">float</span><span class="op">(</span><span class="nam">os</span><span class="op">.</span><span class="nam">getenv</span><span class="op">(</span><span class="str">"NEWS_RECAP_DEDUP_THRESHOLD"</span><span class="op">,</span> <span class="str">"0.95"</span><span class="op">)</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t157" href="#t157">157</a></span><span class="t">                <span class="nam">model_name</span><span class="op">=</span><span class="nam">os</span><span class="op">.</span><span class="nam">getenv</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t158" href="#t158">158</a></span><span class="t">                    <span class="str">"NEWS_RECAP_DEDUP_MODEL_NAME"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -680,7 +680,7 @@
             <a class="nav" href="z_f17cf01cf5f4c2d3_fetcher_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-21 12:42 +0000
+            created at 2026-02-21 12:56 +0000
         </p>
     </div>
 </footer>
