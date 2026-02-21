@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -57,17 +56,9 @@ def _seed_user_articles(db_path: Path, *, count: int = 3) -> list[str]:
     return source_ids
 
 
-def test_highlights_flow_persists_business_output(tmp_path: Path, monkeypatch) -> None:
+def test_highlights_flow_persists_business_output(tmp_path: Path, monkeypatch, echo_agent) -> None:
     db_path = tmp_path / "story-highlights.db"
     _seed_user_articles(db_path)
-    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
-    monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
-        (
-            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--prompt-file {prompt_file}"
-        ),
-    )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
 
     runner = CliRunner()
@@ -142,17 +133,9 @@ def test_highlights_flow_persists_business_output(tmp_path: Path, monkeypatch) -
     assert "blocks=1" in outputs.output
 
 
-def test_qa_is_append_only_by_request_id(tmp_path: Path, monkeypatch) -> None:
+def test_qa_is_append_only_by_request_id(tmp_path: Path, monkeypatch, echo_agent) -> None:
     db_path = tmp_path / "story-qa.db"
     _seed_user_articles(db_path)
-    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
-    monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
-        (
-            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--prompt-file {prompt_file}"
-        ),
-    )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
 
     runner = CliRunner()
@@ -222,17 +205,10 @@ def test_qa_is_append_only_by_request_id(tmp_path: Path, monkeypatch) -> None:
 def test_qa_retrieval_policy_uses_source_id_asc_tiebreak(
     tmp_path: Path,
     monkeypatch,
+    echo_agent,
 ) -> None:
     db_path = tmp_path / "story-qa-retrieval.db"
     _seed_user_articles(db_path)
-    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
-    monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
-        (
-            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--prompt-file {prompt_file}"
-        ),
-    )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
 
     runner = CliRunner()

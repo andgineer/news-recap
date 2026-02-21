@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -51,17 +50,9 @@ def _seed_user_article(db_path: Path) -> str:
     return f"article:{result.article_id}"
 
 
-def test_llm_cli_enqueue_worker_and_inspect(tmp_path: Path, monkeypatch) -> None:
+def test_llm_cli_enqueue_worker_and_inspect(tmp_path: Path, monkeypatch, echo_agent) -> None:
     db_path = tmp_path / "llm-cli.db"
     source_id = _seed_user_article(db_path)
-    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
-    monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
-        (
-            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--prompt-file {prompt_file}"
-        ),
-    )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
 
     runner = CliRunner()
@@ -175,17 +166,10 @@ def test_llm_cli_enqueue_worker_and_inspect(tmp_path: Path, monkeypatch) -> None
 def test_llm_cli_stats_reports_queue_and_validation_metrics(
     tmp_path: Path,
     monkeypatch,
+    echo_agent,
 ) -> None:
     db_path = tmp_path / "llm-cli-stats.db"
     source_id = _seed_user_article(db_path)
-    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
-    monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
-        (
-            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--prompt-file {prompt_file}"
-        ),
-    )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
 
     runner = CliRunner()
@@ -271,17 +255,10 @@ def test_llm_cli_benchmark_writes_report(tmp_path: Path, monkeypatch) -> None:
 def test_llm_cli_benchmark_report_reflects_configured_agent_mode(
     tmp_path: Path,
     monkeypatch,
+    echo_agent,
 ) -> None:
     db_path = tmp_path / "llm-cli-benchmark-configured.db"
     _seed_user_article(db_path)
-    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
-    monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
-        (
-            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--prompt-file {prompt_file}"
-        ),
-    )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
 
     report_path = tmp_path / "benchmark_report_configured.md"
@@ -329,18 +306,10 @@ def test_llm_failures_json_format(tmp_path: Path, monkeypatch) -> None:
     assert "count" in parsed
 
 
-def test_llm_usage_json_format(tmp_path: Path, monkeypatch) -> None:
+def test_llm_usage_json_format(tmp_path: Path, monkeypatch, echo_agent) -> None:
     """llm usage --format json outputs valid JSON with attempt entries."""
     db_path = tmp_path / "usage-json.db"
     source_id = _seed_user_article(db_path)
-    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
-    monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
-        (
-            f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--prompt-file {prompt_file}"
-        ),
-    )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
 
     runner = CliRunner()

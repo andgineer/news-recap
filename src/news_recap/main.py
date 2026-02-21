@@ -45,7 +45,13 @@ from news_recap.orchestrator.intelligence import (
     StoryDetailsGenerateCommand,
     StoryListCommand,
 )
-from news_recap.recap.controllers import RecapCliController, RecapRunCommand, RecapStatusCommand
+from news_recap.recap.controllers import (
+    RecapCliController,
+    RecapRunCommand,
+    RecapStatusCommand,
+    RecapTaskKillCommand,
+    RecapTaskListCommand,
+)
 
 click.rich_click.USE_MARKDOWN = True
 INGESTION_CONTROLLER = IngestionCliController()
@@ -1527,6 +1533,37 @@ def recap_status(db_path: Path | None, pipeline_id: str | None) -> None:
                 db_path=db_path,
                 pipeline_id=pipeline_id,
             ),
+        ),
+    )
+
+
+@recap.group()
+def task() -> None:
+    """Manage recap pipeline tasks."""
+
+
+@task.command("list")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+def recap_task_list(db_path: Path | None) -> None:
+    """List tasks for the current pipeline run."""
+
+    _emit_lines(
+        RECAP_CONTROLLER.list_tasks(
+            RecapTaskListCommand(db_path=db_path),
+        ),
+    )
+
+
+@task.command("kill")
+@click.argument("task_id", required=False, default=None)
+@click.option("--force", is_flag=True, default=False, help="Cancel ALL running/queued tasks.")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+def recap_task_kill(task_id: str | None, force: bool, db_path: Path | None) -> None:
+    """Cancel a task by ID, or all active tasks with --force."""
+
+    _emit_lines(
+        RECAP_CONTROLLER.kill_tasks(
+            RecapTaskKillCommand(db_path=db_path, task_id=task_id, force=force),
         ),
     )
 

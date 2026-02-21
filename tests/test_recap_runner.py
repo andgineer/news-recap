@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from news_recap.orchestrator.contracts import ArticleIndexEntry
 from news_recap.orchestrator.models import SourceCorpusEntry
 from news_recap.recap.runner import (
+    RecapPipelineError,
+    RecapPipelineRunner,
     _articles_needing_full_text,
     _build_event_payloads,
     _events_to_resource_files,
@@ -157,3 +162,85 @@ class TestEventsToResourceFiles:
         result = _events_to_resource_files(events)
         assert "event_e1.json" in result
         assert '"event_id"' in result["event_e1.json"]
+
+
+# -- _check_no_active_run tests -----------------------------------------------
+
+
+def _create_test_db(db_path: Path) -> None:
+    """Create minimal recap_pipeline_runs table for testing."""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS recap_pipeline_runs ("
+        " pipeline_id TEXT PRIMARY KEY,"
+        " user_id TEXT NOT NULL DEFAULT 'default_user',"
+        " business_date TEXT NOT NULL,"
+        " status TEXT NOT NULL,"
+        " current_step TEXT,"
+        " error TEXT,"
+        " created_at TEXT NOT NULL,"
+        " updated_at TEXT NOT NULL"
+        ")",
+    )
+    conn.commit()
+    conn.close()
+
+
+def _insert_run(db_path: Path, pipeline_id: str, status: str, updated_at: datetime) -> None:
+    conn = sqlite3.connect(str(db_path))
+    now_str = updated_at.isoformat()
+    conn.execute(
+        "INSERT INTO recap_pipeline_runs"
+        " (pipeline_id, user_id, business_date, status, created_at, updated_at)"
+        " VALUES (?, 'default_user', '2026-02-20', ?, ?, ?)",
+        (pipeline_id, status, now_str, now_str),
+    )
+    conn.commit()
+    conn.close()
+
+
+class _FakeRepo:
+    def __init__(self, db_path: Path) -> None:
+        self.db_path = db_path
+
+
+class TestCheckNoActiveRun:
+    def test_no_runs_passes(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        _create_test_db(db_path)
+        runner = object.__new__(RecapPipelineRunner)
+        runner._repository = _FakeRepo(db_path)
+        runner._check_no_active_run()
+
+    def test_completed_run_passes(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        _create_test_db(db_path)
+        _insert_run(db_path, "p-done", "completed", datetime.now(tz=UTC))
+        runner = object.__new__(RecapPipelineRunner)
+        runner._repository = _FakeRepo(db_path)
+        runner._check_no_active_run()
+
+    def test_active_run_blocks(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        _create_test_db(db_path)
+        _insert_run(db_path, "p-active", "running", datetime.now(tz=UTC))
+        runner = object.__new__(RecapPipelineRunner)
+        runner._repository = _FakeRepo(db_path)
+        with pytest.raises(RecapPipelineError, match="already running"):
+            runner._check_no_active_run()
+
+    def test_stale_run_auto_recovered(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        _create_test_db(db_path)
+        stale_time = datetime.now(tz=UTC) - timedelta(seconds=2000)
+        _insert_run(db_path, "p-stale", "running", stale_time)
+        runner = object.__new__(RecapPipelineRunner)
+        runner._repository = _FakeRepo(db_path)
+        runner._check_no_active_run()
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT status, error FROM recap_pipeline_runs WHERE pipeline_id = 'p-stale'",
+        ).fetchone()
+        conn.close()
+        assert row[0] == "failed"
+        assert "Stale" in row[1]

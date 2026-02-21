@@ -111,9 +111,6 @@ def test_from_env_parses_article_retention_days(monkeypatch: pytest.MonkeyPatch)
 def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NEWS_RECAP_LLM_DEFAULT_AGENT", raising=False)
     monkeypatch.delenv("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP", raising=False)
-    monkeypatch.delenv("NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE", raising=False)
-    monkeypatch.delenv("NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE", raising=False)
-    monkeypatch.delenv("NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE", raising=False)
     settings = Settings.from_env()
     assert settings.orchestrator.default_agent == "codex"
     assert settings.orchestrator.task_type_profile_map == {
