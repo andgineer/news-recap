@@ -1,0 +1,1115 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+        <meta name="author" content="Andrey Sorokin">
+      
+      
+        <link rel="canonical" href="https://andgineer.github.io/news-recap/cli/">
+      
+      
+        <link rel="prev" href="../installation/">
+      
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.13">
+    
+    
+      
+        <title>CLI - news_recap</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.342714a4.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cli" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="news_recap" class="md-header__button md-logo" aria-label="news_recap" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            news_recap
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CLI
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+      <div class="md-header__option">
+  <div class="md-select">
+    
+    <button class="md-header__button md-icon" aria-label="Select language">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"/></svg>
+    </button>
+    <div class="md-select__inner">
+      <ul class="md-select__list">
+        
+          <li class="md-select__item">
+            <a href="/news-recap/" hreflang="en" class="md-select__link">
+              English
+            </a>
+          </li>
+        
+          <li class="md-select__item">
+            <a href="/news-recap/ru/" hreflang="ru" class="md-select__link">
+              Русский
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/andgineer/news-recap" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    news_recap
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="news_recap" class="md-nav__button md-logo" aria-label="news_recap" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    news_recap
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/andgineer/news-recap" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    news_recap
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    news-recap
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    CLI
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    CLI
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#command-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      Command Map
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Common Notes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ingestion-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ingestion Commands
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ingestion Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ingest-daily" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest daily
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingest-stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest stats
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingest-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest clusters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingest-duplicates" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest duplicates
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingest-prune" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest prune
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingest-gc" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest gc
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#llm-queue-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      LLM Queue Commands
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LLM Queue Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#llm-enqueue-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm enqueue-test
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-worker" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm worker
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm stats
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm failures
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm usage
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm cost
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm benchmark
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm tasks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-inspect" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm inspect
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-retry" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm retry
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-cancel" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm cancel
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-smoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      llm smoke
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#story-and-output-generation-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      Story and Output Generation Commands
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Story and Output Generation Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stories-define" class="md-nav__link">
+    <span class="md-ellipsis">
+      stories define
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stories-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      stories list
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stories-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      stories build
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#highlights-generate" class="md-nav__link">
+    <span class="md-ellipsis">
+      highlights generate
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#story-details-generate" class="md-nav__link">
+    <span class="md-ellipsis">
+      story-details generate
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitor-and-qa-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      Monitor and Q&amp;A Commands
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Monitor and Q&amp;A Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#monitors-define" class="md-nav__link">
+    <span class="md-ellipsis">
+      monitors define
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#monitors-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      monitors list
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#monitors-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      monitors run
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#qa-ask" class="md-nav__link">
+    <span class="md-ellipsis">
+      qa ask
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read-state-and-feedback-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      Read-state and Feedback Commands
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Read-state and Feedback Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#read-state-mark" class="md-nav__link">
+    <span class="md-ellipsis">
+      read-state mark
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#feedback-add" class="md-nav__link">
+    <span class="md-ellipsis">
+      feedback add
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#insights-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      Insights Commands
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Insights Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#insights-stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      insights stats
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#insights-outputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      insights outputs
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#important-environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      Important Environment Variables
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#help" class="md-nav__link">
+    <span class="md-ellipsis">
+      Help
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="cli">CLI</h1>
+<p><code>news-recap</code> is operated from CLI commands grouped by workflow stage.</p>
+<h2 id="command-map">Command Map</h2>
+<ul>
+<li><code>ingest</code>: source import, stats, dedup inspection, retention cleanup.</li>
+<li><code>llm</code>: task queue, worker runtime, retries, smoke checks, benchmark.</li>
+<li><code>stories</code>: pinned story definitions and daily story assignment build.</li>
+<li><code>highlights</code>: enqueue daily highlights generation.</li>
+<li><code>story-details</code>: enqueue detailed output for one story.</li>
+<li><code>monitors</code>: define/list/run scheduled monitor prompts.</li>
+<li><code>qa</code>: enqueue ad-hoc question answering tasks.</li>
+<li><code>read-state</code>: mark outputs/blocks as viewed/opened.</li>
+<li><code>feedback</code>: attach like/dislike/hide/pin feedback.</li>
+<li><code>insights</code>: domain-level stats and output listing.</li>
+</ul>
+<h2 id="common-notes">Common Notes</h2>
+<ul>
+<li>Most commands support <code>--db-path</code> to point to a specific SQLite file.</li>
+<li>Source IDs must use format <code>article:&lt;article_id&gt;</code>.</li>
+<li>Queue tasks are executed by <code>news-recap llm worker</code>.</li>
+</ul>
+<h2 id="ingestion-commands">Ingestion Commands</h2>
+<h3 id="ingest-daily"><code>ingest daily</code></h3>
+<p>Run one ingestion cycle from RSS/Atom feeds.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>daily
+news-recap<span class="w"> </span>ingest<span class="w"> </span>daily<span class="w"> </span>--feed-url<span class="w"> </span>https://example.com/feed.xml
+</code></pre></div>
+<p>Key options:
+- <code>--feed-url</code> (repeatable)
+- <code>--db-path</code></p>
+<p>If <code>--feed-url</code> is omitted, feeds are loaded from:
+- <code>NEWS_RECAP_RSS_FEED_URLS</code>
+- <code>NEWS_RECAP_RSS_FEED_URL</code></p>
+<h3 id="ingest-stats"><code>ingest stats</code></h3>
+<p>Show ingestion and dedup metrics in a rolling window.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>stats<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span><span class="w"> </span>--recent-runs<span class="w"> </span><span class="m">5</span>
+</code></pre></div>
+<p>Key options:
+- <code>--hours</code>
+- <code>--source</code>
+- <code>--recent-runs</code></p>
+<h3 id="ingest-clusters"><code>ingest clusters</code></h3>
+<p>Inspect dedup cluster distribution for a run.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>clusters<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span><span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span>
+news-recap<span class="w"> </span>ingest<span class="w"> </span>clusters<span class="w"> </span>--run-id<span class="w"> </span>&lt;run_id&gt;<span class="w"> </span>--show-members
+</code></pre></div>
+<p>Key options:
+- <code>--run-id</code> or <code>--hours</code>/<code>--source</code> for run resolution
+- <code>--min-size</code>
+- <code>--members-per-cluster</code>
+- <code>--show-members</code></p>
+<h3 id="ingest-duplicates"><code>ingest duplicates</code></h3>
+<p>Print duplicate cluster examples (cluster size &gt;= 2).</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>duplicates<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span><span class="w"> </span>--limit-clusters<span class="w"> </span><span class="m">10</span>
+</code></pre></div>
+<p>Key options:
+- <code>--run-id</code> or <code>--hours</code>/<code>--source</code>
+- <code>--limit-clusters</code>
+- <code>--members-per-cluster</code></p>
+<h3 id="ingest-prune"><code>ingest prune</code></h3>
+<p>Delete old user-article links by retention age (<code>discovered_at</code>).</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>prune<span class="w"> </span>--days<span class="w"> </span><span class="m">30</span>
+news-recap<span class="w"> </span>ingest<span class="w"> </span>prune<span class="w"> </span>--days<span class="w"> </span><span class="m">30</span><span class="w"> </span>--dry-run
+</code></pre></div>
+<p>Key options:
+- <code>--days</code>
+- <code>--dry-run/--no-dry-run</code></p>
+<h3 id="ingest-gc"><code>ingest gc</code></h3>
+<p>Delete globally unreferenced shared records.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>gc
+news-recap<span class="w"> </span>ingest<span class="w"> </span>gc<span class="w"> </span>--dry-run
+</code></pre></div>
+<p>Key options:
+- <code>--dry-run/--no-dry-run</code></p>
+<h2 id="llm-queue-commands">LLM Queue Commands</h2>
+<h3 id="llm-enqueue-test"><code>llm enqueue-test</code></h3>
+<p>Enqueue one queue task with optional routing overrides.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>enqueue-test<span class="w"> </span>--task-type<span class="w"> </span>highlights<span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;Top updates&quot;</span>
+</code></pre></div>
+<p>Key options:
+- <code>--task-type</code>
+- <code>--prompt</code>
+- <code>--source-id</code> (repeatable)
+- <code>--priority</code>
+- <code>--agent</code>, <code>--model-profile</code>, <code>--model</code>
+- <code>--max-attempts</code>, <code>--timeout-seconds</code></p>
+<h3 id="llm-worker"><code>llm worker</code></h3>
+<p>Run queue worker once or in loop mode.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>worker<span class="w"> </span>--once
+news-recap<span class="w"> </span>llm<span class="w"> </span>worker<span class="w"> </span>--loop<span class="w"> </span>--max-tasks<span class="w"> </span><span class="m">100</span>
+</code></pre></div>
+<h3 id="llm-stats"><code>llm stats</code></h3>
+<p>Show queue health, validation/retry metrics, and latency.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>stats<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span>
+</code></pre></div>
+<h3 id="llm-failures"><code>llm failures</code></h3>
+<p>List failed attempts with sanitized diagnostics.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>failures<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span>
+news-recap<span class="w"> </span>llm<span class="w"> </span>failures<span class="w"> </span>--failure-class<span class="w"> </span>output_invalid_json<span class="w"> </span>--agent<span class="w"> </span>codex
+</code></pre></div>
+<p>Key options:
+- <code>--hours</code>
+- <code>--task-type</code>
+- <code>--agent</code>
+- <code>--model</code>
+- <code>--failure-class</code>
+- <code>--limit</code></p>
+<h3 id="llm-usage"><code>llm usage</code></h3>
+<p>Show per-attempt usage telemetry for one task.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>usage<span class="w"> </span>--task-id<span class="w"> </span>&lt;task_id&gt;
+</code></pre></div>
+<h3 id="llm-cost"><code>llm cost</code></h3>
+<p>Show grouped token/cost summary for recent attempts.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>cost<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span><span class="w"> </span>--group-by<span class="w"> </span>model
+news-recap<span class="w"> </span>llm<span class="w"> </span>cost<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span><span class="w"> </span>--group-by<span class="w"> </span>agent
+</code></pre></div>
+<h3 id="llm-benchmark"><code>llm benchmark</code></h3>
+<p>Run deterministic queue benchmark and write report.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>benchmark<span class="w"> </span>--tasks-per-type<span class="w"> </span><span class="m">10</span>
+news-recap<span class="w"> </span>llm<span class="w"> </span>benchmark<span class="w"> </span>--task-type<span class="w"> </span>highlights<span class="w"> </span>--task-type<span class="w"> </span>qa<span class="w"> </span>--use-configured-agent
+</code></pre></div>
+<p>Key options:
+- <code>--task-type</code> (repeatable)
+- <code>--tasks-per-type</code>
+- <code>--source-id</code> (repeatable)
+- <code>--output</code>
+- <code>--use-benchmark-agent/--use-configured-agent</code></p>
+<h3 id="llm-tasks"><code>llm tasks</code></h3>
+<p>List recent tasks, optionally filtered by status.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>tasks<span class="w"> </span>--status<span class="w"> </span>queued<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span>
+</code></pre></div>
+<h3 id="llm-inspect"><code>llm inspect</code></h3>
+<p>Show one task with event timeline.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>inspect<span class="w"> </span>--task-id<span class="w"> </span>&lt;task_id&gt;
+</code></pre></div>
+<h3 id="llm-retry"><code>llm retry</code></h3>
+<p>Manually re-queue failed/timeout/canceled task.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>retry<span class="w"> </span>--task-id<span class="w"> </span>&lt;task_id&gt;
+</code></pre></div>
+<h3 id="llm-cancel"><code>llm cancel</code></h3>
+<p>Cancel queued/running task.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>cancel<span class="w"> </span>--task-id<span class="w"> </span>&lt;task_id&gt;
+</code></pre></div>
+<h3 id="llm-smoke"><code>llm smoke</code></h3>
+<p>Run direct agent smoke checks without DB queue.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>llm<span class="w"> </span>smoke
+news-recap<span class="w"> </span>llm<span class="w"> </span>smoke<span class="w"> </span>--agent<span class="w"> </span>codex<span class="w"> </span>--model-profile<span class="w"> </span>quality
+news-recap<span class="w"> </span>llm<span class="w"> </span>smoke<span class="w"> </span>--agent<span class="w"> </span>gemini<span class="w"> </span>--model<span class="w"> </span>gemini-2.5-flash
+</code></pre></div>
+<p>Key options:
+- <code>--agent</code> (repeatable)
+- <code>--model-profile</code> (<code>fast</code> or <code>quality</code>)
+- <code>--model</code>
+- <code>--prompt</code>, <code>--expect-substring</code>, <code>--timeout-seconds</code>
+- <code>--claude-command</code>, <code>--codex-command</code>, <code>--gemini-command</code></p>
+<h2 id="story-and-output-generation-commands">Story and Output Generation Commands</h2>
+<h3 id="stories-define"><code>stories define</code></h3>
+<p>Create or update a pinned story definition.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>stories<span class="w"> </span>define<span class="w"> </span>--name<span class="w"> </span><span class="s2">&quot;Serbia updates&quot;</span><span class="w"> </span>--description<span class="w"> </span><span class="s2">&quot;Politics and economy&quot;</span><span class="w"> </span>--target-language<span class="w"> </span>sr
+</code></pre></div>
+<p>Key options:
+- <code>--story-id</code> (update existing)
+- <code>--name</code>
+- <code>--description</code>
+- <code>--target-language</code>
+- <code>--priority</code>
+- <code>--enabled/--disabled</code></p>
+<h3 id="stories-list"><code>stories list</code></h3>
+<p>List pinned stories.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>stories<span class="w"> </span>list
+news-recap<span class="w"> </span>stories<span class="w"> </span>list<span class="w"> </span>--all
+</code></pre></div>
+<h3 id="stories-build"><code>stories build</code></h3>
+<p>Build pinned + auto assignments for one business date.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>stories<span class="w"> </span>build
+news-recap<span class="w"> </span>stories<span class="w"> </span>build<span class="w"> </span>--date<span class="w"> </span><span class="m">2026</span>-02-18
+</code></pre></div>
+<h3 id="highlights-generate"><code>highlights generate</code></h3>
+<p>Enqueue highlights generation task for one date.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>highlights<span class="w"> </span>generate<span class="w"> </span>--date<span class="w"> </span><span class="m">2026</span>-02-18
+</code></pre></div>
+<p>Key options:
+- <code>--date</code>
+- <code>--priority</code>
+- <code>--agent</code>, <code>--model-profile</code>, <code>--model</code>
+- <code>--max-attempts</code>, <code>--timeout-seconds</code></p>
+<h3 id="story-details-generate"><code>story-details generate</code></h3>
+<p>Enqueue detailed generation for one pinned story.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>story-details<span class="w"> </span>generate<span class="w"> </span>--story-id<span class="w"> </span>&lt;story_id&gt;<span class="w"> </span>--date<span class="w"> </span><span class="m">2026</span>-02-18
+</code></pre></div>
+<p>Key options:
+- <code>--story-id</code>
+- <code>--date</code>
+- routing/attempt/timeout options (same as highlights)</p>
+<h2 id="monitor-and-qa-commands">Monitor and Q&amp;A Commands</h2>
+<h3 id="monitors-define"><code>monitors define</code></h3>
+<p>Create or update monitor prompt.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>monitors<span class="w"> </span>define<span class="w"> </span>--name<span class="w"> </span><span class="s2">&quot;Macro risks&quot;</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;What changed in macro risk today?&quot;</span>
+</code></pre></div>
+<p>Key options:
+- <code>--monitor-id</code> (update existing)
+- <code>--name</code>
+- <code>--prompt</code>
+- <code>--cadence</code>
+- <code>--enabled/--disabled</code></p>
+<h3 id="monitors-list"><code>monitors list</code></h3>
+<p>List monitor definitions.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>monitors<span class="w"> </span>list
+news-recap<span class="w"> </span>monitors<span class="w"> </span>list<span class="w"> </span>--all
+</code></pre></div>
+<h3 id="monitors-run"><code>monitors run</code></h3>
+<p>Enqueue monitor-answer tasks for enabled monitors.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>monitors<span class="w"> </span>run<span class="w"> </span>--date<span class="w"> </span><span class="m">2026</span>-02-18
+</code></pre></div>
+<p>Key options:
+- <code>--date</code>
+- routing/attempt/timeout options</p>
+<h3 id="qa-ask"><code>qa ask</code></h3>
+<p>Enqueue ad-hoc QA task with bounded retrieval context.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>qa<span class="w"> </span>ask<span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;What were the top geopolitical updates today?&quot;</span>
+news-recap<span class="w"> </span>qa<span class="w"> </span>ask<span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;What changed in energy markets?&quot;</span><span class="w"> </span>--lookback-days<span class="w"> </span><span class="m">7</span>
+</code></pre></div>
+<p>Key options:
+- <code>--prompt</code>
+- <code>--lookback-days</code>
+- routing/attempt/timeout options</p>
+<h2 id="read-state-and-feedback-commands">Read-state and Feedback Commands</h2>
+<h3 id="read-state-mark"><code>read-state mark</code></h3>
+<p>Record read/open interaction for output or output block.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>read-state<span class="w"> </span>mark<span class="w"> </span>--output-id<span class="w"> </span>&lt;output_id&gt;<span class="w"> </span>--event-type<span class="w"> </span>open
+news-recap<span class="w"> </span>read-state<span class="w"> </span>mark<span class="w"> </span>--output-id<span class="w"> </span>&lt;output_id&gt;<span class="w"> </span>--event-type<span class="w"> </span>view<span class="w"> </span>--output-block-id<span class="w"> </span><span class="m">3</span>
+</code></pre></div>
+<h3 id="feedback-add"><code>feedback add</code></h3>
+<p>Attach feedback to output or one block.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>feedback<span class="w"> </span>add<span class="w"> </span>--output-id<span class="w"> </span>&lt;output_id&gt;<span class="w"> </span>--feedback-type<span class="w"> </span>like
+news-recap<span class="w"> </span>feedback<span class="w"> </span>add<span class="w"> </span>--output-id<span class="w"> </span>&lt;output_id&gt;<span class="w"> </span>--feedback-type<span class="w"> </span>hide<span class="w"> </span>--output-block-id<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<h2 id="insights-commands">Insights Commands</h2>
+<h3 id="insights-stats"><code>insights stats</code></h3>
+<p>Show domain counters for stories, outputs, and engagement.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>insights<span class="w"> </span>stats<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span>
+</code></pre></div>
+<h3 id="insights-outputs"><code>insights outputs</code></h3>
+<p>List persisted business outputs.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>insights<span class="w"> </span>outputs<span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span>
+news-recap<span class="w"> </span>insights<span class="w"> </span>outputs<span class="w"> </span>--kind<span class="w"> </span>highlights<span class="w"> </span>--date<span class="w"> </span><span class="m">2026</span>-02-18
+</code></pre></div>
+<h2 id="important-environment-variables">Important Environment Variables</h2>
+<ul>
+<li><code>NEWS_RECAP_DB_PATH</code></li>
+<li><code>NEWS_RECAP_RSS_FEED_URLS</code></li>
+<li><code>NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED</code></li>
+<li><code>NEWS_RECAP_RSS_FEED_ITEMS</code> (<code>&lt;feed_url&gt;|&lt;items&gt;,...</code>)</li>
+<li><code>NEWS_RECAP_ARTICLE_RETENTION_DAYS</code></li>
+<li><code>NEWS_RECAP_LLM_DEFAULT_AGENT</code></li>
+<li><code>NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP</code></li>
+<li><code>NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE</code></li>
+<li><code>NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE</code></li>
+<li><code>NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE</code></li>
+<li><code>NEWS_RECAP_LLM_CODEX_MODEL_FAST</code> / <code>NEWS_RECAP_LLM_CODEX_MODEL_QUALITY</code></li>
+<li><code>NEWS_RECAP_LLM_CLAUDE_MODEL_FAST</code> / <code>NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY</code></li>
+<li><code>NEWS_RECAP_LLM_GEMINI_MODEL_FAST</code> / <code>NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY</code></li>
+<li><code>NEWS_RECAP_LLM_PRICING</code> (<code>agent:model:input_per_1m:output_per_1m</code>, comma-separated)</li>
+<li><code>NEWS_RECAP_QA_LOOKBACK_DAYS</code></li>
+<li><code>NEWS_RECAP_RETRIEVAL_TOP_K</code></li>
+<li><code>NEWS_RECAP_RETRIEVAL_MAX_ARTICLES</code></li>
+<li><code>NEWS_RECAP_RETRIEVAL_TOKEN_BUDGET</code></li>
+<li><code>NEWS_RECAP_RETRIEVAL_CHAR_BUDGET</code></li>
+</ul>
+<h2 id="help">Help</h2>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>--help
+news-recap<span class="w"> </span>ingest<span class="w"> </span>--help
+news-recap<span class="w"> </span>llm<span class="w"> </span>--help
+news-recap<span class="w"> </span>stories<span class="w"> </span>--help
+news-recap<span class="w"> </span>highlights<span class="w"> </span>--help
+news-recap<span class="w"> </span>story-details<span class="w"> </span>--help
+news-recap<span class="w"> </span>monitors<span class="w"> </span>--help
+news-recap<span class="w"> </span>qa<span class="w"> </span>--help
+news-recap<span class="w"> </span>read-state<span class="w"> </span>--help
+news-recap<span class="w"> </span>feedback<span class="w"> </span>--help
+news-recap<span class="w"> </span>insights<span class="w"> </span>--help
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": ["toc.integrate", "navigation.tracking", "content.code.copy"], "search": "../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.13a4f30d.min.js"></script>
+      
+    
+  </body>
+</html>
