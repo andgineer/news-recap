@@ -1,0 +1,7 @@
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 20260217_0001, Initial single-tenant multi-user ingestion schema (squashed baseline).
+INFO  [alembic.runtime.migration] Running upgrade 20260217_0001 -> 20260219_0002, Add per-attempt LLM execution telemetry table.
+INFO  [alembic.runtime.migration] Running upgrade 20260219_0002 -> 20260220_0003, Add recap pipeline state tables.
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
