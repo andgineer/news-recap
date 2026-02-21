@@ -337,12 +337,12 @@ class RecapPipelineRunner:
 
         self._start_worker()
         try:
-            article_entries = _to_article_index(articles)
+            article_entries = to_article_index(articles)
             article_map = {e.source_id: e for e in article_entries}
 
             # Step 1: classify (one file per article, agent evaluates each in isolation)
             self._persist_run_step(pipeline_id, "recap_classify")
-            per_article_files = _articles_to_individual_files(articles)
+            per_article_files = articles_to_individual_files(articles)
             tid = self._run_llm_step(
                 result=result,
                 pipeline_id=pipeline_id,
@@ -352,7 +352,7 @@ class RecapPipelineRunner:
                 extra_input_files=per_article_files,
                 agent_override=agent_override,
             )
-            kept_ids, enrich_ids = _parse_classify_out_files(
+            kept_ids, enrich_ids = parse_classify_out_files(
                 self._task_results_dir(tid),
                 articles,
             )
@@ -387,12 +387,12 @@ class RecapPipelineRunner:
                 extra_input_files=loaded_resources,
                 agent_override=agent_override,
             )
-            enriched_articles = _parse_enrich_result(self._read_task_output(tid))
+            enriched_articles = parse_enrich_result(self._read_task_output(tid))
             self._emit(f"Enrich: {len(enriched_articles)} articles enriched")
 
             # Step 4.1: group
             self._persist_run_step(pipeline_id, "recap_group")
-            enriched_entries = _merge_enriched_into_index(kept_entries, enriched_articles)
+            enriched_entries = merge_enriched_into_index(kept_entries, enriched_articles)
             tid = self._run_llm_step(
                 result=result,
                 pipeline_id=pipeline_id,
@@ -401,12 +401,12 @@ class RecapPipelineRunner:
                 preferences=preferences,
                 agent_override=agent_override,
             )
-            events = _parse_group_result(self._read_task_output(tid))
+            events = parse_group_result(self._read_task_output(tid))
             self._emit(f"Group: {len(events)} events identified")
 
             # Step 4.2: load full texts for significant events
-            significant_events = _select_significant_events(events)
-            articles_for_full = _articles_needing_full_text(significant_events, article_map)
+            significant_events = select_significant_events(events)
+            articles_for_full = articles_needing_full_text(significant_events, article_map)
             self._emit(
                 f"Significant events: {len(significant_events)}, "
                 f"articles needing full text: {len(articles_for_full)}",
@@ -427,10 +427,10 @@ class RecapPipelineRunner:
                     agent_override=agent_override,
                 )
                 enrich_full_payload = self._read_task_output(tid)
-            enriched_full = _parse_enrich_result(enrich_full_payload)
+            enriched_full = parse_enrich_result(enrich_full_payload)
 
             # Step 4→5 merge: rebuild event payloads with enriched texts
-            event_payloads = _build_event_payloads(
+            event_payloads = build_event_payloads(
                 events,
                 enriched_articles,
                 enriched_full,
@@ -439,7 +439,7 @@ class RecapPipelineRunner:
 
             # Step 5: synthesize
             self._persist_run_step(pipeline_id, "recap_synthesize")
-            synth_resources = _events_to_resource_files(event_payloads)
+            synth_resources = events_to_resource_files(event_payloads)
             self._run_llm_step(
                 result=result,
                 pipeline_id=pipeline_id,
@@ -661,7 +661,7 @@ class RecapPipelineRunner:
         return resources
 
 
-def _to_article_index(entries: list[SourceCorpusEntry]) -> list[ArticleIndexEntry]:
+def to_article_index(entries: list[SourceCorpusEntry]) -> list[ArticleIndexEntry]:
     return [
         ArticleIndexEntry(
             source_id=e.source_id,
@@ -679,7 +679,7 @@ def _safe_file_id(source_id: str) -> str:
     return source_id.replace(":", "_").replace("/", "_")
 
 
-def _articles_to_individual_files(
+def articles_to_individual_files(
     entries: list[SourceCorpusEntry],
 ) -> dict[str, bytes | str]:
     """One ``{id}_in.txt`` per article containing only the headline."""
@@ -690,7 +690,7 @@ def _articles_to_individual_files(
     return files
 
 
-def _parse_classify_out_files(
+def parse_classify_out_files(
     results_dir: Path,
     entries: list[SourceCorpusEntry],
 ) -> tuple[list[str], list[str]]:
@@ -716,7 +716,7 @@ def _parse_classify_out_files(
     return kept, enrich
 
 
-def _parse_enrich_result(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
+def parse_enrich_result(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Return {article_id: {new_title, clean_text}} from enrich output."""
 
     enriched = payload.get("enriched", [])
@@ -730,13 +730,13 @@ def _parse_enrich_result(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
     return result
 
 
-def _parse_group_result(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def parse_group_result(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Return events list from group output."""
 
     return payload.get("events", [])
 
 
-def _merge_enriched_into_index(
+def merge_enriched_into_index(
     entries: list[ArticleIndexEntry],
     enriched: dict[str, dict[str, str]],
 ) -> list[ArticleIndexEntry]:
@@ -760,7 +760,7 @@ def _merge_enriched_into_index(
     return result
 
 
-def _select_significant_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def select_significant_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Filter events to only significant ones (high/medium significance or multi-article)."""
 
     return [
@@ -771,7 +771,7 @@ def _select_significant_events(events: list[dict[str, Any]]) -> list[dict[str, A
     ]
 
 
-def _articles_needing_full_text(
+def articles_needing_full_text(
     events: list[dict[str, Any]],
     article_map: dict[str, ArticleIndexEntry],
 ) -> list[ArticleIndexEntry]:
@@ -787,7 +787,7 @@ def _articles_needing_full_text(
     return result
 
 
-def _build_event_payloads(
+def build_event_payloads(
     events: list[dict[str, Any]],
     enriched: dict[str, dict[str, str]],
     enriched_full: dict[str, dict[str, str]],
@@ -826,7 +826,7 @@ def _build_event_payloads(
     return payloads
 
 
-def _events_to_resource_files(events: list[dict[str, Any]]) -> dict[str, bytes | str]:
+def events_to_resource_files(events: list[dict[str, Any]]) -> dict[str, bytes | str]:
     """Serialize events as individual JSON files for LLM input."""
 
     resources: dict[str, bytes | str] = {}

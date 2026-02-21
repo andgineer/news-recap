@@ -13,15 +13,15 @@ from news_recap.orchestrator.models import SourceCorpusEntry
 from news_recap.recap.runner import (
     RecapPipelineError,
     RecapPipelineRunner,
-    _articles_needing_full_text,
-    _build_event_payloads,
-    _events_to_resource_files,
-    _merge_enriched_into_index,
-    _parse_classify_out_files,
-    _parse_enrich_result,
-    _parse_group_result,
     _safe_file_id,
-    _select_significant_events,
+    articles_needing_full_text,
+    build_event_payloads,
+    events_to_resource_files,
+    merge_enriched_into_index,
+    parse_classify_out_files,
+    parse_enrich_result,
+    parse_group_result,
+    select_significant_events,
 )
 
 
@@ -41,7 +41,7 @@ class TestParseClassifyOutFiles:
         entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
         for e, verdict in zip(entries, ["ok", "trash", "enrich"]):
             (tmp_path / f"{_safe_file_id(e.source_id)}_out.txt").write_text(verdict)
-        kept, enrich = _parse_classify_out_files(tmp_path, entries)
+        kept, enrich = parse_classify_out_files(tmp_path, entries)
         assert "a1" in kept
         assert "a2" not in kept
         assert "a3" in kept
@@ -49,7 +49,7 @@ class TestParseClassifyOutFiles:
 
     def test_missing_file_defaults_to_kept(self, tmp_path: Path):
         entries = [_make_entry("a1")]
-        kept, enrich = _parse_classify_out_files(tmp_path, entries)
+        kept, enrich = parse_classify_out_files(tmp_path, entries)
         assert kept == ["a1"]
         assert enrich == []
 
@@ -61,19 +61,19 @@ class TestParseEnrichResult:
                 {"article_id": "a1", "new_title": "Better title", "clean_text": "Clean body"},
             ]
         }
-        result = _parse_enrich_result(payload)
+        result = parse_enrich_result(payload)
         assert "a1" in result
         assert result["a1"]["new_title"] == "Better title"
 
     def test_empty_enriched(self):
-        result = _parse_enrich_result({"enriched": []})
+        result = parse_enrich_result({"enriched": []})
         assert result == {}
 
 
 class TestParseGroupResult:
     def test_basic_group(self):
         payload = {"events": [{"event_id": "e1", "article_ids": ["a1"]}]}
-        result = _parse_group_result(payload)
+        result = parse_group_result(payload)
         assert len(result) == 1
         assert result[0]["event_id"] == "e1"
 
@@ -84,7 +84,7 @@ class TestSelectSignificantEvents:
             {"event_id": "e1", "significance": "high", "article_ids": ["a1"]},
             {"event_id": "e2", "significance": "low", "article_ids": ["a2"]},
         ]
-        result = _select_significant_events(events)
+        result = select_significant_events(events)
         assert len(result) == 1
         assert result[0]["event_id"] == "e1"
 
@@ -92,14 +92,14 @@ class TestSelectSignificantEvents:
         events = [
             {"event_id": "e1", "significance": "low", "article_ids": ["a1", "a2"]},
         ]
-        result = _select_significant_events(events)
+        result = select_significant_events(events)
         assert len(result) == 1
 
     def test_single_low_excluded(self):
         events = [
             {"event_id": "e1", "significance": "low", "article_ids": ["a1"]},
         ]
-        result = _select_significant_events(events)
+        result = select_significant_events(events)
         assert len(result) == 0
 
 
@@ -109,14 +109,14 @@ class TestMergeEnrichedIntoIndex:
             ArticleIndexEntry(source_id="a1", title="Old", url="http://ex.com", source="src"),
         ]
         enriched = {"a1": {"new_title": "New", "clean_text": "..."}}
-        result = _merge_enriched_into_index(entries, enriched)
+        result = merge_enriched_into_index(entries, enriched)
         assert result[0].title == "New"
 
     def test_merge_keeps_original_if_no_enrichment(self):
         entries = [
             ArticleIndexEntry(source_id="a1", title="Original", url="http://ex.com", source="src"),
         ]
-        result = _merge_enriched_into_index(entries, {})
+        result = merge_enriched_into_index(entries, {})
         assert result[0].title == "Original"
 
 
@@ -130,7 +130,7 @@ class TestArticlesNeedingFullText:
             {"event_id": "e1", "article_ids": ["a1", "a2"]},
             {"event_id": "e2", "article_ids": ["a1"]},
         ]
-        result = _articles_needing_full_text(events, article_map)
+        result = articles_needing_full_text(events, article_map)
         assert len(result) == 2
 
 
@@ -144,7 +144,7 @@ class TestBuildEventPayloads:
         }
         enriched = {"a1": {"new_title": "Enriched", "clean_text": "partial text"}}
         enriched_full = {"a1": {"new_title": "Full Title", "clean_text": "full text"}}
-        result = _build_event_payloads(events, enriched, enriched_full, article_map)
+        result = build_event_payloads(events, enriched, enriched_full, article_map)
         assert result[0]["articles"][0]["text"] == "full text"
         assert result[0]["articles"][0]["title"] == "Full Title"
 
@@ -154,14 +154,14 @@ class TestBuildEventPayloads:
             "a1": ArticleIndexEntry(source_id="a1", title="T", url="u", source="s"),
         }
         enriched = {"a1": {"new_title": "Partial", "clean_text": "partial text"}}
-        result = _build_event_payloads(events, enriched, {}, article_map)
+        result = build_event_payloads(events, enriched, {}, article_map)
         assert result[0]["articles"][0]["text"] == "partial text"
 
 
 class TestEventsToResourceFiles:
     def test_creates_json_files(self):
         events = [{"event_id": "e1", "title": "Test"}]
-        result = _events_to_resource_files(events)
+        result = events_to_resource_files(events)
         assert "event_e1.json" in result
         assert '"event_id"' in result["event_e1.json"]
 

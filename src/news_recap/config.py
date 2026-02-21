@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import enum
+import logging
 import os
 import string
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -506,3 +510,82 @@ def _validate_command_template(*, name: str, template: str) -> None:
     ).strip()
     if not rendered:
         raise ValueError(f"{name} rendered an empty command.")
+
+
+# ---------------------------------------------------------------------------
+# Prefect runtime mode
+# ---------------------------------------------------------------------------
+
+
+class PrefectMode(enum.Enum):
+    """Execution mode for the Prefect-based recap pipeline."""
+
+    EPHEMERAL = "ephemeral"
+    SERVER = "server"
+    AUTO = "auto"
+
+
+def resolve_prefect_mode() -> PrefectMode:
+    """Resolve Prefect execution mode from ``NEWS_RECAP_PREFECT_MODE``."""
+    raw = os.getenv("NEWS_RECAP_PREFECT_MODE", "").strip().lower()
+    if not raw or raw == "ephemeral":
+        return PrefectMode.EPHEMERAL
+    if raw == "server":
+        return PrefectMode.SERVER
+    if raw == "auto":
+        return PrefectMode.AUTO
+    raise ValueError(
+        f"Invalid NEWS_RECAP_PREFECT_MODE: {raw!r}. Use ephemeral, server, or auto.",
+    )
+
+
+def configure_prefect_runtime(mode: PrefectMode) -> PrefectMode:
+    """Configure Prefect for *mode* and return the effective mode.
+
+    * ``EPHEMERAL``: unset ``PREFECT_API_URL``; run locally.
+    * ``SERVER``: require ``PREFECT_API_URL``; fail fast if unreachable.
+    * ``AUTO``: probe ``PREFECT_API_URL`` (≤500 ms); fall back to ephemeral.
+    """
+    if mode == PrefectMode.EPHEMERAL:
+        os.environ.pop("PREFECT_API_URL", None)
+        return PrefectMode.EPHEMERAL
+
+    api_url = os.getenv("PREFECT_API_URL", "").strip()
+
+    if mode == PrefectMode.SERVER:
+        if not api_url:
+            raise ValueError(
+                "NEWS_RECAP_PREFECT_MODE=server requires PREFECT_API_URL to be set.",
+            )
+        if not _probe_prefect_server(api_url):
+            raise RuntimeError(
+                f"Prefect server at {api_url} is not reachable (mode=server, fail-fast).",
+            )
+        return PrefectMode.SERVER
+
+    if api_url and _probe_prefect_server(api_url):
+        logger.info("Prefect server reachable at %s — using server mode", api_url)
+        return PrefectMode.SERVER
+
+    logger.info("No reachable Prefect server — falling back to ephemeral mode")
+    os.environ.pop("PREFECT_API_URL", None)
+    return PrefectMode.EPHEMERAL
+
+
+_PROBE_TIMEOUT_SECONDS = 0.5
+
+
+def _probe_prefect_server(api_url: str) -> bool:
+    """Return True if the Prefect server health endpoint responds within timeout.
+
+    ``PREFECT_API_URL`` conventionally includes ``/api`` already
+    (e.g. ``http://localhost:4200/api``), so we append only ``/health``.
+    """
+    import httpx
+
+    try:
+        health_url = f"{api_url.rstrip('/')}/health"
+        resp = httpx.get(health_url, timeout=_PROBE_TIMEOUT_SECONDS)
+        return resp.is_success  # noqa: TRY300
+    except (httpx.HTTPError, OSError):
+        return False
