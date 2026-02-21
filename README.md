@@ -2,23 +2,14 @@
 [![Coverage](https://raw.githubusercontent.com/andgineer/news-recap/python-coverage-comment-action-data/badge.svg)](https://htmlpreview.github.io/?https://github.com/andgineer/news-recap/blob/python-coverage-comment-action-data/htmlcov/index.html)
 # news-recap
 
-`news-recap` is a CLI-first pipeline for collecting, cleaning, and deduplicating news into
-structured daily inputs for later highlights, stories, and Q&A stages.
+`news-recap` is a CLI-first pipeline for collecting, cleaning, deduplicating news
+and producing daily recaps with LLM agents orchestrated by [Prefect](https://www.prefect.io/).
 
-## Epic 1 MVP (Current)
+The key idea: instead of paying per-token via expensive LLM APIs, the pipeline drives
+CLI agents (Codex, Claude Code, Gemini CLI) that run under flat-rate ~$20/month
+subscriptions — making heavy daily summarisation practically free.
 
-Epic 1 is already usable with real data from RSS feeds (including Inoreader Output RSS).
-
-### Implemented now
-
-- RSS/Atom ingestion with pagination, retry/backoff, and gap tracking for transient failures.
-- Article normalization and HTML-to-text cleaning with bounded text size.
-- Semantic deduplication before downstream LLM stages.
-- Persistent SQLite storage for runs, raw payloads, normalized articles, embeddings, and dedup artifacts.
-- Single-tenant, multi-user-ready schema and repository contracts.
-- Automatic local bootstrap of `default_user`.
-
-### Usage
+### Documentation
 
 - [News Recap](https://andgineer.github.io/news-recap/)
 
@@ -29,25 +20,40 @@ Epic 1 is already usable with real data from RSS feeds (including Inoreader Outp
   - `NEWS_RECAP_USER_ID`
   - `NEWS_RECAP_USER_NAME`
 
-### MVP boundary
-
-Epic 1 covers ingestion and dedup foundation only.
-Highlights generation, story assembly, Telegram delivery, and interactive Q&A are planned for
-later epics.
-
 # Developers
-
-Do not forget to run `source ./activate.sh`.
 
 For development you need [uv](https://github.com/astral-sh/uv) installed.
 
-Use [pre-commit](https://pre-commit.com/#install) hooks for code quality:
+Bootstrap the environment and install pre-commit hooks:
 
+    source ./activate.sh
     pre-commit install
 
 Run all checks:
 
-    source ./activate.sh && pre-commit run --verbose --all-files --
+    uv run inv pre
+
+## Prefect server (optional)
+
+By default the recap pipeline runs in **ephemeral** mode (no server required).
+To get the Prefect UI with flow/task observability, start a local server:
+
+    prefect server start
+
+Then point the pipeline at it:
+
+    export PREFECT_API_URL=http://localhost:4200/api
+    export NEWS_RECAP_PREFECT_MODE=server   # or "auto" to probe and fall back
+
+Open the dashboard at <http://localhost:4200>.
+
+Available modes (`NEWS_RECAP_PREFECT_MODE`):
+
+| Value       | Behaviour                                                        |
+|-------------|------------------------------------------------------------------|
+| `ephemeral` | *(default)* Run locally, no server needed                        |
+| `server`    | Require `PREFECT_API_URL`; fail fast if unreachable              |
+| `auto`      | Probe `PREFECT_API_URL`; fall back to ephemeral if unreachable   |
 
 ## Allure test report
 

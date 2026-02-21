@@ -5,7 +5,15 @@ from os import environ
 import allure
 import pytest
 
-from news_recap.config import IngestionSettings, RssSettings, Settings
+from news_recap.config import (
+    IngestionSettings,
+    PrefectMode,
+    RssSettings,
+    Settings,
+    _probe_prefect_server,
+    configure_prefect_runtime,
+    resolve_prefect_mode,
+)
 
 pytestmark = [
     allure.epic("Daily Ingestion"),
@@ -191,3 +199,117 @@ def test_from_env_rejects_invalid_backend_capability_mode(
     monkeypatch.setenv("NEWS_RECAP_BACKEND_CAPABILITY_MODE", "invalid_mode")
     with pytest.raises(ValueError, match="NEWS_RECAP_BACKEND_CAPABILITY_MODE"):
         Settings.from_env(db_path=tmp_path / "test.db")
+
+
+# ---------------------------------------------------------------------------
+# Prefect runtime mode
+# ---------------------------------------------------------------------------
+
+
+class TestResolvePrefectMode:
+    def test_defaults_to_ephemeral(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NEWS_RECAP_PREFECT_MODE", raising=False)
+        assert resolve_prefect_mode() == PrefectMode.EPHEMERAL
+
+    def test_explicit_ephemeral(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEWS_RECAP_PREFECT_MODE", "ephemeral")
+        assert resolve_prefect_mode() == PrefectMode.EPHEMERAL
+
+    def test_server(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEWS_RECAP_PREFECT_MODE", "server")
+        assert resolve_prefect_mode() == PrefectMode.SERVER
+
+    def test_auto(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEWS_RECAP_PREFECT_MODE", "auto")
+        assert resolve_prefect_mode() == PrefectMode.AUTO
+
+    def test_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEWS_RECAP_PREFECT_MODE", "  SERVER  ")
+        assert resolve_prefect_mode() == PrefectMode.SERVER
+
+    def test_invalid_value_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEWS_RECAP_PREFECT_MODE", "cloud")
+        with pytest.raises(ValueError, match="Invalid NEWS_RECAP_PREFECT_MODE"):
+            resolve_prefect_mode()
+
+
+class TestConfigurePrefectRuntime:
+    def test_ephemeral_unsets_api_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PREFECT_API_URL", "http://localhost:4200/api")
+        result = configure_prefect_runtime(PrefectMode.EPHEMERAL)
+        assert result == PrefectMode.EPHEMERAL
+        assert "PREFECT_API_URL" not in environ
+
+    def test_server_requires_api_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PREFECT_API_URL", raising=False)
+        with pytest.raises(ValueError, match="requires PREFECT_API_URL"):
+            configure_prefect_runtime(PrefectMode.SERVER)
+
+    def test_server_fails_fast_when_unreachable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PREFECT_API_URL", "http://localhost:4200/api")
+        monkeypatch.setattr("news_recap.config._probe_prefect_server", lambda _: False)
+        with pytest.raises(RuntimeError, match="not reachable"):
+            configure_prefect_runtime(PrefectMode.SERVER)
+
+    def test_server_succeeds_when_reachable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PREFECT_API_URL", "http://localhost:4200/api")
+        monkeypatch.setattr("news_recap.config._probe_prefect_server", lambda _: True)
+        assert configure_prefect_runtime(PrefectMode.SERVER) == PrefectMode.SERVER
+
+    def test_auto_falls_back_to_ephemeral(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PREFECT_API_URL", "http://localhost:4200/api")
+        monkeypatch.setattr("news_recap.config._probe_prefect_server", lambda _: False)
+        result = configure_prefect_runtime(PrefectMode.AUTO)
+        assert result == PrefectMode.EPHEMERAL
+        assert "PREFECT_API_URL" not in environ
+
+    def test_auto_uses_server_when_reachable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PREFECT_API_URL", "http://localhost:4200/api")
+        monkeypatch.setattr("news_recap.config._probe_prefect_server", lambda _: True)
+        result = configure_prefect_runtime(PrefectMode.AUTO)
+        assert result == PrefectMode.SERVER
+
+    def test_auto_ephemeral_when_no_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PREFECT_API_URL", raising=False)
+        result = configure_prefect_runtime(PrefectMode.AUTO)
+        assert result == PrefectMode.EPHEMERAL
+
+
+class TestProbePrefectServer:
+    def test_returns_true_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import httpx
+
+        def _mock_get(url: str, *, timeout: float) -> httpx.Response:
+            assert url == "http://localhost:4200/api/health"
+            return httpx.Response(200)
+
+        monkeypatch.setattr("httpx.get", _mock_get)
+        assert _probe_prefect_server("http://localhost:4200/api") is True
+
+    def test_returns_false_on_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import httpx
+
+        def _mock_get(url: str, *, timeout: float) -> httpx.Response:
+            raise httpx.ConnectError("refused")
+
+        monkeypatch.setattr("httpx.get", _mock_get)
+        assert _probe_prefect_server("http://localhost:4200/api") is False
+
+    def test_returns_false_on_non_success_status(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import httpx
+
+        def _mock_get(url: str, *, timeout: float) -> httpx.Response:
+            return httpx.Response(503)
+
+        monkeypatch.setattr("httpx.get", _mock_get)
+        assert _probe_prefect_server("http://localhost:4200/api") is False
+
+    def test_strips_trailing_slash(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import httpx
+
+        def _mock_get(url: str, *, timeout: float) -> httpx.Response:
+            assert url == "http://localhost:4200/api/health"
+            return httpx.Response(200)
+
+        monkeypatch.setattr("httpx.get", _mock_get)
+        assert _probe_prefect_server("http://localhost:4200/api/") is True
