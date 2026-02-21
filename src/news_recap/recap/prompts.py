@@ -43,7 +43,8 @@ Write each verdict (one word: ok, enrich, or trash) to output/results/{{id}}_out
 Process every headline file.
 """
 
-RECAP_ENRICH_PROMPT = """\
+RECAP_ENRICH_PROMPT = (
+    """\
 You are processing news articles to prepare them for a digest.
 
 For each article file in the input resources directory:
@@ -54,9 +55,12 @@ For each article file in the input resources directory:
 
 Output format: write a JSON object with an "enriched" array to output_result_path.
 Each item must have: article_id, new_title, clean_text.
-""" + _FILE_IO_RULES
+"""
+    + _FILE_IO_RULES
+)
 
-RECAP_GROUP_PROMPT = """\
+RECAP_GROUP_PROMPT = (
+    """\
 You are grouping news articles into real-world events for a daily digest.
 
 Articles are provided in articles_index. Each article has: source_id, title, url, source.
@@ -74,9 +78,12 @@ Important: limit events to the most informative articles. For dominant events
 
 Output format: write a JSON object with an "events" array to output_result_path.
 Each event must have: event_id, title, significance, article_ids, topic_tags.
-""" + _FILE_IO_RULES
+"""
+    + _FILE_IO_RULES
+)
 
-RECAP_ENRICH_FULL_PROMPT = """\
+RECAP_ENRICH_FULL_PROMPT = (
+    """\
 You are enriching articles from significant news events with full-text content.
 
 For each article file in the input resources directory:
@@ -87,9 +94,12 @@ For each article file in the input resources directory:
 
 Output format: write a JSON object with an "enriched" array to output_result_path.
 Each item must have: article_id, new_title, clean_text.
-""" + _FILE_IO_RULES
+"""
+    + _FILE_IO_RULES
+)
 
-RECAP_SYNTHESIZE_PROMPT = """\
+RECAP_SYNTHESIZE_PROMPT = (
+    """\
 You are synthesizing news events from multiple source articles.
 
 For each event file in the input resources directory:
@@ -105,9 +115,12 @@ Each file must have: event_id, synthesis, summary, key_facts, sources_used.
 
 Also write a summary to output_result_path:
 {{"status": "completed", "processed": <number of events>}}
-""" + _FILE_IO_RULES
+"""
+    + _FILE_IO_RULES
+)
 
-RECAP_COMPOSE_PROMPT = """\
+RECAP_COMPOSE_PROMPT = (
+    """\
 You are composing the final daily news digest from synthesized events.
 
 For each event file in the input resources directory:
@@ -129,7 +142,9 @@ User preferences:
 Output format: write a JSON object with "theme_blocks" array to output_result_path.
 Each theme_block has: theme, recaps[]. Each recap has: headline, body, sources[].
 Also include a "meta" object with: total_events, total_themes, date.
-""" + _FILE_IO_RULES
+"""
+    + _FILE_IO_RULES
+)
 
 PROMPTS_BY_TASK_TYPE: dict[str, str] = {
     "recap_classify": RECAP_CLASSIFY_PROMPT,

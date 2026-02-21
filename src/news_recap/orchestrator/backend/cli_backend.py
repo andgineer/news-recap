@@ -228,7 +228,7 @@ def _build_run_args(
 
         rendered = stripped.format(
             model=model,
-            prompt_file=shlex.quote(str(prompt_file)),
+            prompt_file=shlex.quote(prompt_file.as_posix()),
         )
     except KeyError as error:
         raise BackendRunError(

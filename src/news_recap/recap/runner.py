@@ -59,7 +59,7 @@ class UserPreferences:
             parts.append(f"DISCARD these topics (always trash): {self.not_interesting}")
         if self.interesting:
             parts.append(
-                f"PRIORITY topics (user wants extra detail): {self.interesting}"
+                f"PRIORITY topics (user wants extra detail): {self.interesting}",
             )
         return "\n".join(parts) if parts else "no specific preferences"
 
@@ -308,7 +308,8 @@ class RecapPipelineRunner:
                 logger.warning("Recovered stale pipeline run %s", pipeline_id)
                 return
             raise RecapPipelineError(
-                "run", f"Another pipeline is already running: {pipeline_id}",
+                "run",
+                f"Another pipeline is already running: {pipeline_id}",
             )
         finally:
             conn.close()
@@ -352,7 +353,8 @@ class RecapPipelineRunner:
                 agent_override=agent_override,
             )
             kept_ids, enrich_ids = _parse_classify_out_files(
-                self._task_results_dir(tid), articles,
+                self._task_results_dir(tid),
+                articles,
             )
             kept_entries = [article_map[sid] for sid in kept_ids if sid in article_map]
             discarded = len(articles) - len(kept_ids)
@@ -363,9 +365,7 @@ class RecapPipelineRunner:
 
             # Step 2: load resources (non-LLM)
             self._persist_run_step(pipeline_id, "resource_load")
-            resource_entries = [
-                article_map[sid] for sid in enrich_ids if sid in article_map
-            ]
+            resource_entries = [article_map[sid] for sid in enrich_ids if sid in article_map]
             loaded_resources = self._load_resources(resource_entries)
             result.steps.append(
                 PipelineStepResult(
@@ -534,10 +534,12 @@ class RecapPipelineRunner:
         if step_name == "recap_classify":
             input_dir = self._workdir.root_dir / task_id / "input"
             input_dir.joinpath("_discard.txt").write_text(
-                preferences.not_interesting, "utf-8",
+                preferences.not_interesting,
+                "utf-8",
             )
             input_dir.joinpath("_priority.txt").write_text(
-                preferences.interesting, "utf-8",
+                preferences.interesting,
+                "utf-8",
             )
 
         task = self._repository.enqueue_task(
