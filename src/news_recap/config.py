@@ -29,7 +29,7 @@ class IngestionSettings:
 class DedupSettings:
     """Semantic deduplication settings."""
 
-    enabled: bool = True
+    enabled: bool = False
     threshold: float = 0.95
     model_name: str = "intfloat/multilingual-e5-small"
     allow_model_fallback: bool = False
@@ -152,7 +152,7 @@ class Settings:
                 article_retention_days=int(os.getenv("NEWS_RECAP_ARTICLE_RETENTION_DAYS", "30")),
             ),
             dedup=DedupSettings(
-                enabled=_env_bool("NEWS_RECAP_DEDUP_ENABLED", default=True),
+                enabled=_env_bool("NEWS_RECAP_DEDUP_ENABLED", default=False),
                 threshold=float(os.getenv("NEWS_RECAP_DEDUP_THRESHOLD", "0.95")),
                 model_name=os.getenv(
                     "NEWS_RECAP_DEDUP_MODEL_NAME",

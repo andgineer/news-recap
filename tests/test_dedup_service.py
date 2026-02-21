@@ -83,7 +83,8 @@ def test_dedup_uses_title_plus_clean_text_for_embedding_input(monkeypatch) -> No
     )
 
     service = DedupStageService(
-        repository=repo, dedup_settings=DedupSettings(model_name="hashing-test", threshold=0.95)
+        repository=repo,
+        dedup_settings=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.95),
     )
     counters = IngestionRunCounters()
     service.run(run_id="run-1", counters=counters)
@@ -120,7 +121,8 @@ def test_dedup_does_not_merge_when_clean_text_empty_but_titles_different(monkeyp
     )
 
     service = DedupStageService(
-        repository=repo, dedup_settings=DedupSettings(model_name="hashing-test", threshold=0.95)
+        repository=repo,
+        dedup_settings=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.95),
     )
     counters = IngestionRunCounters()
     service.run(run_id="run-1", counters=counters)
@@ -163,7 +165,8 @@ def test_dedup_still_merges_same_fact_with_title_and_text(monkeypatch) -> None:
     )
 
     service = DedupStageService(
-        repository=repo, dedup_settings=DedupSettings(model_name="hashing-test", threshold=0.95)
+        repository=repo,
+        dedup_settings=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.95),
     )
     counters = IngestionRunCounters()
     service.run(run_id="run-1", counters=counters)

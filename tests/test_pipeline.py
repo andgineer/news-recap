@@ -108,7 +108,7 @@ def _build_settings(db_path: Path) -> Settings:
     return Settings(
         db_path=db_path,
         ingestion=IngestionSettings(page_size=10, max_pages=5),
-        dedup=DedupSettings(model_name="hashing-test", threshold=0.9),
+        dedup=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.9),
         rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
     )
 
@@ -372,7 +372,7 @@ def test_pipeline_max_pages_zero_means_unlimited(tmp_path: Path) -> None:
     settings = Settings(
         db_path=db_path,
         ingestion=IngestionSettings(page_size=1, max_pages=0),
-        dedup=DedupSettings(model_name="hashing-test", threshold=0.9),
+        dedup=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.9),
         rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
     )
 
@@ -402,7 +402,7 @@ def test_pipeline_resumes_rss_processing_after_failure_without_refetch(tmp_path:
     settings = Settings(
         db_path=db_path,
         ingestion=IngestionSettings(page_size=2, max_pages=0),
-        dedup=DedupSettings(model_name="hashing-test", threshold=0.9),
+        dedup=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.9),
         rss=RssSettings(feed_urls=(feed_url,)),
     )
 
