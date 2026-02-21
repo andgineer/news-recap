@@ -46,7 +46,6 @@ from news_recap.orchestrator.output_fallback import (
     recover_output_contract_from_stdout,
 )
 from news_recap.orchestrator.pricing import estimate_cost_usd
-from news_recap.orchestrator.repair import decide_repair
 from news_recap.orchestrator.repository import OrchestratorRepository
 from news_recap.orchestrator.routing import (
     FrozenRouting,
@@ -476,11 +475,9 @@ class OrchestratorWorker:
         if execution_result.execution is None or execution_result.routing is None:
             raise RuntimeError("Execution result is incomplete for processing.")
 
-        manifest = loaded.manifest
         task_input = loaded.task_input
         execution = execution_result.execution
         routing = execution_result.routing
-        allowed_source_ids = loaded.allowed_source_ids
 
         if execution.timed_out:
             self._finalize_attempt(
@@ -575,7 +572,9 @@ class OrchestratorWorker:
                 summary.failed = 1
             return
 
-        validation_payload = _read_output_json(loaded.output_path)
+        validation_payload = _read_output_json(
+            str(loaded.output_path) if loaded.output_path else None,
+        )
         self._persist_success(
             task=task,
             execution=execution,
@@ -976,8 +975,6 @@ def _read_output_json(output_path: str | None) -> dict[str, object] | None:
     if not path.exists():
         return None
     try:
-        import json
-
         return json.loads(path.read_text("utf-8"))
     except (json.JSONDecodeError, OSError):
         return None

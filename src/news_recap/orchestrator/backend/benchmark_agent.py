@@ -19,7 +19,7 @@ from news_recap.orchestrator.contracts import (
 )
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
+def main(argv: list[str] | None = None) -> int:
     """Run deterministic benchmark behavior based on task metadata."""
 
     parser = argparse.ArgumentParser()
@@ -39,6 +39,21 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
     source_id = articles[0].source_id if articles else "article:missing"
 
     benchmark_case = str(task_input.metadata.get("benchmark_case", "success")).strip().lower()
+    return _dispatch_case(
+        benchmark_case=benchmark_case,
+        manifest=manifest,
+        source_id=source_id,
+        task_input=task_input,
+    )
+
+
+def _dispatch_case(  # noqa: PLR0911
+    *,
+    benchmark_case: str,
+    manifest,
+    source_id: str,
+    task_input,
+) -> int:
     repair_mode = os.getenv("NEWS_RECAP_REPAIR_MODE", "0") == "1"
     state = _load_state(Path(manifest.workdir))
 

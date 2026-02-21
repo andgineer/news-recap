@@ -928,9 +928,7 @@ class OutputFeedback(SQLModel, table=True):
 
 class RecapPipelineRun(SQLModel, table=True):
     __tablename__ = "recap_pipeline_runs"  # type: ignore[bad-override]
-    __table_args__ = (
-        Index("idx_recap_pipeline_runs_user_date", "user_id", "business_date"),
-    )
+    __table_args__ = (Index("idx_recap_pipeline_runs_user_date", "user_id", "business_date"),)
 
     pipeline_id: str = Field(primary_key=True)
     user_id: str = Field(
@@ -952,9 +950,7 @@ class RecapPipelineRun(SQLModel, table=True):
 
 class RecapPipelineTask(SQLModel, table=True):
     __tablename__ = "recap_pipeline_tasks"  # type: ignore[bad-override]
-    __table_args__ = (
-        Index("idx_recap_pipeline_tasks_pipeline", "pipeline_id"),
-    )
+    __table_args__ = (Index("idx_recap_pipeline_tasks_pipeline", "pipeline_id"),)
 
     id: int | None = Field(default=None, primary_key=True)
     pipeline_id: str = Field(

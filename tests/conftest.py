@@ -10,8 +10,7 @@ import pytest
 from news_recap.config import Settings
 
 _ECHO_AGENT_COMMAND_TEMPLATE = (
-    f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-    "--prompt-file {prompt_file}"
+    f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent --prompt-file {{prompt_file}}"
 )
 
 
@@ -22,7 +21,9 @@ def echo_agent(monkeypatch):
 
     def _patched_from_env(db_path=None):
         settings = original_from_env(db_path=db_path)
-        new_orch = replace(settings.orchestrator, codex_command_template=_ECHO_AGENT_COMMAND_TEMPLATE)
+        new_orch = replace(
+            settings.orchestrator, codex_command_template=_ECHO_AGENT_COMMAND_TEMPLATE
+        )
         return replace(settings, orchestrator=new_orch)
 
     monkeypatch.setattr(Settings, "from_env", staticmethod(_patched_from_env))

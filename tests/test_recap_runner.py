@@ -136,7 +136,9 @@ class TestArticlesNeedingFullText:
 
 class TestBuildEventPayloads:
     def test_merge_enriched_texts(self):
-        events = [{"event_id": "e1", "title": "Event", "article_ids": ["a1"], "significance": "high"}]
+        events = [
+            {"event_id": "e1", "title": "Event", "article_ids": ["a1"], "significance": "high"}
+        ]
         article_map = {
             "a1": ArticleIndexEntry(source_id="a1", title="T", url="u", source="s"),
         }

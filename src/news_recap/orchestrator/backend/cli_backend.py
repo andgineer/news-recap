@@ -156,13 +156,13 @@ def _build_v3_prompt(
     if manifest.input_resources_dir:
         parts.append(
             f"{step}. Read input files from input_resources_dir: {manifest.input_resources_dir}\n"
-            f"   Process all files in this directory."
+            f"   Process all files in this directory.",
         )
         step += 1
     else:
         parts.append(
             f"{step}. Read articles_index_path from the manifest — each article has a source_id,\n"
-            f"   title, url, and source. Use these as your source material."
+            f"   title, url, and source. Use these as your source material.",
         )
         step += 1
 
@@ -171,28 +171,27 @@ def _build_v3_prompt(
 
     if manifest.output_schema_hint:
         parts.append(
-            f"{step}. The output file must follow this JSON schema:\n"
-            f"{manifest.output_schema_hint}"
+            f"{step}. The output file must follow this JSON schema:\n{manifest.output_schema_hint}",
         )
         step += 1
     else:
         parts.append(
             f"{step}. The output file must follow this JSON schema exactly:\n"
-            f"{_OUTPUT_SCHEMA_EXAMPLE}"
+            f"{_OUTPUT_SCHEMA_EXAMPLE}",
         )
         step += 1
 
     if manifest.output_results_dir:
         parts.append(
             f"{step}. If the task produces per-item results, write them as individual JSON files\n"
-            f"   to output_results_dir: {manifest.output_results_dir}"
+            f"   to output_results_dir: {manifest.output_results_dir}",
         )
         step += 1
 
     parts.append("")
     parts.append("Do not search the web. Write only the output files.")
     parts.append(
-        "Read all input files listed above, analyse the data, and write the output."
+        "Read all input files listed above, analyse the data, and write the output.",
     )
 
     return "\n".join(parts)

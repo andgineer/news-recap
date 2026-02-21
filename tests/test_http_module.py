@@ -8,7 +8,9 @@ from news_recap.http.youtube_extractor import extract_video_id, is_youtube_url
 
 class TestHtmlExtractor:
     def test_extract_from_simple_html(self):
-        html = "<html><body><p>Hello world. This is a test article with enough text.</p></body></html>"
+        html = (
+            "<html><body><p>Hello world. This is a test article with enough text.</p></body></html>"
+        )
         result = extract_text(html)
         assert isinstance(result, ExtractionResult)
 
@@ -49,7 +51,9 @@ class TestYoutubeExtractor:
         assert not is_youtube_url("https://example.com/page")
 
     def test_extract_video_id_with_extra_params(self):
-        assert extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=120") == "dQw4w9WgXcQ"
+        assert (
+            extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=120") == "dQw4w9WgXcQ"
+        )
 
     def test_extract_video_id_empty_string(self):
         assert extract_video_id("") is None

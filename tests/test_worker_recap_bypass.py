@@ -110,9 +110,14 @@ class TestRecapCitationBypass:
         task = _make_task("recap_classify")
         summary = WorkerRunSummary()
 
-        with patch.object(
-            worker, "_build_output_citation_snapshots", side_effect=AssertionError("should not be called")
-        ), patch.object(worker, "_finalize_attempt"):
+        with (
+            patch.object(
+                worker,
+                "_build_output_citation_snapshots",
+                side_effect=AssertionError("should not be called"),
+            ),
+            patch.object(worker, "_finalize_attempt"),
+        ):
             worker._persist_success(
                 task=task,
                 execution=_make_execution(tmp_path),
@@ -128,7 +133,10 @@ class TestRecapCitationBypass:
         worker.repository.complete_task.assert_called_once()
         call_kwargs = worker.repository.complete_task.call_args
         assert call_kwargs.kwargs.get("citations") == [] or call_kwargs[1].get("citations") == []
-        assert call_kwargs.kwargs.get("user_output") is None or call_kwargs[1].get("user_output") is None
+        assert (
+            call_kwargs.kwargs.get("user_output") is None
+            or call_kwargs[1].get("user_output") is None
+        )
 
     def test_non_recap_task_builds_citation_snapshots(self, worker, tmp_path):
         """Standard tasks must call _build_output_citation_snapshots."""
@@ -137,9 +145,12 @@ class TestRecapCitationBypass:
         summary = WorkerRunSummary()
         mock_citations = [MagicMock()]
 
-        with patch.object(
-            worker, "_build_output_citation_snapshots", return_value=mock_citations
-        ) as mock_build, patch.object(worker, "_finalize_attempt"):
+        with (
+            patch.object(
+                worker, "_build_output_citation_snapshots", return_value=mock_citations
+            ) as mock_build,
+            patch.object(worker, "_finalize_attempt"),
+        ):
             worker._persist_success(
                 task=task,
                 execution=_make_execution(tmp_path),
@@ -157,13 +168,24 @@ class TestRecapCitationBypass:
     def test_recap_enrich_full_also_skips(self, worker, tmp_path):
         """All recap_ prefixed types should skip citation snapshots."""
 
-        for task_type in ("recap_enrich", "recap_group", "recap_enrich_full", "recap_synthesize", "recap_compose"):
+        for task_type in (
+            "recap_enrich",
+            "recap_group",
+            "recap_enrich_full",
+            "recap_synthesize",
+            "recap_compose",
+        ):
             task = _make_task(task_type)
             summary = WorkerRunSummary()
 
-            with patch.object(
-                worker, "_build_output_citation_snapshots", side_effect=AssertionError("should not be called")
-            ), patch.object(worker, "_finalize_attempt"):
+            with (
+                patch.object(
+                    worker,
+                    "_build_output_citation_snapshots",
+                    side_effect=AssertionError("should not be called"),
+                ),
+                patch.object(worker, "_finalize_attempt"),
+            ):
                 worker._persist_success(
                     task=task,
                     execution=_make_execution(tmp_path),

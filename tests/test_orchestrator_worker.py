@@ -153,9 +153,7 @@ sys.stderr.write("tokens used\\n12,345\\n")
 """.strip(),
         "utf-8",
     )
-    command_template = (
-        f"{sys.executable} {usage_agent} --prompt-file {{prompt_file}}"
-    )
+    command_template = f"{sys.executable} {usage_agent} --prompt-file {{prompt_file}}"
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -397,9 +395,7 @@ Path(manifest.output_result_path).write_text("{}", "utf-8")
 """.strip(),
         "utf-8",
     )
-    command_template = (
-        f"{sys.executable} {very_slow_agent} --prompt-file {{prompt_file}}"
-    )
+    command_template = f"{sys.executable} {very_slow_agent} --prompt-file {{prompt_file}}"
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -521,9 +517,7 @@ Path(manifest.output_result_path).write_text("{}", "utf-8")
 """.strip(),
         "utf-8",
     )
-    command_template = (
-        f"{sys.executable} {timeout_agent} --prompt-file {{prompt_file}}"
-    )
+    command_template = f"{sys.executable} {timeout_agent} --prompt-file {{prompt_file}}"
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -595,9 +589,7 @@ Path(manifest.output_result_path).write_text(
 """.strip(),
         "utf-8",
     )
-    command_template = (
-        f"{sys.executable} {transient_agent} --prompt-file {{prompt_file}}"
-    )
+    command_template = f"{sys.executable} {transient_agent} --prompt-file {{prompt_file}}"
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -766,9 +758,7 @@ def test_worker_manifest_native_mode_skips_stdout_recovery(tmp_path: Path) -> No
         "print('stdout recovery candidate')\n",
         "utf-8",
     )
-    command_template = (
-        f"{sys.executable} {broken_agent} --prompt-file {{prompt_file}}"
-    )
+    command_template = f"{sys.executable} {broken_agent} --prompt-file {{prompt_file}}"
     routing_defaults = _routing_defaults(command_template)
     service = OrchestratorService(
         repository=repository,

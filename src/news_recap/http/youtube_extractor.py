@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 _YT_VIDEO_ID_RE = re.compile(
     r"(?:youtube\.com/watch\?.*v=|youtu\.be/|youtube\.com/embed/)"
-    r"([a-zA-Z0-9_-]{11})"
+    r"([a-zA-Z0-9_-]{11})",
 )
 
 PREFERRED_LANGUAGES = ("ru", "en", "sr", "uk", "de", "fr")
@@ -73,7 +73,7 @@ def fetch_transcript(
             text = text[:max_chars].rstrip()
         return TranscriptResult(text=text, language=lang, is_success=True)
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("Primary transcript fetch failed for %s, trying fallback", video_id)
 
     try:
         transcript_list = api.list(video_id)
@@ -89,6 +89,11 @@ def fetch_transcript(
                     is_success=True,
                 )
             except Exception:  # noqa: BLE001
+                logger.debug(
+                    "Transcript variant %s failed for %s",
+                    transcript.language_code,
+                    video_id,
+                )
                 continue
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to get any transcript for %s: %s", video_id, exc)

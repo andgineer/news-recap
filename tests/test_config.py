@@ -178,7 +178,6 @@ def test_from_env_rejects_non_positive_sqlite_busy_timeout(
         Settings.from_env()
 
 
-
 def test_from_env_rejects_empty_worker_id(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKER_ID", "   ")
     with pytest.raises(ValueError, match="WORKER_ID"):
