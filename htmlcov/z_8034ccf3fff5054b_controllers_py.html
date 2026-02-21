@@ -60,12 +60,12 @@
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
-            <a id="prevFileLink" class="nav" href="z_2afce437fb617e57_worker_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a id="prevFileLink" class="nav" href="z_645c1912a5c99612_main_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_8034ccf3fff5054b_prefect_flow_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-21 10:37 +0000
+            created at 2026-02-21 12:42 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -95,7 +95,7 @@
     <p class="run"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t"><span class="key">from</span> <span class="nam">pathlib</span> <span class="key">import</span> <span class="nam">Path</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">config</span> <span class="key">import</span> <span class="nam">Settings</span><span class="op">,</span> <span class="nam">configure_prefect_runtime</span><span class="op">,</span> <span class="nam">resolve_prefect_mode</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">orchestrator</span><span class="op">.</span><span class="nam">repository</span> <span class="key">import</span> <span class="nam">OrchestratorRepository</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">ingestion</span><span class="op">.</span><span class="nam">repository</span> <span class="key">import</span> <span class="nam">SQLiteRepository</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">prefect_flow</span> <span class="key">import</span> <span class="nam">recap_flow</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">resource_loader</span> <span class="key">import</span> <span class="nam">ResourceLoader</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">runner</span> <span class="key">import</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -211,8 +211,8 @@
     <p class="pln"><span class="n"><a id="t129" href="#t129">129</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t130" href="#t130">130</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t131" href="#t131">131</a></span><span class="t"><span class="op">@</span><span class="nam">contextmanager</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t132" href="#t132">132</a></span><span class="t"><span class="key">def</span> <span class="nam">_repository</span><span class="op">(</span><span class="nam">settings</span><span class="op">:</span> <span class="nam">Settings</span><span class="op">)</span> <span class="op">-></span> <span class="nam">Iterator</span><span class="op">[</span><span class="nam">OrchestratorRepository</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t133" href="#t133">133</a></span><span class="t">    <span class="nam">repository</span> <span class="op">=</span> <span class="nam">OrchestratorRepository</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t132" href="#t132">132</a></span><span class="t"><span class="key">def</span> <span class="nam">_repository</span><span class="op">(</span><span class="nam">settings</span><span class="op">:</span> <span class="nam">Settings</span><span class="op">)</span> <span class="op">-></span> <span class="nam">Iterator</span><span class="op">[</span><span class="nam">SQLiteRepository</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t133" href="#t133">133</a></span><span class="t">    <span class="nam">repository</span> <span class="op">=</span> <span class="nam">SQLiteRepository</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t134" href="#t134">134</a></span><span class="t">        <span class="nam">db_path</span><span class="op">=</span><span class="nam">settings</span><span class="op">.</span><span class="nam">db_path</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t135" href="#t135">135</a></span><span class="t">        <span class="nam">user_id</span><span class="op">=</span><span class="nam">settings</span><span class="op">.</span><span class="nam">user_context</span><span class="op">.</span><span class="nam">user_id</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t136" href="#t136">136</a></span><span class="t">        <span class="nam">user_name</span><span class="op">=</span><span class="nam">settings</span><span class="op">.</span><span class="nam">user_context</span><span class="op">.</span><span class="nam">user_name</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -227,12 +227,12 @@
 <footer>
     <div class="content">
         <p>
-            <a class="nav" href="z_2afce437fb617e57_worker_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a class="nav" href="z_645c1912a5c99612_main_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_8034ccf3fff5054b_prefect_flow_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-21 10:37 +0000
+            created at 2026-02-21 12:42 +0000
         </p>
     </div>
 </footer>

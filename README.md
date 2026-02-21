@@ -5,6 +5,19 @@
 | Name                                                     |    Stmts |     Miss |   Cover |   Missing |
 |--------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
+| src/news\_recap/agent\_runtime.py                        |       73 |       22 |     70% |37, 40-41, 46, 126, 128, 156-185 |
+| src/news\_recap/brain/backend/base.py                    |       24 |        0 |    100% |           |
+| src/news\_recap/brain/backend/benchmark\_agent.py        |       88 |       88 |      0% |     3-149 |
+| src/news\_recap/brain/backend/cli\_backend.py            |      165 |       62 |     62% |24-25, 77-83, 111, 114, 146-197, 209, 222, 233-234, 241, 261-262, 281, 283, 287, 290, 301-302, 304, 350-351, 359-363, 374-385 |
+| src/news\_recap/brain/backend/echo\_agent.py             |       24 |       24 |      0% |      3-48 |
+| src/news\_recap/brain/contracts.py                       |      116 |       35 |     70% |80, 98, 100, 102, 115-148, 154, 173, 177, 191, 207-208 |
+| src/news\_recap/brain/flows.py                           |      390 |       99 |     75% |183-193, 208-210, 251, 293-354, 362-373, 380-389, 392-435, 478-490, 495-508, 514-519, 635-638, 691-694, 785, 807, 811, 836-837, 865, 869-872, 874-886, 934, 968, 1075 |
+| src/news\_recap/brain/models.py                          |      127 |        0 |    100% |           |
+| src/news\_recap/brain/pricing.py                         |       51 |        5 |     90% |41, 76, 79, 84-85 |
+| src/news\_recap/brain/routing.py                         |      104 |       25 |     76% |58-88, 123, 128, 153, 188, 190, 193, 195, 198, 200, 202, 204, 206, 235 |
+| src/news\_recap/brain/sanitization.py                    |       16 |        2 |     88% |    44, 52 |
+| src/news\_recap/brain/usage.py                           |       91 |       29 |     68% |38, 42, 63-66, 89-91, 95-96, 100-101, 105-107, 109, 114-121, 135-141 |
+| src/news\_recap/brain/workdir.py                         |       55 |        0 |    100% |           |
 | src/news\_recap/config.py                                |      293 |       42 |     86% |248, 250, 252, 258, 266, 268, 288, 301, 303, 305, 307, 311, 313, 315, 317, 319, 321, 323, 353, 360, 376, 378, 388-389, 393, 409, 424, 426, 434, 444, 456, 458, 477-482, 488, 498, 505, 512 |
 | src/news\_recap/http/fetcher.py                          |       42 |       20 |     52% |42-48, 58-81, 91, 94, 97 |
 | src/news\_recap/http/html\_extractor.py                  |       29 |        9 |     69% |47-49, 52-62, 69 |
@@ -17,7 +30,7 @@
 | src/news\_recap/ingestion/language.py                    |       23 |        2 |     91% |    21, 35 |
 | src/news\_recap/ingestion/models.py                      |      161 |        0 |    100% |           |
 | src/news\_recap/ingestion/pipeline.py                    |       39 |        0 |    100% |           |
-| src/news\_recap/ingestion/repository.py                  |      487 |       59 |     88% |115, 144, 184, 209, 239, 255-260, 278, 307-317, 441, 464-466, 530-534, 602, 640, 746-748, 796, 827, 855, 878-881, 953-960, 1014-1034, 1265-1267, 1295, 1378 |
+| src/news\_recap/ingestion/repository.py                  |      748 |      133 |     82% |140, 169, 209, 234, 264, 280-285, 303, 332-342, 466, 489-491, 555-559, 627, 665, 771-773, 821, 852, 880, 903-906, 978-985, 1039-1059, 1227, 1249, 1308-1313, 1468-1476, 1483-1512, 1521-1530, 1560-1577, 1598, 1601, 1658-1673, 1703-1704, 1706, 1717-1779, 1798, 1807, 1834, 1882-1891, 2032-2034, 2062, 2145, 2179, 2197-2198, 2219-2220, 2225-2226, 2258, 2261 |
 | src/news\_recap/ingestion/services/dedup\_service.py     |       53 |        4 |     92% |30, 99-101 |
 | src/news\_recap/ingestion/services/fetch\_service.py     |       65 |        2 |     97% |   79, 120 |
 | src/news\_recap/ingestion/services/normalize\_service.py |       14 |        0 |    100% |           |
@@ -25,36 +38,15 @@
 | src/news\_recap/ingestion/sources/rss.py                 |      424 |      116 |     73% |45, 56, 70, 81, 91, 100, 199, 324, 338, 351, 375-380, 401, 403, 414-454, 464-471, 480-503, 514-515, 521-522, 530-543, 594-632, 636-650, 660-662, 673-678, 682-685, 725, 730, 734, 753-754, 764, 772 |
 | src/news\_recap/ingestion/storage/alembic\_runner.py     |       12 |        0 |    100% |           |
 | src/news\_recap/ingestion/storage/common.py              |       36 |        8 |     78% |24-27, 33-36 |
-| src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      342 |        0 |    100% |           |
-| src/news\_recap/main.py                                  |      294 |       11 |     96% |742, 758, 929, 1099, 1148, 1174, 1239, 1362, 1404, 1434, 1510 |
-| src/news\_recap/orchestrator/backend/base.py             |       24 |        0 |    100% |           |
-| src/news\_recap/orchestrator/backend/benchmark\_agent.py |       88 |       88 |      0% |     3-149 |
-| src/news\_recap/orchestrator/backend/cli\_backend.py     |      165 |       51 |     69% |24-25, 77-83, 111, 114, 146-197, 209, 222, 233-234, 241, 261-262, 281, 283, 287, 290, 301-302, 304, 376-377, 380-385 |
-| src/news\_recap/orchestrator/backend/echo\_agent.py      |       24 |       24 |      0% |      3-48 |
-| src/news\_recap/orchestrator/contracts.py                |      116 |       17 |     85% |80, 98, 100, 102, 118, 123, 130, 132, 134, 136, 138, 154, 173, 177, 191, 207-208 |
-| src/news\_recap/orchestrator/controllers.py              |      309 |       27 |     91% |387, 420-423, 426-429, 437-440, 459, 490, 511, 588-591, 637-638, 646, 655, 720, 736, 754 |
-| src/news\_recap/orchestrator/failure\_classifier.py      |       42 |        2 |     95% |  100, 127 |
-| src/news\_recap/orchestrator/intelligence.py             |      335 |       88 |     74% |168-178, 193-195, 237, 310-400, 407-418, 425-434, 437-487, 538-550, 555-568, 574-579, 637, 641-644, 646-658, 706, 735, 822 |
-| src/news\_recap/orchestrator/metrics.py                  |      236 |       60 |     75% |42-44, 98-102, 128-131, 149-157, 162, 166-168, 173, 227, 229, 231-233, 304-306, 316, 333, 352, 382, 460, 467-468, 475-476, 485, 499, 505, 509-515, 527, 539-543, 549, 557 |
-| src/news\_recap/orchestrator/models.py                   |      293 |        0 |    100% |           |
-| src/news\_recap/orchestrator/output\_fallback.py         |       89 |       28 |     69% |24, 32-38, 55, 63-67, 76, 87, 90, 95, 98, 105, 107, 111, 115, 119, 127, 132-134 |
-| src/news\_recap/orchestrator/pricing.py                  |       51 |        5 |     90% |41, 76, 79, 84-85 |
-| src/news\_recap/orchestrator/repair.py                   |       14 |       14 |      0% |      3-39 |
-| src/news\_recap/orchestrator/repository.py               |      635 |      116 |     82% |214-215, 240, 271, 280, 302, 324-338, 358-359, 480, 606, 629, 697, 815, 830, 925, 928, 930, 1020, 1022, 1024, 1026, 1045, 1047, 1069, 1140, 1162, 1204-1209, 1239-1268, 1277-1286, 1416-1424, 1452-1469, 1490, 1493, 1548-1563, 1593-1594, 1596, 1605-1667, 1700, 1776, 1785, 1812, 1828, 1862-1871, 1897-1905, 1967, 2033-2034, 2086, 2104-2105, 2126-2127, 2132-2133, 2165, 2168 |
-| src/news\_recap/orchestrator/routing.py                  |      104 |       16 |     85% |65, 83, 85, 123, 128, 153, 188, 190, 193, 195, 198, 200, 202, 204, 206, 235 |
-| src/news\_recap/orchestrator/sanitization.py             |       16 |        1 |     94% |        52 |
-| src/news\_recap/orchestrator/services.py                 |       49 |        0 |    100% |           |
-| src/news\_recap/orchestrator/smoke.py                    |      111 |       41 |     63% |72-89, 92-105, 146-149, 156, 176-192, 208, 211, 220-223, 228, 230, 240-255, 262 |
-| src/news\_recap/orchestrator/usage.py                    |       91 |        3 |     97% |137, 140-141 |
-| src/news\_recap/orchestrator/workdir.py                  |       55 |        0 |    100% |           |
-| src/news\_recap/orchestrator/worker.py                   |      493 |      107 |     78% |148-149, 178-180, 188-194, 227, 229, 243-244, 250, 255, 260, 271-272, 291, 318-330, 346, 386-392, 424-463, 474, 476, 557-558, 561-573, 677-679, 684-685, 691-695, 715, 717, 737, 739, 788-806, 894, 899, 903, 973, 976, 986, 989, 994-996, 1008-1017, 1028, 1031, 1035, 1044, 1047, 1049, 1052-1053, 1059, 1069, 1072, 1074, 1090, 1116, 1123-1126, 1134, 1191, 1196 |
+| src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      250 |        0 |    100% |           |
+| src/news\_recap/main.py                                  |      194 |        9 |     95% |367, 537, 586, 612, 677, 800, 842, 872, 948 |
 | src/news\_recap/recap/controllers.py                     |       86 |       59 |     31% |45-106, 110-128, 133-143 |
-| src/news\_recap/recap/prefect\_flow.py                   |      164 |      115 |     30% |62-68, 72, 98-158, 169-201, 228, 240, 243, 254-278, 289-314, 324-331, 352-403 |
+| src/news\_recap/recap/prefect\_flow.py                   |      133 |       88 |     34% |78-138, 165, 177, 180, 191-214, 225-249, 259-266, 287-338 |
 | src/news\_recap/recap/prompts.py                         |        9 |        0 |    100% |           |
 | src/news\_recap/recap/resource\_loader.py                |       43 |       21 |     51% |39-41, 46-48, 51-59, 68-90, 99-100, 103, 106 |
 | src/news\_recap/recap/runner.py                          |      124 |       16 |     87% |42-49, 78-79, 88, 109-113, 227, 265 |
 | src/news\_recap/recap/schemas.py                         |        8 |        0 |    100% |           |
-| **TOTAL**                                                | **6587** | **1270** | **81%** |           |
+| **TOTAL**                                                | **4609** | **1018** | **78%** |           |
 
 
 ## Setup coverage badge
