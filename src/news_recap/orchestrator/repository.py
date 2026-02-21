@@ -1127,6 +1127,7 @@ class OrchestratorRepository:
                         url=article.url,
                         source=article.source_domain,
                         published_at=_to_utc_aware_datetime(article.published_at),
+                        clean_text=article.clean_text or "",
                     )
                     for article, _user_link in rows
                 ]
@@ -1170,6 +1171,7 @@ class OrchestratorRepository:
                         url=article.url,
                         source=article.source_domain,
                         published_at=_to_utc_aware_datetime(article.published_at),
+                        clean_text=article.clean_text or "",
                     ),
                 )
             return resolved

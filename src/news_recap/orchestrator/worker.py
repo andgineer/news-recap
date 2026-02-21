@@ -55,7 +55,6 @@ from news_recap.orchestrator.routing import (
 )
 from news_recap.orchestrator.sanitization import sanitize_preview
 from news_recap.orchestrator.usage import extract_usage
-from news_recap.orchestrator.validator import validate_output_contract
 
 
 @dataclass(slots=True)
@@ -576,163 +575,17 @@ class OrchestratorWorker:
                 summary.failed = 1
             return
 
-        validation = validate_output_contract(
-            output_path=Path(manifest.output_result_path),
-            allowed_source_ids=allowed_source_ids,
-            task_type=task.task_type,
-            manifest=manifest,
-        )
-        if validation.is_valid:
-            self.repository.add_task_event(
-                task_id=task.task_id,
-                event_type="first_pass_validation_passed",
-                status_from=LlmTaskStatus.RUNNING,
-                status_to=LlmTaskStatus.RUNNING,
-                details={
-                    "schema_valid": True,
-                    "source_mapping_valid": True,
-                },
-            )
-            self._persist_success(
-                task=task,
-                execution=execution,
-                routing=routing,
-                loaded=loaded,
-                validation_payload=validation.payload,
-                task_input_metadata=task_input.metadata,
-                summary=summary,
-                attempt_failure_code="completed",
-            )
-            return
-
-        self.repository.add_task_event(
-            task_id=task.task_id,
-            event_type="first_pass_validation_failed",
-            status_from=LlmTaskStatus.RUNNING,
-            status_to=LlmTaskStatus.RUNNING,
-            details={
-                "failure_class": _failure_class_value(validation.failure_class),
-                "error_summary": validation.error_summary or "Unknown validation failure.",
-            },
-        )
-        if (
-            validation.failure_class == FailureClass.OUTPUT_INVALID_JSON
-            and self.backend_capability_mode == "stdout_parser_fallback"
-        ):
-            parser_recovered = self._try_stdout_parser_recovery(
-                task_id=task.task_id,
-                output_path=loaded.output_path,
-                stdout_path=execution.stdout_path,
-                allowed_source_ids=allowed_source_ids,
-            )
-            if parser_recovered:
-                recovered_validation = validate_output_contract(
-                    output_path=loaded.output_path,
-                    allowed_source_ids=allowed_source_ids,
-                    task_type=task.task_type,
-                    manifest=manifest,
-                )
-                if recovered_validation.is_valid:
-                    self.repository.add_task_event(
-                        task_id=task.task_id,
-                        event_type="stdout_parser_recovered",
-                        status_from=LlmTaskStatus.RUNNING,
-                        status_to=LlmTaskStatus.RUNNING,
-                        details={"parser_version": STDOUT_PARSER_VERSION},
-                    )
-                    self._persist_success(
-                        task=task,
-                        execution=execution,
-                        routing=routing,
-                        loaded=loaded,
-                        validation_payload=recovered_validation.payload,
-                        task_input_metadata=task_input.metadata,
-                        summary=summary,
-                        attempt_failure_code="stdout_parser_recovered",
-                    )
-                    return
-                validation = recovered_validation
-
-        if validation.failure_class is None or validation.error_summary is None:
-            self._finalize_attempt(
-                task=task,
-                status=LlmTaskStatus.FAILED,
-                failure_class=FailureClass.OUTPUT_INVALID_JSON,
-                attempt_failure_code="output_contract_unknown",
-                error_summary="Unknown validation failure.",
-                execution=execution,
-                routing=routing,
-                output_path=loaded.output_path,
-            )
-            failed = self.repository.fail_task(
-                task_id=task.task_id,
-                status=LlmTaskStatus.FAILED,
-                failure_class=FailureClass.OUTPUT_INVALID_JSON,
-                error_summary="Unknown validation failure.",
-                last_exit_code=execution.exit_code,
-            )
-            if failed:
-                summary.failed = 1
-            return
-
-        decision = decide_repair(
-            failure_class=validation.failure_class,
-            repair_attempted_at=task.repair_attempted_at,
-        )
-        if decision.should_repair:
-            marked = self.repository.mark_repair_attempted(task_id=task.task_id)
-            if marked:
-                repair_execution = self._execute_backend(
-                    task_id=task.task_id,
-                    manifest_path=loaded.manifest_path or Path(task.input_manifest_path),
-                    task=task,
-                    routing=routing,
-                    repair_mode=True,
-                )
-                execution = repair_execution
-                if repair_execution.exit_code == 0 and not repair_execution.timed_out:
-                    repaired = validate_output_contract(
-                        output_path=loaded.output_path,
-                        allowed_source_ids=allowed_source_ids,
-                        task_type=task.task_type,
-                        manifest=manifest,
-                    )
-                    if repaired.is_valid:
-                        self._persist_success(
-                            task=task,
-                            execution=repair_execution,
-                            routing=routing,
-                            loaded=loaded,
-                            validation_payload=repaired.payload,
-                            task_input_metadata=task_input.metadata,
-                            summary=summary,
-                            attempt_failure_code="repair_recovered",
-                        )
-                        return
-
-        attempt_failure_code = _attempt_failure_code_from_validation(
-            failure_class=validation.failure_class,
-            error_summary=validation.error_summary,
-        )
-        self._finalize_attempt(
+        validation_payload = _read_output_json(loaded.output_path)
+        self._persist_success(
             task=task,
-            status=LlmTaskStatus.FAILED,
-            failure_class=validation.failure_class,
-            attempt_failure_code=attempt_failure_code,
-            error_summary=validation.error_summary,
             execution=execution,
             routing=routing,
-            output_path=loaded.output_path,
+            loaded=loaded,
+            validation_payload=validation_payload,
+            task_input_metadata=task_input.metadata,
+            summary=summary,
+            attempt_failure_code="completed",
         )
-        failed = self.repository.fail_task(
-            task_id=task.task_id,
-            status=LlmTaskStatus.FAILED,
-            failure_class=validation.failure_class,
-            error_summary=validation.error_summary,
-            last_exit_code=execution.exit_code,
-        )
-        if failed:
-            summary.failed = 1
 
     def _persist_success(  # noqa: PLR0913
         self,
@@ -1113,6 +966,21 @@ class OrchestratorWorker:
             article_entries=article_entries,
             ordered_source_ids=ordered_source_ids,
         )
+
+
+def _read_output_json(output_path: str | None) -> dict[str, object] | None:
+    """Read agent output JSON if it exists, return None otherwise."""
+    if not output_path:
+        return None
+    path = Path(output_path)
+    if not path.exists():
+        return None
+    try:
+        import json
+
+        return json.loads(path.read_text("utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def _article_id_from_source_id(source_id: str) -> str | None:

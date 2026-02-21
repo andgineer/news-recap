@@ -48,7 +48,7 @@ def _make_routing() -> FrozenRouting:
         agent="codex",
         profile="fast",
         model="gpt-5-codex-mini",
-        command_template="codex exec {prompt}",
+        command_template='codex exec "Read your task from {prompt_file}"',
         resolved_at="2026-01-01T00:00:00Z",
         resolved_by="test",
     )

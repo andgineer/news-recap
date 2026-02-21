@@ -65,7 +65,7 @@ def test_highlights_flow_persists_business_output(tmp_path: Path, monkeypatch) -
         "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
         (
             f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--task-manifest {task_manifest} {prompt}"
+            "--prompt-file {prompt_file}"
         ),
     )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
@@ -150,7 +150,7 @@ def test_qa_is_append_only_by_request_id(tmp_path: Path, monkeypatch) -> None:
         "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
         (
             f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--task-manifest {task_manifest} {prompt}"
+            "--prompt-file {prompt_file}"
         ),
     )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
@@ -230,7 +230,7 @@ def test_qa_retrieval_policy_uses_source_id_asc_tiebreak(
         "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
         (
             f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--task-manifest {task_manifest} {prompt}"
+            "--prompt-file {prompt_file}"
         ),
     )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))

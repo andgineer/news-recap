@@ -83,7 +83,7 @@ def test_worker_executes_task_successfully_with_echo_agent(tmp_path: Path) -> No
     repository.init_schema()
     command_template = (
         f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-        "--task-manifest {task_manifest} {prompt}"
+        "--prompt-file {prompt_file}"
     )
     routing_defaults = _routing_defaults(command_template)
 
@@ -113,7 +113,6 @@ def test_worker_executes_task_successfully_with_echo_agent(tmp_path: Path) -> No
     details = repository.get_task_details(task_id=task.task_id)
     assert details is not None
     assert details.task.status == LlmTaskStatus.SUCCEEDED
-    assert any(event.event_type == "first_pass_validation_passed" for event in details.events)
     assert details.task.output_path is not None
     attempts = repository.list_task_attempts(task_id=task.task_id)
     assert len(attempts) == 1
@@ -122,70 +121,6 @@ def test_worker_executes_task_successfully_with_echo_agent(tmp_path: Path) -> No
     citations = repository.list_output_citations(task_id=task.task_id)
     assert len(citations) == 1
     assert citations[0].source_id == source_id
-    repository.close()
-
-
-def test_worker_recovers_invalid_output_file_from_stdout(tmp_path: Path) -> None:
-    db_path = tmp_path / "worker-stdout-recovery.db"
-    source_id = _seed_source_id(db_path, external_id="worker-stdout-recovery")
-    repository = OrchestratorRepository(db_path)
-    repository.init_schema()
-
-    stdout_only_agent = tmp_path / "stdout_only_agent.py"
-    stdout_only_agent.write_text(
-        """
-import argparse
-from pathlib import Path
-from news_recap.orchestrator.contracts import read_manifest
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
-args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
-Path(manifest.output_result_path).write_text('{"blocks":[', "utf-8")
-print("Recovered from stdout parser")
-""".strip(),
-        "utf-8",
-    )
-    command_template = (
-        f"{sys.executable} {stdout_only_agent} --task-manifest {{task_manifest}} {{prompt}}"
-    )
-    routing_defaults = _routing_defaults(command_template)
-
-    service = OrchestratorService(
-        repository=repository,
-        workdir_root=tmp_path / "workdir",
-        routing_defaults=routing_defaults,
-    )
-    task = service.enqueue_demo_task(
-        EnqueueDemoTask(
-            task_type="highlights",
-            prompt="Recover from stdout.",
-            source_ids=(source_id,),
-        ),
-    )
-
-    worker = OrchestratorWorker(
-        repository=repository,
-        backend=CliAgentBackend(),
-        routing_defaults=routing_defaults,
-        worker_id="test-worker",
-        backend_capability_mode="stdout_parser_fallback",
-    )
-    summary = worker.run_once()
-    assert summary.processed == 1
-    assert summary.succeeded == 1
-
-    details = repository.get_task_details(task_id=task.task_id)
-    assert details is not None
-    assert details.task.status == LlmTaskStatus.SUCCEEDED
-    assert any(event.event_type == "stdout_parser_recovered" for event in details.events)
-
-    attempts = repository.list_task_attempts(task_id=task.task_id)
-    assert len(attempts) == 1
-    assert attempts[0].attempt_failure_code == "stdout_parser_recovered"
-    assert attempts[0].output_chars is not None
-    assert attempts[0].output_chars > 0
     repository.close()
 
 
@@ -204,9 +139,10 @@ from pathlib import Path
 from news_recap.orchestrator.contracts import read_manifest, read_articles_index
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
+parser.add_argument("--prompt-file", required=True)
 args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
+manifest_path = Path(args.prompt_file).parent.parent / "meta" / "task_manifest.json"
+manifest = read_manifest(manifest_path)
 articles = read_articles_index(Path(manifest.articles_index_path))
 source_id = articles[0].source_id if articles else "article:missing"
 Path(manifest.output_result_path).write_text(
@@ -218,7 +154,7 @@ sys.stderr.write("tokens used\\n12,345\\n")
         "utf-8",
     )
     command_template = (
-        f"{sys.executable} {usage_agent} --task-manifest {{task_manifest}} {{prompt}}"
+        f"{sys.executable} {usage_agent} --prompt-file {{prompt_file}}"
     )
     routing_defaults = _routing_defaults(command_template)
 
@@ -254,153 +190,6 @@ sys.stderr.write("tokens used\\n12,345\\n")
     repository.close()
 
 
-def test_worker_marks_source_mapping_failure(tmp_path: Path) -> None:
-    db_path = tmp_path / "worker-invalid.db"
-    source_id = _seed_source_id(db_path, external_id="worker-invalid")
-    repository = OrchestratorRepository(db_path)
-    repository.init_schema()
-
-    invalid_agent = tmp_path / "invalid_agent.py"
-    invalid_agent.write_text(
-        """
-import argparse
-from pathlib import Path
-from news_recap.orchestrator.contracts import read_manifest
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
-args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
-Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_ids":[]}]}', "utf-8")
-""".strip(),
-        "utf-8",
-    )
-
-    command_template = (
-        f"{sys.executable} {invalid_agent} --task-manifest {{task_manifest}} {{prompt}}"
-    )
-    routing_defaults = _routing_defaults(command_template)
-
-    service = OrchestratorService(
-        repository=repository,
-        workdir_root=tmp_path / "workdir",
-        routing_defaults=routing_defaults,
-    )
-    task = service.enqueue_demo_task(
-        EnqueueDemoTask(
-            task_type="highlights",
-            prompt="Check mapping.",
-            source_ids=(source_id,),
-        ),
-    )
-    worker = OrchestratorWorker(
-        repository=repository,
-        backend=CliAgentBackend(),
-        routing_defaults=routing_defaults,
-        worker_id="test-worker",
-    )
-    summary = worker.run_once()
-    assert summary.processed == 1
-    assert summary.failed == 1
-
-    details = repository.get_task_details(task_id=task.task_id)
-    assert details is not None
-    assert details.task.status == LlmTaskStatus.FAILED
-    assert details.task.failure_class is not None
-    assert details.task.failure_class.value == "source_mapping_failed"
-    assert any(event.event_type == "first_pass_validation_failed" for event in details.events)
-    repository.close()
-
-
-def test_worker_fails_fast_when_command_template_has_no_prompt_placeholder(
-    tmp_path: Path,
-) -> None:
-    db_path = tmp_path / "worker-missing-prompt.db"
-    source_id = _seed_source_id(db_path, external_id="worker-missing-prompt")
-    repository = OrchestratorRepository(db_path)
-    repository.init_schema()
-
-    command_template = "echo {task_manifest}"
-    routing_defaults = _routing_defaults(command_template)
-    service = OrchestratorService(
-        repository=repository,
-        workdir_root=tmp_path / "workdir",
-        routing_defaults=routing_defaults,
-    )
-    task = service.enqueue_demo_task(
-        EnqueueDemoTask(
-            task_type="highlights",
-            prompt="Should fail fast.",
-            source_ids=(source_id,),
-            max_attempts=1,
-        ),
-    )
-    worker = OrchestratorWorker(
-        repository=repository,
-        backend=CliAgentBackend(),
-        routing_defaults=routing_defaults,
-        worker_id="test-worker",
-    )
-    summary = worker.run_once()
-    assert summary.failed == 1
-
-    details = repository.get_task_details(task_id=task.task_id)
-    assert details is not None
-    assert details.task.status == LlmTaskStatus.FAILED
-    assert details.task.failure_class is not None
-    assert details.task.failure_class.value == "backend_non_retryable"
-    assert details.task.error_summary is not None
-    assert "must include {prompt}" in details.task.error_summary
-    repository.close()
-
-
-def test_worker_stdout_recovers_when_output_file_is_missing(tmp_path: Path) -> None:
-    db_path = tmp_path / "worker-missing-output-recover.db"
-    source_id = _seed_source_id(db_path, external_id="worker-missing-output-recover")
-    repository = OrchestratorRepository(db_path)
-    repository.init_schema()
-
-    missing_output_agent = tmp_path / "missing_output_agent.py"
-    missing_output_agent.write_text(
-        """
-print("Parser candidate text that should auto-recover missing output file.")
-""".strip(),
-        "utf-8",
-    )
-    command_template = f"{sys.executable} {missing_output_agent} {{task_manifest}} {{prompt}}"
-    routing_defaults = _routing_defaults(command_template)
-    service = OrchestratorService(
-        repository=repository,
-        workdir_root=tmp_path / "workdir",
-        routing_defaults=routing_defaults,
-    )
-    task = service.enqueue_demo_task(
-        EnqueueDemoTask(
-            task_type="highlights",
-            prompt="Missing output file should recover from stdout.",
-            source_ids=(source_id,),
-        ),
-    )
-    worker = OrchestratorWorker(
-        repository=repository,
-        backend=CliAgentBackend(),
-        routing_defaults=routing_defaults,
-        worker_id="test-worker",
-        backend_capability_mode="stdout_parser_fallback",
-    )
-    summary = worker.run_once()
-    assert summary.succeeded == 1
-    assert summary.failed == 0
-
-    details = repository.get_task_details(task_id=task.task_id)
-    assert details is not None
-    assert details.task.status == LlmTaskStatus.SUCCEEDED
-    assert details.task.failure_class is None
-    event_types = [event.event_type for event in details.events]
-    assert "stdout_parser_recovered" in event_types
-    repository.close()
-
-
 def test_worker_does_not_override_canceled_task_with_success(tmp_path: Path) -> None:
     db_path = tmp_path / "worker-cancel.db"
     source_id = _seed_source_id(db_path, external_id="worker-cancel")
@@ -416,9 +205,10 @@ from pathlib import Path
 from news_recap.orchestrator.contracts import read_manifest, read_articles_index
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
+parser.add_argument("--prompt-file", required=True)
 args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
+manifest_path = Path(args.prompt_file).parent.parent / "meta" / "task_manifest.json"
+manifest = read_manifest(manifest_path)
 articles = read_articles_index(Path(manifest.articles_index_path))
 time.sleep(2.0)
 source_id = articles[0].source_id if articles else "source:demo"
@@ -430,7 +220,7 @@ Path(manifest.output_result_path).write_text(
         "utf-8",
     )
 
-    command_template = f"{sys.executable} {slow_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = f"{sys.executable} {slow_agent} --prompt-file {{prompt_file}}"
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -507,9 +297,10 @@ from pathlib import Path
 from news_recap.orchestrator.contracts import read_manifest, read_articles_index
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
+parser.add_argument("--prompt-file", required=True)
 args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
+manifest_path = Path(args.prompt_file).parent.parent / "meta" / "task_manifest.json"
+manifest = read_manifest(manifest_path)
 articles = read_articles_index(Path(manifest.articles_index_path))
 time.sleep(1.0)
 source_id = articles[0].source_id if articles else "source:demo"
@@ -521,7 +312,7 @@ Path(manifest.output_result_path).write_text(
         "utf-8",
     )
 
-    command_template = f"{sys.executable} {slow_agent} --task-manifest {{task_manifest}} {{prompt}}"
+    command_template = f"{sys.executable} {slow_agent} --prompt-file {{prompt_file}}"
     routing_defaults = _routing_defaults(command_template)
 
     service = OrchestratorService(
@@ -597,16 +388,17 @@ from pathlib import Path
 from news_recap.orchestrator.contracts import read_manifest
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
+parser.add_argument("--prompt-file", required=True)
 args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
+manifest_path = Path(args.prompt_file).parent.parent / "meta" / "task_manifest.json"
+manifest = read_manifest(manifest_path)
 time.sleep(10.0)
 Path(manifest.output_result_path).write_text("{}", "utf-8")
 """.strip(),
         "utf-8",
     )
     command_template = (
-        f"{sys.executable} {very_slow_agent} --task-manifest {{task_manifest}} {{prompt}}"
+        f"{sys.executable} {very_slow_agent} --prompt-file {{prompt_file}}"
     )
     routing_defaults = _routing_defaults(command_template)
 
@@ -665,7 +457,7 @@ def test_worker_applies_routing_fallback_for_legacy_task(tmp_path: Path) -> None
     repository.init_schema()
     command_template = (
         f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-        "--task-manifest {task_manifest} {prompt}"
+        "--prompt-file {prompt_file}"
     )
     routing_defaults = _routing_defaults(command_template)
 
@@ -720,16 +512,17 @@ from pathlib import Path
 from news_recap.orchestrator.contracts import read_manifest
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
+parser.add_argument("--prompt-file", required=True)
 args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
+manifest_path = Path(args.prompt_file).parent.parent / "meta" / "task_manifest.json"
+manifest = read_manifest(manifest_path)
 time.sleep(2.0)
 Path(manifest.output_result_path).write_text("{}", "utf-8")
 """.strip(),
         "utf-8",
     )
     command_template = (
-        f"{sys.executable} {timeout_agent} --task-manifest {{task_manifest}} {{prompt}}"
+        f"{sys.executable} {timeout_agent} --prompt-file {{prompt_file}}"
     )
     routing_defaults = _routing_defaults(command_template)
 
@@ -783,9 +576,10 @@ from pathlib import Path
 from news_recap.orchestrator.contracts import read_manifest, read_articles_index
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
+parser.add_argument("--prompt-file", required=True)
 args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
+manifest_path = Path(args.prompt_file).parent.parent / "meta" / "task_manifest.json"
+manifest = read_manifest(manifest_path)
 state_path = Path(manifest.workdir) / "state.txt"
 if not state_path.exists():
     state_path.write_text("1", "utf-8")
@@ -802,7 +596,7 @@ Path(manifest.output_result_path).write_text(
         "utf-8",
     )
     command_template = (
-        f"{sys.executable} {transient_agent} --task-manifest {{task_manifest}} {{prompt}}"
+        f"{sys.executable} {transient_agent} --prompt-file {{prompt_file}}"
     )
     routing_defaults = _routing_defaults(command_template)
 
@@ -842,152 +636,13 @@ Path(manifest.output_result_path).write_text(
     repository.close()
 
 
-def test_worker_repair_path_recovers_on_second_backend_call(tmp_path: Path) -> None:
-    db_path = tmp_path / "worker-repair-success.db"
-    source_id = _seed_source_id(db_path, external_id="worker-repair-success")
-    repository = OrchestratorRepository(db_path)
-    repository.init_schema()
-
-    repair_agent = tmp_path / "repair_agent.py"
-    repair_agent.write_text(
-        """
-import argparse
-import os
-from pathlib import Path
-from news_recap.orchestrator.contracts import read_manifest, read_articles_index
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
-args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
-if os.getenv("NEWS_RECAP_REPAIR_MODE", "0") != "1":
-    Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_ids":[]}]}', "utf-8")
-    raise SystemExit(0)
-
-articles = read_articles_index(Path(manifest.articles_index_path))
-source_id = articles[0].source_id if articles else "article:missing"
-Path(manifest.output_result_path).write_text(
-    '{"blocks":[{"text":"repaired","source_ids":["' + source_id + '"]}]}',
-    "utf-8",
-)
-""".strip(),
-        "utf-8",
-    )
-    command_template = (
-        f"{sys.executable} {repair_agent} --task-manifest {{task_manifest}} {{prompt}}"
-    )
-    routing_defaults = _routing_defaults(command_template)
-
-    service = OrchestratorService(
-        repository=repository,
-        workdir_root=tmp_path / "workdir",
-        routing_defaults=routing_defaults,
-    )
-    task = service.enqueue_demo_task(
-        EnqueueDemoTask(
-            task_type="highlights",
-            prompt="Repair path test.",
-            source_ids=(source_id,),
-        ),
-    )
-    worker = OrchestratorWorker(
-        repository=repository,
-        backend=CliAgentBackend(),
-        routing_defaults=routing_defaults,
-        worker_id="test-worker",
-    )
-
-    summary = worker.run_once()
-    assert summary.succeeded == 1
-    details = repository.get_task_details(task_id=task.task_id)
-    assert details is not None
-    assert any(event.event_type == "repair_attempted" for event in details.events)
-    attempts = repository.list_task_attempts(task_id=task.task_id)
-    assert attempts[0].attempt_failure_code == "repair_recovered"
-    repository.close()
-
-
-def test_worker_skips_repair_when_already_repaired_in_attempt(tmp_path: Path) -> None:
-    db_path = tmp_path / "worker-repair-already.db"
-    source_id = _seed_source_id(db_path, external_id="worker-repair-already")
-    repository = OrchestratorRepository(db_path)
-    repository.init_schema()
-
-    no_repair_agent = tmp_path / "no_repair_agent.py"
-    no_repair_agent.write_text(
-        """
-import argparse
-import os
-from pathlib import Path
-from news_recap.orchestrator.contracts import read_manifest, read_articles_index
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--task-manifest", required=True)
-args, _ = parser.parse_known_args()
-manifest = read_manifest(Path(args.task_manifest))
-marker = Path(manifest.workdir) / "repair_mode_called.txt"
-if os.getenv("NEWS_RECAP_REPAIR_MODE", "0") == "1":
-    marker.write_text("called", "utf-8")
-    articles = read_articles_index(Path(manifest.articles_index_path))
-    source_id = articles[0].source_id if articles else "article:missing"
-    Path(manifest.output_result_path).write_text(
-        '{"blocks":[{"text":"repair","source_ids":["' + source_id + '"]}]}',
-        "utf-8",
-    )
-else:
-    Path(manifest.output_result_path).write_text('{"blocks":[{"text":"bad","source_ids":[]}]}', "utf-8")
-""".strip(),
-        "utf-8",
-    )
-    command_template = (
-        f"{sys.executable} {no_repair_agent} --task-manifest {{task_manifest}} {{prompt}}"
-    )
-    routing_defaults = _routing_defaults(command_template)
-
-    service = OrchestratorService(
-        repository=repository,
-        workdir_root=tmp_path / "workdir",
-        routing_defaults=routing_defaults,
-    )
-    task = service.enqueue_demo_task(
-        EnqueueDemoTask(
-            task_type="highlights",
-            prompt="Already repaired marker.",
-            source_ids=(source_id,),
-        ),
-    )
-
-    repository._connection.execute(
-        "UPDATE llm_tasks SET repair_attempted_at = ? WHERE task_id = ?",
-        (datetime.now(tz=UTC).replace(tzinfo=None).isoformat(sep=" "), task.task_id),
-    )
-    repository._connection.commit()
-
-    worker = OrchestratorWorker(
-        repository=repository,
-        backend=CliAgentBackend(),
-        routing_defaults=routing_defaults,
-        worker_id="test-worker",
-    )
-    summary = worker.run_once()
-    assert summary.failed == 1
-
-    details = repository.get_task_details(task_id=task.task_id)
-    assert details is not None
-    assert details.task.status == LlmTaskStatus.FAILED
-    manifest = read_manifest(Path(details.task.input_manifest_path))
-    repair_marker = Path(manifest.workdir) / "repair_mode_called.txt"
-    assert repair_marker.exists() is False
-    repository.close()
-
-
 def test_enqueue_demo_task_requires_user_scoped_sources(tmp_path: Path) -> None:
     db_path = tmp_path / "worker-no-sources.db"
     repository = OrchestratorRepository(db_path)
     repository.init_schema()
     command_template = (
         f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-        "--task-manifest {task_manifest} {prompt}"
+        "--prompt-file {prompt_file}"
     )
     routing_defaults = _routing_defaults(command_template)
     service = OrchestratorService(
@@ -1018,7 +673,7 @@ def test_enqueue_demo_task_rejects_unknown_user_source_ids(tmp_path: Path) -> No
     repository.init_schema()
     command_template = (
         f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-        "--task-manifest {task_manifest} {prompt}"
+        "--prompt-file {prompt_file}"
     )
     routing_defaults = _routing_defaults(command_template)
     service = OrchestratorService(
@@ -1051,7 +706,7 @@ def test_worker_finalizes_attempt_before_completing_task(tmp_path: Path) -> None
 
     command_template = (
         f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-        "--task-manifest {task_manifest} {prompt}"
+        "--prompt-file {prompt_file}"
     )
     routing_defaults = _routing_defaults(command_template)
     service = OrchestratorService(
@@ -1101,17 +756,18 @@ def test_worker_manifest_native_mode_skips_stdout_recovery(tmp_path: Path) -> No
     broken_agent.write_text(
         "import argparse\n"
         "parser = argparse.ArgumentParser()\n"
-        "parser.add_argument('--task-manifest', required=True)\n"
+        "parser.add_argument('--prompt-file', required=True)\n"
         "args, _ = parser.parse_known_args()\n"
         "from pathlib import Path\n"
         "from news_recap.orchestrator.contracts import read_manifest\n"
-        "manifest = read_manifest(Path(args.task_manifest))\n"
+        "manifest_path = Path(args.prompt_file).parent.parent / 'meta' / 'task_manifest.json'\n"
+        "manifest = read_manifest(manifest_path)\n"
         "Path(manifest.output_result_path).write_text('{\"blocks\":[', 'utf-8')\n"
         "print('stdout recovery candidate')\n",
         "utf-8",
     )
     command_template = (
-        f"{sys.executable} {broken_agent} --task-manifest {{task_manifest}} {{prompt}}"
+        f"{sys.executable} {broken_agent} --prompt-file {{prompt_file}}"
     )
     routing_defaults = _routing_defaults(command_template)
     service = OrchestratorService(

@@ -805,7 +805,7 @@ def llm_cancel(db_path: Path | None, task_id: str) -> None:
     "--claude-command",
     default=None,
     help=(
-        "Run template for Claude CLI. Supports {model}, {prompt}, and {prompt_file}. "
+        "Smoke run template for Claude CLI. Supports {model} and {prompt}. "
         "If omitted, NEWS_RECAP_LLM_SMOKE_CLAUDE_COMMAND is used."
     ),
 )
@@ -813,7 +813,7 @@ def llm_cancel(db_path: Path | None, task_id: str) -> None:
     "--codex-command",
     default=None,
     help=(
-        "Run template for Codex CLI. Supports {model}, {prompt}, and {prompt_file}. "
+        "Smoke run template for Codex CLI. Supports {model} and {prompt}. "
         "If omitted, NEWS_RECAP_LLM_SMOKE_CODEX_COMMAND is used."
     ),
 )
@@ -821,7 +821,7 @@ def llm_cancel(db_path: Path | None, task_id: str) -> None:
     "--gemini-command",
     default=None,
     help=(
-        "Run template for Gemini CLI. Supports {model}, {prompt}, and {prompt_file}. "
+        "Smoke run template for Gemini CLI. Supports {model} and {prompt}. "
         "If omitted, NEWS_RECAP_LLM_SMOKE_GEMINI_COMMAND is used."
     ),
 )
@@ -1492,25 +1492,15 @@ def recap() -> None:
     help="Business date in YYYY-MM-DD. Defaults to today (UTC).",
 )
 @click.option(
-    "--max-headline-chars",
-    type=click.IntRange(min=20, max=500),
-    default=120,
-    show_default=True,
-    help="Maximum characters for recap headlines.",
-)
-@click.option("--topics", default="", help="User topics of interest for filtering.")
-@click.option(
-    "--language",
-    default="ru",
-    show_default=True,
-    help="Output language.",
+    "--agent",
+    type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
+    default=None,
+    help="LLM agent to use for all pipeline steps. Overrides default_agent from config.",
 )
 def recap_run(
     db_path: Path | None,
     business_date: datetime | None,
-    max_headline_chars: int,
-    topics: str,
-    language: str,
+    agent: str | None,
 ) -> None:
     """Run the full news digest pipeline."""
 
@@ -1519,9 +1509,7 @@ def recap_run(
             RecapRunCommand(
                 db_path=db_path,
                 business_date=business_date.date() if business_date is not None else None,
-                max_headline_chars=max_headline_chars,
-                topics=topics,
-                language=language,
+                agent_override=agent,
             ),
         ),
     )

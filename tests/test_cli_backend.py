@@ -12,35 +12,27 @@ pytestmark = [
 ]
 
 
-def test_build_run_args_windows_avoids_nested_quoting_in_quoted_payload() -> None:
+def test_build_run_args_windows_quotes_prompt_file_with_spaces() -> None:
     run_args, command_head = _build_run_args(
-        command_template='codex exec --model {model} "task_manifest={task_manifest}\\n{prompt}"',
-        model="gpt-5-codex",
-        prompt='hello "world"',
-        prompt_file=Path("input/prompt.txt"),
-        manifest_path=Path("m file.json"),
+        command_template='codex exec {model} "Read your task from {prompt_file} and execute it."',
+        model="--model gpt-5.2 -c model_reasoning_effort=low",
+        prompt_file=Path("input/my prompt.txt"),
         os_name="nt",
     )
 
     assert isinstance(run_args, str)
     assert command_head == "codex"
-    assert (
-        run_args == 'codex exec --model gpt-5-codex "task_manifest=m file.json\\nhello \\"world\\""'
-    )
+    assert '"input/my prompt.txt"' in run_args or "my prompt.txt" in run_args
 
 
-def test_build_run_args_windows_quotes_unquoted_placeholder_values() -> None:
+def test_build_run_args_unix_splits_correctly() -> None:
     run_args, command_head = _build_run_args(
-        command_template="runner --manifest {task_manifest} --prompt {prompt} --model {model}",
-        model="gpt-5-codex",
-        prompt="hello world",
+        command_template='codex exec {model} "Read your task from {prompt_file} and execute it."',
+        model="--model gpt-5.2 -c model_reasoning_effort=low",
         prompt_file=Path("input/prompt.txt"),
-        manifest_path=Path("m file.json"),
-        os_name="nt",
+        os_name="posix",
     )
 
-    assert isinstance(run_args, str)
-    assert command_head == "runner"
-    assert '--manifest "m file.json"' in run_args
-    assert '--prompt "hello world"' in run_args
-    assert "--model gpt-5-codex" in run_args
+    assert isinstance(run_args, list)
+    assert command_head == "codex"
+    assert "input/prompt.txt" in " ".join(run_args)

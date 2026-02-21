@@ -48,9 +48,7 @@ class CliAgentBackend:
         run_args, command_head = _build_run_args(
             command_template=request.command_template,
             model=request.model,
-            prompt=enriched_prompt,
-            prompt_file=prompt_file,
-            manifest_path=request.manifest_path,
+            prompt_file=Path("input") / "task_prompt.txt",
         )
 
         env = os.environ.copy()
@@ -67,6 +65,7 @@ class CliAgentBackend:
                 return _run_subprocess_with_shutdown(
                     run_args=run_args,
                     env=env,
+                    cwd=Path(manifest.workdir),
                     timeout_seconds=request.timeout_seconds,
                     stdout_handle=stdout_handle,
                     stderr_handle=stderr_handle,
@@ -107,6 +106,9 @@ def _build_enriched_prompt(
     """Wrap the task prompt with manifest path and output contract."""
 
     manifest_path = f"{manifest.workdir}/meta/task_manifest.json"
+
+    if manifest.task_type == "recap_classify":
+        return base_prompt
 
     if manifest.output_schema_hint or manifest.input_resources_dir:
         return _build_v3_prompt(
@@ -154,7 +156,7 @@ def _build_v3_prompt(
     if manifest.input_resources_dir:
         parts.append(
             f"{step}. Read input files from input_resources_dir: {manifest.input_resources_dir}\n"
-            f"   Each file is a JSON document. Process all files in this directory."
+            f"   Process all files in this directory."
         )
         step += 1
     else:
@@ -190,31 +192,22 @@ def _build_v3_prompt(
     parts.append("")
     parts.append("Do not search the web. Write only the output files.")
     parts.append(
-        "Do NOT write or execute scripts (Python, shell, etc.) to process the data. "
-        "Read files directly using your built-in file access, analyse the content, "
-        "and write the JSON output."
+        "Read all input files listed above, analyse the data, and write the output."
     )
 
     return "\n".join(parts)
 
 
-def _build_run_args(  # noqa: PLR0913
+def _build_run_args(
     *,
     command_template: str,
     model: str,
-    prompt: str,
     prompt_file: Path,
-    manifest_path: Path,
     os_name: str | None = None,
 ) -> tuple[str | list[str], str]:
     stripped = command_template.strip()
     if not stripped:
         raise BackendRunError("CLI backend command template is empty.", transient=False)
-    if "{prompt}" not in stripped:
-        raise BackendRunError(
-            "CLI backend command template must include {prompt}.",
-            transient=False,
-        )
 
     current_os_name = os_name or os.name
     try:
@@ -223,9 +216,7 @@ def _build_run_args(  # noqa: PLR0913
                 template=stripped,
                 values={
                     "model": model,
-                    "prompt": prompt,
                     "prompt_file": str(prompt_file),
-                    "task_manifest": str(manifest_path),
                 },
             ).strip()
             if not rendered:
@@ -237,10 +228,8 @@ def _build_run_args(  # noqa: PLR0913
             return rendered, command_head
 
         rendered = stripped.format(
-            model=shlex.quote(model),
-            prompt=shlex.quote(prompt),
+            model=model,
             prompt_file=shlex.quote(str(prompt_file)),
-            task_manifest=shlex.quote(str(manifest_path)),
         )
     except KeyError as error:
         raise BackendRunError(
@@ -326,6 +315,7 @@ def _run_subprocess_with_shutdown(  # noqa: PLR0913
     *,
     run_args: str | list[str],
     env: dict[str, str],
+    cwd: Path | None = None,
     timeout_seconds: int,
     stdout_handle,
     stderr_handle,
@@ -337,6 +327,7 @@ def _run_subprocess_with_shutdown(  # noqa: PLR0913
     process = subprocess.Popen(  # noqa: S603
         run_args,
         env=env,
+        cwd=cwd,
         stdout=stdout_handle,
         stderr=stderr_handle,
         text=True,

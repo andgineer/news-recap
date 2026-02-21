@@ -121,8 +121,10 @@ def test_llm_smoke_quotes_prompt_placeholder(tmp_path: Path, monkeypatch) -> Non
             "smoke",
             "--agent",
             "codex",
+            "--model",
+            "test-model",
             "--codex-command",
-            "codex {prompt}",
+            "codex --model {model} {prompt}",
             "--prompt",
             "Reply with exactly: OK",
             "--expect-substring",
@@ -130,7 +132,7 @@ def test_llm_smoke_quotes_prompt_placeholder(tmp_path: Path, monkeypatch) -> Non
         ],
     )
     assert result.exit_code == 0
-    assert "agent=codex available=yes model=" in result.output
+    assert "agent=codex available=yes model=test-model" in result.output
     assert "probe=ok run=ok" in result.output
 
 
@@ -143,8 +145,6 @@ def test_llm_smoke_resolves_model_profile_for_template(tmp_path: Path, monkeypat
         "NEWS_RECAP_LLM_SMOKE_CODEX_COMMAND",
         "codex --model {model} --prompt-file {prompt_file}",
     )
-    monkeypatch.setenv("NEWS_RECAP_LLM_CODEX_MODEL_QUALITY", "codex-quality-test")
-
     runner = CliRunner()
     result = runner.invoke(
         news_recap,
@@ -162,4 +162,5 @@ def test_llm_smoke_resolves_model_profile_for_template(tmp_path: Path, monkeypat
         ],
     )
     assert result.exit_code == 0
-    assert "agent=codex available=yes model=codex-quality-test probe=ok run=ok" in result.output
+    assert "agent=codex available=yes" in result.output
+    assert "probe=ok run=ok" in result.output

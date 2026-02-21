@@ -25,9 +25,9 @@ def _defaults() -> RoutingDefaults:
             "story": "quality",
         },
         command_templates={
-            "claude": "claude --model {model} -- {prompt}",
-            "codex": "codex exec --model {model} {prompt}",
-            "gemini": "gemini --model {model} --prompt {prompt}",
+            "claude": 'claude --model {model} -- "Read task from {prompt_file}"',
+            "codex": 'codex exec --model {model} "Read task from {prompt_file}"',
+            "gemini": 'gemini --model {model} --prompt "Read task from {prompt_file}"',
         },
         models={
             "claude": {"fast": "claude-fast", "quality": "claude-quality"},

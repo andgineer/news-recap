@@ -59,7 +59,7 @@ def test_llm_cli_enqueue_worker_and_inspect(tmp_path: Path, monkeypatch) -> None
         "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
         (
             f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--task-manifest {task_manifest} {prompt}"
+            "--prompt-file {prompt_file}"
         ),
     )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
@@ -183,7 +183,7 @@ def test_llm_cli_stats_reports_queue_and_validation_metrics(
         "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
         (
             f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--task-manifest {task_manifest} {prompt}"
+            "--prompt-file {prompt_file}"
         ),
     )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
@@ -279,7 +279,7 @@ def test_llm_cli_benchmark_report_reflects_configured_agent_mode(
         "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
         (
             f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--task-manifest {task_manifest} {prompt}"
+            "--prompt-file {prompt_file}"
         ),
     )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))
@@ -338,7 +338,7 @@ def test_llm_usage_json_format(tmp_path: Path, monkeypatch) -> None:
         "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
         (
             f"{sys.executable} -m news_recap.orchestrator.backend.echo_agent "
-            "--task-manifest {task_manifest} {prompt}"
+            "--prompt-file {prompt_file}"
         ),
     )
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKDIR_ROOT", str(tmp_path / "workdir"))

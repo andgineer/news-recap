@@ -29,7 +29,7 @@ DEFAULT_SMOKE_COMMAND_TEMPLATES = {
     "codex": (
         "codex exec --sandbox workspace-write "
         "-c sandbox_workspace_write.network_access=true "
-        "-c model_reasoning_effort=high --model {model} {prompt}"
+        "{model} {prompt}"
     ),
     "claude": (
         "claude -p --model {model} --permission-mode dontAsk "
@@ -262,7 +262,7 @@ class OrchestratorCliController:
         if command.use_benchmark_agent:
             benchmark_command_template = (
                 sys.executable + " -m news_recap.orchestrator.backend.benchmark_agent "
-                "--task-manifest {task_manifest}"
+                "--prompt-file {prompt_file}"
             )
             routing_defaults = RoutingDefaults(
                 default_agent=routing_defaults.default_agent,

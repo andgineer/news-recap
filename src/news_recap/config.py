@@ -25,6 +25,7 @@ class IngestionSettings:
 class DedupSettings:
     """Semantic deduplication settings."""
 
+    enabled: bool = True
     threshold: float = 0.95
     model_name: str = "intfloat/multilingual-e5-small"
     allow_model_fallback: bool = False
@@ -75,20 +76,20 @@ class OrchestratorSettings:
     codex_command_template: str = (
         "codex exec --sandbox workspace-write "
         "-c sandbox_workspace_write.network_access=true "
-        '-c model_reasoning_effort=high --model {model} "task_manifest={task_manifest}\\n{prompt}"'
+        '{model} "Read your task from {prompt_file} and execute it."'
     )
     claude_command_template: str = (
         "claude -p --model {model} --permission-mode dontAsk "
         '--allowed-tools "Read,Write,Edit,WebFetch,'
         'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
-        '-- "task_manifest={task_manifest}\\n{prompt}"'
+        '-- "Read your task from {prompt_file} and execute it."'
     )
     gemini_command_template: str = (
         "gemini --model {model} --approval-mode auto_edit "
-        '--prompt "task_manifest={task_manifest}\\n{prompt}"'
+        '--prompt "Read your task from {prompt_file} and execute it."'
     )
-    codex_model_fast: str = "gpt-5-codex-mini"
-    codex_model_quality: str = "gpt-5-codex"
+    codex_model_fast: str = "--model gpt-5.2 -c model_reasoning_effort=medium"
+    codex_model_quality: str = "--model gpt-5.2 -c model_reasoning_effort=high"
     claude_model_fast: str = "sonnet"
     claude_model_quality: str = "opus"
     gemini_model_fast: str = "gemini-2.5-flash"
@@ -147,6 +148,7 @@ class Settings:
                 article_retention_days=int(os.getenv("NEWS_RECAP_ARTICLE_RETENTION_DAYS", "30")),
             ),
             dedup=DedupSettings(
+                enabled=_env_bool("NEWS_RECAP_DEDUP_ENABLED", default=True),
                 threshold=float(os.getenv("NEWS_RECAP_DEDUP_THRESHOLD", "0.95")),
                 model_name=os.getenv(
                     "NEWS_RECAP_DEDUP_MODEL_NAME",
@@ -189,50 +191,6 @@ class Settings:
                 ),
                 default_agent=os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex"),
                 task_type_profile_map=_collect_task_type_profile_map(),
-                codex_command_template=os.getenv(
-                    "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
-                    "codex exec --sandbox workspace-write "
-                    "-c sandbox_workspace_write.network_access=true "
-                    "-c model_reasoning_effort=high "
-                    "--model {model} {prompt}",
-                ),
-                claude_command_template=os.getenv(
-                    "NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE",
-                    "claude -p --model {model} "
-                    "--output-format text "
-                    "--permission-mode bypassPermissions "
-                    '--allowed-tools "Read,Write,Edit,WebFetch,'
-                    'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
-                    "-- {prompt}",
-                ),
-                gemini_command_template=os.getenv(
-                    "NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE",
-                    "gemini --model {model} --approval-mode auto_edit --prompt {prompt}",
-                ),
-                codex_model_fast=os.getenv(
-                    "NEWS_RECAP_LLM_CODEX_MODEL_FAST",
-                    "gpt-5-codex-mini",
-                ),
-                codex_model_quality=os.getenv(
-                    "NEWS_RECAP_LLM_CODEX_MODEL_QUALITY",
-                    "gpt-5-codex",
-                ),
-                claude_model_fast=os.getenv(
-                    "NEWS_RECAP_LLM_CLAUDE_MODEL_FAST",
-                    "sonnet",
-                ),
-                claude_model_quality=os.getenv(
-                    "NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY",
-                    "opus",
-                ),
-                gemini_model_fast=os.getenv(
-                    "NEWS_RECAP_LLM_GEMINI_MODEL_FAST",
-                    "gemini-2.5-flash-lite",
-                ),
-                gemini_model_quality=os.getenv(
-                    "NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY",
-                    "gemini-2.5-flash",
-                ),
                 worker_id=os.getenv("NEWS_RECAP_LLM_WORKER_ID", "worker-default"),
                 poll_interval_seconds=float(
                     os.getenv("NEWS_RECAP_LLM_POLL_INTERVAL_SECONDS", "2.0"),
@@ -307,23 +265,23 @@ class Settings:
                     f"Unsupported model profile for task_type={task_type!r}: {profile!r}",
                 )
 
-        for key, template in (
-            ("NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE", self.orchestrator.codex_command_template),
-            ("NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE", self.orchestrator.claude_command_template),
-            ("NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE", self.orchestrator.gemini_command_template),
+        for name, template in (
+            ("codex_command_template", self.orchestrator.codex_command_template),
+            ("claude_command_template", self.orchestrator.claude_command_template),
+            ("gemini_command_template", self.orchestrator.gemini_command_template),
         ):
-            _validate_command_template(env_key=key, template=template)
+            _validate_command_template(name=name, template=template)
 
-        for env_key, model_id in (
-            ("NEWS_RECAP_LLM_CODEX_MODEL_FAST", self.orchestrator.codex_model_fast),
-            ("NEWS_RECAP_LLM_CODEX_MODEL_QUALITY", self.orchestrator.codex_model_quality),
-            ("NEWS_RECAP_LLM_CLAUDE_MODEL_FAST", self.orchestrator.claude_model_fast),
-            ("NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY", self.orchestrator.claude_model_quality),
-            ("NEWS_RECAP_LLM_GEMINI_MODEL_FAST", self.orchestrator.gemini_model_fast),
-            ("NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY", self.orchestrator.gemini_model_quality),
+        for field_name, model_id in (
+            ("codex_model_fast", self.orchestrator.codex_model_fast),
+            ("codex_model_quality", self.orchestrator.codex_model_quality),
+            ("claude_model_fast", self.orchestrator.claude_model_fast),
+            ("claude_model_quality", self.orchestrator.claude_model_quality),
+            ("gemini_model_fast", self.orchestrator.gemini_model_fast),
+            ("gemini_model_quality", self.orchestrator.gemini_model_quality),
         ):
             if not model_id.strip():
-                raise ValueError(f"{env_key} must not be empty.")
+                raise ValueError(f"OrchestratorSettings.{field_name} must not be empty.")
 
         valid_capability_modes = {"manifest_native", "stdout_parser_fallback"}
         if self.orchestrator.backend_capability_mode not in valid_capability_modes:
@@ -520,13 +478,13 @@ def _env_bool(name: str, default: bool) -> bool:
     raise ValueError(f"Invalid boolean value for {name}: {value!r}")
 
 
-def _validate_command_template(*, env_key: str, template: str) -> None:
+def _validate_command_template(*, name: str, template: str) -> None:
     stripped = template.strip()
     if not stripped:
-        raise ValueError(f"{env_key} must not be empty.")
+        raise ValueError(f"{name} must not be empty.")
 
     formatter = string.Formatter()
-    allowed = {"model", "prompt", "prompt_file", "task_manifest"}
+    allowed = {"model", "prompt_file"}
     seen_fields: set[str] = set()
 
     for _, field_name, _, _ in formatter.parse(stripped):
@@ -534,23 +492,17 @@ def _validate_command_template(*, env_key: str, template: str) -> None:
             continue
         if field_name not in allowed:
             raise ValueError(
-                f"{env_key} uses unsupported placeholder {{{field_name}}}. "
+                f"{name} uses unsupported placeholder {{{field_name}}}. "
                 f"Allowed: {', '.join(sorted(allowed))}",
             )
         seen_fields.add(field_name)
 
-    if not seen_fields:
-        raise ValueError(
-            f"{env_key} must include at least one placeholder from: {', '.join(sorted(allowed))}",
-        )
-    if "prompt" not in seen_fields:
-        raise ValueError(f"{env_key} must include required placeholder {{prompt}}.")
+    if "prompt_file" not in seen_fields:
+        raise ValueError(f"{name} must include required placeholder {{prompt_file}}.")
 
     rendered = stripped.format(
         model="model-id",
-        prompt="prompt-text",
         prompt_file="prompt.txt",
-        task_manifest="task_manifest.json",
     ).strip()
     if not rendered:
-        raise ValueError(f"{env_key} rendered an empty command.")
+        raise ValueError(f"{name} rendered an empty command.")

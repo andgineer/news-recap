@@ -26,6 +26,8 @@ class DedupStageService:
         self.dedup_settings = dedup_settings
 
     def run(self, *, run_id: str, counters: IngestionRunCounters) -> None:
+        if not self.dedup_settings.enabled:
+            return
         _touch_run_heartbeat(self.repository, run_id)
         since = datetime.now(tz=UTC) - timedelta(days=self.dedup_settings.lookback_days)
         candidates = self.repository.list_candidates_for_dedup(since=since)

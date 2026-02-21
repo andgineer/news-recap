@@ -130,22 +130,20 @@ def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatc
     assert settings.orchestrator.codex_command_template == (
         "codex exec --sandbox workspace-write "
         "-c sandbox_workspace_write.network_access=true "
-        "-c model_reasoning_effort=high "
-        "--model {model} {prompt}"
+        '{model} "Read your task from {prompt_file} and execute it."'
     )
     assert settings.orchestrator.claude_command_template == (
-        "claude -p --model {model} "
-        "--output-format text "
-        "--permission-mode bypassPermissions "
+        "claude -p --model {model} --permission-mode dontAsk "
         '--allowed-tools "Read,Write,Edit,WebFetch,'
         'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
-        "-- {prompt}"
+        '-- "Read your task from {prompt_file} and execute it."'
     )
     assert settings.orchestrator.gemini_command_template == (
-        "gemini --model {model} --approval-mode auto_edit --prompt {prompt}"
+        "gemini --model {model} --approval-mode auto_edit "
+        '--prompt "Read your task from {prompt_file} and execute it."'
     )
-    assert settings.orchestrator.gemini_model_fast == "gemini-2.5-flash-lite"
-    assert settings.orchestrator.gemini_model_quality == "gemini-2.5-flash"
+    assert settings.orchestrator.gemini_model_fast == "gemini-2.5-flash"
+    assert settings.orchestrator.gemini_model_quality == "gemini-2.5-pro"
 
 
 def test_from_env_parses_task_type_profile_map(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -182,32 +180,6 @@ def test_from_env_rejects_non_positive_sqlite_busy_timeout(
     with pytest.raises(ValueError, match="SQLITE_BUSY_TIMEOUT_MS"):
         Settings.from_env()
 
-
-def test_from_env_rejects_unsupported_command_template_placeholder(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE", "codex exec {unknown}")
-    with pytest.raises(ValueError, match="unsupported placeholder"):
-        Settings.from_env()
-
-
-def test_from_env_rejects_command_template_without_placeholders(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE", "gemini --help")
-    with pytest.raises(ValueError, match="must include at least one placeholder"):
-        Settings.from_env()
-
-
-def test_from_env_rejects_command_template_without_prompt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(
-        "NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE",
-        "codex --model {model} {task_manifest}",
-    )
-    with pytest.raises(ValueError, match="required placeholder \\{prompt\\}"):
-        Settings.from_env()
 
 
 def test_from_env_rejects_empty_worker_id(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -23,10 +23,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
     """Run deterministic benchmark behavior based on task metadata."""
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task-manifest", required=True)
-    args = parser.parse_args(argv)
+    parser.add_argument("--task-manifest", required=False)
+    parser.add_argument("--prompt-file", required=False)
+    args, _ = parser.parse_known_args(argv)
 
-    manifest = read_manifest(Path(args.task_manifest))
+    if args.task_manifest:
+        manifest_path = Path(args.task_manifest)
+    elif args.prompt_file:
+        manifest_path = Path(args.prompt_file).parent.parent / "meta" / "task_manifest.json"
+    else:
+        parser.error("Either --task-manifest or --prompt-file is required")
+    manifest = read_manifest(manifest_path)
     task_input = read_task_input(Path(manifest.task_input_path))
     articles = read_articles_index(Path(manifest.articles_index_path))
     source_id = articles[0].source_id if articles else "article:missing"

@@ -2,41 +2,51 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from pathlib import Path
+
 from news_recap.orchestrator.contracts import ArticleIndexEntry
+from news_recap.orchestrator.models import SourceCorpusEntry
 from news_recap.recap.runner import (
     _articles_needing_full_text,
     _build_event_payloads,
     _events_to_resource_files,
     _merge_enriched_into_index,
-    _parse_classify_result,
+    _parse_classify_out_files,
     _parse_enrich_result,
     _parse_group_result,
+    _safe_file_id,
     _select_significant_events,
 )
 
 
-class TestParseClassifyResult:
-    def test_basic_classify(self):
-        payload = {
-            "articles": [
-                {"article_id": "a1", "decision": "keep", "needs_resource": True},
-                {"article_id": "a2", "decision": "discard", "needs_resource": False},
-                {"article_id": "a3", "decision": "keep", "needs_resource": False},
-            ]
-        }
-        kept, needs = _parse_classify_result(payload)
-        assert kept == ["a1", "a3"]
-        assert needs == ["a1"]
+def _make_entry(source_id: str) -> SourceCorpusEntry:
+    return SourceCorpusEntry(
+        source_id=source_id,
+        article_id=source_id,
+        title=f"Title {source_id}",
+        url=f"http://example.com/{source_id}",
+        source="test",
+        published_at=datetime.now(tz=UTC),
+    )
 
-    def test_empty_articles(self):
-        kept, needs = _parse_classify_result({"articles": []})
-        assert kept == []
-        assert needs == []
 
-    def test_missing_articles_key(self):
-        kept, needs = _parse_classify_result({})
-        assert kept == []
-        assert needs == []
+class TestParseClassifyOutFiles:
+    def test_basic_verdicts(self, tmp_path: Path):
+        entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
+        for e, verdict in zip(entries, ["ok", "trash", "enrich"]):
+            (tmp_path / f"{_safe_file_id(e.source_id)}_out.txt").write_text(verdict)
+        kept, enrich = _parse_classify_out_files(tmp_path, entries)
+        assert "a1" in kept
+        assert "a2" not in kept
+        assert "a3" in kept
+        assert enrich == ["a3"]
+
+    def test_missing_file_defaults_to_kept(self, tmp_path: Path):
+        entries = [_make_entry("a1")]
+        kept, enrich = _parse_classify_out_files(tmp_path, entries)
+        assert kept == ["a1"]
+        assert enrich == []
 
 
 class TestParseEnrichResult:

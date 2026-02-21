@@ -193,6 +193,7 @@ class SourceCorpusEntry:
     url: str
     source: str
     published_at: datetime
+    clean_text: str = ""
 
 
 @dataclass(slots=True)
