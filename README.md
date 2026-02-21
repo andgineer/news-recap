@@ -26,7 +26,7 @@
 | src/news\_recap/ingestion/storage/alembic\_runner.py     |       12 |        7 |     42% |     14-21 |
 | src/news\_recap/ingestion/storage/common.py              |       36 |       22 |     39% |18, 24-27, 33-36, 42-59, 65-68, 72-76 |
 | src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      362 |        0 |    100% |           |
-| src/news\_recap/main.py                                  |      299 |      290 |      3% |   50-1536 |
+| src/news\_recap/main.py                                  |      311 |      302 |      3% |   56-1573 |
 | src/news\_recap/orchestrator/backend/base.py             |       24 |        0 |    100% |           |
 | src/news\_recap/orchestrator/backend/benchmark\_agent.py |       86 |       86 |      0% |     3-134 |
 | src/news\_recap/orchestrator/backend/cli\_backend.py     |      165 |      142 |     14% |24-25, 32-83, 108-120, 146-198, 208-246, 250-272, 281-292, 296-307, 311, 327-371, 375-386 |
@@ -48,7 +48,7 @@
 | src/news\_recap/orchestrator/usage.py                    |       91 |       67 |     26% |36-44, 56-74, 78-121, 132-141 |
 | src/news\_recap/orchestrator/workdir.py                  |       55 |       44 |     20% |31, 46-120 |
 | src/news\_recap/orchestrator/worker.py                   |      497 |      402 |     19% |125-142, 147-206, 223-251, 254-257, 260-262, 267-305, 319-331, 346-407, 425-464, 474-579, 602-666, 678-680, 684-710, 713-721, 735-743, 765-779, 789-807, 821-842, 871-879, 885-887, 894-900, 903-905, 920-945, 948-952, 960-965, 973-983, 987-993, 997-999, 1003, 1011-1020, 1024-1042, 1046-1056, 1060-1063, 1067-1080, 1088-1104, 1113-1154, 1178-1203 |
-| **TOTAL**                                                | **6137** | **3996** | **35%** |           |
+| **TOTAL**                                                | **6149** | **4008** | **35%** |           |
 
 
 ## Setup coverage badge
