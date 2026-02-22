@@ -58,6 +58,23 @@ class UserContextSettings:
     user_name: str = "Default User"
 
 
+_DEFAULT_CODEX_CMD = (
+    "codex exec --sandbox workspace-write "
+    "-c sandbox_workspace_write.network_access=true "
+    '{model} "Read your task from {prompt_file} and execute it."'
+)
+_DEFAULT_CLAUDE_CMD = (
+    "claude -p --model {model} --permission-mode dontAsk "
+    '--allowed-tools "Read,Write,Edit,WebFetch,'
+    'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
+    '-- "Read your task from {prompt_file} and execute it."'
+)
+_DEFAULT_GEMINI_CMD = (
+    "gemini --model {model} --approval-mode auto_edit "
+    '--prompt "Read your task from {prompt_file} and execute it."'
+)
+
+
 @dataclass(slots=True)
 class OrchestratorSettings:
     """CLI orchestrator settings."""
@@ -77,21 +94,9 @@ class OrchestratorSettings:
             "recap_compose": "quality",
         },
     )
-    codex_command_template: str = (
-        "codex exec --sandbox workspace-write "
-        "-c sandbox_workspace_write.network_access=true "
-        '{model} "Read your task from {prompt_file} and execute it."'
-    )
-    claude_command_template: str = (
-        "claude -p --model {model} --permission-mode dontAsk "
-        '--allowed-tools "Read,Write,Edit,WebFetch,'
-        'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
-        '-- "Read your task from {prompt_file} and execute it."'
-    )
-    gemini_command_template: str = (
-        "gemini --model {model} --approval-mode auto_edit "
-        '--prompt "Read your task from {prompt_file} and execute it."'
-    )
+    codex_command_template: str = _DEFAULT_CODEX_CMD
+    claude_command_template: str = _DEFAULT_CLAUDE_CMD
+    gemini_command_template: str = _DEFAULT_GEMINI_CMD
     codex_model_fast: str = "--model gpt-5.2 -c model_reasoning_effort=medium"
     codex_model_quality: str = "--model gpt-5.2 -c model_reasoning_effort=high"
     claude_model_fast: str = "sonnet"
@@ -194,6 +199,18 @@ class Settings:
                     ),
                 ),
                 default_agent=os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex"),
+                codex_command_template=os.getenv(
+                    "NEWS_RECAP_CODEX_COMMAND_TEMPLATE",
+                    _DEFAULT_CODEX_CMD,
+                ),
+                claude_command_template=os.getenv(
+                    "NEWS_RECAP_CLAUDE_COMMAND_TEMPLATE",
+                    _DEFAULT_CLAUDE_CMD,
+                ),
+                gemini_command_template=os.getenv(
+                    "NEWS_RECAP_GEMINI_COMMAND_TEMPLATE",
+                    _DEFAULT_GEMINI_CMD,
+                ),
                 task_type_profile_map=_collect_task_type_profile_map(),
                 worker_id=os.getenv("NEWS_RECAP_LLM_WORKER_ID", "worker-default"),
                 poll_interval_seconds=float(

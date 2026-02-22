@@ -49,6 +49,28 @@ class RoutingDefaults:
     command_templates: dict[str, str]
     models: dict[str, dict[str, str]]
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "default_agent": self.default_agent,
+            "task_type_profile_map": self.task_type_profile_map,
+            "command_templates": self.command_templates,
+            "models": self.models,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RoutingDefaults:
+        return cls(
+            default_agent=str(data["default_agent"]),
+            task_type_profile_map={
+                str(k): str(v) for k, v in data["task_type_profile_map"].items()
+            },
+            command_templates={str(k): str(v) for k, v in data["command_templates"].items()},
+            models={
+                str(agent): {str(p): str(m) for p, m in profiles.items()}
+                for agent, profiles in data["models"].items()
+            },
+        )
+
     @classmethod
     def from_settings(cls, settings: OrchestratorSettings) -> RoutingDefaults:
         """Build validated defaults from orchestrator settings."""

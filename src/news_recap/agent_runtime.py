@@ -15,6 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from prefect import task
+from prefect.logging import get_run_logger
 
 from news_recap.brain.backend.base import BackendRunRequest
 from news_recap.brain.backend.cli_backend import CliAgentBackend
@@ -36,7 +37,7 @@ def read_task_output(workdir_root: Path, task_id: str) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text("utf-8"))
+        return json.loads(path.read_text("utf-8"), strict=False)
     except json.JSONDecodeError:
         return {}
 
@@ -57,7 +58,7 @@ class AgentTaskResult:
     elapsed_seconds: float
 
 
-@task(retries=_STEP_RETRIES, retry_delay_seconds=_STEP_RETRY_DELAY)
+@task(retries=_STEP_RETRIES, retry_delay_seconds=_STEP_RETRY_DELAY, log_prints=True)
 def run_agent_task(  # noqa: PLR0913
     *,
     task_type: str,
@@ -80,6 +81,11 @@ def run_agent_task(  # noqa: PLR0913
     monitors, Q&A).  Materializes workdir, resolves routing, calls
     ``CliAgentBackend`` directly (no task-queue, no polling).
     """
+    try:
+        pf_logger = get_run_logger()
+    except Exception:  # noqa: BLE001
+        pf_logger = logger  # type: ignore[assignment]
+
     task_id = str(uuid4())
     routing = resolve_routing_for_enqueue(
         defaults=routing_defaults,
@@ -88,6 +94,7 @@ def run_agent_task(  # noqa: PLR0913
         profile_override=profile_override,
         model_override=model_override,
     )
+    pf_logger.info("[%s] Routing: agent=%s model=%s", task_type, routing.agent, routing.model)
 
     task_metadata: dict[str, object] = {"routing": routing.to_metadata()}
     if metadata:
@@ -106,6 +113,7 @@ def run_agent_task(  # noqa: PLR0913
         retrieval_context=retrieval_context,
         story_context=story_context,
     )
+    pf_logger.info("[%s] Workdir: %s", task_type, materialized.manifest.workdir)
 
     request = BackendRunRequest(
         manifest_path=materialized.manifest_path,
@@ -130,12 +138,7 @@ def run_agent_task(  # noqa: PLR0913
         )
 
     output = read_task_output(workdir_mgr.root_dir, task_id)
-    logger.info(
-        "Agent task completed: task_type=%s task_id=%s elapsed=%.1fs",
-        task_type,
-        task_id,
-        elapsed,
-    )
+    pf_logger.info("[%s] Completed: task_id=%s elapsed=%.1fs", task_type, task_id, elapsed)
 
     return AgentTaskResult(
         task_id=task_id,

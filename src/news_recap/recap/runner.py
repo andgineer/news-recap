@@ -20,6 +20,7 @@ from news_recap.brain.contracts import ArticleIndexEntry
 from news_recap.brain.models import SourceCorpusEntry
 from news_recap.brain.routing import RoutingDefaults
 from news_recap.config import Settings
+from news_recap.recap.prompts import RECAP_CLASSIFY_BATCH_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,11 @@ MIN_ARTICLES_FOR_SIGNIFICANT_EVENT = 2
 
 _DEFAULT_NOT_INTERESTING = "horoscopes, medical advice, sports (except Russia), Epstein files"
 _DEFAULT_INTERESTING = "Russia, Serbia, war in Ukraine"
+
+_CLASSIFY_MAX_PROMPT_CHARS = 60_000
+_CLASSIFY_MIN_BATCH = 50
+_CLASSIFY_MAX_BATCH = 500
+_CLASSIFY_MIN_RECOGNITION_RATE = 0.8
 
 
 @dataclass(slots=True)
@@ -47,6 +53,23 @@ class UserPreferences:
                 f"PRIORITY topics (user wants extra detail): {self.interesting}",
             )
         return "\n".join(parts) if parts else "no specific preferences"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "max_headline_chars": self.max_headline_chars,
+            "interesting": self.interesting,
+            "not_interesting": self.not_interesting,
+            "language": self.language,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> UserPreferences:
+        return cls(
+            max_headline_chars=int(data.get("max_headline_chars", 120)),
+            interesting=str(data.get("interesting", _DEFAULT_INTERESTING)),
+            not_interesting=str(data.get("not_interesting", _DEFAULT_NOT_INTERESTING)),
+            language=str(data.get("language", "ru")),
+        )
 
 
 @dataclass(slots=True)
@@ -136,6 +159,162 @@ def parse_classify_out_files(
         kept.append(e.source_id)
         if verdict == "enrich":
             enrich.append(e.source_id)
+    return kept, enrich
+
+
+def split_into_classify_batches(
+    entries: list[SourceCorpusEntry],
+    preferences: UserPreferences,
+) -> list[list[SourceCorpusEntry]]:
+    """Split entries into char-budget-aware batches for batch classify.
+
+    Packs headlines greedily up to ``_CLASSIFY_MAX_PROMPT_CHARS`` total chars
+    or ``_CLASSIFY_MAX_BATCH`` entries per batch.  A trailing batch smaller
+    than ``_CLASSIFY_MIN_BATCH`` is merged into the previous one.
+
+    >>> from datetime import UTC, datetime
+    >>> from news_recap.brain.models import SourceCorpusEntry
+    >>> prefs = UserPreferences()
+    >>> entries = [
+    ...     SourceCorpusEntry(
+    ...         source_id=str(i), article_id=str(i), title=f"T{i}",
+    ...         url="u", source="s", published_at=datetime.now(tz=UTC),
+    ...     )
+    ...     for i in range(10)
+    ... ]
+    >>> batches = split_into_classify_batches(entries, prefs)
+    >>> len(batches) >= 1
+    True
+    """
+    if not entries:
+        return []
+
+    preamble_len = len(
+        RECAP_CLASSIFY_BATCH_PROMPT.format(
+            discard_policy=preferences.not_interesting or "none",
+            priority_policy=preferences.interesting or "none",
+            expected_count=0,
+            headlines_block="",
+        ),
+    )
+    budget = max(1, _CLASSIFY_MAX_PROMPT_CHARS - preamble_len)
+
+    batches: list[list[SourceCorpusEntry]] = []
+    current: list[SourceCorpusEntry] = []
+    current_chars = 0
+
+    for idx, entry in enumerate(entries):
+        line = f"{idx + 1}\t{entry.title}\n"
+        line_chars = len(line)
+        over_budget = current_chars + line_chars > budget
+        over_max = len(current) >= _CLASSIFY_MAX_BATCH
+        if current and (over_budget or over_max):
+            batches.append(current)
+            current = []
+            current_chars = 0
+        current.append(entry)
+        current_chars += line_chars
+
+    if current:
+        batches.append(current)
+
+    # Merge a too-small trailing batch into the previous
+    if len(batches) >= 2 and len(batches[-1]) < _CLASSIFY_MIN_BATCH:  # noqa: PLR2004
+        batches[-2].extend(batches.pop())
+
+    return batches
+
+
+def build_classify_batch_prompt(
+    entries: list[SourceCorpusEntry],
+    preferences: UserPreferences,
+) -> str:
+    """Build the inline batch classify prompt for a slice of articles.
+
+    Uses sequential 1-based numbers as IDs (not UUIDs) — short numbers are
+    unambiguous and agents reproduce them reliably.
+    """
+    headlines_block = "\n".join(f"{i + 1}\t{e.title}" for i, e in enumerate(entries))
+    return RECAP_CLASSIFY_BATCH_PROMPT.format(
+        discard_policy=preferences.not_interesting or "none",
+        priority_policy=preferences.interesting or "none",
+        expected_count=len(entries),
+        headlines_block=headlines_block,
+    )
+
+
+def parse_classify_batch_stdout(  # noqa: C901, PLR0912
+    stdout_path: Path,
+    entries: list[SourceCorpusEntry],
+) -> tuple[list[str], list[str]]:
+    """Parse batch classification verdicts from agent stdout log.
+
+    Reads from ``output/agent_stdout.log`` (the agent's captured stdout).
+    Each verdict line must be ``N<TAB>(ok|enrich|trash)`` where N is a
+    1-based sequential number matching the order in the prompt.
+
+    Non-matching lines (narration, markdown fences, thinking) are silently
+    skipped.  Also handles a ``BEGIN_VERDICTS`` / ``END_VERDICTS`` block.
+
+    Raises ``RecapPipelineError`` if fewer than 80 % of verdicts are
+    recognised (agent produced garbage output).  Missing IDs between
+    80 % and 100 % default to ``"ok"`` with a warning.
+
+    Returns ``(kept_ids, enrich_ids)``.
+    """
+    if not stdout_path.exists():
+        logger.warning("Verdicts file not found: %s — defaulting all to ok", stdout_path)
+        return [e.source_id for e in entries], []
+
+    text = stdout_path.read_text("utf-8")
+
+    begin_idx = text.find("BEGIN_VERDICTS")
+    end_idx = text.find("END_VERDICTS")
+    if begin_idx != -1 and end_idx != -1 and end_idx > begin_idx:
+        verdicts_text = text[begin_idx + len("BEGIN_VERDICTS") : end_idx]
+    else:
+        verdicts_text = text
+
+    valid_nums = {str(i + 1) for i in range(len(entries))}
+
+    parsed: dict[str, str] = {}
+    for raw_line in verdicts_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split("\t", 1)
+        if len(parts) != 2:  # noqa: PLR2004
+            parts = line.split(None, 1)
+        if len(parts) != 2:  # noqa: PLR2004
+            continue
+        num, verdict = parts[0].strip(), parts[1].strip().lower()
+        if num not in valid_nums or verdict not in ("ok", "enrich", "trash"):
+            continue
+        parsed[num] = verdict
+
+    recognition_rate = len(parsed) / len(entries) if entries else 1.0
+    if recognition_rate < _CLASSIFY_MIN_RECOGNITION_RATE:
+        raise RecapPipelineError(
+            "recap_classify",
+            f"Agent classified only {len(parsed)}/{len(entries)} articles ({recognition_rate:.0%})",
+        )
+    if recognition_rate < 1.0:
+        logger.warning(
+            "Batch classify: %d/%d verdicts recognised — missing IDs default to ok",
+            len(parsed),
+            len(entries),
+        )
+
+    kept: list[str] = []
+    enrich: list[str] = []
+    for i, e in enumerate(entries):
+        verdict = parsed.get(str(i + 1), "ok")
+        if verdict == "trash":
+            continue
+        kept.append(e.source_id)
+        if verdict == "enrich":
+            enrich.append(e.source_id)
+
     return kept, enrich
 
 

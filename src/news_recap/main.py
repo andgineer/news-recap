@@ -938,10 +938,26 @@ def recap() -> None:
     default=None,
     help="LLM agent to use for all pipeline steps. Overrides default_agent from config.",
 )
+@click.option(
+    "--limit",
+    "article_limit",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Cap number of articles fetched from DB (useful for smoke tests).",
+)
+@click.option(
+    "--classify-only",
+    "classify_only",
+    is_flag=True,
+    default=False,
+    help="Stop pipeline after classify step (skip enrich, group, synthesize).",
+)
 def recap_run(
     db_path: Path | None,
     business_date: datetime | None,
     agent: str | None,
+    article_limit: int | None,
+    classify_only: bool,
 ) -> None:
     """Run the full news digest pipeline."""
 
@@ -951,6 +967,8 @@ def recap_run(
                 db_path=db_path,
                 business_date=business_date.date() if business_date is not None else None,
                 agent_override=agent,
+                article_limit=article_limit,
+                classify_only=classify_only,
             ),
         ),
     )

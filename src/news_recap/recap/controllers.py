@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import queue
-import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -15,7 +13,6 @@ from pathlib import Path
 from news_recap.config import Settings, configure_prefect_runtime, resolve_prefect_mode
 from news_recap.ingestion.repository import SQLiteRepository
 from news_recap.recap.prefect_flow import recap_flow
-from news_recap.recap.resource_loader import ResourceLoader
 from news_recap.recap.runner import (
     PipelineRunResult,
     UserPreferences,
@@ -23,8 +20,6 @@ from news_recap.recap.runner import (
 )
 
 logger = logging.getLogger(__name__)
-
-_SENTINEL = object()
 
 
 @dataclass(slots=True)
@@ -34,76 +29,80 @@ class RecapRunCommand:
     db_path: Path | None = None
     business_date: date | None = None
     agent_override: str | None = None
+    article_limit: int | None = None
+    classify_only: bool = False
+
+
+def _write_pipeline_input(  # noqa: PLR0913
+    pipeline_dir: Path,
+    *,
+    business_date: date,
+    articles: list,
+    preferences: UserPreferences,
+    routing_defaults: object,
+    agent_override: str | None,
+) -> None:
+    """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
+    pipeline_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "business_date": business_date.isoformat(),
+        "articles": [a.to_dict() for a in articles],
+        "preferences": preferences.to_dict(),
+        "routing_defaults": routing_defaults.to_dict(),  # type: ignore[union-attr]
+        "agent_override": agent_override,
+    }
+    (pipeline_dir / "pipeline_input.json").write_text(
+        json.dumps(payload, ensure_ascii=False),
+        "utf-8",
+    )
 
 
 class RecapCliController:
     """CLI controller for recap pipeline operations."""
 
     def run_pipeline(self, command: RecapRunCommand) -> Iterator[str]:
-        """Execute the full recap pipeline, yielding real-time progress lines."""
+        """Execute the full recap pipeline, yielding status lines."""
 
         settings = Settings.from_env(db_path=command.db_path)
         routing_defaults = build_routing_defaults(settings)
         business_date = command.business_date or datetime.now(tz=UTC).date()
+        preferences = UserPreferences()
 
         mode = resolve_prefect_mode()
         effective_mode = configure_prefect_runtime(mode)
         yield f"Prefect runtime: {effective_mode.value}"
 
         with _repository(settings) as repository:
-            articles = repository.list_user_retrieval_articles(limit=2000)
+            fetch_limit = command.article_limit or 2000
+            articles = repository.list_user_retrieval_articles(limit=fetch_limit)
             if not articles:
                 yield "No articles found in database. Run ingestion first."
                 return
 
-            yield f"Found {len(articles)} articles for {business_date}"
+            limit_note = f" (limited to {fetch_limit})" if command.article_limit else ""
+            yield f"Found {len(articles)} articles for {business_date}{limit_note}"
+
+            ts = datetime.now(tz=UTC).strftime("%H%M%S")
+            pipeline_dir = (
+                settings.orchestrator.workdir_root / f"pipeline-{business_date}-{ts}"
+            ).resolve()
+            _write_pipeline_input(
+                pipeline_dir,
+                business_date=business_date,
+                articles=articles,
+                preferences=preferences,
+                routing_defaults=routing_defaults,
+                agent_override=command.agent_override,
+            )
+            yield f"Pipeline dir: {pipeline_dir}"
             yield "Starting pipeline…"
 
-            progress_q: queue.Queue[str | object] = queue.Queue()
-
-            def _on_progress(msg: str) -> None:
-                progress_q.put(msg)
-
-            result_holder: list[PipelineRunResult] = []
-            error_holder: list[Exception] = []
-
-            def _run() -> None:
-                try:
-                    with ResourceLoader() as loader:
-                        result_holder.append(
-                            recap_flow(
-                                business_date=business_date,
-                                preferences=UserPreferences(),
-                                articles=articles,
-                                workdir_root=settings.orchestrator.workdir_root,
-                                routing_defaults=routing_defaults,
-                                resource_loader=loader,
-                                agent_override=command.agent_override,
-                                on_progress=_on_progress,
-                            ),
-                        )
-                except Exception as exc:  # noqa: BLE001
-                    error_holder.append(exc)
-                finally:
-                    progress_q.put(_SENTINEL)
-
-            worker_thread = threading.Thread(target=_run, daemon=True)
-            worker_thread.start()
-
-            while True:
-                item = progress_q.get()
-                if item is _SENTINEL:
-                    break
-                yield str(item)
-
-            worker_thread.join(timeout=10)
-
-            if error_holder:
-                yield f"Pipeline failed with error: {error_holder[0]}"
-                return
-
-            if result_holder:
-                yield from _format_run_result(result_holder[0])
+            result = recap_flow(
+                pipeline_dir=str(pipeline_dir),
+                business_date=business_date.isoformat(),
+                classify_only=command.classify_only,
+            )
+            yield from _format_run_result(result)
 
 
 def _format_run_result(result: PipelineRunResult) -> Iterator[str]:

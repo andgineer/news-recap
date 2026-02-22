@@ -559,7 +559,7 @@ class IntelligenceCliController:
 # ---------------------------------------------------------------------------
 
 
-@flow(name="highlights_flow")
+@flow(name="highlights_flow", log_prints=True)
 def _run_highlights_flow(  # noqa: PLR0913
     *,
     settings: Settings,
@@ -619,7 +619,7 @@ def _run_highlights_flow(  # noqa: PLR0913
     )
 
 
-@flow(name="story_details_flow")
+@flow(name="story_details_flow", log_prints=True)
 def _run_story_details_flow(  # noqa: PLR0913
     *,
     settings: Settings,
@@ -678,7 +678,7 @@ def _run_story_details_flow(  # noqa: PLR0913
     )
 
 
-@flow(name="monitor_flow")
+@flow(name="monitor_flow", log_prints=True)
 def _run_monitor_flow(  # noqa: PLR0913
     *,
     settings: Settings,
@@ -714,7 +714,7 @@ def _run_monitor_flow(  # noqa: PLR0913
     )
 
 
-@flow(name="qa_flow")
+@flow(name="qa_flow", log_prints=True)
 def _run_qa_flow(  # noqa: PLR0913
     *,
     settings: Settings,

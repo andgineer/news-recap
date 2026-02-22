@@ -8,15 +8,20 @@ from pathlib import Path
 from news_recap.brain.contracts import ArticleIndexEntry
 from news_recap.brain.models import SourceCorpusEntry
 from news_recap.recap.runner import (
+    _CLASSIFY_MAX_BATCH,
+    _CLASSIFY_MIN_BATCH,
     _safe_file_id,
     articles_needing_full_text,
+    build_classify_batch_prompt,
     build_event_payloads,
     events_to_resource_files,
     merge_enriched_into_index,
+    parse_classify_batch_stdout,
     parse_classify_out_files,
     parse_enrich_result,
     parse_group_result,
     select_significant_events,
+    split_into_classify_batches,
 )
 
 
@@ -159,3 +164,136 @@ class TestEventsToResourceFiles:
         result = events_to_resource_files(events)
         assert "event_e1.json" in result
         assert '"event_id"' in result["event_e1.json"]
+
+
+# ---------------------------------------------------------------------------
+# Batch classify helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_prefs(**kwargs):
+    from news_recap.recap.runner import UserPreferences
+
+    return UserPreferences(**kwargs)
+
+
+class TestSplitIntoClassifyBatches:
+    def test_empty_returns_empty(self):
+        assert split_into_classify_batches([], _make_prefs()) == []
+
+    def test_small_list_one_batch(self):
+        entries = [_make_entry(str(i)) for i in range(10)]
+        batches = split_into_classify_batches(entries, _make_prefs())
+        assert len(batches) == 1
+        assert sum(len(b) for b in batches) == 10
+
+    def test_splits_on_max_batch_size(self):
+        # Use MIN_BATCH extra so the trailing batch is not merged back
+        n = _CLASSIFY_MAX_BATCH + _CLASSIFY_MIN_BATCH
+        entries = [_make_entry(str(i)) for i in range(n)]
+        batches = split_into_classify_batches(entries, _make_prefs())
+        assert len(batches) >= 2
+        assert all(len(b) <= _CLASSIFY_MAX_BATCH for b in batches)
+        assert sum(len(b) for b in batches) == n
+
+    def test_tiny_trailing_batch_merged(self):
+        # Force a split by using max batch size, then add a tiny tail < MIN
+        n_tail = _CLASSIFY_MIN_BATCH - 1
+        entries = [_make_entry(str(i)) for i in range(_CLASSIFY_MAX_BATCH + n_tail)]
+        batches = split_into_classify_batches(entries, _make_prefs())
+        # The tiny tail should be merged into the previous batch
+        assert all(len(b) >= _CLASSIFY_MIN_BATCH for b in batches)
+        assert sum(len(b) for b in batches) == _CLASSIFY_MAX_BATCH + n_tail
+
+    def test_all_entries_preserved(self):
+        entries = [_make_entry(str(i)) for i in range(300)]
+        batches = split_into_classify_batches(entries, _make_prefs())
+        all_ids = [e.source_id for batch in batches for e in batch]
+        assert sorted(all_ids) == sorted(str(i) for i in range(300))
+
+
+class TestBuildClassifyBatchPrompt:
+    def test_contains_headlines(self):
+        entries = [_make_entry("a1"), _make_entry("a2")]
+        prefs = _make_prefs()
+        prompt = build_classify_batch_prompt(entries, prefs)
+        assert "a1" in prompt
+        assert "Title a1" in prompt
+        assert "a2" in prompt
+
+    def test_contains_expected_count(self):
+        entries = [_make_entry(str(i)) for i in range(7)]
+        prompt = build_classify_batch_prompt(entries, _make_prefs())
+        assert "7" in prompt
+
+    def test_contains_policies(self):
+        prefs = _make_prefs(not_interesting="sports", interesting="politics")
+        prompt = build_classify_batch_prompt([_make_entry("x")], prefs)
+        assert "sports" in prompt
+        assert "politics" in prompt
+
+    def test_contains_stdout_instruction(self):
+        prompt = build_classify_batch_prompt([_make_entry("x")], _make_prefs())
+        assert "stdout" in prompt
+
+
+class TestParseClassifyBatchStdout:
+    def _write_stdout(self, tmp_path: Path, content: str) -> Path:
+        p = tmp_path / "agent_stdout.log"
+        p.write_text(content, "utf-8")
+        return p
+
+    def test_basic_parsing(self, tmp_path):
+        entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
+        stdout = self._write_stdout(
+            tmp_path,
+            "BEGIN_VERDICTS\n1\tok\n2\ttrash\n3\tenrich\nEND_VERDICTS",
+        )
+        kept, enrich = parse_classify_batch_stdout(stdout, entries)
+        assert "a1" in kept
+        assert "a2" not in kept
+        assert "a3" in kept
+        assert enrich == ["a3"]
+
+    def test_missing_file_defaults_all_ok(self, tmp_path):
+        entries = [_make_entry("a1"), _make_entry("a2")]
+        missing = tmp_path / "nonexistent.log"
+        kept, enrich = parse_classify_batch_stdout(missing, entries)
+        assert kept == ["a1", "a2"]
+        assert enrich == []
+
+    def test_missing_markers_scans_full_text(self, tmp_path):
+        entries = [_make_entry("a1")]
+        stdout = self._write_stdout(tmp_path, "1\tok\n")
+        kept, enrich = parse_classify_batch_stdout(stdout, entries)
+        assert "a1" in kept
+
+    def test_space_delimiter_fallback(self, tmp_path):
+        entries = [_make_entry("a1"), _make_entry("a2")]
+        stdout = self._write_stdout(
+            tmp_path,
+            "BEGIN_VERDICTS\n1 ok\n2 trash\nEND_VERDICTS",
+        )
+        kept, enrich = parse_classify_batch_stdout(stdout, entries)
+        assert "a1" in kept
+        assert "a2" not in kept
+
+    def test_low_recognition_rate_raises(self, tmp_path):
+        import pytest
+
+        from news_recap.recap.runner import RecapPipelineError
+
+        entries = [_make_entry(str(i)) for i in range(10)]
+        stdout = self._write_stdout(tmp_path, "BEGIN_VERDICTS\n1\tok\nEND_VERDICTS")
+        with pytest.raises(RecapPipelineError):
+            parse_classify_batch_stdout(stdout, entries)
+
+    def test_missing_ids_default_to_ok(self, tmp_path):
+        entries = [_make_entry(f"x{i}") for i in range(5)]
+        content = (
+            "BEGIN_VERDICTS\n" + "\n".join(f"{i + 1}\tok" for i in range(4)) + "\nEND_VERDICTS"
+        )
+        stdout = self._write_stdout(tmp_path, content)
+        kept, enrich = parse_classify_batch_stdout(stdout, entries)
+        assert "x4" in kept
+        assert len(kept) == 5

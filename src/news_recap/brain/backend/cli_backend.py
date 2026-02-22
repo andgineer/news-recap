@@ -51,6 +51,11 @@ class CliAgentBackend:
             prompt_file=Path("input") / "task_prompt.txt",
         )
 
+        cmd_line = run_args if isinstance(run_args, str) else shlex.join(run_args)
+        meta_dir = Path(manifest.workdir) / "meta"
+        meta_dir.mkdir(parents=True, exist_ok=True)
+        (meta_dir / "agent_command.txt").write_text(cmd_line, "utf-8")
+
         env = os.environ.copy()
         env["NEWS_RECAP_REPAIR_MODE"] = "1" if request.repair_mode else "0"
         env["NEWS_RECAP_LLM_AGENT"] = request.agent
@@ -107,7 +112,7 @@ def _build_enriched_prompt(
 
     manifest_path = f"{manifest.workdir}/meta/task_manifest.json"
 
-    if manifest.task_type == "recap_classify":
+    if manifest.task_type.startswith("recap_classify"):
         return base_prompt
 
     if manifest.output_schema_hint or manifest.input_resources_dir:
