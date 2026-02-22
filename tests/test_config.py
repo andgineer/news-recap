@@ -138,17 +138,17 @@ def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatc
         '{model} "Read your task from {prompt_file} and execute it."'
     )
     assert settings.orchestrator.claude_command_template == (
-        "claude -p --model {model} --permission-mode dontAsk "
+        "claude -p {model} --permission-mode dontAsk "
         '--allowed-tools "Read,Write,Edit,WebFetch,'
         'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
         '-- "Read your task from {prompt_file} and execute it."'
     )
     assert settings.orchestrator.gemini_command_template == (
-        "gemini --model {model} --approval-mode auto_edit "
+        "gemini {model} --approval-mode auto_edit "
         '--prompt "Read your task from {prompt_file} and execute it."'
     )
-    assert settings.orchestrator.gemini_model_fast == "gemini-2.5-flash"
-    assert settings.orchestrator.gemini_model_quality == "gemini-2.5-pro"
+    assert settings.orchestrator.gemini_model_fast == "--model gemini-2.5-flash"
+    assert settings.orchestrator.gemini_model_quality == "--model gemini-2.5-pro"
 
 
 def test_from_env_parses_task_type_profile_map(monkeypatch: pytest.MonkeyPatch) -> None:
