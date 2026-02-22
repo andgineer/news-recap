@@ -60,12 +60,12 @@
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
-            <a id="prevFileLink" class="nav" href="z_8034ccf3fff5054b_resource_loader_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a id="prevFileLink" class="nav" href="z_8034ccf3fff5054b_routing_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_8034ccf3fff5054b_schemas_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-22 15:23 +0000
+            created at 2026-02-22 17:12 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -96,11 +96,11 @@
     <p class="run"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="key">from</span> <span class="nam">typing</span> <span class="key">import</span> <span class="nam">Any</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t"><span class="key">from</span> <span class="nam">uuid</span> <span class="key">import</span> <span class="nam">uuid4</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">brain</span><span class="op">.</span><span class="nam">contracts</span> <span class="key">import</span> <span class="nam">ArticleIndexEntry</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">brain</span><span class="op">.</span><span class="nam">models</span> <span class="key">import</span> <span class="nam">SourceCorpusEntry</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">brain</span><span class="op">.</span><span class="nam">routing</span> <span class="key">import</span> <span class="nam">RoutingDefaults</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">config</span> <span class="key">import</span> <span class="nam">Settings</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">prompts</span> <span class="key">import</span> <span class="nam">RECAP_CLASSIFY_BATCH_PROMPT</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">config</span> <span class="key">import</span> <span class="nam">Settings</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">contracts</span> <span class="key">import</span> <span class="nam">ArticleIndexEntry</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">models</span> <span class="key">import</span> <span class="nam">SourceCorpusEntry</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">prompts</span> <span class="key">import</span> <span class="nam">RECAP_CLASSIFY_BATCH_PROMPT</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">routing</span> <span class="key">import</span> <span class="nam">RoutingDefaults</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t"><span class="nam">logger</span> <span class="op">=</span> <span class="nam">logging</span><span class="op">.</span><span class="nam">getLogger</span><span class="op">(</span><span class="nam">__name__</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -253,7 +253,7 @@
     <p class="pln"><span class="n"><a id="t171" href="#t171">171</a></span><span class="t"><span class="str">    than ``_CLASSIFY_MIN_BATCH`` is merged into the previous one.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t172" href="#t172">172</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t173" href="#t173">173</a></span><span class="t"><span class="str">    >>> from datetime import UTC, datetime</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t174" href="#t174">174</a></span><span class="t"><span class="str">    >>> from news_recap.brain.models import SourceCorpusEntry</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t174" href="#t174">174</a></span><span class="t"><span class="str">    >>> from news_recap.recap.models import SourceCorpusEntry</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t175" href="#t175">175</a></span><span class="t"><span class="str">    >>> prefs = UserPreferences()</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t176" href="#t176">176</a></span><span class="t"><span class="str">    >>> entries = [</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t177" href="#t177">177</a></span><span class="t"><span class="str">    ...     SourceCorpusEntry(</span>&nbsp;</span><span class="r"></span></p>
@@ -548,12 +548,12 @@
 <footer>
     <div class="content">
         <p>
-            <a class="nav" href="z_8034ccf3fff5054b_resource_loader_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a class="nav" href="z_8034ccf3fff5054b_routing_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_8034ccf3fff5054b_schemas_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-22 15:23 +0000
+            created at 2026-02-22 17:12 +0000
         </p>
     </div>
 </footer>
