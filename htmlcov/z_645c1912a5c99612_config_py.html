@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_f17cf01cf5f4c2d3_fetcher_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-22 11:15 +0000
+            created at 2026-02-22 15:17 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -146,13 +146,13 @@
     <p class="run run2"><span class="n"><a id="t64" href="#t64">64</a></span><span class="t">    <span class="str">'{model} "Read your task from {prompt_file} and execute it."'</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t65" href="#t65">65</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t66" href="#t66">66</a></span><span class="t"><span class="nam">_DEFAULT_CLAUDE_CMD</span> <span class="op">=</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t67" href="#t67">67</a></span><span class="t">    <span class="str">"claude -p --model {model} --permission-mode dontAsk "</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t67" href="#t67">67</a></span><span class="t">    <span class="str">"claude -p {model} --permission-mode dontAsk "</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t68" href="#t68">68</a></span><span class="t">    <span class="str">'--allowed-tools "Read,Write,Edit,WebFetch,'</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t69" href="#t69">69</a></span><span class="t">    <span class="str">'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">    <span class="str">'-- "Read your task from {prompt_file} and execute it."'</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t"><span class="nam">_DEFAULT_GEMINI_CMD</span> <span class="op">=</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t">    <span class="str">"gemini --model {model} --approval-mode auto_edit "</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t">    <span class="str">"gemini {model} --approval-mode auto_edit "</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t">    <span class="str">'--prompt "Read your task from {prompt_file} and execute it."'</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t76" href="#t76">76</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -181,10 +181,10 @@
     <p class="run"><span class="n"><a id="t99" href="#t99">99</a></span><span class="t">    <span class="nam">gemini_command_template</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="nam">_DEFAULT_GEMINI_CMD</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t100" href="#t100">100</a></span><span class="t">    <span class="nam">codex_model_fast</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"--model gpt-5.2 -c model_reasoning_effort=medium"</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t101" href="#t101">101</a></span><span class="t">    <span class="nam">codex_model_quality</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"--model gpt-5.2 -c model_reasoning_effort=high"</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t102" href="#t102">102</a></span><span class="t">    <span class="nam">claude_model_fast</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"sonnet"</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t103" href="#t103">103</a></span><span class="t">    <span class="nam">claude_model_quality</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"opus"</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t104" href="#t104">104</a></span><span class="t">    <span class="nam">gemini_model_fast</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"gemini-2.5-flash"</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t105" href="#t105">105</a></span><span class="t">    <span class="nam">gemini_model_quality</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"gemini-2.5-pro"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t102" href="#t102">102</a></span><span class="t">    <span class="nam">claude_model_fast</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"--model sonnet --effort low"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t103" href="#t103">103</a></span><span class="t">    <span class="nam">claude_model_quality</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"--model opus"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t104" href="#t104">104</a></span><span class="t">    <span class="nam">gemini_model_fast</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"--model gemini-2.5-flash"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t105" href="#t105">105</a></span><span class="t">    <span class="nam">gemini_model_quality</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"--model gemini-2.5-pro"</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t106" href="#t106">106</a></span><span class="t">    <span class="nam">worker_id</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">"worker-default"</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t">    <span class="nam">poll_interval_seconds</span><span class="op">:</span> <span class="nam">float</span> <span class="op">=</span> <span class="num">2.0</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">    <span class="nam">retry_base_seconds</span><span class="op">:</span> <span class="nam">int</span> <span class="op">=</span> <span class="num">30</span>&nbsp;</span><span class="r"></span></p>
@@ -697,7 +697,7 @@
             <a class="nav" href="z_f17cf01cf5f4c2d3_fetcher_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-22 11:15 +0000
+            created at 2026-02-22 15:17 +0000
         </p>
     </div>
 </footer>
