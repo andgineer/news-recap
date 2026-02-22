@@ -5,20 +5,20 @@
 | Name                                                     |    Stmts |     Miss |   Cover |   Missing |
 |--------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
-| src/news\_recap/agent\_runtime.py                        |       73 |       22 |     70% |37, 40-41, 46, 126, 128, 156-185 |
+| src/news\_recap/agent\_runtime.py                        |       80 |       22 |     72% |38, 41-42, 47, 134, 136, 159-188 |
 | src/news\_recap/brain/backend/base.py                    |       24 |        0 |    100% |           |
 | src/news\_recap/brain/backend/benchmark\_agent.py        |       88 |       88 |      0% |     3-149 |
-| src/news\_recap/brain/backend/cli\_backend.py            |      165 |       62 |     62% |24-25, 77-83, 111, 114, 146-197, 209, 222, 233-234, 241, 261-262, 281, 283, 287, 290, 301-302, 304, 350-351, 359-363, 374-385 |
-| src/news\_recap/brain/backend/echo\_agent.py             |       24 |       24 |      0% |      3-48 |
+| src/news\_recap/brain/backend/cli\_backend.py            |      169 |       62 |     63% |24-25, 82-88, 116, 119, 151-202, 214, 227, 238-239, 246, 266-267, 286, 288, 292, 295, 306-307, 309, 355-356, 364-368, 379-390 |
+| src/news\_recap/brain/backend/echo\_agent.py             |       40 |       40 |      0% |     19-90 |
 | src/news\_recap/brain/contracts.py                       |      116 |       35 |     70% |80, 98, 100, 102, 115-148, 154, 173, 177, 191, 207-208 |
 | src/news\_recap/brain/flows.py                           |      390 |       99 |     75% |183-193, 208-210, 251, 293-354, 362-373, 380-389, 392-435, 478-490, 495-508, 514-519, 635-638, 691-694, 785, 807, 811, 836-837, 865, 869-872, 874-886, 934, 968, 1075 |
-| src/news\_recap/brain/models.py                          |      127 |        0 |    100% |           |
+| src/news\_recap/brain/models.py                          |      132 |        2 |     98% |    23, 35 |
 | src/news\_recap/brain/pricing.py                         |       51 |        5 |     90% |41, 76, 79, 84-85 |
-| src/news\_recap/brain/routing.py                         |      104 |       25 |     76% |58-88, 123, 128, 153, 188, 190, 193, 195, 198, 200, 202, 204, 206, 235 |
+| src/news\_recap/brain/routing.py                         |      109 |       27 |     75% |53, 62, 80-110, 145, 150, 175, 210, 212, 215, 217, 220, 222, 224, 226, 228, 257 |
 | src/news\_recap/brain/sanitization.py                    |       16 |        2 |     88% |    44, 52 |
 | src/news\_recap/brain/usage.py                           |       91 |       29 |     68% |38, 42, 63-66, 89-91, 95-96, 100-101, 105-107, 109, 114-121, 135-141 |
 | src/news\_recap/brain/workdir.py                         |       55 |        0 |    100% |           |
-| src/news\_recap/config.py                                |      293 |       42 |     86% |248, 250, 252, 258, 266, 268, 288, 301, 303, 305, 307, 311, 313, 315, 317, 319, 321, 323, 353, 360, 376, 378, 388-389, 393, 409, 424, 426, 434, 444, 456, 458, 477-482, 488, 498, 505, 512 |
+| src/news\_recap/config.py                                |      296 |       42 |     86% |265, 267, 269, 275, 283, 285, 305, 318, 320, 322, 324, 328, 330, 332, 334, 336, 338, 340, 370, 377, 393, 395, 405-406, 410, 426, 441, 443, 451, 461, 473, 475, 494-499, 505, 515, 522, 529 |
 | src/news\_recap/http/fetcher.py                          |       42 |       20 |     52% |42-48, 58-81, 91, 94, 97 |
 | src/news\_recap/http/html\_extractor.py                  |       29 |        9 |     69% |47-49, 52-62, 69 |
 | src/news\_recap/http/youtube\_extractor.py               |       49 |       29 |     41% |    57-107 |
@@ -39,14 +39,14 @@
 | src/news\_recap/ingestion/storage/alembic\_runner.py     |       12 |        0 |    100% |           |
 | src/news\_recap/ingestion/storage/common.py              |       36 |        8 |     78% |24-27, 33-36 |
 | src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      250 |        0 |    100% |           |
-| src/news\_recap/main.py                                  |      194 |        9 |     95% |367, 537, 586, 612, 677, 800, 842, 872, 948 |
-| src/news\_recap/recap/controllers.py                     |       86 |       59 |     31% |45-106, 110-128, 133-143 |
-| src/news\_recap/recap/prefect\_flow.py                   |      133 |       88 |     34% |78-138, 165, 177, 180, 191-214, 225-249, 259-266, 287-338 |
-| src/news\_recap/recap/prompts.py                         |        9 |        0 |    100% |           |
+| src/news\_recap/main.py                                  |      196 |        9 |     95% |367, 537, 586, 612, 677, 800, 842, 872, 964 |
+| src/news\_recap/recap/controllers.py                     |       72 |       46 |     36% |46-54, 66-105, 109-127, 132-142 |
+| src/news\_recap/recap/prefect\_flow.py                   |      197 |      154 |     22% |77-79, 94-97, 111-143, 152-176, 197-232, 249-338, 350-395, 406-435, 447-448, 458-520 |
+| src/news\_recap/recap/prompts.py                         |       10 |        0 |    100% |           |
 | src/news\_recap/recap/resource\_loader.py                |       43 |       21 |     51% |39-41, 46-48, 51-59, 68-90, 99-100, 103, 106 |
-| src/news\_recap/recap/runner.py                          |      124 |       16 |     87% |42-49, 78-79, 88, 109-113, 227, 265 |
+| src/news\_recap/recap/runner.py                          |      201 |       18 |     91% |48-55, 58, 67, 111, 132-136, 289, 292, 406, 444 |
 | src/news\_recap/recap/schemas.py                         |        8 |        0 |    100% |           |
-| **TOTAL**                                                | **4609** | **1017** | **78%** |           |
+| **TOTAL**                                                | **4779** | **1092** | **77%** |           |
 
 
 ## Setup coverage badge
