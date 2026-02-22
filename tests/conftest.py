@@ -12,7 +12,7 @@ import pytest
 from news_recap.config import Settings
 
 _ECHO_AGENT_COMMAND_TEMPLATE = (
-    f"{sys.executable} -m news_recap.brain.backend.echo_agent --prompt-file {{prompt_file}}"
+    f"{sys.executable} -m news_recap.recap.backend.echo_agent --prompt-file {{prompt_file}}"
 )
 
 
@@ -42,11 +42,9 @@ class _FakeTaskWrapper:
 def _bypass_prefect(monkeypatch):
     """Replace @flow/@task decorated functions with their raw .fn so tests
     never start a Prefect ephemeral server or bind to a port."""
-    from news_recap import agent_runtime
-    from news_recap.brain import flows as brain_flows
     from news_recap.recap import agent_task, flow
 
-    for mod in (brain_flows, agent_runtime, agent_task, flow):
+    for mod in (agent_task, flow):
         for name in dir(mod):
             obj = getattr(mod, name, None)
             if callable(obj) and hasattr(obj, "fn"):

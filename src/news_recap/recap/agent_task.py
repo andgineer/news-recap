@@ -15,10 +15,10 @@ from prefect import task
 from prefect.cache_policies import INPUTS
 from prefect.logging import get_run_logger
 
-from news_recap.brain.backend.base import BackendRunRequest
-from news_recap.brain.backend.cli_backend import CliAgentBackend
-from news_recap.brain.routing import resolve_routing_for_enqueue
+from news_recap.recap.backend.base import BackendRunRequest
+from news_recap.recap.backend.cli_backend import CliAgentBackend
 from news_recap.recap.pipeline_io import read_pipeline_input
+from news_recap.recap.routing import resolve_routing_for_enqueue
 from news_recap.recap.runner import RecapPipelineError
 
 STEP_TIMEOUT = 600

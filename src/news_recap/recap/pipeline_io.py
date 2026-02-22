@@ -12,17 +12,34 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from news_recap.brain.contracts import ArticleIndexEntry, TaskInputContract
-from news_recap.brain.models import SourceCorpusEntry
-from news_recap.brain.routing import RoutingDefaults, resolve_routing_for_enqueue
-from news_recap.brain.workdir import TaskWorkdirManager
+from news_recap.recap.contracts import ArticleIndexEntry, TaskInputContract
+from news_recap.recap.models import SourceCorpusEntry
 from news_recap.recap.prompts import PROMPTS_BY_TASK_TYPE
 from news_recap.recap.resource_loader import ResourceLoader
+from news_recap.recap.routing import RoutingDefaults, resolve_routing_for_enqueue
 from news_recap.recap.runner import UserPreferences
 from news_recap.recap.schemas import SCHEMAS_BY_TASK_TYPE
+from news_recap.recap.workdir import TaskWorkdirManager
 
 logger = logging.getLogger(__name__)
+
+
+def read_task_output(workdir_root: Path, task_id: str) -> dict[str, Any]:
+    """Read agent_result.json from a completed task workdir."""
+    path = workdir_root / task_id / "output" / "agent_result.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text("utf-8"), strict=False)
+    except json.JSONDecodeError:
+        return {}
+
+
+def task_results_dir(workdir_root: Path, task_id: str) -> Path:
+    """Return the results subdirectory for a task."""
+    return workdir_root / task_id / "output" / "results"
 
 
 @dataclass(slots=True)

@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from news_recap.brain.contracts import (
+from news_recap.recap.contracts import (
     ArticleIndexEntry,
     TaskInputContract,
     read_manifest,
 )
-from news_recap.brain.workdir import TaskWorkdirManager
+from news_recap.recap.workdir import TaskWorkdirManager
 
 
 @pytest.fixture

@@ -14,11 +14,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from news_recap.brain.contracts import ArticleIndexEntry
-from news_recap.brain.models import SourceCorpusEntry
-from news_recap.brain.routing import RoutingDefaults
 from news_recap.config import Settings
+from news_recap.recap.contracts import ArticleIndexEntry
+from news_recap.recap.models import SourceCorpusEntry
 from news_recap.recap.prompts import RECAP_CLASSIFY_BATCH_PROMPT
+from news_recap.recap.routing import RoutingDefaults
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +171,7 @@ def split_into_classify_batches(
     than ``_CLASSIFY_MIN_BATCH`` is merged into the previous one.
 
     >>> from datetime import UTC, datetime
-    >>> from news_recap.brain.models import SourceCorpusEntry
+    >>> from news_recap.recap.models import SourceCorpusEntry
     >>> prefs = UserPreferences()
     >>> entries = [
     ...     SourceCorpusEntry(

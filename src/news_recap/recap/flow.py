@@ -17,15 +17,14 @@ from uuid import uuid4
 from prefect import flow
 from prefect.logging import get_run_logger
 
-from news_recap.agent_runtime import read_task_output
-from news_recap.brain.contracts import ArticleIndexEntry
-from news_recap.brain.workdir import TaskWorkdirManager
 from news_recap.recap.agent_task import run_agent_step
+from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.pipeline_io import (
     PipelineInput,
     load_resources,
     materialize_step,
     read_pipeline_input,
+    read_task_output,
 )
 from news_recap.recap.runner import (
     PipelineRunResult,
@@ -43,6 +42,7 @@ from news_recap.recap.runner import (
     split_into_classify_batches,
     to_article_index,
 )
+from news_recap.recap.workdir import TaskWorkdirManager
 
 _CLASSIFY_MIN_BATCH_SUCCESS_RATE = 0.8
 

@@ -11,7 +11,7 @@ from alembic.config import Config
 def upgrade_head(db_path: Path) -> None:
     """Apply Alembic migrations up to head for the given SQLite database."""
 
-    root_dir = Path(__file__).resolve().parents[4]
+    root_dir = Path(__file__).resolve().parents[3]
     alembic_ini = root_dir / "alembic.ini"
     alembic_dir = root_dir / "alembic"
 

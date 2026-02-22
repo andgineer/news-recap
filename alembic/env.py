@@ -8,7 +8,7 @@ from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
 from alembic import context
-from news_recap.ingestion.storage import sqlmodel_models  # noqa: F401
+from news_recap.storage import sqlmodel_models  # noqa: F401
 
 config = context.config
 

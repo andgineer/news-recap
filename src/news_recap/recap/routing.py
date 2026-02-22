@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from news_recap.brain.contracts import TaskInputContract
 from news_recap.config import OrchestratorSettings
-from news_recap.ingestion.storage.common import utc_now
+from news_recap.recap.contracts import TaskInputContract
+from news_recap.storage.common import utc_now
 
 SUPPORTED_AGENTS = ("claude", "codex", "gemini")
 SUPPORTED_PROFILES = ("fast", "quality")
