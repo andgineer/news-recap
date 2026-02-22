@@ -40,13 +40,15 @@
 | src/news\_recap/ingestion/storage/common.py              |       36 |        8 |     78% |24-27, 33-36 |
 | src/news\_recap/ingestion/storage/sqlmodel\_models.py    |      250 |        0 |    100% |           |
 | src/news\_recap/main.py                                  |      196 |        9 |     95% |367, 537, 586, 612, 677, 800, 842, 872, 964 |
-| src/news\_recap/recap/controllers.py                     |       72 |       46 |     36% |46-54, 66-105, 109-127, 132-142 |
-| src/news\_recap/recap/prefect\_flow.py                   |      197 |      154 |     22% |77-79, 94-97, 111-143, 152-176, 197-232, 249-338, 350-395, 406-435, 447-448, 458-520 |
+| src/news\_recap/recap/agent\_task.py                     |       32 |       15 |     53% |     43-78 |
+| src/news\_recap/recap/flow.py                            |      129 |      109 |     16% |60-149, 162-207, 219-248, 256-257, 267-329 |
+| src/news\_recap/recap/launcher.py                        |       54 |       29 |     46% |45-53, 65-99, 108-118 |
+| src/news\_recap/recap/pipeline\_io.py                    |       49 |       30 |     39% |40-42, 52-55, 69-101, 106-130 |
 | src/news\_recap/recap/prompts.py                         |       10 |        0 |    100% |           |
 | src/news\_recap/recap/resource\_loader.py                |       43 |       21 |     51% |39-41, 46-48, 51-59, 68-90, 99-100, 103, 106 |
-| src/news\_recap/recap/runner.py                          |      201 |       18 |     91% |48-55, 58, 67, 111, 132-136, 289, 292, 406, 444 |
+| src/news\_recap/recap/runner.py                          |      201 |       18 |     91% |46-53, 56, 65, 109, 130-134, 287, 290, 404, 442 |
 | src/news\_recap/recap/schemas.py                         |        8 |        0 |    100% |           |
-| **TOTAL**                                                | **4779** | **1092** | **77%** |           |
+| **TOTAL**                                                | **4774** | **1075** | **77%** |           |
 
 
 ## Setup coverage badge
