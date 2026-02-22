@@ -64,13 +64,13 @@ _DEFAULT_CODEX_CMD = (
     '{model} "Read your task from {prompt_file} and execute it."'
 )
 _DEFAULT_CLAUDE_CMD = (
-    "claude -p --model {model} --permission-mode dontAsk "
+    "claude -p {model} --permission-mode dontAsk "
     '--allowed-tools "Read,Write,Edit,WebFetch,'
     'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
     '-- "Read your task from {prompt_file} and execute it."'
 )
 _DEFAULT_GEMINI_CMD = (
-    "gemini --model {model} --approval-mode auto_edit "
+    "gemini {model} --approval-mode auto_edit "
     '--prompt "Read your task from {prompt_file} and execute it."'
 )
 
@@ -99,10 +99,10 @@ class OrchestratorSettings:
     gemini_command_template: str = _DEFAULT_GEMINI_CMD
     codex_model_fast: str = "--model gpt-5.2 -c model_reasoning_effort=medium"
     codex_model_quality: str = "--model gpt-5.2 -c model_reasoning_effort=high"
-    claude_model_fast: str = "sonnet"
-    claude_model_quality: str = "opus"
-    gemini_model_fast: str = "gemini-2.5-flash"
-    gemini_model_quality: str = "gemini-2.5-pro"
+    claude_model_fast: str = "--model sonnet --effort low"
+    claude_model_quality: str = "--model opus"
+    gemini_model_fast: str = "--model gemini-2.5-flash"
+    gemini_model_quality: str = "--model gemini-2.5-pro"
     worker_id: str = "worker-default"
     poll_interval_seconds: float = 2.0
     retry_base_seconds: int = 30
