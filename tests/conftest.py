@@ -44,9 +44,9 @@ def _bypass_prefect(monkeypatch):
     never start a Prefect ephemeral server or bind to a port."""
     from news_recap import agent_runtime
     from news_recap.brain import flows as brain_flows
-    from news_recap.recap import prefect_flow
+    from news_recap.recap import agent_task, flow
 
-    for mod in (brain_flows, agent_runtime, prefect_flow):
+    for mod in (brain_flows, agent_runtime, agent_task, flow):
         for name in dir(mod):
             obj = getattr(mod, name, None)
             if callable(obj) and hasattr(obj, "fn"):

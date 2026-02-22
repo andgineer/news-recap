@@ -1,7 +1,7 @@
 """Shared Prefect tasks for running CLI LLM agents.
 
-Neutral module imported by both ``recap/prefect_flow.py`` (recap pipeline)
-and ``brain/flows.py`` (intelligence layer).
+Neutral module imported by both the recap pipeline and
+``brain/flows.py`` (intelligence layer).
 """
 
 from __future__ import annotations

@@ -31,7 +31,7 @@ from news_recap.ingestion.controllers import (
     IngestionPruneCommand,
     IngestionStatsCommand,
 )
-from news_recap.recap.controllers import (
+from news_recap.recap.launcher import (
     RecapCliController,
     RecapRunCommand,
 )

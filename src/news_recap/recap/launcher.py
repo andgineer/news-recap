@@ -1,4 +1,4 @@
-"""CLI controller for recap pipeline commands."""
+"""Prepare inputs and launch the recap Prefect pipeline."""
 
 from __future__ import annotations
 
@@ -12,9 +12,8 @@ from pathlib import Path
 
 from news_recap.config import Settings, configure_prefect_runtime, resolve_prefect_mode
 from news_recap.ingestion.repository import SQLiteRepository
-from news_recap.recap.prefect_flow import recap_flow
+from news_recap.recap.flow import recap_flow
 from news_recap.recap.runner import (
-    PipelineRunResult,
     UserPreferences,
     build_routing_defaults,
 )
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class RecapRunCommand:
-    """Input for recap run CLI command."""
+    """CLI parameters for a pipeline launch."""
 
     db_path: Path | None = None
     business_date: date | None = None
@@ -58,10 +57,10 @@ def _write_pipeline_input(  # noqa: PLR0913
 
 
 class RecapCliController:
-    """CLI controller for recap pipeline operations."""
+    """Load articles, materialize pipeline inputs, and launch the Prefect flow."""
 
     def run_pipeline(self, command: RecapRunCommand) -> Iterator[str]:
-        """Execute the full recap pipeline, yielding status lines."""
+        """Fetch articles from DB, write pipeline_input.json, and run recap_flow."""
 
         settings = Settings.from_env(db_path=command.db_path)
         routing_defaults = build_routing_defaults(settings)
@@ -97,34 +96,11 @@ class RecapCliController:
             yield f"Pipeline dir: {pipeline_dir}"
             yield "Starting pipeline…"
 
-            result = recap_flow(
+            recap_flow(
                 pipeline_dir=str(pipeline_dir),
                 business_date=business_date.isoformat(),
                 classify_only=command.classify_only,
             )
-            yield from _format_run_result(result)
-
-
-def _format_run_result(result: PipelineRunResult) -> Iterator[str]:
-    yield ""
-    yield f"Pipeline {result.pipeline_id}"
-    yield f"  Date: {result.business_date}"
-    yield f"  Status: {result.status}"
-
-    for step in result.steps:
-        status_marker = "ok" if step.status == "completed" else step.status
-        task_info = f" (task {step.task_id[:12]})" if step.task_id else ""
-        yield f"  [{status_marker}] {step.step_name}{task_info}"
-        if step.error:
-            yield f"    Error: {step.error}"
-
-    if result.error:
-        yield f"  Error: {result.error}"
-
-    if result.digest:
-        yield ""
-        yield "Digest preview:"
-        yield json.dumps(result.digest, ensure_ascii=False, indent=2)[:3000]
 
 
 @contextmanager

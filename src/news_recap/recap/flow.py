@@ -1,42 +1,36 @@
-"""Prefect-based recap pipeline flow.
+"""Prefect @flow for the recap pipeline and its phase functions.
 
-All pipeline data flows through files in the pipeline directory.
-The ``@flow`` receives ``pipeline_dir`` (a string path).  Each ``@task``
-receives ``pipeline_dir`` + step-specific scalars.  No module-level
-globals carry business state.
+Orchestrates classify -> enrich -> group -> deep-enrich -> synthesize -> compose.
+Each phase materializes workdirs on disk and delegates execution to
+``run_agent_step`` (the Prefect @task in ``agent_task.py``).
 
 ``from __future__ import annotations`` is intentionally NOT used —
 Prefect inspects parameter annotations at runtime for the Inputs tab.
 """
 
-import json
-import logging
 import os
-import time
-from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from prefect import flow, task
-from prefect.cache_policies import INPUTS
+from prefect import flow
 from prefect.logging import get_run_logger
 
 from news_recap.agent_runtime import read_task_output
-from news_recap.brain.backend.base import BackendRunRequest
-from news_recap.brain.backend.cli_backend import CliAgentBackend
-from news_recap.brain.contracts import ArticleIndexEntry, TaskInputContract
-from news_recap.brain.models import SourceCorpusEntry
-from news_recap.brain.routing import RoutingDefaults, resolve_routing_for_enqueue
+from news_recap.brain.contracts import ArticleIndexEntry
 from news_recap.brain.workdir import TaskWorkdirManager
-from news_recap.recap.prompts import PROMPTS_BY_TASK_TYPE
-from news_recap.recap.resource_loader import ResourceLoader
+from news_recap.recap.agent_task import run_agent_step
+from news_recap.recap.pipeline_io import (
+    PipelineInput,
+    load_resources,
+    materialize_step,
+    read_pipeline_input,
+)
 from news_recap.recap.runner import (
     PipelineRunResult,
     PipelineStepResult,
     RecapPipelineError,
-    UserPreferences,
     articles_needing_full_text,
     build_classify_batch_prompt,
     build_event_payloads,
@@ -49,203 +43,20 @@ from news_recap.recap.runner import (
     split_into_classify_batches,
     to_article_index,
 )
-from news_recap.recap.schemas import SCHEMAS_BY_TASK_TYPE
 
-logger = logging.getLogger(__name__)
-
-_STEP_TIMEOUT = 600
-_STEP_RETRIES = int(os.getenv("NEWS_RECAP_STEP_RETRIES", "1"))
-_STEP_RETRY_DELAY = 30
-_GRACEFUL_SHUTDOWN = 30
 _CLASSIFY_MIN_BATCH_SUCCESS_RATE = 0.8
-
-
-# ---------------------------------------------------------------------------
-# Pipeline input contract — read from pipeline_dir/pipeline_input.json
-# ---------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class _PipelineInput:
-    articles: list[SourceCorpusEntry]
-    preferences: UserPreferences
-    routing_defaults: RoutingDefaults
-    agent_override: str | None
-
-
-def _read_pipeline_input(pipeline_dir: str) -> _PipelineInput:
-    path = Path(pipeline_dir) / "pipeline_input.json"
-    raw = json.loads(path.read_text("utf-8"))
-    return _PipelineInput(
-        articles=[SourceCorpusEntry.from_dict(a) for a in raw["articles"]],
-        preferences=UserPreferences.from_dict(raw["preferences"]),
-        routing_defaults=RoutingDefaults.from_dict(raw["routing_defaults"]),
-        agent_override=raw.get("agent_override"),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Workdir materialization helper (called from flow body, not from tasks)
-# ---------------------------------------------------------------------------
-
-
-def _make_task_id(step_name: str, batch: int | None = None) -> str:
-    """Human-readable dir name: ``classify``, ``classify-1``, ``classify-2``."""
-    short = step_name.removeprefix("recap_")
-    if batch is not None:
-        return f"{short}-{batch}"
-    return short
-
-
-def _materialize_step(  # noqa: PLR0913
-    workdir_mgr: TaskWorkdirManager,
-    inp: _PipelineInput,
-    *,
-    step_name: str,
-    batch: int | None = None,
-    article_entries: list[ArticleIndexEntry] | None = None,
-    prompt: str | None = None,
-    extra_input_files: dict[str, bytes | str] | None = None,
-) -> str:
-    """Create a task workdir with all input files.  Returns task_id."""
-    task_id = _make_task_id(step_name, batch)
-    entries = article_entries or []
-
-    routing = resolve_routing_for_enqueue(
-        defaults=inp.routing_defaults,
-        task_type=step_name,
-        agent_override=inp.agent_override,
-        profile_override=None,
-        model_override=None,
-    )
-
-    schema_hint: str | None = None
-    if prompt is None:
-        prompt_template = PROMPTS_BY_TASK_TYPE[step_name]
-        prompt = prompt_template.format(
-            preferences=inp.preferences.format_for_prompt(),
-            max_headline_chars=inp.preferences.max_headline_chars,
-        )
-        schema_hint = SCHEMAS_BY_TASK_TYPE.get(step_name)
-
-    workdir_mgr.materialize(
-        task_id=task_id,
-        task_type=step_name,
-        task_input=TaskInputContract(
-            task_type=step_name,
-            prompt=prompt,
-            metadata={"routing": routing.to_metadata()},
-        ),
-        articles_index=entries,
-        extra_input_files=extra_input_files,
-        output_schema_hint=schema_hint,
-    )
-    return task_id
-
-
-# ---------------------------------------------------------------------------
-# Resource loading (plain function, not a Prefect task)
-# ---------------------------------------------------------------------------
-
-
-def _load_resources(entries: list[ArticleIndexEntry]) -> dict[str, bytes | str]:
-    if not entries:
-        return {}
-    resources: dict[str, bytes | str] = {}
-    with ResourceLoader() as loader:
-        for entry in entries:
-            if not entry.url:
-                continue
-            loaded = loader.load(entry.url)
-            if loaded.is_success and loaded.text:
-                safe_id = entry.source_id.replace(":", "_").replace("/", "_")
-                resources[f"{safe_id}.json"] = json.dumps(
-                    {
-                        "article_id": entry.source_id,
-                        "title": entry.title,
-                        "url": entry.url,
-                        "source": entry.source,
-                        "text": loaded.text,
-                        "content_type": loaded.content_type,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            else:
-                logger.warning("Failed to load %s: %s", entry.source_id, loaded.error)
-    return resources
-
-
-# ---------------------------------------------------------------------------
-# Prefect @task — runs agent in a pre-materialized workdir
-# ---------------------------------------------------------------------------
-
-
-@task(
-    cache_policy=INPUTS,
-    persist_result=True,
-    retries=_STEP_RETRIES,
-    retry_delay_seconds=_STEP_RETRY_DELAY,
-)
-def run_agent_step(
-    pipeline_dir: str,
-    step_name: str,
-    task_id: str,
-    timeout_seconds: int = _STEP_TIMEOUT,
-) -> str:
-    """Run an LLM agent whose workdir was already materialized by the flow."""
-    pf_logger = get_run_logger()
-
-    inp = _read_pipeline_input(pipeline_dir)
-    routing = resolve_routing_for_enqueue(
-        defaults=inp.routing_defaults,
-        task_type=step_name,
-        agent_override=inp.agent_override,
-        profile_override=None,
-        model_override=None,
-    )
-    pf_logger.info("[%s] agent=%s model=%s", step_name, routing.agent, routing.model)
-
-    manifest_path = Path(pipeline_dir) / task_id / "meta" / "task_manifest.json"
-    request = BackendRunRequest(
-        manifest_path=manifest_path,
-        timeout_seconds=timeout_seconds,
-        agent=routing.agent,
-        profile=routing.profile,
-        model=routing.model,
-        command_template=routing.command_template,
-        shutdown_requested=None,
-        graceful_shutdown_seconds=_GRACEFUL_SHUTDOWN,
-    )
-
-    step_start = time.monotonic()
-    result = CliAgentBackend().run(request)
-    elapsed = time.monotonic() - step_start
-
-    pf_logger.info("[%s] Finished in %.1fs (exit=%s)", step_name, elapsed, result.exit_code)
-
-    if result.timed_out:
-        raise RecapPipelineError(step_name, "agent timed out")
-    if result.exit_code != 0:
-        raise RecapPipelineError(step_name, f"agent exit code {result.exit_code}")
-
-    return task_id
-
-
-# ---------------------------------------------------------------------------
-# Pipeline phases (plain functions called from the @flow body)
-# ---------------------------------------------------------------------------
 
 
 def _run_classify_and_enrich(  # noqa: PLR0913
     pdir: Path,
     workdir_mgr: TaskWorkdirManager,
-    inp: _PipelineInput,
+    inp: PipelineInput,
     article_map: dict[str, ArticleIndexEntry],
     result: PipelineRunResult,
     *,
     classify_only: bool = False,
 ) -> tuple[list[ArticleIndexEntry], dict[str, dict[str, str]]]:
+    """Batch-classify articles and optionally enrich unclear ones."""
     pf_logger = get_run_logger()
     batches = split_into_classify_batches(inp.articles, inp.preferences)
     debug_max = int(os.getenv("NEWS_RECAP_CLASSIFY_MAX_BATCHES", "0")) or None
@@ -257,7 +68,7 @@ def _run_classify_and_enrich(  # noqa: PLR0913
     futures = []
     for i, batch in enumerate(batches):
         prompt = build_classify_batch_prompt(batch, inp.preferences)
-        task_id = _materialize_step(
+        task_id = materialize_step(
             workdir_mgr,
             inp,
             step_name="recap_classify",
@@ -316,10 +127,10 @@ def _run_classify_and_enrich(  # noqa: PLR0913
         return kept_entries, {}
 
     resource_entries = [article_map[sid] for sid in all_enrich if sid in article_map]
-    loaded = _load_resources(resource_entries)
+    loaded = load_resources(resource_entries)
     result.steps.append(PipelineStepResult("resource_load", None, "completed"))
 
-    tid = _materialize_step(
+    tid = materialize_step(
         workdir_mgr,
         inp,
         step_name="recap_enrich",
@@ -341,16 +152,17 @@ def _run_classify_and_enrich(  # noqa: PLR0913
 def _run_group_and_deep_enrich(  # noqa: PLR0913
     pdir: Path,
     workdir_mgr: TaskWorkdirManager,
-    inp: _PipelineInput,
+    inp: PipelineInput,
     kept_entries: list[ArticleIndexEntry],
     enriched_articles: dict[str, dict[str, str]],
     article_map: dict[str, ArticleIndexEntry],
     result: PipelineRunResult,
 ) -> list[dict[str, Any]]:
+    """Group articles into events, then deep-enrich significant ones."""
     pf_logger = get_run_logger()
     enriched_entries = merge_enriched_into_index(kept_entries, enriched_articles)
 
-    tid = _materialize_step(
+    tid = materialize_step(
         workdir_mgr,
         inp,
         step_name="recap_group",
@@ -372,11 +184,11 @@ def _run_group_and_deep_enrich(  # noqa: PLR0913
         len(significant),
         len(articles_for_full),
     )
-    full_resources = _load_resources(articles_for_full)
+    full_resources = load_resources(articles_for_full)
 
     enrich_full_payload: dict[str, Any] = {"enriched": []}
     if full_resources:
-        tid = _materialize_step(
+        tid = materialize_step(
             workdir_mgr,
             inp,
             step_name="recap_enrich_full",
@@ -398,14 +210,15 @@ def _run_group_and_deep_enrich(  # noqa: PLR0913
 def _run_synthesize_and_compose(  # noqa: PLR0913
     pdir: Path,
     workdir_mgr: TaskWorkdirManager,
-    inp: _PipelineInput,
+    inp: PipelineInput,
     kept_entries: list[ArticleIndexEntry],
     event_payloads: list[dict[str, Any]],
     result: PipelineRunResult,
 ) -> dict[str, Any]:
+    """Synthesize event narratives, then compose the final digest."""
     synth_resources = events_to_resource_files(event_payloads)
 
-    tid = _materialize_step(
+    tid = materialize_step(
         workdir_mgr,
         inp,
         step_name="recap_synthesize",
@@ -419,7 +232,7 @@ def _run_synthesize_and_compose(  # noqa: PLR0913
     )
     result.steps.append(PipelineStepResult("recap_synthesize", tid, "completed"))
 
-    tid = _materialize_step(
+    tid = materialize_step(
         workdir_mgr,
         inp,
         step_name="recap_compose",
@@ -435,15 +248,11 @@ def _run_synthesize_and_compose(  # noqa: PLR0913
     return read_task_output(pdir, tid)
 
 
-# ---------------------------------------------------------------------------
-# Prefect @flow
-# ---------------------------------------------------------------------------
-
-
 def _flow_run_name(
     business_date: str = "",  # noqa: ARG001
     **_kwargs: Any,
 ) -> str:
+    """Generate a human-readable flow run name with timestamp."""
     now = datetime.now(tz=UTC).strftime("%H:%M:%S")
     return f"recap {business_date} {now}"
 
@@ -454,10 +263,10 @@ def recap_flow(
     business_date: str,
     classify_only: bool = False,
 ) -> PipelineRunResult:
-    """Prefect flow — only simple, serializable parameters."""
+    """Top-level Prefect flow for the daily recap pipeline."""
     pf_logger = get_run_logger()
     pdir = Path(pipeline_dir)
-    inp = _read_pipeline_input(pipeline_dir)
+    inp = read_pipeline_input(pipeline_dir)
     workdir_mgr = TaskWorkdirManager(pdir)
 
     pipeline_id = str(uuid4())

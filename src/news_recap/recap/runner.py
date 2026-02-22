@@ -1,9 +1,7 @@
 """Data-transformation helpers and shared types for the recap pipeline.
 
-Business logic (article parsing, event building, etc.) used by
-``prefect_flow.py``.  The legacy ``RecapPipelineRunner`` class that
-previously lived here has been removed — all orchestration now goes
-through Prefect.
+Business logic (article parsing, event building, etc.) used by the
+recap flow modules.  All orchestration goes through Prefect.
 """
 
 from __future__ import annotations
@@ -103,7 +101,7 @@ class RecapPipelineError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# Article / event helpers (reused by prefect_flow.py)
+# Article / event helpers (reused by the flow module)
 # ---------------------------------------------------------------------------
 
 
