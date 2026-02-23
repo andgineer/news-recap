@@ -12,8 +12,6 @@ from news_recap.ingestion.controllers import (
     IngestionCliController,
     IngestionClustersCommand,
     IngestionDuplicatesCommand,
-    IngestionGcCommand,
-    IngestionPruneCommand,
     IngestionStatsCommand,
 )
 from news_recap.recap.launcher import (
@@ -38,20 +36,25 @@ def ingest() -> None:
 
 
 @ingest.command("daily")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--data-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Data directory path.",
+)
 @click.option(
     "--feed-url",
     "feed_urls",
     multiple=True,
     help="RSS/Atom feed URL. Can be repeated.",
 )
-def ingest_daily(db_path: Path | None, feed_urls: tuple[str, ...]) -> None:
+def ingest_daily(data_dir: Path | None, feed_urls: tuple[str, ...]) -> None:
     """Run one daily ingestion cycle from RSS feeds."""
 
     _emit_lines(
         INGESTION_CONTROLLER.run_daily(
             DailyIngestionCommand(
-                db_path=db_path,
+                data_dir=data_dir,
                 feed_urls=feed_urls,
             ),
         ),
@@ -59,7 +62,12 @@ def ingest_daily(db_path: Path | None, feed_urls: tuple[str, ...]) -> None:
 
 
 @ingest.command("stats")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--data-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Data directory path.",
+)
 @click.option(
     "--hours",
     type=click.IntRange(min=1),
@@ -80,7 +88,7 @@ def ingest_daily(db_path: Path | None, feed_urls: tuple[str, ...]) -> None:
     help="How many latest runs to display.",
 )
 def ingest_stats(
-    db_path: Path | None,
+    data_dir: Path | None,
     hours: int,
     source: str | None,
     recent_runs: int,
@@ -90,7 +98,7 @@ def ingest_stats(
     _emit_lines(
         INGESTION_CONTROLLER.stats(
             IngestionStatsCommand(
-                db_path=db_path,
+                data_dir=data_dir,
                 hours=hours,
                 source=source,
                 recent_runs=recent_runs,
@@ -100,7 +108,12 @@ def ingest_stats(
 
 
 @ingest.command("clusters")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--data-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Data directory path.",
+)
 @click.option("--run-id", default=None, help="Specific ingestion run id to inspect.")
 @click.option(
     "--source",
@@ -142,7 +155,7 @@ def ingest_stats(
     help="Print sample member articles for each cluster.",
 )
 def ingest_clusters(  # noqa: PLR0913
-    db_path: Path | None,
+    data_dir: Path | None,
     run_id: str | None,
     source: str | None,
     hours: int,
@@ -156,7 +169,7 @@ def ingest_clusters(  # noqa: PLR0913
     _emit_lines(
         INGESTION_CONTROLLER.clusters(
             IngestionClustersCommand(
-                db_path=db_path,
+                data_dir=data_dir,
                 run_id=run_id,
                 source=source,
                 hours=hours,
@@ -170,7 +183,12 @@ def ingest_clusters(  # noqa: PLR0913
 
 
 @ingest.command("duplicates")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--data-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Data directory path.",
+)
 @click.option("--run-id", default=None, help="Specific ingestion run id to inspect.")
 @click.option(
     "--source",
@@ -199,7 +217,7 @@ def ingest_clusters(  # noqa: PLR0913
     help="How many cluster members to show for each duplicate example.",
 )
 def ingest_duplicates(  # noqa: PLR0913
-    db_path: Path | None,
+    data_dir: Path | None,
     run_id: str | None,
     source: str | None,
     hours: int,
@@ -211,71 +229,12 @@ def ingest_duplicates(  # noqa: PLR0913
     _emit_lines(
         INGESTION_CONTROLLER.duplicates(
             IngestionDuplicatesCommand(
-                db_path=db_path,
+                data_dir=data_dir,
                 run_id=run_id,
                 source=source,
                 hours=hours,
                 limit_clusters=limit_clusters,
                 members_per_cluster=members_per_cluster,
-            ),
-        ),
-    )
-
-
-@ingest.command("prune")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option(
-    "--days",
-    type=click.IntRange(min=0),
-    default=None,
-    help=(
-        "Delete user-article links older than this many days by discovered_at. "
-        "Defaults to NEWS_RECAP_ARTICLE_RETENTION_DAYS."
-    ),
-)
-@click.option(
-    "--dry-run/--no-dry-run",
-    default=False,
-    show_default=True,
-    help="Show deletion counts without modifying the database.",
-)
-def ingest_prune(
-    db_path: Path | None,
-    days: int | None,
-    dry_run: bool,
-) -> None:
-    """Delete old articles according to retention policy."""
-
-    _emit_lines(
-        INGESTION_CONTROLLER.prune(
-            IngestionPruneCommand(
-                db_path=db_path,
-                days=days,
-                dry_run=dry_run,
-            ),
-        ),
-    )
-
-
-@ingest.command("gc")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
-@click.option(
-    "--dry-run/--no-dry-run",
-    default=False,
-    show_default=True,
-    help="Show deletion counts without modifying the database.",
-)
-def ingest_gc(
-    db_path: Path | None,
-    dry_run: bool,
-) -> None:
-    """Run global GC for shared unreferenced records."""
-
-    _emit_lines(
-        INGESTION_CONTROLLER.gc(
-            IngestionGcCommand(
-                db_path=db_path,
-                dry_run=dry_run,
             ),
         ),
     )
@@ -287,7 +246,12 @@ def recap() -> None:
 
 
 @recap.command("run")
-@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option(
+    "--data-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Data directory path.",
+)
 @click.option(
     "--date",
     "business_date",
@@ -306,32 +270,35 @@ def recap() -> None:
     "article_limit",
     type=click.IntRange(min=1),
     default=None,
-    help="Cap number of articles fetched from DB (useful for smoke tests).",
+    help="Cap number of articles loaded (useful for smoke tests).",
 )
 @click.option(
-    "--classify-only",
-    "classify_only",
-    is_flag=True,
-    default=False,
-    help="Stop pipeline after classify step (skip enrich, group, synthesize).",
+    "--stop-after",
+    "stop_after",
+    type=click.Choice(
+        ["classify", "enrich", "group", "enrich_full", "synthesize", "compose"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Stop pipeline after this phase (e.g. --stop-after classify).",
 )
 def recap_run(
-    db_path: Path | None,
+    data_dir: Path | None,
     business_date: datetime | None,
     agent: str | None,
     article_limit: int | None,
-    classify_only: bool,
+    stop_after: str | None,
 ) -> None:
     """Run the full news digest pipeline."""
 
     _emit_lines(
         RECAP_CONTROLLER.run_pipeline(
             RecapRunCommand(
-                db_path=db_path,
+                data_dir=data_dir,
                 business_date=business_date.date() if business_date is not None else None,
                 agent_override=agent,
                 article_limit=article_limit,
-                classify_only=classify_only,
+                stop_after=stop_after,
             ),
         ),
     )

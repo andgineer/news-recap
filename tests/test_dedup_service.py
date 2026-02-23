@@ -22,6 +22,9 @@ class FakeRepository:
         self.last_save_model_name: str | None = None
         self.saved_clusters_count = 0
 
+    def touch_run(self, run_id: str) -> None:  # noqa: ARG002
+        pass
+
     def list_candidates_for_dedup(self, since: datetime) -> list[DedupCandidate]:  # noqa: ARG002
         return self._candidates
 
@@ -83,7 +86,7 @@ def test_dedup_uses_title_plus_clean_text_for_embedding_input(monkeypatch) -> No
     )
 
     service = DedupStageService(
-        repository=repo,
+        store=repo,
         dedup_settings=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.95),
     )
     counters = IngestionRunCounters()
@@ -121,7 +124,7 @@ def test_dedup_does_not_merge_when_clean_text_empty_but_titles_different(monkeyp
     )
 
     service = DedupStageService(
-        repository=repo,
+        store=repo,
         dedup_settings=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.95),
     )
     counters = IngestionRunCounters()
@@ -165,7 +168,7 @@ def test_dedup_still_merges_same_fact_with_title_and_text(monkeypatch) -> None:
     )
 
     service = DedupStageService(
-        repository=repo,
+        store=repo,
         dedup_settings=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.95),
     )
     counters = IngestionRunCounters()

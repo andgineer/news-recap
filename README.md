@@ -13,13 +13,6 @@ subscriptions — making heavy daily summarisation practically free.
 
 - [News Recap](https://andgineer.github.io/news-recap/)
 
-### User defaults
-
-- Local runs use `user_id=default_user`.
-- You can override context with:
-  - `NEWS_RECAP_USER_ID`
-  - `NEWS_RECAP_USER_NAME`
-
 # Developers
 
 For development you need [uv](https://github.com/astral-sh/uv) installed.

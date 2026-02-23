@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from news_recap.config import IngestionSettings
 from news_recap.ingestion.models import GapWrite, IngestionRunCounters, UpsertAction
-from news_recap.ingestion.repository import SQLiteRepository
+from news_recap.ingestion.repository import IngestionStore
 from news_recap.ingestion.services.normalize_service import ArticleNormalizationService
 from news_recap.ingestion.sources.base import (
     PageCheckpointSourceAdapter,
@@ -31,12 +31,12 @@ class FetchStageService:
         self,
         *,
         source: SourceAdapter,
-        repository: SQLiteRepository,
+        store: IngestionStore,
         ingestion_settings: IngestionSettings,
         normalizer: ArticleNormalizationService,
     ) -> None:
         self.source = source
-        self.repository = repository
+        self.store = store
         self.ingestion_settings = ingestion_settings
         self.normalizer = normalizer
 
@@ -44,7 +44,7 @@ class FetchStageService:
         if isinstance(self.source, RunLifecycleSourceAdapter):
             self.source.begin_run()
 
-        open_gaps = self.repository.list_open_gaps(
+        open_gaps = self.store.list_open_gaps(
             source=self.source.name,
             limit=self.ingestion_settings.backfill_max_gaps,
         )
@@ -81,14 +81,14 @@ class FetchStageService:
             if not unlimited_pages:
                 pages_left -= 1
 
-            self.repository.touch_run(run_id)
+            self.store.touch_run(run_id)
             try:
                 page = self.source.fetch_page(
                     cursor=cursor,
                     limit=self.ingestion_settings.page_size,
                 )
             except TemporarySourceError as error:
-                self.repository.create_gap(
+                self.store.create_gap(
                     run_id=run_id,
                     source=self.source.name,
                     gap=GapWrite(
@@ -102,13 +102,13 @@ class FetchStageService:
                 break
 
             if seed.gap_id and not gap_resolved:
-                self.repository.resolve_gap(seed.gap_id)
+                self.store.resolve_gap(seed.gap_id)
                 gap_resolved = True
 
             for source_article in page.articles:
                 normalized = self.normalizer.normalize(source_article)
-                result = self.repository.upsert_article(article=normalized, run_id=run_id)
-                self.repository.upsert_raw_article(
+                result = self.store.upsert_article(article=normalized, run_id=run_id)
+                self.store.upsert_raw_article(
                     source_name=self.source.name,
                     external_id=source_article.external_id,
                     raw_payload=source_article.raw_payload,
@@ -122,7 +122,7 @@ class FetchStageService:
                     counters.skipped_count += 1
 
             self._mark_page_processed(next_cursor=page.next_cursor)
-            self.repository.touch_run(run_id)
+            self.store.touch_run(run_id)
 
             cursor = page.next_cursor
             if not cursor:

@@ -22,7 +22,8 @@ class IngestionSettings:
     active_run_stale_after_seconds: int = 1_800
     backfill_max_gaps: int = 10
     clean_text_max_chars: int = 12_000
-    article_retention_days: int = 30
+    gc_retention_days: int = 7
+    digest_lookback_days: int = 3
 
 
 @dataclass(slots=True)
@@ -48,14 +49,6 @@ class RssSettings:
     max_retries: int = 3
     retry_backoff_seconds: float = 1.0
     request_timeout_seconds: float = 30.0
-
-
-@dataclass(slots=True)
-class UserContextSettings:
-    """User context settings."""
-
-    user_id: str = "default_user"
-    user_name: str = "Default User"
 
 
 _DEFAULT_CODEX_CMD = (
@@ -122,21 +115,19 @@ class OrchestratorSettings:
 class Settings:
     """Application settings grouped by domain concerns."""
 
-    db_path: Path = Path(".news_recap.db")
+    data_dir: Path = Path(".news_recap_data")
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)
     dedup: DedupSettings = field(default_factory=DedupSettings)
     rss: RssSettings = field(default_factory=RssSettings)
-    user_context: UserContextSettings = field(default_factory=UserContextSettings)
     orchestrator: OrchestratorSettings = field(default_factory=OrchestratorSettings)
-    sqlite_busy_timeout_ms: int = 5_000
 
     @classmethod
-    def from_env(cls, db_path: Path | None = None) -> Settings:
+    def from_env(cls, data_dir: Path | None = None) -> Settings:
         """Load settings from environment with sane defaults for local development."""
 
         rss_urls = _collect_feed_urls()
         settings = cls(
-            db_path=db_path or Path(os.getenv("NEWS_RECAP_DB_PATH", ".news_recap.db")),
+            data_dir=data_dir or Path(os.getenv("NEWS_RECAP_DATA_DIR", ".news_recap_data")),
             ingestion=IngestionSettings(
                 page_size=int(
                     os.getenv(
@@ -155,7 +146,8 @@ class Settings:
                 ),
                 backfill_max_gaps=int(os.getenv("NEWS_RECAP_BACKFILL_MAX_GAPS", "10")),
                 clean_text_max_chars=int(os.getenv("NEWS_RECAP_CLEAN_TEXT_MAX_CHARS", "12000")),
-                article_retention_days=int(os.getenv("NEWS_RECAP_ARTICLE_RETENTION_DAYS", "30")),
+                gc_retention_days=int(os.getenv("NEWS_RECAP_GC_RETENTION_DAYS", "7")),
+                digest_lookback_days=int(os.getenv("NEWS_RECAP_DIGEST_LOOKBACK_DAYS", "3")),
             ),
             dedup=DedupSettings(
                 enabled=_env_bool("NEWS_RECAP_DEDUP_ENABLED", default=False),
@@ -187,10 +179,6 @@ class Settings:
                 request_timeout_seconds=float(
                     os.getenv("NEWS_RECAP_RSS_REQUEST_TIMEOUT_SECONDS", "30.0"),
                 ),
-            ),
-            user_context=UserContextSettings(
-                user_id=os.getenv("NEWS_RECAP_USER_ID", "default_user"),
-                user_name=os.getenv("NEWS_RECAP_USER_NAME", "Default User"),
             ),
             orchestrator=OrchestratorSettings(
                 workdir_root=Path(
@@ -230,9 +218,6 @@ class Settings:
                     os.getenv("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS", "30"),
                 ),
             ),
-            sqlite_busy_timeout_ms=int(
-                os.getenv("NEWS_RECAP_SQLITE_BUSY_TIMEOUT_MS", "5000"),
-            ),
         )
         settings.validate()
         return settings
@@ -245,12 +230,12 @@ class Settings:
         self._validate_orchestrator_runtime_limits()
 
     def _validate_storage_and_ingestion(self) -> None:
-        if self.sqlite_busy_timeout_ms <= 0:
-            raise ValueError("NEWS_RECAP_SQLITE_BUSY_TIMEOUT_MS must be > 0.")
         if self.ingestion.active_run_stale_after_seconds <= 0:
             raise ValueError("NEWS_RECAP_ACTIVE_RUN_STALE_AFTER_SECONDS must be > 0.")
-        if self.ingestion.article_retention_days < 0:
-            raise ValueError("NEWS_RECAP_ARTICLE_RETENTION_DAYS must be >= 0.")
+        if self.ingestion.gc_retention_days < 1:
+            raise ValueError("NEWS_RECAP_GC_RETENTION_DAYS must be >= 1.")
+        if self.ingestion.digest_lookback_days < 1:
+            raise ValueError("NEWS_RECAP_DIGEST_LOOKBACK_DAYS must be >= 1.")
         if not (0.0 < self.dedup.threshold <= 1.0):
             raise ValueError("NEWS_RECAP_DEDUP_THRESHOLD must be in (0, 1].")
 
@@ -313,8 +298,6 @@ class Settings:
 
         if self.ingestion.active_run_stale_after_seconds <= 0:
             raise ValueError("NEWS_RECAP_ACTIVE_RUN_STALE_AFTER_SECONDS must be > 0.")
-        if self.ingestion.article_retention_days < 0:
-            raise ValueError("NEWS_RECAP_ARTICLE_RETENTION_DAYS must be >= 0.")
 
         effective_feed_urls = _normalize_feed_urls(override_feed_urls or self.rss.feed_urls)
         if not effective_feed_urls:

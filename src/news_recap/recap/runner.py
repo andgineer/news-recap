@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import msgspec
+
 from news_recap.config import Settings
 from news_recap.recap.contracts import ArticleIndexEntry
-from news_recap.recap.models import SourceCorpusEntry
+from news_recap.recap.models import DigestArticle
 from news_recap.recap.prompts import RECAP_CLASSIFY_BATCH_PROMPT
 from news_recap.recap.routing import RoutingDefaults
 
@@ -33,8 +35,7 @@ _CLASSIFY_MAX_BATCH = 500
 _CLASSIFY_MIN_RECOGNITION_RATE = 0.8
 
 
-@dataclass(slots=True)
-class UserPreferences:
+class UserPreferences(msgspec.Struct):
     """User preferences for digest composition."""
 
     max_headline_chars: int = 120
@@ -52,22 +53,12 @@ class UserPreferences:
             )
         return "\n".join(parts) if parts else "no specific preferences"
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "max_headline_chars": self.max_headline_chars,
-            "interesting": self.interesting,
-            "not_interesting": self.not_interesting,
-            "language": self.language,
-        }
+    def to_dict(self) -> dict[str, object]:
+        return msgspec.structs.asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UserPreferences:
-        return cls(
-            max_headline_chars=int(data.get("max_headline_chars", 120)),
-            interesting=str(data.get("interesting", _DEFAULT_INTERESTING)),
-            not_interesting=str(data.get("not_interesting", _DEFAULT_NOT_INTERESTING)),
-            language=str(data.get("language", "ru")),
-        )
+        return msgspec.convert(data, UserPreferences)
 
 
 @dataclass(slots=True)
@@ -105,14 +96,14 @@ class RecapPipelineError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def to_article_index(entries: list[SourceCorpusEntry]) -> list[ArticleIndexEntry]:
+def to_article_index(entries: list[DigestArticle]) -> list[ArticleIndexEntry]:
     return [
         ArticleIndexEntry(
-            source_id=e.source_id,
+            source_id=e.article_id,
             title=e.title,
             url=e.url,
             source=e.source,
-            published_at=e.published_at.isoformat(),
+            published_at=e.published_at,
         )
         for e in entries
     ]
@@ -124,19 +115,19 @@ def _safe_file_id(source_id: str) -> str:
 
 
 def articles_to_individual_files(
-    entries: list[SourceCorpusEntry],
+    entries: list[DigestArticle],
 ) -> dict[str, bytes | str]:
     """One ``{id}_in.txt`` per article containing only the headline."""
     files: dict[str, bytes | str] = {}
     for e in entries:
-        fid = _safe_file_id(e.source_id)
+        fid = _safe_file_id(e.article_id)
         files[f"{fid}_in.txt"] = e.title
     return files
 
 
 def parse_classify_out_files(
     results_dir: Path,
-    entries: list[SourceCorpusEntry],
+    entries: list[DigestArticle],
 ) -> tuple[list[str], list[str]]:
     """Read ``{id}_out.txt`` files written by the agent.
 
@@ -146,37 +137,37 @@ def parse_classify_out_files(
     kept: list[str] = []
     enrich: list[str] = []
     for e in entries:
-        fid = _safe_file_id(e.source_id)
+        fid = _safe_file_id(e.article_id)
         out_path = results_dir / f"{fid}_out.txt"
         if not out_path.exists():
-            kept.append(e.source_id)
+            kept.append(e.article_id)
             continue
         verdict = out_path.read_text("utf-8").strip().lower()
         if verdict == "trash":
             continue
-        kept.append(e.source_id)
+        kept.append(e.article_id)
         if verdict == "enrich":
-            enrich.append(e.source_id)
+            enrich.append(e.article_id)
     return kept, enrich
 
 
 def split_into_classify_batches(
-    entries: list[SourceCorpusEntry],
+    entries: list[DigestArticle],
     preferences: UserPreferences,
-) -> list[list[SourceCorpusEntry]]:
+) -> list[list[DigestArticle]]:
     """Split entries into char-budget-aware batches for batch classify.
 
     Packs headlines greedily up to ``_CLASSIFY_MAX_PROMPT_CHARS`` total chars
     or ``_CLASSIFY_MAX_BATCH`` entries per batch.  A trailing batch smaller
     than ``_CLASSIFY_MIN_BATCH`` is merged into the previous one.
 
-    >>> from datetime import UTC, datetime
-    >>> from news_recap.recap.models import SourceCorpusEntry
+    >>> from news_recap.recap.models import DigestArticle
     >>> prefs = UserPreferences()
     >>> entries = [
-    ...     SourceCorpusEntry(
-    ...         source_id=str(i), article_id=str(i), title=f"T{i}",
-    ...         url="u", source="s", published_at=datetime.now(tz=UTC),
+    ...     DigestArticle(
+    ...         article_id=str(i), title=f"T{i}",
+    ...         url="u", source="s", published_at="2026-01-01T00:00:00+00:00",
+    ...         clean_text="",
     ...     )
     ...     for i in range(10)
     ... ]
@@ -197,8 +188,8 @@ def split_into_classify_batches(
     )
     budget = max(1, _CLASSIFY_MAX_PROMPT_CHARS - preamble_len)
 
-    batches: list[list[SourceCorpusEntry]] = []
-    current: list[SourceCorpusEntry] = []
+    batches: list[list[DigestArticle]] = []
+    current: list[DigestArticle] = []
     current_chars = 0
 
     for idx, entry in enumerate(entries):
@@ -224,7 +215,7 @@ def split_into_classify_batches(
 
 
 def build_classify_batch_prompt(
-    entries: list[SourceCorpusEntry],
+    entries: list[DigestArticle],
     preferences: UserPreferences,
 ) -> str:
     """Build the inline batch classify prompt for a slice of articles.
@@ -243,7 +234,7 @@ def build_classify_batch_prompt(
 
 def parse_classify_batch_stdout(  # noqa: C901, PLR0912
     stdout_path: Path,
-    entries: list[SourceCorpusEntry],
+    entries: list[DigestArticle],
 ) -> tuple[list[str], list[str]]:
     """Parse batch classification verdicts from agent stdout log.
 
@@ -262,7 +253,7 @@ def parse_classify_batch_stdout(  # noqa: C901, PLR0912
     """
     if not stdout_path.exists():
         logger.warning("Verdicts file not found: %s — defaulting all to ok", stdout_path)
-        return [e.source_id for e in entries], []
+        return [e.article_id for e in entries], []
 
     text = stdout_path.read_text("utf-8")
 
@@ -309,9 +300,9 @@ def parse_classify_batch_stdout(  # noqa: C901, PLR0912
         verdict = parsed.get(str(i + 1), "ok")
         if verdict == "trash":
             continue
-        kept.append(e.source_id)
+        kept.append(e.article_id)
         if verdict == "enrich":
-            enrich.append(e.source_id)
+            enrich.append(e.article_id)
 
     return kept, enrich
 

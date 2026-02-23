@@ -16,7 +16,7 @@ from news_recap.ingestion.models import (
     SourcePage,
 )
 from news_recap.ingestion.pipeline import run_daily_ingestion
-from news_recap.ingestion.repository import SQLiteRepository
+from news_recap.ingestion.repository import IngestionStore
 from news_recap.ingestion.sources.base import (
     NonRetryableSourceError,
     TemporarySourceError,
@@ -104,9 +104,9 @@ def _build_article(
     )
 
 
-def _build_settings(db_path: Path) -> Settings:
+def _build_settings(data_dir: Path) -> Settings:
     return Settings(
-        db_path=db_path,
+        data_dir=data_dir,
         ingestion=IngestionSettings(page_size=10, max_pages=5),
         dedup=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.9),
         rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
@@ -114,9 +114,7 @@ def _build_settings(db_path: Path) -> Settings:
 
 
 def test_pipeline_idempotent_run(tmp_path: Path) -> None:
-    db_path = tmp_path / "pipeline.db"
-    repository = SQLiteRepository(db_path)
-    repository.init_schema()
+    store = IngestionStore(tmp_path)
 
     pages = {
         None: SourcePage(
@@ -134,10 +132,10 @@ def test_pipeline_idempotent_run(tmp_path: Path) -> None:
         ),
     }
     source = StaticSource(pages)
-    settings = _build_settings(db_path)
+    settings = _build_settings(tmp_path)
 
-    first = run_daily_ingestion(settings=settings, repository=repository, source=source)
-    second = run_daily_ingestion(settings=settings, repository=repository, source=source)
+    first = run_daily_ingestion(settings=settings, store=store, source=source)
+    second = run_daily_ingestion(settings=settings, store=store, source=source)
 
     assert first.status == RunStatus.SUCCEEDED
     assert first.counters.ingested_count == 3
@@ -148,13 +146,11 @@ def test_pipeline_idempotent_run(tmp_path: Path) -> None:
     assert second.counters.updated_count == 0
     assert second.counters.skipped_count == 3
 
-    repository.close()
+    store.close()
 
 
 def test_pipeline_backfills_open_gap(tmp_path: Path) -> None:
-    db_path = tmp_path / "backfill.db"
-    repository = SQLiteRepository(db_path)
-    repository.init_schema()
+    store = IngestionStore(tmp_path)
 
     pages = {
         None: SourcePage(
@@ -164,54 +160,43 @@ def test_pipeline_backfills_open_gap(tmp_path: Path) -> None:
         )
     }
     source = FlakySource(pages)
-    settings = _build_settings(db_path)
+    settings = _build_settings(tmp_path)
 
-    first = run_daily_ingestion(settings=settings, repository=repository, source=source)
+    first = run_daily_ingestion(settings=settings, store=store, source=source)
     assert first.status == RunStatus.PARTIAL
     assert first.counters.gaps_opened_count == 1
-    assert len(repository.list_open_gaps(source=source.name, limit=10)) == 1
+    assert len(store.list_open_gaps(source=source.name, limit=10)) == 1
 
-    second = run_daily_ingestion(settings=settings, repository=repository, source=source)
+    second = run_daily_ingestion(settings=settings, store=store, source=source)
     assert second.status == RunStatus.SUCCEEDED
     assert second.counters.ingested_count == 1
-    assert len(repository.list_open_gaps(source=source.name, limit=10)) == 0
+    assert len(store.list_open_gaps(source=source.name, limit=10)) == 0
 
-    repository.close()
+    store.close()
 
 
 def test_pipeline_fails_fast_on_non_retryable_source_error(tmp_path: Path) -> None:
-    db_path = tmp_path / "fail-fast.db"
-    repository = SQLiteRepository(db_path)
-    repository.init_schema()
+    store = IngestionStore(tmp_path)
 
     source = NonRetryableFailingSource({})
-    settings = _build_settings(db_path)
+    settings = _build_settings(tmp_path)
 
     with pytest.raises(NonRetryableSourceError):
-        run_daily_ingestion(settings=settings, repository=repository, source=source)
+        run_daily_ingestion(settings=settings, store=store, source=source)
 
-    assert len(repository.list_open_gaps(source=source.name, limit=10)) == 0
-    last_run = repository._connection.execute(
-        """
-        SELECT status, gaps_opened_count
-        FROM ingestion_runs
-        ORDER BY started_at DESC
-        LIMIT 1
-        """
-    ).fetchone()
-    assert last_run is not None
-    assert last_run["status"] == RunStatus.FAILED.value
-    assert int(last_run["gaps_opened_count"]) == 0
-    repository.close()
+    assert len(store.list_open_gaps(source=source.name, limit=10)) == 0
+    runs = store.list_recent_runs(limit=1, source=source.name)
+    assert len(runs) == 1
+    assert runs[0].status == RunStatus.FAILED.value
+    assert runs[0].gaps_opened_count == 0
+    store.close()
 
 
 def test_pipeline_does_not_fetch_none_twice_when_gap_seed_is_none(tmp_path: Path) -> None:
-    db_path = tmp_path / "dedupe-seed.db"
-    repository = SQLiteRepository(db_path)
-    repository.init_schema()
+    store = IngestionStore(tmp_path)
 
-    setup_run_id = repository.start_run(source="fake")
-    repository.create_gap(
+    setup_run_id = store.start_run(source="fake")
+    store.create_gap(
         run_id=setup_run_id,
         source="fake",
         gap=GapWrite(
@@ -221,7 +206,7 @@ def test_pipeline_does_not_fetch_none_twice_when_gap_seed_is_none(tmp_path: Path
             retry_after=1,
         ),
     )
-    repository.finish_run(
+    store.finish_run(
         run_id=setup_run_id,
         status=RunStatus.PARTIAL,
         counters=IngestionRunCounters(),
@@ -236,18 +221,16 @@ def test_pipeline_does_not_fetch_none_twice_when_gap_seed_is_none(tmp_path: Path
             )
         }
     )
-    settings = _build_settings(db_path)
+    settings = _build_settings(tmp_path)
 
-    summary = run_daily_ingestion(settings=settings, repository=repository, source=source)
+    summary = run_daily_ingestion(settings=settings, store=store, source=source)
     assert summary.status == RunStatus.SUCCEEDED
     assert source.calls.count(None) == 1
-    repository.close()
+    store.close()
 
 
 def test_pipeline_calls_source_page_checkpoint_after_successful_page(tmp_path: Path) -> None:
-    db_path = tmp_path / "checkpoint-source.db"
-    repository = SQLiteRepository(db_path)
-    repository.init_schema()
+    store = IngestionStore(tmp_path)
 
     source = CheckpointingSource(
         {
@@ -263,20 +246,18 @@ def test_pipeline_calls_source_page_checkpoint_after_successful_page(tmp_path: P
             ),
         }
     )
-    settings = _build_settings(db_path)
+    settings = _build_settings(tmp_path)
 
-    summary = run_daily_ingestion(settings=settings, repository=repository, source=source)
+    summary = run_daily_ingestion(settings=settings, store=store, source=source)
     assert summary.status == RunStatus.SUCCEEDED
     assert source.checkpoints == ["c1", None]
-    repository.close()
+    store.close()
 
 
 def test_pipeline_dedup_does_not_merge_empty_clean_text_with_different_titles(
     tmp_path: Path,
 ) -> None:
-    db_path = tmp_path / "dedup-empty-clean.db"
-    repository = SQLiteRepository(db_path)
-    repository.init_schema()
+    store = IngestionStore(tmp_path)
 
     source = StaticSource(
         {
@@ -300,19 +281,17 @@ def test_pipeline_dedup_does_not_merge_empty_clean_text_with_different_titles(
             ),
         },
     )
-    settings = _build_settings(db_path)
+    settings = _build_settings(tmp_path)
 
-    summary = run_daily_ingestion(settings=settings, repository=repository, source=source)
+    summary = run_daily_ingestion(settings=settings, store=store, source=source)
     assert summary.status == RunStatus.SUCCEEDED
     assert summary.counters.dedup_clusters_count == 2
     assert summary.counters.dedup_duplicates_count == 0
-    repository.close()
+    store.close()
 
 
 def test_pipeline_dedup_keeps_merging_same_fact(tmp_path: Path) -> None:
-    db_path = tmp_path / "dedup-same-fact.db"
-    repository = SQLiteRepository(db_path)
-    repository.init_schema()
+    store = IngestionStore(tmp_path)
 
     source = StaticSource(
         {
@@ -336,19 +315,17 @@ def test_pipeline_dedup_keeps_merging_same_fact(tmp_path: Path) -> None:
             ),
         },
     )
-    settings = _build_settings(db_path)
+    settings = _build_settings(tmp_path)
 
-    summary = run_daily_ingestion(settings=settings, repository=repository, source=source)
+    summary = run_daily_ingestion(settings=settings, store=store, source=source)
     assert summary.status == RunStatus.SUCCEEDED
     assert summary.counters.dedup_clusters_count == 1
     assert summary.counters.dedup_duplicates_count == 1
-    repository.close()
+    store.close()
 
 
 def test_pipeline_max_pages_zero_means_unlimited(tmp_path: Path) -> None:
-    db_path = tmp_path / "unlimited-pages.db"
-    repository = SQLiteRepository(db_path)
-    repository.init_schema()
+    store = IngestionStore(tmp_path)
 
     source = StaticSource(
         {
@@ -370,22 +347,20 @@ def test_pipeline_max_pages_zero_means_unlimited(tmp_path: Path) -> None:
         },
     )
     settings = Settings(
-        db_path=db_path,
+        data_dir=tmp_path,
         ingestion=IngestionSettings(page_size=1, max_pages=0),
         dedup=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.9),
         rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
     )
 
-    summary = run_daily_ingestion(settings=settings, repository=repository, source=source)
+    summary = run_daily_ingestion(settings=settings, store=store, source=source)
     assert summary.status == RunStatus.SUCCEEDED
     assert summary.counters.ingested_count == 3
-    repository.close()
+    store.close()
 
 
 def test_pipeline_resumes_rss_processing_after_failure_without_refetch(tmp_path: Path) -> None:
-    db_path = tmp_path / "rss-resume.db"
-    repository = SQLiteRepository(db_path)
-    repository.init_schema()
+    store = IngestionStore(tmp_path)
 
     feed_url = "https://example.com/feed.xml"
     feed_xml = """<?xml version="1.0"?>
@@ -400,7 +375,7 @@ def test_pipeline_resumes_rss_processing_after_failure_without_refetch(tmp_path:
 """
 
     settings = Settings(
-        db_path=db_path,
+        data_dir=tmp_path,
         ingestion=IngestionSettings(page_size=2, max_pages=0),
         dedup=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.9),
         rss=RssSettings(feed_urls=(feed_url,)),
@@ -409,37 +384,37 @@ def test_pipeline_resumes_rss_processing_after_failure_without_refetch(tmp_path:
     source_first = RssSource(
         RssSourceConfig(
             feed_urls=(feed_url,),
-            state_store=repository,
+            state_store=store,
         ),
     )
     source_first._request_feed = lambda *_args, **_kwargs: feed_xml
 
-    original_upsert = repository.upsert_article
+    original_upsert = store.upsert_article
     failed = {"done": False}
 
-    def _flaky_upsert(*, article: NormalizedArticle, run_id: str) -> object:
+    def _flaky_upsert(article: NormalizedArticle, run_id: str) -> object:
         external_id = article.external_id
         if (not failed["done"]) and "id-3" in str(external_id):
             failed["done"] = True
             raise RuntimeError("simulated crash in article processing")
         return original_upsert(article=article, run_id=run_id)
 
-    repository.upsert_article = _flaky_upsert  # type: ignore[method-assign]
+    store.upsert_article = _flaky_upsert  # type: ignore[method-assign]
     with pytest.raises(RuntimeError, match="simulated crash"):
-        run_daily_ingestion(settings=settings, repository=repository, source=source_first)
+        run_daily_ingestion(settings=settings, store=store, source=source_first)
 
     source_second = RssSource(
         RssSourceConfig(
             feed_urls=(feed_url,),
-            state_store=repository,
+            state_store=store,
         ),
     )
     source_second._request_feed = lambda *_args, **_kwargs: (_ for _ in ()).throw(
         AssertionError("Must resume from saved snapshot without network re-fetch"),
     )
-    repository.upsert_article = original_upsert  # type: ignore[method-assign]
+    store.upsert_article = original_upsert  # type: ignore[method-assign]
 
-    resumed = run_daily_ingestion(settings=settings, repository=repository, source=source_second)
+    resumed = run_daily_ingestion(settings=settings, store=store, source=source_second)
     assert resumed.status == RunStatus.SUCCEEDED
     assert resumed.counters.ingested_count == 2
-    repository.close()
+    store.close()

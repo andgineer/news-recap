@@ -28,7 +28,6 @@ _RSS_XML = """<?xml version="1.0"?>
 
 
 def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatch) -> None:
-    # Keep CLI test fully offline and fast: avoid loading remote HF model in dedup stage.
     monkeypatch.setenv("NEWS_RECAP_DEDUP_MODEL_NAME", "hashing-test")
 
     def _request_feed(
@@ -53,7 +52,7 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(RssSource, "_request_feed", _request_feed)
 
-    db_path = tmp_path / "daily-cli.db"
+    data_dir = tmp_path / "daily-cli-data"
     runner = CliRunner()
 
     first = runner.invoke(
@@ -61,8 +60,8 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
         [
             "ingest",
             "daily",
-            "--db-path",
-            str(db_path),
+            "--data-dir",
+            str(data_dir),
             "--feed-url",
             "https://example.com/feed.xml",
         ],
@@ -85,8 +84,8 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
         [
             "ingest",
             "daily",
-            "--db-path",
-            str(db_path),
+            "--data-dir",
+            str(data_dir),
             "--feed-url",
             "https://example.com/feed.xml",
         ],

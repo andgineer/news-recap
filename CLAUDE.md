@@ -20,35 +20,38 @@ Stress tests run in CI with `NEWS_RECAP_RUN_STRESS_TESTS=1` and `NEWS_RECAP_STRE
 
 ## Architecture
 
-Two subsystems share one SQLite database (`.news_recap.db`, configurable via `NEWS_RECAP_DB_PATH`):
+Two subsystems share a file-based data directory (`.news_recap_data/`, configurable via `NEWS_RECAP_DATA_DIR`):
 
 ### Ingestion Pipeline (`src/news_recap/ingestion/`)
-RSS feeds → `RssSourceAdapter` (HTTP cache, pagination, defusedxml) → `FetchStageService` → `ArticleNormalizationService` (HTML cleaning, language detection) → `SQLiteRepository` (articles + user_articles) → `DedupStageService` (sentence-transformers embeddings → cosine-similarity clustering).
+RSS feeds → `RssSourceAdapter` (HTTP cache, pagination, defusedxml) → `FetchStageService` → `ArticleNormalizationService` (HTML cleaning, language detection) → `IngestionStore` (weekly-partitioned JSON files) → `DedupStageService` (sentence-transformers embeddings → cosine-similarity clustering).
 
 Entry point: `IngestionOrchestrator.run_daily()` in `pipeline.py`.
 
-### Intelligence Layer (`src/news_recap/brain/`)
-Synchronous Prefect `@flow` functions that run CLI LLM agents (`codex`/`claude`/`gemini`) via subprocess, validate JSON output, and persist results. Shared agent execution logic lives in `agent_runtime.py`.
+### Recap Pipeline (`src/news_recap/recap/`)
+Task queue system that materializes per-task workdirs with JSON contracts → executes external CLI agents (`codex`/`claude`/`gemini`) as subprocesses → validates JSON output. Orchestrated by Prefect flows.
 
-Agents use a **manifest-native** contract: the prompt points the agent to `task_manifest.json`, which contains paths to all input/output files. Agents discover articles, write output JSON, and reference `source_ids` from the articles index.
+Entry point: `recap_flow()` in `flow.py`, launched via `RecapCliController` in `launcher.py`.
 
-Flows: highlights, story details, monitors, Q&A — all run synchronously and return results to the CLI.
+### Storage (`src/news_recap/storage/`)
+All persistence uses `msgspec.Struct` models serialized to JSON files via `storage/io.py`. No SQL database.
 
-Token usage is extracted from agent stdout/stderr (`usage.py`) and cost estimated via configurable pricing (`pricing.py`).
-
-Entry point: `IntelligenceCliController` in `brain/flows.py`.
+- **Weekly article partitions**: `articles-YYYY-Www.json` — auto-GC on startup deletes files older than 2 weeks.
+- **Feed state**: `feeds.json` — RSS HTTP cache and processing snapshots.
+- **Run history**: `runs.json` — recent ingestion runs, gaps, dedup results.
+- **Digest checkpoint**: `digest.json` — pipeline state saved after each phase for restart.
+- **Atomic writes**: write-to-temp + rename pattern via `atomic_write()`.
 
 ### Key Patterns
 - **CLI-first, no HTTP API.** Commands go through `*CliController` classes that accept `*Command` dataclasses and return `Iterator[str]`.
-- **Repository pattern.** `SQLiteRepository` owns all SQL (ingestion + intelligence). No raw SQL in business logic.
-- **File-based contracts** (`contracts.py`): task I/O uses JSON files in per-task workdirs managed by `TaskWorkdirManager`. Agents read `task_manifest.json` to discover all paths.
+- **`IngestionStore`** (`ingestion/repository.py`) owns all file I/O for ingestion. No raw file access in business logic.
+- **`msgspec.Struct`** for all domain models — same struct is used for storage, pipeline transfer, and agent serialization. No `to_dict()`/`from_dict()` boilerplate.
+- **File-based contracts** (`contracts.py`): task I/O uses JSON files in per-task workdirs managed by `TaskWorkdirManager`.
 - **Routing** (`routing.py`): `FrozenRouting` resolves agent + profile (fast/quality) → concrete model.
 - **All settings** via `Settings.from_env()` in `config.py` (dataclass + env vars, no config files).
-- **Alembic migrations** run programmatically via `AlembicRunner` at startup.
 
 ## Coding Conventions
 
-- Python 3.12+, type hints on public functions, `dataclasses` with `slots=True`.
+- Python 3.12+, type hints on public functions, `msgspec.Struct` for domain models, `dataclasses` for mutable counters.
 - `snake_case` functions/vars, `UPPER_CASE` constants, `CapWords` classes.
 - Ruff enforces formatting (~100 char lines) and linting; pyrefly for type checking.
 - Target 85%+ test coverage. Tests use `pytest` with `click.testing` for CLI tests.

@@ -12,7 +12,7 @@ import pytest
 from news_recap.config import Settings
 
 _ECHO_AGENT_COMMAND_TEMPLATE = (
-    f"{sys.executable} -m news_recap.recap.backend.echo_agent --prompt-file {{prompt_file}}"
+    f"{sys.executable} -m news_recap.recap.agent_echo --prompt-file {{prompt_file}}"
 )
 
 
@@ -42,9 +42,9 @@ class _FakeTaskWrapper:
 def _bypass_prefect(monkeypatch):
     """Replace @flow/@task decorated functions with their raw .fn so tests
     never start a Prefect ephemeral server or bind to a port."""
-    from news_recap.recap import agent_task, flow
+    from news_recap.recap import task_ai_agent, flow
 
-    for mod in (agent_task, flow):
+    for mod in (task_ai_agent, flow):
         for name in dir(mod):
             obj = getattr(mod, name, None)
             if callable(obj) and hasattr(obj, "fn"):
@@ -57,8 +57,8 @@ def echo_agent(monkeypatch):
     """Monkeypatch Settings.from_env to use the echo agent for codex."""
     original_from_env = Settings.from_env
 
-    def _patched_from_env(db_path=None):
-        settings = original_from_env(db_path=db_path)
+    def _patched_from_env(data_dir=None):
+        settings = original_from_env(data_dir=data_dir)
         new_orch = replace(
             settings.orchestrator, codex_command_template=_ECHO_AGENT_COMMAND_TEMPLATE
         )

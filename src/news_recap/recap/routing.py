@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
+
+import msgspec
 
 from news_recap.config import OrchestratorSettings
 from news_recap.recap.contracts import TaskInputContract
-from news_recap.storage.common import utc_now
+from news_recap.storage.io import utc_now
 
 SUPPORTED_AGENTS = ("claude", "codex", "gemini")
 SUPPORTED_PROFILES = ("fast", "quality")
 ROUTING_SCHEMA_VERSION = 1
 
 
-@dataclass(slots=True)
-class FrozenRouting:
+class FrozenRouting(msgspec.Struct):
     """Resolved immutable routing payload stored in task metadata."""
 
     schema_version: int
@@ -27,22 +27,11 @@ class FrozenRouting:
     resolved_by: str
 
     def to_metadata(self) -> dict[str, object]:
-        """Serialize frozen routing for task_input metadata."""
-
-        return {
-            "schema_version": self.schema_version,
-            "agent": self.agent,
-            "profile": self.profile,
-            "model": self.model,
-            "command_template": self.command_template,
-            "resolved_at": self.resolved_at,
-            "resolved_by": self.resolved_by,
-        }
+        return msgspec.structs.asdict(self)
 
 
-@dataclass(slots=True)
-class RoutingDefaults:
-    """Settings snapshot used for enqueue-time routing and legacy fallback."""
+class RoutingDefaults(msgspec.Struct):
+    """Settings snapshot used for enqueue-time routing."""
 
     default_agent: str
     task_type_profile_map: dict[str, str]
@@ -51,30 +40,11 @@ class RoutingDefaults:
     models: dict[str, dict[str, str]]
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "default_agent": self.default_agent,
-            "task_type_profile_map": self.task_type_profile_map,
-            "task_type_timeout_map": self.task_type_timeout_map,
-            "command_templates": self.command_templates,
-            "models": self.models,
-        }
+        return msgspec.structs.asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RoutingDefaults:
-        return cls(
-            default_agent=str(data["default_agent"]),
-            task_type_profile_map={
-                str(k): str(v) for k, v in data["task_type_profile_map"].items()
-            },
-            task_type_timeout_map={
-                str(k): int(v) for k, v in data.get("task_type_timeout_map", {}).items()
-            },
-            command_templates={str(k): str(v) for k, v in data["command_templates"].items()},
-            models={
-                str(agent): {str(p): str(m) for p, m in profiles.items()}
-                for agent, profiles in data["models"].items()
-            },
-        )
+        return msgspec.convert(data, RoutingDefaults)
 
     @classmethod
     def from_settings(cls, settings: OrchestratorSettings) -> RoutingDefaults:

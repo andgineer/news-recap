@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 from news_recap.recap.contracts import ArticleIndexEntry
-from news_recap.recap.models import SourceCorpusEntry
+from news_recap.recap.models import DigestArticle
 from news_recap.recap.runner import (
     _CLASSIFY_MAX_BATCH,
     _CLASSIFY_MIN_BATCH,
@@ -25,14 +24,14 @@ from news_recap.recap.runner import (
 )
 
 
-def _make_entry(source_id: str) -> SourceCorpusEntry:
-    return SourceCorpusEntry(
-        source_id=source_id,
-        article_id=source_id,
-        title=f"Title {source_id}",
-        url=f"http://example.com/{source_id}",
+def _make_entry(article_id: str) -> DigestArticle:
+    return DigestArticle(
+        article_id=article_id,
+        title=f"Title {article_id}",
+        url=f"http://example.com/{article_id}",
         source="test",
-        published_at=datetime.now(tz=UTC),
+        published_at="2026-02-17T00:00:00+00:00",
+        clean_text="",
     )
 
 
@@ -40,7 +39,7 @@ class TestParseClassifyOutFiles:
     def test_basic_verdicts(self, tmp_path: Path):
         entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
         for e, verdict in zip(entries, ["ok", "trash", "enrich"]):
-            (tmp_path / f"{_safe_file_id(e.source_id)}_out.txt").write_text(verdict)
+            (tmp_path / f"{_safe_file_id(e.article_id)}_out.txt").write_text(verdict)
         kept, enrich = parse_classify_out_files(tmp_path, entries)
         assert "a1" in kept
         assert "a2" not in kept
@@ -188,7 +187,6 @@ class TestSplitIntoClassifyBatches:
         assert sum(len(b) for b in batches) == 10
 
     def test_splits_on_max_batch_size(self):
-        # Use MIN_BATCH extra so the trailing batch is not merged back
         n = _CLASSIFY_MAX_BATCH + _CLASSIFY_MIN_BATCH
         entries = [_make_entry(str(i)) for i in range(n)]
         batches = split_into_classify_batches(entries, _make_prefs())
@@ -197,18 +195,16 @@ class TestSplitIntoClassifyBatches:
         assert sum(len(b) for b in batches) == n
 
     def test_tiny_trailing_batch_merged(self):
-        # Force a split by using max batch size, then add a tiny tail < MIN
         n_tail = _CLASSIFY_MIN_BATCH - 1
         entries = [_make_entry(str(i)) for i in range(_CLASSIFY_MAX_BATCH + n_tail)]
         batches = split_into_classify_batches(entries, _make_prefs())
-        # The tiny tail should be merged into the previous batch
         assert all(len(b) >= _CLASSIFY_MIN_BATCH for b in batches)
         assert sum(len(b) for b in batches) == _CLASSIFY_MAX_BATCH + n_tail
 
     def test_all_entries_preserved(self):
         entries = [_make_entry(str(i)) for i in range(300)]
         batches = split_into_classify_batches(entries, _make_prefs())
-        all_ids = [e.source_id for batch in batches for e in batch]
+        all_ids = [e.article_id for batch in batches for e in batch]
         assert sorted(all_ids) == sorted(str(i) for i in range(300))
 
 

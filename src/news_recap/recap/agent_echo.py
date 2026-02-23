@@ -8,11 +8,11 @@ tokens.  Detects task type from the prompt and produces appropriate output:
 
 Usage (standalone)::
 
-    python -m news_recap.recap.backend.echo_agent --prompt-file input/task_prompt.txt
+    python -m news_recap.recap.agent_echo --prompt-file input/task_prompt.txt
 
 Or via command template (set in env or Settings)::
 
-    NEWS_RECAP_GEMINI_COMMAND_TEMPLATE="python -m news_recap.recap.backend.echo_agent \
+    NEWS_RECAP_GEMINI_COMMAND_TEMPLATE="python -m news_recap.recap.agent_echo \
         --prompt-file {prompt_file}"
 """
 

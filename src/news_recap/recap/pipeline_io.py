@@ -14,8 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import msgspec
+
 from news_recap.recap.contracts import ArticleIndexEntry, TaskInputContract
-from news_recap.recap.models import SourceCorpusEntry
+from news_recap.recap.models import DigestArticle
 from news_recap.recap.prompts import PROMPTS_BY_TASK_TYPE
 from news_recap.recap.resource_loader import ResourceLoader
 from news_recap.recap.routing import RoutingDefaults, resolve_routing_for_enqueue
@@ -46,7 +48,7 @@ def task_results_dir(workdir_root: Path, task_id: str) -> Path:
 class PipelineInput:
     """Deserialized contents of ``pipeline_input.json``."""
 
-    articles: list[SourceCorpusEntry]
+    articles: list[DigestArticle]
     preferences: UserPreferences
     routing_defaults: RoutingDefaults
     agent_override: str | None
@@ -57,7 +59,7 @@ def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
     path = Path(pipeline_dir) / "pipeline_input.json"
     raw = json.loads(path.read_text("utf-8"))
     return PipelineInput(
-        articles=[SourceCorpusEntry.from_dict(a) for a in raw["articles"]],
+        articles=[msgspec.convert(a, DigestArticle) for a in raw["articles"]],
         preferences=UserPreferences.from_dict(raw["preferences"]),
         routing_defaults=RoutingDefaults.from_dict(raw["routing_defaults"]),
         agent_override=raw.get("agent_override"),

@@ -5,18 +5,14 @@
 - сбора новостей из RSS/Atom,
 - нормализации и очистки текста статей,
 - семантической дедупликации и кластеризации,
-- очереди LLM-задач и worker runtime,
-- генерации stories/highlights/Q&A,
-- трекинга read-state и feedback,
-- хранения истории и артефактов в SQLite.
+- генерации ежедневных дайджестов с помощью LLM-агентов (Codex, Claude Code, Gemini CLI),
+- файлового хранения статей и дайджестов.
 
 ## Текущий Scope
 
 - Ingestion из RSS/Atom (включая Inoreader Output RSS).
-- Shared-хранение статей и user-scoped retrieval.
-- Очередь задач для внешних CLI-агентов.
-- Назначение сюжетов, генерация highlights, monitor answers, ad-hoc QA.
-- Сохранение бизнес-output и команды наблюдаемости.
+- Файловое хранение статей с ежедневным разбиением и автоматической сборкой мусора.
+- Recap-пайплайн, оркестрированный Prefect: classify → enrich → group → deep-enrich → synthesize → compose.
 
 ## С чего Начать
 

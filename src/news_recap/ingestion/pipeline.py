@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from news_recap.config import Settings
 from news_recap.ingestion.models import IngestionRunCounters, RunStatus
-from news_recap.ingestion.repository import SQLiteRepository
+from news_recap.ingestion.repository import IngestionStore
 from news_recap.ingestion.services.dedup_service import DedupStageService
 from news_recap.ingestion.services.fetch_service import FetchStageService
 from news_recap.ingestion.services.normalize_service import ArticleNormalizationService
@@ -30,11 +30,11 @@ class IngestionOrchestrator:
         self,
         *,
         settings: Settings,
-        repository: SQLiteRepository,
+        store: IngestionStore,
         source: SourceAdapter,
     ) -> None:
         self.settings = settings
-        self.repository = repository
+        self.store = store
         self.source = source
 
         normalizer = ArticleNormalizationService(
@@ -43,37 +43,37 @@ class IngestionOrchestrator:
         )
         self.fetch_stage = FetchStageService(
             source=source,
-            repository=repository,
+            store=store,
             ingestion_settings=settings.ingestion,
             normalizer=normalizer,
         )
         self.dedup_stage = DedupStageService(
-            repository=repository,
+            store=store,
             dedup_settings=settings.dedup,
         )
 
     def run_daily(self) -> IngestionSummary:
         counters = IngestionRunCounters()
-        run_id = self.repository.start_run(
+        run_id = self.store.start_run(
             source=self.source.name,
             stale_after=timedelta(seconds=self.settings.ingestion.active_run_stale_after_seconds),
         )
 
         try:
-            self.repository.touch_run(run_id)
+            self.store.touch_run(run_id)
             self.fetch_stage.run(run_id=run_id, counters=counters)
-            self.repository.touch_run(run_id)
+            self.store.touch_run(run_id)
             self.dedup_stage.run(run_id=run_id, counters=counters)
 
             final_status = RunStatus.PARTIAL if counters.gaps_opened_count else RunStatus.SUCCEEDED
-            self.repository.finish_run(
+            self.store.finish_run(
                 run_id=run_id,
                 status=final_status,
                 counters=counters,
             )
             return IngestionSummary(run_id=run_id, status=final_status, counters=counters)
         except Exception as exc:
-            self.repository.finish_run(
+            self.store.finish_run(
                 run_id=run_id,
                 status=RunStatus.FAILED,
                 counters=counters,
@@ -85,13 +85,13 @@ class IngestionOrchestrator:
 def run_daily_ingestion(
     *,
     settings: Settings,
-    repository: SQLiteRepository,
+    store: IngestionStore,
     source: SourceAdapter,
 ) -> IngestionSummary:
     """Run daily ingestion with provided dependencies."""
 
     return IngestionOrchestrator(
         settings=settings,
-        repository=repository,
+        store=store,
         source=source,
     ).run_daily()

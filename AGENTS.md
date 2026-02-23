@@ -2,6 +2,9 @@
 
 ## Project Structure & Module Organization
 - `src/news_recap/`: main package code. CLI entrypoint is `main.py`; package version lives in `__about__.py`.
+- `src/news_recap/storage/`: file-based storage utilities (`io.py` — atomic writes, GC, msgspec helpers).
+- `src/news_recap/ingestion/`: ingestion pipeline and `IngestionStore` (weekly-partitioned article storage).
+- `src/news_recap/recap/`: recap pipeline (Prefect flows, LLM agent orchestration).
 - `tests/`: pytest test suite (including CLI checks).
 - `docs/`: MkDocs content, with language folders under `docs/src/en/` and `docs/src/ru/`.
 - `scripts/`: helper scripts for docs, version bumps, packaging, and uploads.
@@ -18,9 +21,10 @@
 - `./scripts/build-docs.sh --copy-assets en` then `mkdocs serve -f docs/_mkdocs.yml`: local docs preview flow.
 
 ## Coding Style & Naming Conventions
-- Python 3.10+ with 4-space indentation and explicit, readable names.
+- Python 3.12+ with 4-space indentation and explicit, readable names.
 - Naming: `snake_case` for modules/functions/variables, `UPPER_CASE` for constants, `CapWords` for classes.
-- Use type hints for public functions and CLI-related logic where practical.
+- Use `msgspec.Struct` for domain models (immutable data); `dataclasses` only for mutable counters.
+- Type hints for public functions and CLI-related logic where practical.
 - Formatting and linting are enforced through pre-commit with Ruff; run hooks before pushing.
 - Keep line length formatter-friendly (Ruff hooks are configured for ~100 chars).
 

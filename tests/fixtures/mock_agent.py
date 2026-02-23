@@ -10,11 +10,11 @@ Usage — set the agent command template env var to point here, then run normall
 
     export NEWS_RECAP_GEMINI_COMMAND_TEMPLATE="python3 $(pwd)/tests/fixtures/mock_agent.py --model {model} {prompt_file}"
     PREFECT_API_URL=http://localhost:4200/api \\
-    NEWS_RECAP_CLASSIFY_ONLY=1 \\
+    NEWS_RECAP_STOP_AFTER=classify \\
       news-recap recap run --agent gemini --limit 20
 
 The script accepts (and ignores) any positional args so it fits any command template.
-cwd is set to the task workdir by cli_backend.py.
+cwd is set to the task workdir by task_ai_agent.py.
 """
 
 from __future__ import annotations

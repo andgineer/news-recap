@@ -5,18 +5,14 @@
 - collecting news from RSS/Atom feeds,
 - normalizing and cleaning article text,
 - semantic deduplication and clustering,
-- running queue-based LLM tasks,
-- generating story/highlights/Q&A outputs,
-- tracking read-state and feedback,
-- storing history and artifacts in SQLite.
+- producing daily digests with LLM agents (Codex, Claude Code, Gemini CLI),
+- file-based article and digest storage.
 
 ## Current Scope
 
 - Source ingestion from RSS/Atom feeds (including Inoreader Output RSS).
-- Shared article storage with user-scoped retrieval.
-- Queue worker runtime for external CLI agents.
-- Story assignment, highlights generation, monitor answers, ad-hoc QA.
-- Domain output persistence and observability commands.
+- File-based article storage with daily partitioning and automatic garbage collection.
+- Recap pipeline orchestrated by Prefect: classify → enrich → group → deep-enrich → synthesize → compose.
 
 ## Where To Start
 

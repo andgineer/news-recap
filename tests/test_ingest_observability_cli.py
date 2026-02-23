@@ -14,8 +14,9 @@ from news_recap.ingestion.models import (
     NormalizedArticle,
     RunStatus,
 )
-from news_recap.ingestion.repository import SQLiteRepository
+from news_recap.ingestion.repository import IngestionStore
 from news_recap.main import news_recap
+from news_recap.storage.io import day_key
 
 pytestmark = [
     allure.epic("Daily Ingestion"),
@@ -47,14 +48,13 @@ def _article(
     )
 
 
-def _seed_observability_dataset(db_path: Path) -> str:
-    repo = SQLiteRepository(db_path)
-    repo.init_schema()
+def _seed_observability_dataset(data_dir: Path) -> str:
+    store = IngestionStore(data_dir)
 
-    run_id = repo.start_run(source="rss")
+    run_id = store.start_run(source="rss")
     published_at = datetime(2026, 2, 17, 12, 0, tzinfo=UTC)
 
-    first = repo.upsert_article(
+    first = store.upsert_article(
         article=_article(
             external_id="stable-1",
             title="France issues red flood alerts",
@@ -63,7 +63,7 @@ def _seed_observability_dataset(db_path: Path) -> str:
         ),
         run_id=run_id,
     )
-    second = repo.upsert_article(
+    second = store.upsert_article(
         article=_article(
             external_id="stable-2",
             title="France flood warnings after heavy rain",
@@ -72,7 +72,7 @@ def _seed_observability_dataset(db_path: Path) -> str:
         ),
         run_id=run_id,
     )
-    third = repo.upsert_article(
+    third = store.upsert_article(
         article=_article(
             external_id="stable-3",
             title="Central bank leaves rates unchanged",
@@ -82,7 +82,7 @@ def _seed_observability_dataset(db_path: Path) -> str:
         run_id=run_id,
     )
 
-    repo.save_dedup_clusters(
+    store.save_dedup_clusters(
         run_id=run_id,
         model_name="intfloat/multilingual-e5-small",
         threshold=0.95,
@@ -121,7 +121,7 @@ def _seed_observability_dataset(db_path: Path) -> str:
         ],
     )
 
-    repo.finish_run(
+    store.finish_run(
         run_id=run_id,
         status=RunStatus.SUCCEEDED,
         counters=IngestionRunCounters(
@@ -133,18 +133,18 @@ def _seed_observability_dataset(db_path: Path) -> str:
             gaps_opened_count=0,
         ),
     )
-    repo.close()
+    store.close()
     return run_id
 
 
 def test_ingest_stats_command_shows_window_metrics(tmp_path: Path) -> None:
-    db_path = tmp_path / "observability.db"
-    run_id = _seed_observability_dataset(db_path)
+    data_dir = tmp_path / "observability-data"
+    run_id = _seed_observability_dataset(data_dir)
 
     runner = CliRunner()
     result = runner.invoke(
         news_recap,
-        ["ingest", "stats", "--db-path", str(db_path), "--hours", "24"],
+        ["ingest", "stats", "--data-dir", str(data_dir), "--hours", "24"],
     )
 
     assert result.exit_code == 0
@@ -156,8 +156,8 @@ def test_ingest_stats_command_shows_window_metrics(tmp_path: Path) -> None:
 
 
 def test_ingest_clusters_command_shows_cluster_sizes(tmp_path: Path) -> None:
-    db_path = tmp_path / "clusters.db"
-    run_id = _seed_observability_dataset(db_path)
+    data_dir = tmp_path / "clusters-data"
+    run_id = _seed_observability_dataset(data_dir)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -165,8 +165,8 @@ def test_ingest_clusters_command_shows_cluster_sizes(tmp_path: Path) -> None:
         [
             "ingest",
             "clusters",
-            "--db-path",
-            str(db_path),
+            "--data-dir",
+            str(data_dir),
             "--run-id",
             run_id,
             "--show-members",
@@ -184,8 +184,8 @@ def test_ingest_clusters_command_shows_cluster_sizes(tmp_path: Path) -> None:
 
 
 def test_ingest_duplicates_command_shows_duplicate_examples(tmp_path: Path) -> None:
-    db_path = tmp_path / "duplicates.db"
-    run_id = _seed_observability_dataset(db_path)
+    data_dir = tmp_path / "duplicates-data"
+    run_id = _seed_observability_dataset(data_dir)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -193,8 +193,8 @@ def test_ingest_duplicates_command_shows_duplicate_examples(tmp_path: Path) -> N
         [
             "ingest",
             "duplicates",
-            "--db-path",
-            str(db_path),
+            "--data-dir",
+            str(data_dir),
             "--run-id",
             run_id,
             "--limit-clusters",
@@ -211,200 +211,33 @@ def test_ingest_duplicates_command_shows_duplicate_examples(tmp_path: Path) -> N
     assert "France flood warnings after heavy rain" in result.output
 
 
-def test_ingest_prune_command_deletes_articles_older_than_days(tmp_path: Path) -> None:
-    db_path = tmp_path / "prune.db"
-    repo = SQLiteRepository(db_path)
-    repo.init_schema()
-    run_id = repo.start_run(source="rss")
+def test_auto_gc_deletes_old_daily_partitions_on_init(tmp_path: Path) -> None:
+    data_dir = tmp_path / "auto-gc-data"
+    store = IngestionStore(data_dir, gc_retention_days=7)
+    run_id = store.start_run(source="rss")
 
     now = datetime.now(tz=UTC)
-    old_published_at = now - timedelta(days=40)
-    fresh_published_at = now - timedelta(days=3)
+    old_published_at = now - timedelta(days=10)
 
-    old = repo.upsert_article(
-        article=_article(
-            external_id="old-ext",
-            title="Old article",
-            url="https://example.com/news/old",
-            published_at=old_published_at,
-        ),
-        run_id=run_id,
-    )
-    fresh = repo.upsert_article(
-        article=_article(
-            external_id="fresh-ext",
-            title="Fresh article",
-            url="https://example.com/news/fresh",
-            published_at=fresh_published_at,
-        ),
-        run_id=run_id,
-    )
-    repo._connection.execute(
-        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
-        (old_published_at.isoformat(), repo.user_id, old.article_id),
-    )
-    repo._connection.execute(
-        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
-        (fresh_published_at.isoformat(), repo.user_id, fresh.article_id),
-    )
-    repo._connection.commit()
-    repo.close()
-
-    runner = CliRunner()
-    result = runner.invoke(
-        news_recap,
-        [
-            "ingest",
-            "prune",
-            "--db-path",
-            str(db_path),
-            "--days",
-            "30",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert "Retention prune completed: days=30 dry_run=no" in result.output
-    assert "User article links deleted: 1" in result.output
-
-    reopened = SQLiteRepository(db_path)
-    reopened.init_schema()
-    remaining = reopened._connection.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
-    assert remaining is not None
-    assert int(remaining["cnt"]) == 2
-    remaining_links = reopened._connection.execute(
-        "SELECT COUNT(*) AS cnt FROM user_articles WHERE user_id = ?",
-        (reopened.user_id,),
-    ).fetchone()
-    assert remaining_links is not None
-    assert int(remaining_links["cnt"]) == 1
-    reopened.close()
-
-
-def test_ingest_gc_command_deletes_global_orphans_and_public_resources(tmp_path: Path) -> None:
-    db_path = tmp_path / "gc.db"
-    repo = SQLiteRepository(db_path)
-    repo.init_schema()
-    run_id = repo.start_run(source="rss")
-
-    now = datetime.now(tz=UTC)
-    published_at = now - timedelta(days=40)
-    inserted = repo.upsert_article(
+    store.upsert_article(
         article=_article(
             external_id="orphan-ext",
             title="Orphan article",
             url="https://example.com/news/orphan",
-            published_at=published_at,
+            published_at=old_published_at,
         ),
         run_id=run_id,
     )
-    repo.upsert_raw_article(
-        source_name="rss",
-        external_id="orphan-ext",
-        raw_payload={"id": "orphan-ext"},
+    store.finish_run(
+        run_id=run_id,
+        status=RunStatus.SUCCEEDED,
+        counters=IngestionRunCounters(ingested_count=1),
     )
-    canonical = canonicalize_url("https://example.com/news/orphan")
-    hashed = url_hash(canonical)
-    repo.upsert_public_article_resource(
-        url_hash=hashed,
-        url_canonical=canonical,
-        fetch_status="ok",
-        content_text="public cache",
-        fetched_at=now,
-    )
-    repo._connection.execute(
-        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
-        (published_at.isoformat(), repo.user_id, inserted.article_id),
-    )
-    repo._connection.commit()
-    repo.prune_articles(cutoff=now)
-    repo.close()
+    store.close()
 
-    runner = CliRunner()
-    result = runner.invoke(
-        news_recap,
-        [
-            "ingest",
-            "gc",
-            "--db-path",
-            str(db_path),
-        ],
-    )
-    assert result.exit_code == 0
-    assert "Global GC completed: dry_run=no" in result.output
-    assert "Global articles deleted: 1" in result.output
-    assert "Public resources deleted: 1" in result.output
+    old_dk = day_key(old_published_at)
+    assert (data_dir / "ingestion" / f"articles-{old_dk}.json").exists()
 
-    reopened = SQLiteRepository(db_path)
+    reopened = IngestionStore(data_dir, gc_retention_days=7)
     reopened.init_schema()
-    articles_count = reopened._connection.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
-    assert articles_count is not None
-    assert int(articles_count["cnt"]) == 0
-    resources_count = reopened._connection.execute(
-        "SELECT COUNT(*) AS cnt FROM article_resources"
-    ).fetchone()
-    assert resources_count is not None
-    assert int(resources_count["cnt"]) == 0
-    reopened.close()
-
-
-def test_ingest_gc_dry_run_matches_wet_counts_for_public_resources(tmp_path: Path) -> None:
-    db_path = tmp_path / "gc-dry-vs-wet.db"
-    repo = SQLiteRepository(db_path)
-    repo.init_schema()
-    run_id = repo.start_run(source="rss")
-
-    now = datetime.now(tz=UTC)
-    published_at = now - timedelta(days=40)
-    inserted = repo.upsert_article(
-        article=_article(
-            external_id="dry-wet-ext",
-            title="Dry wet article",
-            url="https://example.com/news/dry-wet",
-            published_at=published_at,
-        ),
-        run_id=run_id,
-    )
-    canonical = canonicalize_url("https://example.com/news/dry-wet")
-    hashed = url_hash(canonical)
-    repo.upsert_public_article_resource(
-        url_hash=hashed,
-        url_canonical=canonical,
-        fetch_status="ok",
-        content_text="public cache",
-        fetched_at=now,
-    )
-    repo._connection.execute(
-        "UPDATE user_articles SET discovered_at = ? WHERE user_id = ? AND article_id = ?",
-        (published_at.isoformat(), repo.user_id, inserted.article_id),
-    )
-    repo._connection.commit()
-    repo.prune_articles(cutoff=now)
-    repo.close()
-
-    runner = CliRunner()
-    dry = runner.invoke(
-        news_recap,
-        [
-            "ingest",
-            "gc",
-            "--db-path",
-            str(db_path),
-            "--dry-run",
-        ],
-    )
-    wet = runner.invoke(
-        news_recap,
-        [
-            "ingest",
-            "gc",
-            "--db-path",
-            str(db_path),
-        ],
-    )
-    assert dry.exit_code == 0
-    assert wet.exit_code == 0
-    assert "Global articles deleted: 1" in dry.output
-    assert "Public resources deleted: 1" in dry.output
-    assert "Global articles deleted: 1" in wet.output
-    assert "Public resources deleted: 1" in wet.output
+    assert not (data_dir / "ingestion" / f"articles-{old_dk}.json").exists()

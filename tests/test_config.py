@@ -77,16 +77,6 @@ def test_validate_for_rss_rejects_non_positive_active_run_stale_after_seconds() 
         settings.validate_for_rss()
 
 
-def test_validate_for_rss_rejects_negative_article_retention_days() -> None:
-    settings = Settings(
-        ingestion=IngestionSettings(article_retention_days=-1),
-        rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
-    )
-
-    with pytest.raises(ValueError, match="ARTICLE_RETENTION_DAYS"):
-        settings.validate_for_rss()
-
-
 def test_from_env_parses_per_feed_items(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "NEWS_RECAP_RSS_FEED_URLS", "https://a.example/feed.xml,https://b.example/feed.xml"
@@ -110,10 +100,22 @@ def test_from_env_parses_per_feed_items(monkeypatch: pytest.MonkeyPatch) -> None
     environ.pop("NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED", None)
 
 
-def test_from_env_parses_article_retention_days(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("NEWS_RECAP_ARTICLE_RETENTION_DAYS", "14")
+def test_from_env_parses_gc_retention_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NEWS_RECAP_GC_RETENTION_DAYS", "14")
     settings = Settings.from_env()
-    assert settings.ingestion.article_retention_days == 14
+    assert settings.ingestion.gc_retention_days == 14
+
+
+def test_from_env_parses_digest_lookback_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NEWS_RECAP_DIGEST_LOOKBACK_DAYS", "5")
+    settings = Settings.from_env()
+    assert settings.ingestion.digest_lookback_days == 5
+
+
+def test_validate_rejects_zero_gc_retention_days() -> None:
+    settings = Settings(ingestion=IngestionSettings(gc_retention_days=0))
+    with pytest.raises(ValueError, match="GC_RETENTION_DAYS"):
+        settings.validate()
 
 
 def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -166,20 +168,6 @@ def test_from_env_rejects_invalid_task_type_profile_map_value(
 ) -> None:
     monkeypatch.setenv("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP", "highlights=cheap")
     with pytest.raises(ValueError, match="expected fast or quality"):
-        Settings.from_env()
-
-
-def test_from_env_parses_sqlite_busy_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("NEWS_RECAP_SQLITE_BUSY_TIMEOUT_MS", "12345")
-    settings = Settings.from_env()
-    assert settings.sqlite_busy_timeout_ms == 12345
-
-
-def test_from_env_rejects_non_positive_sqlite_busy_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("NEWS_RECAP_SQLITE_BUSY_TIMEOUT_MS", "0")
-    with pytest.raises(ValueError, match="SQLITE_BUSY_TIMEOUT_MS"):
         Settings.from_env()
 
 

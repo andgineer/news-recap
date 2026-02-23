@@ -9,9 +9,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from news_recap.config import Settings
-from news_recap.ingestion.models import RetentionPruneResult
 from news_recap.ingestion.pipeline import run_daily_ingestion
-from news_recap.ingestion.repository import SQLiteRepository
+from news_recap.ingestion.repository import IngestionStore
 from news_recap.ingestion.sources.rss import RssSource, RssSourceConfig
 
 
@@ -19,7 +18,7 @@ from news_recap.ingestion.sources.rss import RssSource, RssSourceConfig
 class DailyIngestionCommand:
     """CLI inputs for daily ingestion command."""
 
-    db_path: Path | None
+    data_dir: Path | None
     feed_urls: tuple[str, ...]
 
 
@@ -27,7 +26,7 @@ class DailyIngestionCommand:
 class IngestionStatsCommand:
     """CLI inputs for stats command."""
 
-    db_path: Path | None
+    data_dir: Path | None
     hours: int
     source: str | None
     recent_runs: int
@@ -37,7 +36,7 @@ class IngestionStatsCommand:
 class IngestionClustersCommand:
     """CLI inputs for cluster inspection command."""
 
-    db_path: Path | None
+    data_dir: Path | None
     run_id: str | None
     source: str | None
     hours: int
@@ -51,7 +50,7 @@ class IngestionClustersCommand:
 class IngestionDuplicatesCommand:
     """CLI inputs for duplicate sample command."""
 
-    db_path: Path | None
+    data_dir: Path | None
     run_id: str | None
     source: str | None
     hours: int
@@ -59,31 +58,14 @@ class IngestionDuplicatesCommand:
     members_per_cluster: int
 
 
-@dataclass(slots=True)
-class IngestionPruneCommand:
-    """CLI inputs for retention prune command."""
-
-    db_path: Path | None
-    days: int | None
-    dry_run: bool
-
-
-@dataclass(slots=True)
-class IngestionGcCommand:
-    """CLI inputs for global GC command."""
-
-    db_path: Path | None
-    dry_run: bool
-
-
 class IngestionCliController:
     """Coordinates ingestion command execution."""
 
     def run_daily(self, command: DailyIngestionCommand) -> list[str]:
-        settings = Settings.from_env(db_path=command.db_path)
+        settings = Settings.from_env(data_dir=command.data_dir)
         settings.validate_for_rss(override_feed_urls=command.feed_urls)
         feed_urls = _effective_feed_urls(command.feed_urls, settings)
-        with _repository(settings) as repository:
+        with _store(settings) as store:
             source = RssSource(
                 RssSourceConfig(
                     feed_urls=feed_urls,
@@ -95,16 +77,11 @@ class IngestionCliController:
                     max_retries=settings.rss.max_retries,
                     retry_backoff_seconds=settings.rss.retry_backoff_seconds,
                     request_timeout_seconds=settings.rss.request_timeout_seconds,
-                    state_store=repository,
+                    state_store=store,
                 ),
             )
-            summary = run_daily_ingestion(settings=settings, repository=repository, source=source)
+            summary = run_daily_ingestion(settings=settings, store=store, source=source)
             fetch_stats = source.get_last_run_fetch_stats()
-            prune_result = _prune_for_retention(
-                repository=repository,
-                retention_days=settings.ingestion.article_retention_days,
-                dry_run=False,
-            )
 
         lines = [
             "Ingestion run completed: "
@@ -139,30 +116,19 @@ class IngestionCliController:
                 f"etag={'yes' if feed.received_etag else 'no'} "
                 f"last_modified={'yes' if feed.received_last_modified else 'no'}",
             )
-        if prune_result is None:
-            lines.append("Retention prune: disabled (NEWS_RECAP_ARTICLE_RETENTION_DAYS=0)")
-        else:
-            lines.append(
-                "Retention prune: "
-                f"days={settings.ingestion.article_retention_days} "
-                f"cutoff={prune_result.cutoff.isoformat()} "
-                f"articles_deleted={prune_result.articles_deleted} "
-                f"raw_deleted={prune_result.raw_payloads_deleted} "
-                f"private_resources_deleted={prune_result.private_resources_deleted}",
-            )
         return lines
 
     def stats(self, command: IngestionStatsCommand) -> list[str]:
-        settings = Settings.from_env(db_path=command.db_path)
+        settings = Settings.from_env(data_dir=command.data_dir)
         until = datetime.now(tz=UTC)
         since = until - timedelta(hours=command.hours)
-        with _repository(settings) as repository:
-            summary = repository.summarize_runs(
+        with _store(settings) as store:
+            summary = store.summarize_runs(
                 since=since,
                 until=until,
                 source=command.source,
             )
-            recent = repository.list_recent_runs(
+            recent = store.list_recent_runs(
                 limit=command.recent_runs,
                 source=command.source,
             )
@@ -206,10 +172,10 @@ class IngestionCliController:
         return lines
 
     def clusters(self, command: IngestionClustersCommand) -> list[str]:
-        settings = Settings.from_env(db_path=command.db_path)
-        with _repository(settings) as repository:
+        settings = Settings.from_env(data_dir=command.data_dir)
+        with _store(settings) as store:
             run_id = self._resolve_run_id(
-                repository=repository,
+                store=store,
                 run_id=command.run_id,
                 source=command.source,
                 hours=command.hours,
@@ -217,7 +183,7 @@ class IngestionCliController:
             if run_id is None:
                 return ["No ingestion run found for the selected scope."]
 
-            result = repository.list_clusters_for_run(
+            result = store.list_clusters_for_run(
                 run_id=run_id,
                 min_size=command.min_size,
                 limit=command.limit,
@@ -249,10 +215,10 @@ class IngestionCliController:
         return lines
 
     def duplicates(self, command: IngestionDuplicatesCommand) -> list[str]:
-        settings = Settings.from_env(db_path=command.db_path)
-        with _repository(settings) as repository:
+        settings = Settings.from_env(data_dir=command.data_dir)
+        with _store(settings) as store:
             run_id = self._resolve_run_id(
-                repository=repository,
+                store=store,
                 run_id=command.run_id,
                 source=command.source,
                 hours=command.hours,
@@ -260,7 +226,7 @@ class IngestionCliController:
             if run_id is None:
                 return ["No ingestion run found for the selected scope."]
 
-            result = repository.list_clusters_for_run(
+            result = store.list_clusters_for_run(
                 run_id=run_id,
                 min_size=2,
                 limit=command.limit_clusters,
@@ -286,49 +252,10 @@ class IngestionCliController:
                 )
         return lines
 
-    def prune(self, command: IngestionPruneCommand) -> list[str]:
-        settings = Settings.from_env(db_path=command.db_path)
-        days = settings.ingestion.article_retention_days if command.days is None else command.days
-        if days < 0:
-            raise ValueError("--days must be >= 0.")
-        with _repository(settings) as repository:
-            prune_result = _prune_for_retention(
-                repository=repository,
-                retention_days=days,
-                dry_run=command.dry_run,
-            )
-
-        if prune_result is None:
-            return [
-                "Retention prune skipped: days=0.",
-                "Set NEWS_RECAP_ARTICLE_RETENTION_DAYS > 0 or pass --days.",
-            ]
-
-        return [
-            "Retention prune completed: "
-            f"days={days} dry_run={'yes' if command.dry_run else 'no'} "
-            f"cutoff={prune_result.cutoff.isoformat()}",
-            f"User article links deleted: {prune_result.articles_deleted}",
-            f"Raw payload rows deleted: {prune_result.raw_payloads_deleted}",
-            f"User private resources deleted: {prune_result.private_resources_deleted}",
-        ]
-
-    def gc(self, command: IngestionGcCommand) -> list[str]:
-        settings = Settings.from_env(db_path=command.db_path)
-        with _repository(settings) as repository:
-            result = repository.gc_unreferenced_articles(dry_run=command.dry_run)
-
-        return [
-            f"Global GC completed: dry_run={'yes' if command.dry_run else 'no'}",
-            f"Global articles deleted: {result.articles_deleted}",
-            f"Global raw payload rows deleted: {result.raw_payloads_deleted}",
-            f"Public resources deleted: {result.public_resources_deleted}",
-        ]
-
     @staticmethod
     def _resolve_run_id(
         *,
-        repository: SQLiteRepository,
+        store: IngestionStore,
         run_id: str | None,
         source: str | None,
         hours: int,
@@ -336,22 +263,20 @@ class IngestionCliController:
         if run_id:
             return run_id
         since = datetime.now(tz=UTC) - timedelta(hours=hours)
-        return repository.get_latest_run_id(source=source, since=since)
+        return store.get_latest_run_id(source=source, since=since)
 
 
 @contextmanager
-def _repository(settings: Settings) -> Iterator[SQLiteRepository]:
-    repository = SQLiteRepository(
-        settings.db_path,
-        user_id=settings.user_context.user_id,
-        user_name=settings.user_context.user_name,
-        sqlite_busy_timeout_ms=settings.sqlite_busy_timeout_ms,
+def _store(settings: Settings) -> Iterator[IngestionStore]:
+    store = IngestionStore(
+        settings.data_dir,
+        gc_retention_days=settings.ingestion.gc_retention_days,
     )
     try:
-        repository.init_schema()
-        yield repository
+        store.init_schema()
+        yield store
     finally:
-        repository.close()
+        store.close()
 
 
 def _effective_feed_urls(
@@ -376,15 +301,3 @@ def _snapshot_max_age_seconds(hours: int) -> int | None:
     if hours <= 0:
         return None
     return hours * 3600
-
-
-def _prune_for_retention(
-    *,
-    repository: SQLiteRepository,
-    retention_days: int,
-    dry_run: bool,
-) -> RetentionPruneResult | None:
-    if retention_days <= 0:
-        return None
-    cutoff = datetime.now(tz=UTC) - timedelta(days=retention_days)
-    return repository.prune_articles(cutoff=cutoff, dry_run=dry_run)

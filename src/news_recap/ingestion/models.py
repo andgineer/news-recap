@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+
+import msgspec
 
 
 class RunStatus(str, Enum):
@@ -34,8 +36,7 @@ class UpsertAction(str, Enum):
     SKIPPED = "skipped"
 
 
-@dataclass(slots=True)
-class SourceArticle:
+class SourceArticle(msgspec.Struct):
     """Normalized article payload from a source connector."""
 
     external_id: str
@@ -45,11 +46,10 @@ class SourceArticle:
     published_at: datetime
     content: str | None = None
     summary: str | None = None
-    raw_payload: dict[str, object] = field(default_factory=dict)
+    raw_payload: dict[str, object] = {}
 
 
-@dataclass(slots=True)
-class SourcePage:
+class SourcePage(msgspec.Struct):
     """Page of source articles with cursor-based pagination."""
 
     articles: list[SourceArticle]
@@ -57,8 +57,7 @@ class SourcePage:
     cursor: str | None
 
 
-@dataclass(slots=True)
-class NormalizedArticle:
+class NormalizedArticle(msgspec.Struct):
     """Article record ready for persistence."""
 
     source_name: str
@@ -79,16 +78,14 @@ class NormalizedArticle:
     is_truncated: bool
 
 
-@dataclass(slots=True)
-class UpsertResult:
+class UpsertResult(msgspec.Struct):
     """Result of persisting a normalized article."""
 
     article_id: str
     action: UpsertAction
 
 
-@dataclass(slots=True)
-class IngestionGap:
+class IngestionGap(msgspec.Struct):
     """Failed ingestion window that should be retried."""
 
     gap_id: int
@@ -100,8 +97,7 @@ class IngestionGap:
     status: GapStatus
 
 
-@dataclass(slots=True)
-class GapWrite:
+class GapWrite(msgspec.Struct):
     """Input payload for recording failed source windows."""
 
     from_cursor_or_time: str | None
@@ -112,7 +108,7 @@ class GapWrite:
 
 @dataclass(slots=True)
 class IngestionRunCounters:
-    """Counters tracked for ingestion run statistics."""
+    """Counters tracked for ingestion run statistics — mutable, stays dataclass."""
 
     ingested_count: int = 0
     updated_count: int = 0
@@ -122,8 +118,7 @@ class IngestionRunCounters:
     gaps_opened_count: int = 0
 
 
-@dataclass(slots=True)
-class IngestionWindowStats:
+class IngestionWindowStats(msgspec.Struct):
     """Aggregated ingestion counters for a time window."""
 
     runs_count: int = 0
@@ -139,8 +134,7 @@ class IngestionWindowStats:
     gaps_opened_count: int = 0
 
 
-@dataclass(slots=True)
-class IngestionRunView:
+class IngestionRunView(msgspec.Struct):
     """Compact run view for CLI reporting."""
 
     run_id: str
@@ -156,8 +150,7 @@ class IngestionRunView:
     gaps_opened_count: int
 
 
-@dataclass(slots=True)
-class DedupCandidate:
+class DedupCandidate(msgspec.Struct):
     """Article view used by deduplication stage."""
 
     article_id: str
@@ -169,8 +162,7 @@ class DedupCandidate:
     clean_text_chars: int
 
 
-@dataclass(slots=True)
-class ClusterMember:
+class ClusterMember(msgspec.Struct):
     """Dedup cluster member metadata."""
 
     article_id: str
@@ -178,8 +170,7 @@ class ClusterMember:
     is_representative: bool
 
 
-@dataclass(slots=True)
-class DedupCluster:
+class DedupCluster(msgspec.Struct):
     """Dedup cluster with representative and alternative sources."""
 
     cluster_id: str
@@ -188,8 +179,7 @@ class DedupCluster:
     members: list[ClusterMember]
 
 
-@dataclass(slots=True)
-class ClusterMemberPreview:
+class ClusterMemberPreview(msgspec.Struct):
     """Readable article entry for cluster inspection."""
 
     article_id: str
@@ -200,8 +190,7 @@ class ClusterMemberPreview:
     is_representative: bool
 
 
-@dataclass(slots=True)
-class ClusterPreview:
+class ClusterPreview(msgspec.Struct):
     """Cluster details for observability commands."""
 
     cluster_id: str
@@ -210,11 +199,10 @@ class ClusterPreview:
     representative_article_id: str
     representative_title: str
     representative_url: str
-    members: list[ClusterMemberPreview] = field(default_factory=list)
+    members: list[ClusterMemberPreview] = []
 
 
-@dataclass(slots=True)
-class ClusterListResult:
+class ClusterListResult(msgspec.Struct):
     """Paginated view of clusters for one ingestion run."""
 
     run_id: str
@@ -223,22 +211,90 @@ class ClusterListResult:
     clusters: list[ClusterPreview]
 
 
-@dataclass(slots=True)
-class RetentionPruneResult:
-    """Result of retention cleanup for article-related records."""
-
-    cutoff: datetime
-    dry_run: bool
-    articles_deleted: int
-    raw_payloads_deleted: int
-    private_resources_deleted: int = 0
+# ---------------------------------------------------------------------------
+# Persisted domain structs (replace SQLModel tables)
+# ---------------------------------------------------------------------------
 
 
-@dataclass(slots=True)
-class GlobalGcResult:
-    """Result of global garbage collection for unreferenced shared records."""
+class Article(msgspec.Struct):
+    """Persisted article — replaces both Article SQLModel + NormalizedArticle dataclass."""
 
-    dry_run: bool
-    articles_deleted: int
-    raw_payloads_deleted: int
-    public_resources_deleted: int
+    article_id: str
+    source_name: str
+    external_id: str
+    url: str
+    url_canonical: str
+    url_hash: str
+    title: str
+    source_domain: str
+    published_at: datetime
+    language_detected: str
+    clean_text: str
+    clean_text_chars: int
+    is_full_content: bool
+    is_truncated: bool
+    ingested_at: datetime
+    content_raw: str | None = None
+    summary_raw: str | None = None
+    fallback_key: str | None = None
+    raw_json: str | None = None
+
+
+class DailyStore(msgspec.Struct):
+    """One calendar day of articles."""
+
+    articles: dict[str, Article] = {}
+    embeddings: dict[str, list[float]] = {}
+
+
+class FeedState(msgspec.Struct):
+    """HTTP cache validators for one RSS feed."""
+
+    source_name: str
+    feed_url: str
+    etag: str | None = None
+    last_modified: str | None = None
+    updated_at: datetime | None = None
+
+
+class ProcessingSnapshot(msgspec.Struct):
+    """Crash-safe RSS processing snapshot."""
+
+    source_name: str
+    feed_set_hash: str
+    snapshot_json: str
+    next_cursor: str | None = None
+    updated_at: datetime | None = None
+
+
+class FeedsStore(msgspec.Struct):
+    """Persisted RSS feed states and processing snapshots."""
+
+    feed_states: dict[str, FeedState] = {}
+    processing_snapshots: dict[str, ProcessingSnapshot] = {}
+
+
+class IngestionRunRecord(msgspec.Struct):
+    """Persisted ingestion run record for CLI observability."""
+
+    run_id: str
+    source: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    heartbeat_at: datetime | None = None
+    ingested_count: int = 0
+    updated_count: int = 0
+    skipped_count: int = 0
+    dedup_clusters_count: int = 0
+    dedup_duplicates_count: int = 0
+    gaps_opened_count: int = 0
+    error_summary: str | None = None
+
+
+class RunsStore(msgspec.Struct):
+    """Persisted recent ingestion runs."""
+
+    runs: list[IngestionRunRecord] = []
+    gaps: list[IngestionGap] = []
+    dedup_results: dict[str, list[DedupCluster]] = {}
