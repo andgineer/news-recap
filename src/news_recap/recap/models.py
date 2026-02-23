@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import date, datetime
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 
@@ -41,48 +41,3 @@ class SourceCorpusEntry:
             published_at=datetime.fromisoformat(str(data["published_at"])),
             clean_text=str(data.get("clean_text", "")),
         )
-
-
-@dataclass(slots=True)
-class UserOutputBlockWrite:
-    """One output block with strict source mapping."""
-
-    block_order: int
-    text: str
-    source_ids: tuple[str, ...]
-
-
-@dataclass(slots=True)
-class UserOutputUpsert:
-    """Upsert payload for stable business output object."""
-
-    kind: str
-    business_date: date
-    status: str
-    payload: dict[str, Any]
-    blocks: list[UserOutputBlockWrite]
-    story_id: str | None = None
-    monitor_id: str | None = None
-    request_id: str | None = None
-    task_id: str | None = None
-    title: str | None = None
-
-
-@dataclass(slots=True)
-class UserOutputView:
-    """Stored business output record."""
-
-    output_id: str
-    user_id: str
-    kind: str
-    business_date: date
-    status: str
-    story_id: str | None
-    monitor_id: str | None
-    request_id: str | None
-    task_id: str | None
-    title: str | None
-    payload: dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
-    blocks: list[UserOutputBlockWrite] = field(default_factory=list)

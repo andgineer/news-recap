@@ -122,9 +122,6 @@ def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatc
     settings = Settings.from_env()
     assert settings.orchestrator.default_agent == "codex"
     assert settings.orchestrator.task_type_profile_map == {
-        "highlights": "fast",
-        "story": "quality",
-        "qa": "fast",
         "recap_classify": "fast",
         "recap_enrich": "fast",
         "recap_group": "fast",
@@ -190,15 +187,6 @@ def test_from_env_rejects_empty_worker_id(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKER_ID", "   ")
     with pytest.raises(ValueError, match="WORKER_ID"):
         Settings.from_env()
-
-
-def test_from_env_rejects_invalid_backend_capability_mode(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    monkeypatch.setenv("NEWS_RECAP_BACKEND_CAPABILITY_MODE", "invalid_mode")
-    with pytest.raises(ValueError, match="NEWS_RECAP_BACKEND_CAPABILITY_MODE"):
-        Settings.from_env(db_path=tmp_path / "test.db")
 
 
 # ---------------------------------------------------------------------------

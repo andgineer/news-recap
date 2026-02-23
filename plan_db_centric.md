@@ -14,7 +14,7 @@ This plan migrates the pipeline to a DB-centric architecture where each step rea
 
 ## Terminology
 
-- **Digest** -- the final assembled product shown to the user. One digest per `(user, business_date)`. Lives in existing `user_outputs` table with `kind='digest'`. Consists of ordered `user_output_blocks`. An article belongs to at most one digest at a time. Test/experiment digests can be trashed to release their articles for a real digest.
+- **Digest** -- the final assembled product shown to the user. One digest per `(user, business_date)`. Lives in new `recap_digests` table. Consists of ordered `recap_digest_blocks`. An article belongs to at most one digest at a time. Test/experiment digests can be trashed to release their articles for a real digest.
 - **Event** -- a group of articles about the same real-world fact. Intermediate entity, stored in new `recap_events` table.
 - **Verdict** -- classification result per article: `ok`, `trash`, or `enrich`. Stored as a column on `user_articles`.
 
@@ -68,7 +68,7 @@ Each step queries DB for work. No work = step is a no-op. No in-memory data pass
 ### New columns on `user_articles`
 
 ```python
-recap_digest_id: str | None      # FK -> user_outputs.output_id; binds article to a digest
+recap_digest_id: str | None      # FK -> recap_digests.digest_id; binds article to a digest
 recap_verdict: str | None         # 'ok' | 'trash' | 'enrich' | NULL (not yet classified)
 recap_enriched_title: str | None  # improved title from enrich/deep-enrich
 recap_enriched_text: str | None   # cleaned full text from enrich/deep-enrich
@@ -79,7 +79,7 @@ recap_enriched_text: str | None   # cleaned full text from enrich/deep-enrich
 ```python
 event_id: str           # PK
 user_id: str            # FK -> users
-digest_id: str          # FK -> user_outputs.output_id
+digest_id: str          # FK -> recap_digests.digest_id
 title: str              # event headline (from group step)
 significance: str       # 'high' | 'medium' | 'low'
 narrative: str | None   # filled by synthesize, NULL until then
@@ -100,31 +100,45 @@ CREATE TABLE recap_event_articles (
 
 Composite PK prevents duplicate links from retries. `ON DELETE CASCADE` from `recap_events` ensures cleanup when events are deleted (trash, re-group).
 
-### New column on `user_outputs`
+### New table `recap_digests`
 
 ```python
-pipeline_dir: str | None   # absolute path to digest workdir on disk (set once at creation)
+digest_id: str              # PK
+user_id: str                # FK -> users
+business_date: date         # NOT NULL
+status: str                 # 'draft' | 'ready' | 'published'
+title: str | None
+pipeline_dir: str | None    # absolute path to digest workdir on disk (set once at creation)
+created_at: datetime
+updated_at: datetime
 ```
 
-This anchors the digest to a stable workdir. Agent output reuse relies on finding cached output in the same directory across pipeline restarts. Without this column, a restart would create a new workdir and lose all cached agent output.
+Unique constraint: `(user_id, business_date) WHERE status = 'draft'` — at most one draft per day.
 
-### Existing tables used as-is
+`pipeline_dir` anchors the digest to a stable workdir. Agent output reuse relies on finding cached output in the same directory across pipeline restarts. Without this column, a restart would create a new workdir and lose all cached agent output.
 
-- **`user_outputs`** with `kind='digest'`, `status` = `'draft'` | `'ready'` | `'published'`
-- **`user_output_blocks`** -- final themed blocks shown to the user
+### New table `recap_digest_blocks`
+
+```python
+block_id: int               # PK autoincrement
+user_id: str                # FK -> users
+digest_id: str              # FK -> recap_digests.digest_id ON DELETE CASCADE
+block_order: int
+text: str                   # themed block content
+source_ids_json: str        # JSON array of article source_ids
+created_at: datetime
+```
 
 ### Migration
 
-Single Alembic migration `20260222_0002_recap_pipeline_state.py`:
+The app has not been released yet so we modify the existing `alembic/versions/20260217_0001_initial_multiuser.py`:
 - Add columns to `user_articles`: `recap_digest_id`, `recap_verdict`, `recap_enriched_title`, `recap_enriched_text`
-- Add column to `user_outputs`: `pipeline_dir`
-- Data fixup (executed before constraints, in this order):
-  1. Backfill digest rows with `business_date IS NULL`: set to `date(created_at)` as best-effort fallback. If `created_at` is also NULL, clear `user_articles.recap_digest_id` and `recap_verdict` to NULL for any articles referencing this digest, delete its `user_output_blocks`, then delete the row. Log all affected `output_id` values for manual audit.
-  2. Dedupe digest rows: for each `(user_id, business_date)` with multiple digest rows, keep the one with highest priority (`published > ready > draft`, then latest `created_at`, then largest `output_id` as tiebreaker). For deleted duplicates: `UPDATE user_articles SET recap_digest_id = <kept_id> WHERE recap_digest_id = <deleted_id> AND user_id = <digest_user_id>`, then catch-all: `UPDATE user_articles SET recap_digest_id = NULL, recap_verdict = NULL WHERE recap_digest_id = <deleted_id>` (handles any cross-user mismatches; log affected rows), then delete `user_output_blocks` and the duplicate digest row.
-- Add `CHECK(kind != 'digest' OR business_date IS NOT NULL)` on `user_outputs`.
-- Add unique index on `user_outputs (user_id, business_date) WHERE kind = 'digest'`.
+- Create table `recap_digests`
+- Create table `recap_digest_blocks`
 - Create table `recap_events`
 - Create table `recap_event_articles`
+
+No data fixup needed — all recap tables are new with no legacy data.
 
 ## How Each Step Works
 
@@ -238,7 +252,7 @@ classify-1/
 
 - **Input**: all events with narratives for this digest
 - **Agent output**: JSON with themed blocks
-- **DB write**: `DELETE + INSERT user_output_blocks` (idempotent), `UPDATE user_outputs SET status = 'ready'`
+- **DB write**: `DELETE + INSERT recap_digest_blocks` (idempotent), `UPDATE recap_digests SET status = 'ready'`
 
 ## Resumability
 
@@ -323,7 +337,7 @@ news-recap recap trash
 news-recap recap trash --digest-id abc123
 ```
 
-`recap trash` in a single transaction: deletes `user_output_blocks` for the digest, deletes `recap_events` (cascades to `recap_event_articles`), clears `recap_digest_id` and `recap_verdict` on all bound articles, and finally deletes the digest record from `user_outputs`. Enrichment columns (`recap_enriched_title`, `recap_enriched_text`) are preserved -- enrichment is article-intrinsic (cleaned body text), not digest-specific, so keeping it avoids re-running expensive agent calls when the same articles enter a new digest. The workdir on disk is left intact (for post-mortem inspection) but can be manually deleted.
+`recap trash` in a single transaction: deletes `recap_digest_blocks` for the digest, deletes `recap_events` (cascades to `recap_event_articles`), clears `recap_digest_id` and `recap_verdict` on all bound articles, and finally deletes the digest record from `recap_digests`. Enrichment columns (`recap_enriched_title`, `recap_enriched_text`) are preserved -- enrichment is article-intrinsic (cleaned body text), not digest-specific, so keeping it avoids re-running expensive agent calls when the same articles enter a new digest. The workdir on disk is left intact (for post-mortem inspection) but can be manually deleted.
 
 **Default target:** without `--digest-id`, `recap trash` finds the `draft` digest for the current user and current business date (today). If no draft exists for today, it errors with "no draft digest to trash for <date>." Use `--digest-id` to trash a specific digest (e.g., from a different date).
 
@@ -421,9 +435,9 @@ Pipeline state is never determined by workdir contents.
 
 ## Files to change
 
-- `src/news_recap/ingestion/storage/sqlmodel_models.py` -- new columns on `UserArticle`, new `RecapEvent` + `RecapEventArticle` models
-- New Alembic migration in `alembic/versions/`
-- `src/news_recap/ingestion/repository.py` -- recap methods: digest lifecycle, verdict CRUD, events CRUD, work queries, `trash_digest(digest_id, *, drop_enrichment=False)`
+- `src/news_recap/storage/sqlmodel_models.py` -- new columns on `UserArticle`, new `RecapDigest`, `RecapDigestBlock`, `RecapEvent`, `RecapEventArticle` models
+- `alembic/versions/20260217_0001_initial_multiuser.py` -- add new tables and columns to the existing initial migration
+- `src/news_recap/ingestion/repository.py` -- recap methods: digest lifecycle, verdict CRUD, events CRUD, digest blocks, work queries, `trash_digest(digest_id, *, drop_enrichment=False)`
 - `src/news_recap/recap/flow.py` -- phases query DB, check cached output, transactional commit/rollback
 - `src/news_recap/recap/launcher.py` -- create/resume digest, assign articles, `--debug-step` / `--stop-after`, `recap trash` (incl. `--drop-enrichment` / `--force` flag parsing)
 - `src/news_recap/recap/agent_task.py` -- stays thin: run agent only, no DB writes

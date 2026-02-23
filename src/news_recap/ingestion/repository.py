@@ -6,8 +6,7 @@ import json
 import logging
 import struct
 from collections import defaultdict
-from collections.abc import Sequence
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -38,9 +37,6 @@ from news_recap.ingestion.models import (
 )
 from news_recap.recap.models import (
     SourceCorpusEntry,
-    UserOutputBlockWrite,
-    UserOutputUpsert,
-    UserOutputView,
 )
 from news_recap.storage.alembic_runner import upgrade_head
 from news_recap.storage.common import (
@@ -62,8 +58,6 @@ from news_recap.storage.sqlmodel_models import (
     RssFeedState,
     RssProcessingSnapshot,
     UserArticle,
-    UserOutput,
-    UserOutputBlock,
 )
 from news_recap.storage.sqlmodel_models import (
     IngestionGap as IngestionGapRow,
@@ -1262,198 +1256,6 @@ class SQLiteRepository:
         ]
         return resolved, missing
 
-    # -- Outputs ----------------------------------------------------------------
-
-    def upsert_user_output(self, payload: UserOutputUpsert) -> UserOutputView:
-        """Upsert stable business output row and replace its blocks."""
-
-        with Session(self.engine) as session:
-            row = self._upsert_user_output_in_session(session=session, payload=payload)
-            session.commit()
-
-            refreshed = session.exec(
-                select(UserOutput).where(
-                    col(UserOutput.user_id) == self.user_id,
-                    col(UserOutput.output_id) == row.output_id,
-                ),
-            ).one()
-            block_rows = session.exec(
-                select(UserOutputBlock)
-                .where(
-                    col(UserOutputBlock.user_id) == self.user_id,
-                    col(UserOutputBlock.output_id) == row.output_id,
-                )
-                .order_by(col(UserOutputBlock.block_order).asc()),
-            ).all()
-            return _to_user_output_view(refreshed, block_rows)
-
-    def get_user_output(self, *, output_id: str) -> UserOutputView | None:
-        """Fetch one output with ordered blocks."""
-
-        with Session(self.engine) as session:
-            row = session.exec(
-                select(UserOutput).where(
-                    col(UserOutput.user_id) == self.user_id,
-                    col(UserOutput.output_id) == output_id,
-                ),
-            ).one_or_none()
-            if row is None:
-                return None
-            blocks = session.exec(
-                select(UserOutputBlock)
-                .where(
-                    col(UserOutputBlock.user_id) == self.user_id,
-                    col(UserOutputBlock.output_id) == row.output_id,
-                )
-                .order_by(col(UserOutputBlock.block_order).asc()),
-            ).all()
-            return _to_user_output_view(row, blocks)
-
-    def list_user_outputs(
-        self,
-        *,
-        kind: str | None = None,
-        business_date: date | None = None,
-        limit: int = 50,
-    ) -> list[UserOutputView]:
-        """List recent outputs with blocks."""
-
-        with Session(self.engine) as session:
-            statement = (
-                select(UserOutput)
-                .where(col(UserOutput.user_id) == self.user_id)
-                .order_by(col(UserOutput.updated_at).desc())
-                .limit(max(1, limit))
-            )
-            if kind is not None:
-                statement = statement.where(col(UserOutput.kind) == kind)
-            if business_date is not None:
-                statement = statement.where(col(UserOutput.business_date) == business_date)
-            rows = session.exec(statement).all()
-            if not rows:
-                return []
-            output_ids = [row.output_id for row in rows]
-            block_rows = session.exec(
-                select(UserOutputBlock).where(
-                    col(UserOutputBlock.user_id) == self.user_id,
-                    col(UserOutputBlock.output_id).in_(output_ids),
-                ),
-            ).all()
-            blocks_by_output: dict[str, list[UserOutputBlock]] = {}
-            for block in block_rows:
-                blocks_by_output.setdefault(block.output_id, []).append(block)
-            for values in blocks_by_output.values():
-                values.sort(key=lambda row: row.block_order)
-            return [
-                _to_user_output_view(row, blocks_by_output.get(row.output_id, [])) for row in rows
-            ]
-
-    # -- Output persistence helpers (private) -----------------------------------
-
-    def _resolve_existing_user_output(
-        self,
-        *,
-        session: Session,
-        payload: UserOutputUpsert,
-    ) -> UserOutput | None:
-        if payload.request_id is not None:
-            return session.exec(
-                select(UserOutput).where(
-                    col(UserOutput.user_id) == self.user_id,
-                    col(UserOutput.kind) == payload.kind,
-                    col(UserOutput.request_id) == payload.request_id,
-                ),
-            ).one_or_none()
-        if payload.monitor_id is not None:
-            return session.exec(
-                select(UserOutput).where(
-                    col(UserOutput.user_id) == self.user_id,
-                    col(UserOutput.kind) == payload.kind,
-                    col(UserOutput.business_date) == payload.business_date,
-                    col(UserOutput.monitor_id) == payload.monitor_id,
-                ),
-            ).one_or_none()
-        if payload.story_id is not None:
-            return session.exec(
-                select(UserOutput).where(
-                    col(UserOutput.user_id) == self.user_id,
-                    col(UserOutput.kind) == payload.kind,
-                    col(UserOutput.business_date) == payload.business_date,
-                    col(UserOutput.story_id) == payload.story_id,
-                ),
-            ).one_or_none()
-        return session.exec(
-            select(UserOutput).where(
-                col(UserOutput.user_id) == self.user_id,
-                col(UserOutput.kind) == payload.kind,
-                col(UserOutput.business_date) == payload.business_date,
-                col(UserOutput.story_id).is_(None),
-                col(UserOutput.monitor_id).is_(None),
-                col(UserOutput.request_id).is_(None),
-            ),
-        ).one_or_none()
-
-    def _upsert_user_output_in_session(
-        self,
-        *,
-        session: Session,
-        payload: UserOutputUpsert,
-    ) -> UserOutput:
-        now = utc_now()
-        row = self._resolve_existing_user_output(session=session, payload=payload)
-        if row is None:
-            row = UserOutput(
-                output_id=str(uuid4()),
-                user_id=self.user_id,
-                kind=payload.kind,
-                business_date=payload.business_date,
-                story_id=payload.story_id,
-                monitor_id=payload.monitor_id,
-                request_id=payload.request_id,
-                task_id=payload.task_id,
-                status=payload.status,
-                title=payload.title,
-                payload_json=json.dumps(payload.payload, ensure_ascii=False, sort_keys=True),
-                created_at=now,
-                updated_at=now,
-            )
-            session.add(row)
-            session.flush()
-        else:
-            row.business_date = payload.business_date
-            row.story_id = payload.story_id
-            row.monitor_id = payload.monitor_id
-            row.request_id = payload.request_id
-            row.task_id = payload.task_id
-            row.status = payload.status
-            row.title = payload.title
-            row.payload_json = json.dumps(payload.payload, ensure_ascii=False, sort_keys=True)
-            row.updated_at = now
-            session.add(row)
-
-        session.exec(
-            delete(UserOutputBlock).where(
-                col(UserOutputBlock.user_id) == self.user_id,
-                col(UserOutputBlock.output_id) == row.output_id,
-            ),
-        )
-        for block in payload.blocks:
-            session.add(
-                UserOutputBlock(
-                    user_id=self.user_id,
-                    output_id=row.output_id,
-                    block_order=block.block_order,
-                    text=block.text,
-                    source_ids_json=json.dumps(
-                        list(block.source_ids),
-                        ensure_ascii=False,
-                        sort_keys=True,
-                    ),
-                    created_at=now,
-                ),
-            )
-        return row
-
     def _ensure_user_article_link(self, *, session: Session, article_id: str) -> bool:
         existing = session.exec(
             select(UserArticle).where(
@@ -1695,51 +1497,6 @@ def _to_utc_aware_datetime(value: datetime) -> datetime:
 
 def _same_timestamp(left: datetime, right: datetime) -> bool:
     return _to_utc_aware_datetime(left) == _to_utc_aware_datetime(right)
-
-
-def _to_user_output_view(
-    row: UserOutput,
-    block_rows: Sequence[UserOutputBlock],
-) -> UserOutputView:
-    payload: dict[str, object] = {}
-    try:
-        parsed_payload = json.loads(row.payload_json)
-        if isinstance(parsed_payload, dict):
-            payload = parsed_payload
-    except json.JSONDecodeError:
-        payload = {}
-    blocks: list[UserOutputBlockWrite] = []
-    for block_row in block_rows:
-        try:
-            parsed_source_ids = json.loads(block_row.source_ids_json)
-        except json.JSONDecodeError:
-            parsed_source_ids = []
-        source_ids = tuple(
-            value for value in parsed_source_ids if isinstance(value, str) and value.strip()
-        )
-        blocks.append(
-            UserOutputBlockWrite(
-                block_order=block_row.block_order,
-                text=block_row.text,
-                source_ids=source_ids,
-            ),
-        )
-    return UserOutputView(
-        output_id=row.output_id,
-        user_id=row.user_id,
-        kind=row.kind,
-        business_date=row.business_date,
-        status=row.status,
-        story_id=row.story_id,
-        monitor_id=row.monitor_id,
-        request_id=row.request_id,
-        task_id=row.task_id,
-        title=row.title,
-        payload=payload,
-        created_at=_to_utc_aware_datetime(row.created_at),
-        updated_at=_to_utc_aware_datetime(row.updated_at),
-        blocks=blocks,
-    )
 
 
 def _article_id_from_source_id(source_id: str) -> str | None:

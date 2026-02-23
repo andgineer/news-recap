@@ -25,31 +25,15 @@ def test_alembic_schema_is_initialized_to_head(tmp_path: Path) -> None:
     ).fetchone()
     assert user is not None
 
-    intelligence_tables = repository._connection.execute(
-        """
-        SELECT name
-        FROM sqlite_master
-        WHERE type = 'table'
-          AND name IN ('user_outputs', 'user_output_blocks', 'user_story_definitions',
-                       'story_assignments', 'daily_story_snapshots', 'monitor_questions')
-        ORDER BY name
-        """
-    ).fetchall()
-    assert [str(row["name"]) for row in intelligence_tables] == [
-        "daily_story_snapshots",
-        "monitor_questions",
-        "story_assignments",
-        "user_output_blocks",
-        "user_outputs",
-        "user_story_definitions",
-    ]
-
     removed = repository._connection.execute(
         """
         SELECT name
         FROM sqlite_master
         WHERE type = 'table'
-          AND name IN ('llm_tasks', 'llm_task_events', 'llm_task_artifacts',
+          AND name IN ('user_outputs', 'user_output_blocks', 'user_story_definitions',
+                       'story_assignments', 'daily_story_snapshots', 'monitor_questions',
+                       'read_state_events', 'output_feedback',
+                       'llm_tasks', 'llm_task_events', 'llm_task_artifacts',
                        'llm_task_attempts', 'output_citation_snapshots')
         """
     ).fetchall()

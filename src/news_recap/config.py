@@ -83,9 +83,6 @@ class OrchestratorSettings:
     default_agent: str = "codex"
     task_type_profile_map: dict[str, str] = field(
         default_factory=lambda: {
-            "highlights": "fast",
-            "story": "quality",
-            "qa": "fast",
             "recap_classify": "fast",
             "recap_enrich": "fast",
             "recap_group": "fast",
@@ -109,12 +106,6 @@ class OrchestratorSettings:
     retry_max_seconds: int = 900
     worker_stale_attempt_seconds: int = 1_800
     worker_graceful_shutdown_seconds: int = 30
-    backend_capability_mode: str = "manifest_native"
-    qa_lookback_days: int = 3
-    retrieval_top_k: int = 40
-    retrieval_max_articles: int = 80
-    retrieval_token_budget: int = 12_000
-    retrieval_char_budget: int = 60_000
 
 
 @dataclass(slots=True)
@@ -228,21 +219,6 @@ class Settings:
                 worker_graceful_shutdown_seconds=int(
                     os.getenv("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS", "30"),
                 ),
-                backend_capability_mode=os.getenv(
-                    "NEWS_RECAP_BACKEND_CAPABILITY_MODE",
-                    "manifest_native",
-                ),
-                qa_lookback_days=int(os.getenv("NEWS_RECAP_QA_LOOKBACK_DAYS", "3")),
-                retrieval_top_k=int(os.getenv("NEWS_RECAP_RETRIEVAL_TOP_K", "40")),
-                retrieval_max_articles=int(
-                    os.getenv("NEWS_RECAP_RETRIEVAL_MAX_ARTICLES", "80"),
-                ),
-                retrieval_token_budget=int(
-                    os.getenv("NEWS_RECAP_RETRIEVAL_TOKEN_BUDGET", "12000"),
-                ),
-                retrieval_char_budget=int(
-                    os.getenv("NEWS_RECAP_RETRIEVAL_CHAR_BUDGET", "60000"),
-                ),
             ),
             sqlite_busy_timeout_ms=int(
                 os.getenv("NEWS_RECAP_SQLITE_BUSY_TIMEOUT_MS", "5000"),
@@ -304,14 +280,7 @@ class Settings:
             if not model_id.strip():
                 raise ValueError(f"OrchestratorSettings.{field_name} must not be empty.")
 
-        valid_capability_modes = {"manifest_native", "stdout_parser_fallback"}
-        if self.orchestrator.backend_capability_mode not in valid_capability_modes:
-            raise ValueError(
-                f"NEWS_RECAP_BACKEND_CAPABILITY_MODE must be one of {valid_capability_modes}, "
-                f"got {self.orchestrator.backend_capability_mode!r}.",
-            )
-
-    def _validate_orchestrator_runtime_limits(self) -> None:  # noqa: C901
+    def _validate_orchestrator_runtime_limits(self) -> None:
         if not self.orchestrator.worker_id.strip():
             raise ValueError("NEWS_RECAP_LLM_WORKER_ID must not be empty.")
         if self.orchestrator.poll_interval_seconds < 0:
@@ -328,16 +297,6 @@ class Settings:
             raise ValueError("NEWS_RECAP_WORKER_STALE_ATTEMPT_SECONDS must be > 0.")
         if self.orchestrator.worker_graceful_shutdown_seconds <= 0:
             raise ValueError("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS must be > 0.")
-        if self.orchestrator.qa_lookback_days <= 0:
-            raise ValueError("NEWS_RECAP_QA_LOOKBACK_DAYS must be > 0.")
-        if self.orchestrator.retrieval_top_k <= 0:
-            raise ValueError("NEWS_RECAP_RETRIEVAL_TOP_K must be > 0.")
-        if self.orchestrator.retrieval_max_articles <= 0:
-            raise ValueError("NEWS_RECAP_RETRIEVAL_MAX_ARTICLES must be > 0.")
-        if self.orchestrator.retrieval_token_budget <= 0:
-            raise ValueError("NEWS_RECAP_RETRIEVAL_TOKEN_BUDGET must be > 0.")
-        if self.orchestrator.retrieval_char_budget <= 0:
-            raise ValueError("NEWS_RECAP_RETRIEVAL_CHAR_BUDGET must be > 0.")
 
     def validate_for_rss(self, override_feed_urls: tuple[str, ...] = ()) -> None:
         """Raise configuration error if RSS feed URLs are missing or invalid."""
@@ -417,16 +376,12 @@ def _collect_feed_item_overrides() -> dict[str, int]:
 
 def _collect_task_type_profile_map() -> dict[str, str]:
     default_map = (
-        "highlights=fast,story=quality,qa=fast,"
         "recap_classify=fast,recap_enrich=fast,recap_group=fast,"
         "recap_enrich_full=fast,recap_synthesize=quality,recap_compose=quality"
     )
     raw = os.getenv("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP", default_map).strip()
     if not raw:
         return {
-            "highlights": "fast",
-            "story": "quality",
-            "qa": "fast",
             "recap_classify": "fast",
             "recap_enrich": "fast",
             "recap_group": "fast",
