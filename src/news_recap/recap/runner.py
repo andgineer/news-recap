@@ -461,4 +461,5 @@ def build_routing_defaults(settings: Settings) -> RoutingDefaults:
                 "quality": settings.orchestrator.gemini_model_quality,
             },
         },
+        task_type_timeout_map=settings.orchestrator.task_type_timeout_map,
     )
