@@ -5,7 +5,7 @@
 | Name                                                     |    Stmts |     Miss |   Cover |   Missing |
 |--------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
-| src/news\_recap/config.py                                |      296 |       42 |     86% |265, 267, 269, 275, 283, 285, 305, 318, 320, 322, 324, 328, 330, 332, 334, 336, 338, 340, 370, 377, 393, 395, 405-406, 410, 426, 441, 443, 451, 461, 473, 475, 494-499, 505, 515, 522, 529 |
+| src/news\_recap/config.py                                |      277 |       37 |     87% |241, 243, 245, 251, 259, 261, 281, 287, 289, 291, 293, 297, 299, 329, 336, 352, 354, 364-365, 369, 384, 396, 398, 406, 416, 428, 430, 449-454, 460, 470, 477, 484 |
 | src/news\_recap/http/fetcher.py                          |       42 |       20 |     52% |42-48, 58-81, 91, 94, 97 |
 | src/news\_recap/http/html\_extractor.py                  |       29 |        9 |     69% |47-49, 52-62, 69 |
 | src/news\_recap/http/youtube\_extractor.py               |       49 |       29 |     41% |    57-107 |
@@ -17,7 +17,7 @@
 | src/news\_recap/ingestion/language.py                    |       23 |        2 |     91% |    21, 35 |
 | src/news\_recap/ingestion/models.py                      |      161 |        0 |    100% |           |
 | src/news\_recap/ingestion/pipeline.py                    |       39 |        0 |    100% |           |
-| src/news\_recap/ingestion/repository.py                  |      610 |      171 |     72% |124, 153, 193, 218, 248, 264-269, 287, 316-326, 450, 473-475, 539-543, 611, 649, 755-757, 805, 836, 864, 887-890, 962-969, 1023-1043, 1172-1248, 1257-1263, 1270-1288, 1293-1310, 1321-1347, 1359-1385, 1402-1455, 1573-1575, 1603, 1686, 1704-1727, 1746-1752 |
+| src/news\_recap/ingestion/repository.py                  |      531 |       99 |     81% |118, 147, 187, 212, 242, 258-263, 281, 310-320, 444, 467-469, 533-537, 605, 643, 749-751, 799, 830, 858, 881-884, 956-963, 1017-1037, 1166-1242, 1251-1257, 1375-1377, 1405, 1488, 1503-1509 |
 | src/news\_recap/ingestion/services/dedup\_service.py     |       53 |        3 |     94% |    99-101 |
 | src/news\_recap/ingestion/services/fetch\_service.py     |       65 |        2 |     97% |   79, 120 |
 | src/news\_recap/ingestion/services/normalize\_service.py |       14 |        0 |    100% |           |
@@ -32,7 +32,7 @@
 | src/news\_recap/recap/contracts.py                       |      116 |       43 |     63% |80, 93-103, 115-148, 154, 173, 177, 191, 207-208 |
 | src/news\_recap/recap/flow.py                            |      128 |      109 |     15% |60-149, 162-207, 219-248, 256-257, 267-329 |
 | src/news\_recap/recap/launcher.py                        |       54 |       29 |     46% |45-53, 65-99, 108-118 |
-| src/news\_recap/recap/models.py                          |       51 |        2 |     96% |    23, 35 |
+| src/news\_recap/recap/models.py                          |       18 |        2 |     89% |    23, 35 |
 | src/news\_recap/recap/pipeline\_io.py                    |       60 |       38 |     37% |31-37, 42, 57-59, 69-72, 86-118, 123-147 |
 | src/news\_recap/recap/prompts.py                         |       10 |        0 |    100% |           |
 | src/news\_recap/recap/resource\_loader.py                |       43 |       21 |     51% |39-41, 46-48, 51-59, 68-90, 99-100, 103, 106 |
@@ -42,8 +42,8 @@
 | src/news\_recap/recap/workdir.py                         |       55 |        0 |    100% |           |
 | src/news\_recap/storage/alembic\_runner.py               |       12 |        0 |    100% |           |
 | src/news\_recap/storage/common.py                        |       36 |        8 |     78% |24-27, 33-36 |
-| src/news\_recap/storage/sqlmodel\_models.py              |      250 |        0 |    100% |           |
-| **TOTAL**                                                | **3812** | **1003** | **74%** |           |
+| src/news\_recap/storage/sqlmodel\_models.py              |      155 |        0 |    100% |           |
+| **TOTAL**                                                | **3586** |  **926** | **74%** |           |
 
 
 ## Setup coverage badge
