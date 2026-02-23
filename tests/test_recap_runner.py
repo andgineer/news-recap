@@ -1,27 +1,33 @@
-"""Tests for recap pipeline runner helper functions."""
+"""Tests for recap pipeline helper functions.
+
+Tests are grouped by the module the helpers now live in after the
+runner.py breakup.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from news_recap.recap.contracts import ArticleIndexEntry
-from news_recap.recap.models import DigestArticle
-from news_recap.recap.runner import (
-    _CLASSIFY_MAX_BATCH,
-    _CLASSIFY_MIN_BATCH,
-    _safe_file_id,
-    articles_needing_full_text,
+from news_recap.recap.models import DigestArticle, UserPreferences
+from news_recap.recap.tasks.base import RecapPipelineError, events_to_resource_files
+from news_recap.recap.tasks.classify import (
+    _MAX_BATCH as _CLASSIFY_MAX_BATCH,
+)
+from news_recap.recap.tasks.classify import (
+    _MIN_BATCH as _CLASSIFY_MIN_BATCH,
+)
+from news_recap.recap.tasks.classify import (
     build_classify_batch_prompt,
-    build_event_payloads,
-    events_to_resource_files,
-    merge_enriched_into_index,
     parse_classify_batch_stdout,
-    parse_classify_out_files,
-    parse_enrich_result,
-    parse_group_result,
-    select_significant_events,
     split_into_classify_batches,
 )
+from news_recap.recap.tasks.enrich import (
+    articles_needing_full_text,
+    build_event_payloads,
+    select_significant_events,
+)
+from news_recap.recap.tasks.group import merge_enriched_into_index, parse_group_result
 
 
 def _make_entry(article_id: str) -> DigestArticle:
@@ -33,40 +39,6 @@ def _make_entry(article_id: str) -> DigestArticle:
         published_at="2026-02-17T00:00:00+00:00",
         clean_text="",
     )
-
-
-class TestParseClassifyOutFiles:
-    def test_basic_verdicts(self, tmp_path: Path):
-        entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
-        for e, verdict in zip(entries, ["ok", "trash", "enrich"]):
-            (tmp_path / f"{_safe_file_id(e.article_id)}_out.txt").write_text(verdict)
-        kept, enrich = parse_classify_out_files(tmp_path, entries)
-        assert "a1" in kept
-        assert "a2" not in kept
-        assert "a3" in kept
-        assert enrich == ["a3"]
-
-    def test_missing_file_defaults_to_kept(self, tmp_path: Path):
-        entries = [_make_entry("a1")]
-        kept, enrich = parse_classify_out_files(tmp_path, entries)
-        assert kept == ["a1"]
-        assert enrich == []
-
-
-class TestParseEnrichResult:
-    def test_basic_enrich(self):
-        payload = {
-            "enriched": [
-                {"article_id": "a1", "new_title": "Better title", "clean_text": "Clean body"},
-            ]
-        }
-        result = parse_enrich_result(payload)
-        assert "a1" in result
-        assert result["a1"]["new_title"] == "Better title"
-
-    def test_empty_enriched(self):
-        result = parse_enrich_result({"enriched": []})
-        assert result == {}
 
 
 class TestParseGroupResult:
@@ -171,8 +143,6 @@ class TestEventsToResourceFiles:
 
 
 def _make_prefs(**kwargs):
-    from news_recap.recap.runner import UserPreferences
-
     return UserPreferences(**kwargs)
 
 
@@ -276,8 +246,6 @@ class TestParseClassifyBatchStdout:
 
     def test_low_recognition_rate_raises(self, tmp_path):
         import pytest
-
-        from news_recap.recap.runner import RecapPipelineError
 
         entries = [_make_entry(str(i)) for i in range(10)]
         stdout = self._write_stdout(tmp_path, "BEGIN_VERDICTS\n1\tok\nEND_VERDICTS")

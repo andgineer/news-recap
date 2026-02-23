@@ -28,13 +28,10 @@ from news_recap.recap.contracts import (
     read_manifest,
     read_task_input,
 )
-from news_recap.recap.runner import RecapPipelineError
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
+from news_recap.recap.tasks.base import RecapPipelineError
 
 _DEFAULT_TIMEOUT = 600
-STEP_RETRIES = int(os.getenv("NEWS_RECAP_STEP_RETRIES", "1"))
-STEP_RETRY_DELAY = 30
-_GRACEFUL_SHUTDOWN = 30
 _TAIL_LINES = 30
 
 
@@ -49,14 +46,24 @@ def run_ai_agent(
     step_name: str,
     task_id: str,
 ) -> str:
-    """Execute an LLM agent with internal retries, return *task_id* on success.
+    """Execute an LLM agent, return *task_id* on success.
 
-    Retries are handled inside the function (not by Prefect) so that
-    intermediate failures produce clean log lines instead of tracebacks.
-    On final failure the task raises ``RecapPipelineError`` so Prefect
+    Before launching the subprocess, checks whether the agent output
+    already exists on disk (from a previous pipeline run that crashed
+    after the agent finished).  If so, the expensive agent call is
+    skipped entirely.
+
+    On failure the task raises ``RecapPipelineError`` so Prefect
     correctly marks it as Failed.
     """
     pf_logger = get_run_logger()
+
+    manifest_path = Path(pipeline_dir) / task_id / "meta" / "task_manifest.json"
+    manifest = read_manifest(manifest_path)
+
+    if _has_existing_output(manifest, step_name):
+        pf_logger.info("[%s] Reusing existing agent output — skipping agent call", step_name)
+        return task_id
 
     inp = read_pipeline_input(pipeline_dir)
     routing = resolve_routing_for_enqueue(
@@ -68,44 +75,58 @@ def run_ai_agent(
     )
     timeout = inp.routing_defaults.task_type_timeout_map.get(step_name, _DEFAULT_TIMEOUT)
 
-    max_attempts = 1 + STEP_RETRIES
-    manifest_path = Path(pipeline_dir) / task_id / "meta" / "task_manifest.json"
-    error = "unknown failure"
+    pf_logger.info(
+        "[%s] agent=%s model=%s timeout=%ds",
+        step_name,
+        routing.agent,
+        routing.model,
+        timeout,
+    )
 
-    for attempt in range(max_attempts):
-        pf_logger.info(
-            "[%s] agent=%s model=%s timeout=%ds%s",
-            step_name,
-            routing.agent,
-            routing.model,
-            timeout,
-            f" (attempt {attempt + 1}/{max_attempts})" if max_attempts > 1 else "",
-        )
+    step_start = time.monotonic()
+    result = _run_agent_cli(
+        manifest=manifest,
+        timeout_seconds=timeout,
+        command_template=routing.command_template,
+        model=routing.model,
+    )
+    elapsed = time.monotonic() - step_start
 
-        step_start = time.monotonic()
-        result = _run_agent_cli(
-            manifest_path=manifest_path,
-            timeout_seconds=timeout,
-            command_template=routing.command_template,
-            model=routing.model,
-        )
-        elapsed = time.monotonic() - step_start
+    m, s = divmod(int(elapsed), 60)
+    t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
+    pf_logger.info("[%s] Finished in %s (exit=%s)", step_name, t, result.exit_code)
 
-        m, s = divmod(int(elapsed), 60)
-        t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
-        pf_logger.info("[%s] Finished in %s (exit=%s)", step_name, t, result.exit_code)
+    if result.exit_code == 0:
+        return task_id
 
-        if result.exit_code == 0:
-            return task_id
-
-        _log_agent_output(pf_logger, step_name, result)
-        error = "agent timed out" if result.timed_out else f"agent exit code {result.exit_code}"
-
-        if attempt < max_attempts - 1:
-            pf_logger.info("[%s] Retrying in %ds…", step_name, STEP_RETRY_DELAY)
-            time.sleep(STEP_RETRY_DELAY)
-
+    _log_agent_output(pf_logger, step_name, result)
+    error = "agent timed out" if result.timed_out else f"agent exit code {result.exit_code}"
     raise RecapPipelineError(step_name, error)
+
+
+# ---------------------------------------------------------------------------
+# Output detection — skip agent if output already present on disk
+# ---------------------------------------------------------------------------
+
+_MIN_STDOUT_BYTES = 20
+
+
+def _has_existing_output(manifest: TaskManifest, step_name: str) -> bool:
+    """Check if agent output files already exist from a previous run.
+
+    For classify tasks the output is in stdout; for other tasks it is
+    in ``output_result_path`` (agent_result.json).
+    """
+    result_path = Path(manifest.output_result_path)
+    if result_path.exists() and result_path.stat().st_size > 0:
+        return True
+
+    if step_name.startswith("recap_classify"):
+        stdout_path = Path(manifest.output_stdout_path)
+        if stdout_path.exists() and stdout_path.stat().st_size > _MIN_STDOUT_BYTES:
+            return True
+
+    return False
 
 
 def _log_agent_output(logger, step_name: str, result) -> None:
@@ -130,13 +151,12 @@ def _log_agent_output(logger, step_name: str, result) -> None:
 
 def _run_agent_cli(
     *,
-    manifest_path: Path,
+    manifest: TaskManifest,
     timeout_seconds: int,
     command_template: str,
     model: str,
 ):
     """Enrich prompt, render command, and run the agent process."""
-    manifest = read_manifest(manifest_path)
     task_input = read_task_input(Path(manifest.task_input_path))
     stdout_path = Path(manifest.output_stdout_path)
     stderr_path = Path(manifest.output_stderr_path)
@@ -214,7 +234,7 @@ def _build_enriched_prompt(
     """Wrap the task prompt with manifest path and output contract."""
     manifest_path = f"{manifest.workdir}/meta/task_manifest.json"
 
-    if manifest.task_type.startswith("recap_classify"):
+    if manifest.task_type.startswith(("recap_classify", "recap_enrich")):
         return base_prompt
 
     if manifest.output_schema_hint or manifest.input_resources_dir:

@@ -78,21 +78,29 @@ Example output (3 headlines):
 === HEADLINES ===
 {headlines_block}"""
 
-RECAP_ENRICH_PROMPT = (
-    """\
+RECAP_ENRICH_BATCH_PROMPT = """\
 You are processing news articles to prepare them for a digest.
 
-For each article file in the input resources directory:
-- Read the article content (title, url, text)
+For each article below:
 - Rewrite the title to be informative and factual (not clickbait)
 - Clean the article text: remove boilerplate, ads, navigation fragments
 - Preserve all unique factual information
+- Keep the cleaned text concise — aim for the core facts in 1-3 paragraphs
 
-Output format: write a JSON object with an "enriched" array to output_result_path.
-Each item must have: article_id, new_title, clean_text.
-"""
-    + _FILE_IO_RULES
-)
+Do NOT write any scripts, use any tools, or read any files.
+Read the articles below and print your results directly to stdout.
+
+Print EXACTLY {expected_count} blocks to stdout,
+one per article, in the same order as the list below.
+Format: NUMBER<TAB>new_title<TAB>clean_text
+(tab-separated, clean_text on one line — replace newlines with spaces)
+
+Example output (2 articles):
+1	New factual title for first article	Cleaned article text with key facts preserved.
+2	New factual title for second article	Another cleaned article with all boilerplate removed.
+
+=== ARTICLES ===
+{articles_block}"""
 
 RECAP_GROUP_PROMPT = (
     """\
@@ -117,21 +125,7 @@ Each event must have: event_id, title, significance, article_ids, topic_tags.
     + _FILE_IO_RULES
 )
 
-RECAP_ENRICH_FULL_PROMPT = (
-    """\
-You are enriching articles from significant news events with full-text content.
-
-For each article file in the input resources directory:
-- Read the full article content (fetched from the original source URL)
-- Rewrite the title to be informative and factual
-- Clean and structure the full text: remove boilerplate, preserve all factual details
-- This is the deep enrichment pass — capture as much factual information as possible
-
-Output format: write a JSON object with an "enriched" array to output_result_path.
-Each item must have: article_id, new_title, clean_text.
-"""
-    + _FILE_IO_RULES
-)
+RECAP_ENRICH_FULL_PROMPT = RECAP_ENRICH_BATCH_PROMPT
 
 RECAP_SYNTHESIZE_PROMPT = (
     """\
@@ -183,7 +177,7 @@ Also include a "meta" object with: total_events, total_themes, date.
 
 PROMPTS_BY_TASK_TYPE: dict[str, str] = {
     "recap_classify": RECAP_CLASSIFY_PROMPT,
-    "recap_enrich": RECAP_ENRICH_PROMPT,
+    "recap_enrich": RECAP_ENRICH_BATCH_PROMPT,
     "recap_group": RECAP_GROUP_PROMPT,
     "recap_enrich_full": RECAP_ENRICH_FULL_PROMPT,
     "recap_synthesize": RECAP_SYNTHESIZE_PROMPT,

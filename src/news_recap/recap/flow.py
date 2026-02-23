@@ -17,16 +17,16 @@ from uuid import uuid4
 from prefect import flow
 from prefect.logging import get_run_logger
 
-from news_recap.recap.models import Digest
-from news_recap.recap.runner import (
+from news_recap.recap.models import Digest, to_article_index
+from news_recap.recap.storage.pipeline_io import read_pipeline_input
+from news_recap.recap.storage.workdir import TaskWorkdirManager
+from news_recap.recap.tasks.base import (
+    FlowContext,
     PipelineRunResult,
     PipelineStepResult,
     RecapPipelineError,
-    to_article_index,
+    StopPipelineError,
 )
-from news_recap.recap.storage.pipeline_io import read_pipeline_input
-from news_recap.recap.storage.workdir import TaskWorkdirManager
-from news_recap.recap.tasks.base import FlowContext, StopPipelineError
 from news_recap.recap.tasks.classify import Classify
 from news_recap.recap.tasks.compose import Compose
 from news_recap.recap.tasks.enrich import Enrich, EnrichFull

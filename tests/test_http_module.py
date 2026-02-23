@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
+import httpx
+
+from news_recap.http.fetcher import HttpFetcher
 from news_recap.http.html_extractor import ExtractionResult, extract_text
 from news_recap.http.youtube_extractor import extract_video_id, is_youtube_url
 
@@ -57,3 +62,53 @@ class TestYoutubeExtractor:
 
     def test_extract_video_id_empty_string(self):
         assert extract_video_id("") is None
+
+
+class TestHttpFetcher:
+    @patch("news_recap.http.fetcher.httpx.Client")
+    def test_fetch_success(self, mock_client_cls: MagicMock) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = "<html><body>OK</body></html>"
+        mock_resp.headers = {"content-type": "text/html; charset=utf-8"}
+        mock_resp.is_success = True
+        mock_client_cls.return_value.get.return_value = mock_resp
+
+        fetcher = HttpFetcher()
+        result = fetcher.fetch("https://example.com")
+        assert result.is_success
+        assert result.status_code == 200
+        assert "OK" in result.content
+
+    @patch("news_recap.http.fetcher.httpx.Client")
+    def test_fetch_timeout(self, mock_client_cls: MagicMock) -> None:
+        mock_client_cls.return_value.get.side_effect = httpx.TimeoutException("timed out")
+
+        fetcher = HttpFetcher()
+        result = fetcher.fetch("https://example.com/slow")
+        assert not result.is_success
+        assert result.error == "timeout"
+
+    @patch("news_recap.http.fetcher.httpx.Client")
+    def test_fetch_http_error(self, mock_client_cls: MagicMock) -> None:
+        mock_client_cls.return_value.get.side_effect = httpx.HTTPError("connection reset")
+
+        fetcher = HttpFetcher()
+        result = fetcher.fetch("https://example.com/broken")
+        assert not result.is_success
+        assert "connection reset" in (result.error or "")
+
+    @patch("news_recap.http.fetcher.httpx.Client")
+    def test_fetch_non_success_status(self, mock_client_cls: MagicMock) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        mock_resp.text = "Forbidden"
+        mock_resp.headers = {"content-type": "text/html"}
+        mock_resp.is_success = False
+        mock_client_cls.return_value.get.return_value = mock_resp
+
+        fetcher = HttpFetcher()
+        result = fetcher.fetch("https://example.com/forbidden")
+        assert not result.is_success
+        assert result.status_code == 403
+        assert result.error == "HTTP 403"

@@ -2,16 +2,51 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from prefect.logging import get_run_logger
 
 from news_recap.recap.agents.ai_agent import run_ai_agent
-from news_recap.recap.runner import (
-    PipelineStepResult,
-    merge_enriched_into_index,
-    parse_group_result,
-)
+from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.storage.pipeline_io import materialize_step, read_task_output
-from news_recap.recap.tasks.base import TaskLauncher
+from news_recap.recap.tasks.base import PipelineStepResult, TaskLauncher
+
+# ---------------------------------------------------------------------------
+# Group-specific helpers
+# ---------------------------------------------------------------------------
+
+
+def parse_group_result(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return events list from group output."""
+    return payload.get("events", [])
+
+
+def merge_enriched_into_index(
+    entries: list[ArticleIndexEntry],
+    enriched: dict[str, dict[str, str]],
+) -> list[ArticleIndexEntry]:
+    """Update article titles from enrichment pass."""
+    result: list[ArticleIndexEntry] = []
+    for entry in entries:
+        enriched_data = enriched.get(entry.source_id)
+        if enriched_data and enriched_data.get("new_title"):
+            result.append(
+                ArticleIndexEntry(
+                    source_id=entry.source_id,
+                    title=enriched_data["new_title"],
+                    url=entry.url,
+                    source=entry.source,
+                    published_at=entry.published_at,
+                ),
+            )
+        else:
+            result.append(entry)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Task launcher
+# ---------------------------------------------------------------------------
 
 
 class Group(TaskLauncher):

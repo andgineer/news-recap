@@ -1,0 +1,436 @@
+"""Tests for ResourceLoader, ResourceCache, and load_resources."""
+
+from __future__ import annotations
+
+import json
+import logging
+import threading
+import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from news_recap.recap.contracts import ArticleIndexEntry
+from news_recap.recap.loaders.resource_cache import ResourceCache
+from news_recap.recap.loaders.resource_loader import LoadedResource, ResourceLoader
+from news_recap.recap.storage.pipeline_io import load_resources
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _ok(url: str = "https://example.com", text: str = "x" * 500) -> LoadedResource:
+    return LoadedResource(url=url, text=text, content_type="text/html", is_success=True)
+
+
+def _fail(url: str = "https://example.com", error: str = "timeout") -> LoadedResource:
+    return LoadedResource(url=url, text="", content_type="", is_success=False, error=error)
+
+
+def _entry(sid: str, url: str = "https://example.com/a") -> ArticleIndexEntry:
+    return ArticleIndexEntry(source_id=sid, title=f"Title {sid}", url=url, source="test")
+
+
+# ===========================================================================
+# ResourceLoader tests
+# ===========================================================================
+
+
+class TestResourceLoaderSingle:
+    def test_load_html_success(self) -> None:
+        fetcher = MagicMock()
+        fetcher.fetch.return_value = MagicMock(
+            is_success=True,
+            content="<html><body><article><p>" + "word " * 200 + "</p></article></body></html>",
+            content_type="text/html",
+        )
+        loader = ResourceLoader(fetcher=fetcher, max_chars=50_000)
+        result = loader.load("https://example.com/article")
+        assert result.is_success
+        assert result.content_type == "text/html"
+
+    def test_load_html_fetch_failure(self) -> None:
+        fetcher = MagicMock()
+        fetcher.fetch.return_value = MagicMock(
+            is_success=False,
+            content="",
+            content_type="text/html",
+            error="HTTP 403",
+        )
+        loader = ResourceLoader(fetcher=fetcher)
+        result = loader.load("https://example.com/blocked")
+        assert not result.is_success
+        assert result.error == "HTTP 403"
+
+    @patch("news_recap.recap.loaders.resource_loader.fetch_transcript")
+    def test_load_youtube_success(self, mock_fetch: MagicMock) -> None:
+        mock_fetch.return_value = MagicMock(
+            is_success=True,
+            text="Hello from YouTube",
+            language="en",
+        )
+        loader = ResourceLoader()
+        result = loader.load("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        assert result.is_success
+        assert result.content_type.startswith("youtube/transcript")
+        assert "Hello from YouTube" in result.text
+
+    @patch("news_recap.recap.loaders.resource_loader.fetch_transcript")
+    def test_load_youtube_not_available(self, mock_fetch: MagicMock) -> None:
+        mock_fetch.return_value = MagicMock(
+            is_success=False,
+            text="",
+            language="",
+            error="no transcripts available",
+        )
+        loader = ResourceLoader()
+        result = loader.load("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        assert not result.is_success
+        assert result.error == "no transcripts available"
+
+    def test_load_autodetects_youtube_vs_html(self) -> None:
+        fetcher = MagicMock()
+        fetcher.fetch.return_value = MagicMock(
+            is_success=True,
+            content="<html><body><p>text</p></body></html>",
+            content_type="text/html",
+        )
+        loader = ResourceLoader(fetcher=fetcher)
+        result = loader.load("https://example.com/page")
+        fetcher.fetch.assert_called_once()
+        assert result.content_type == "text/html"
+
+
+class TestResourceLoaderBatch:
+    def test_load_batch_concurrent(self) -> None:
+        fetcher = MagicMock()
+        fetcher.fetch.return_value = MagicMock(
+            is_success=True,
+            content="<html><body><article><p>" + "content " * 100 + "</p></article></body></html>",
+            content_type="text/html",
+        )
+        loader = ResourceLoader(fetcher=fetcher, max_workers=3)
+        entries = [
+            ("a1", "https://example.com/1"),
+            ("a2", "https://example.com/2"),
+            ("a3", "https://other.com/3"),
+        ]
+        results = loader.load_batch(entries)
+        assert set(results.keys()) == {"a1", "a2", "a3"}
+        assert fetcher.fetch.call_count == 3
+
+    def test_load_batch_partial_failure(self) -> None:
+        call_count = {"n": 0}
+
+        def _fake_fetch(url: str):
+            call_count["n"] += 1
+            if "fail" in url:
+                return MagicMock(is_success=False, content="", content_type="", error="HTTP 500")
+            return MagicMock(
+                is_success=True,
+                content="<html><body><p>ok</p></body></html>",
+                content_type="text/html",
+            )
+
+        fetcher = MagicMock()
+        fetcher.fetch.side_effect = _fake_fetch
+        loader = ResourceLoader(fetcher=fetcher, max_workers=2)
+        entries = [
+            ("ok1", "https://example.com/ok"),
+            ("bad1", "https://example.com/fail"),
+        ]
+        results = loader.load_batch(entries)
+        assert len(results) == 2
+        assert not results["bad1"].is_success
+        assert results["bad1"].error == "HTTP 500"
+
+    def test_load_batch_respects_domain_semaphore(self) -> None:
+        """Verify that at most max_per_domain requests run concurrently per domain."""
+        max_concurrent: dict[str, int] = {"peak": 0}
+        active = {"count": 0}
+        lock = threading.Lock()
+
+        def _slow_fetch(url: str):
+            with lock:
+                active["count"] += 1
+                if active["count"] > max_concurrent["peak"]:
+                    max_concurrent["peak"] = active["count"]
+            time.sleep(0.05)
+            with lock:
+                active["count"] -= 1
+            return MagicMock(
+                is_success=True,
+                content="<html><body><p>text</p></body></html>",
+                content_type="text/html",
+            )
+
+        fetcher = MagicMock()
+        fetcher.fetch.side_effect = _slow_fetch
+        loader = ResourceLoader(fetcher=fetcher, max_workers=10, max_per_domain=2)
+        entries = [(f"a{i}", f"https://same.com/{i}") for i in range(6)]
+        results = loader.load_batch(entries)
+        assert len(results) == 6
+        assert max_concurrent["peak"] <= 2
+
+    def test_load_batch_worker_crash_does_not_kill_batch(self) -> None:
+        def _crash_fetch(url: str):
+            if "crash" in url:
+                raise RuntimeError("extractor bug")
+            return MagicMock(
+                is_success=True,
+                content="<html><body><article><p>ok text</p></article></body></html>",
+                content_type="text/html",
+            )
+
+        fetcher = MagicMock()
+        fetcher.fetch.side_effect = _crash_fetch
+        loader = ResourceLoader(fetcher=fetcher, max_workers=2)
+        entries = [
+            ("ok1", "https://example.com/ok"),
+            ("bad1", "https://example.com/crash"),
+        ]
+        results = loader.load_batch(entries)
+        assert len(results) == 2
+        assert not results["bad1"].is_success
+        assert "extractor bug" in (results["bad1"].error or "")
+
+
+# ===========================================================================
+# ResourceCache tests
+# ===========================================================================
+
+
+class TestResourceCache:
+    def test_cache_put_and_get(self, tmp_path: Path) -> None:
+        cache = ResourceCache(tmp_path)
+        resource = _ok("https://example.com/a", text="cached text")
+        cache.put("art:1", resource)
+        got = cache.get("art:1", expected_url="https://example.com/a")
+        assert got is not None
+        assert got.text == "cached text"
+        assert got.is_success
+
+    def test_cache_miss_returns_none(self, tmp_path: Path) -> None:
+        cache = ResourceCache(tmp_path)
+        assert cache.get("nonexistent", expected_url="https://x.com") is None
+
+    def test_cache_does_not_store_failures(self, tmp_path: Path) -> None:
+        cache = ResourceCache(tmp_path)
+        cache.put("art:1", _fail("https://example.com"))
+        assert cache.get("art:1", expected_url="https://example.com") is None
+
+    def test_cache_corrupt_file_returns_none(self, tmp_path: Path) -> None:
+        cache = ResourceCache(tmp_path)
+        cache_dir = tmp_path / "resource_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / "art_1.json").write_text("not valid json{{{", "utf-8")
+        assert cache.get("art:1", expected_url="https://x.com") is None
+
+    def test_cache_non_dict_json_returns_none(self, tmp_path: Path) -> None:
+        """Valid JSON that is not a dict (e.g. array or string) should be a cache miss."""
+        cache = ResourceCache(tmp_path)
+        cache_dir = tmp_path / "resource_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / "art_1.json").write_text('["not", "a", "dict"]', "utf-8")
+        assert cache.get("art:1", expected_url="https://x.com") is None
+        (cache_dir / "art_2.json").write_text('"just a string"', "utf-8")
+        assert cache.get("art:2", expected_url="https://x.com") is None
+
+    def test_cache_url_mismatch_invalidates(self, tmp_path: Path) -> None:
+        cache = ResourceCache(tmp_path)
+        cache.put("art:1", _ok("https://old-url.com/a"))
+        got = cache.get("art:1", expected_url="https://new-url.com/a")
+        assert got is None
+
+    def test_get_or_load_uses_cache(self, tmp_path: Path) -> None:
+        cache = ResourceCache(tmp_path)
+        cache.put("a1", _ok("https://example.com/1", text="from cache"))
+
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {}
+
+        results, hits = cache.get_or_load(
+            [("a1", "https://example.com/1")],
+            loader,
+        )
+        assert hits == 1
+        assert results["a1"].text == "from cache"
+        loader.load_batch.assert_not_called()
+
+    def test_get_or_load_fetches_missing(self, tmp_path: Path) -> None:
+        cache = ResourceCache(tmp_path)
+        cache.put("a1", _ok("https://example.com/1", text="cached"))
+
+        fetched_resource = _ok("https://example.com/2", text="freshly loaded")
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {"a2": fetched_resource}
+
+        results, hits = cache.get_or_load(
+            [("a1", "https://example.com/1"), ("a2", "https://example.com/2")],
+            loader,
+        )
+        assert hits == 1
+        assert results["a1"].text == "cached"
+        assert results["a2"].text == "freshly loaded"
+        loader.load_batch.assert_called_once_with([("a2", "https://example.com/2")])
+
+        got = cache.get("a2", expected_url="https://example.com/2")
+        assert got is not None
+        assert got.text == "freshly loaded"
+
+
+# ===========================================================================
+# load_resources integration tests
+# ===========================================================================
+
+
+class TestLoadResources:
+    def test_load_resources_empty_entries(self) -> None:
+        assert load_resources([]) == {}
+
+    def test_load_resources_returns_json_map(self) -> None:
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {
+            "art:1": _ok("https://example.com/1", text="Full article text " * 20),
+        }
+        entries = [_entry("art:1", "https://example.com/1")]
+        result = load_resources(entries, loader=loader)
+        assert len(result) == 1
+        key = list(result.keys())[0]
+        assert key.endswith(".json")
+        data = json.loads(result[key])
+        assert data["article_id"] == "art:1"
+        assert data["text"] == "Full article text " * 20
+
+    def test_load_resources_filters_short_content(self) -> None:
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {
+            "a1": _ok("https://example.com/1", text="short"),
+            "a2": _ok("https://example.com/2", text="x" * 500),
+        }
+        entries = [
+            _entry("a1", "https://example.com/1"),
+            _entry("a2", "https://example.com/2"),
+        ]
+        result = load_resources(entries, loader=loader, min_resource_chars=200)
+        assert len(result) == 1
+        key = list(result.keys())[0]
+        data = json.loads(result[key])
+        assert data["article_id"] == "a2"
+
+    def test_load_resources_youtube_lower_threshold(self) -> None:
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {
+            "yt1": LoadedResource(
+                url="https://youtube.com/watch?v=abc",
+                text="x" * 120,
+                content_type="youtube/transcript:en",
+                is_success=True,
+            ),
+        }
+        entries = [_entry("yt1", "https://youtube.com/watch?v=abc")]
+        result = load_resources(entries, loader=loader, min_resource_chars=200)
+        assert len(result) == 1
+
+    def test_load_resources_custom_min_resource_chars(self) -> None:
+        """Content accepted at a custom threshold that would be filtered at the default."""
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {
+            "a1": _ok("https://example.com/1", text="x" * 50),
+        }
+        entries = [_entry("a1", "https://example.com/1")]
+        result = load_resources(entries, loader=loader, min_resource_chars=30)
+        assert len(result) == 1
+
+        result_strict = load_resources(entries, loader=loader, min_resource_chars=100)
+        assert len(result_strict) == 0
+
+    def test_load_resources_emits_progress_log(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Progress log is emitted every _PROGRESS_INTERVAL items."""
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {
+            f"a{i}": _ok(f"https://example.com/{i}", text="ok " * 200) for i in range(15)
+        }
+        entries = [_entry(f"a{i}", f"https://example.com/{i}") for i in range(15)]
+        with caplog.at_level(logging.INFO, logger="news_recap.recap.storage.pipeline_io"):
+            load_resources(entries, loader=loader)
+        progress_msgs = [r.message for r in caplog.records if "processed" in r.message]
+        assert len(progress_msgs) >= 1
+
+    def test_load_resources_with_cache(self, tmp_path: Path) -> None:
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {
+            "a1": _ok("https://example.com/1", text="loaded " * 100),
+        }
+        entries = [_entry("a1", "https://example.com/1")]
+        result1 = load_resources(entries, cache_dir=tmp_path, loader=loader)
+        assert len(result1) == 1
+        loader.load_batch.assert_called_once()
+
+        loader.load_batch.reset_mock()
+        loader.load_batch.return_value = {}
+        result2 = load_resources(entries, cache_dir=tmp_path, loader=loader)
+        assert len(result2) == 1
+        loader.load_batch.assert_not_called()
+
+
+# ===========================================================================
+# PipelineInput round-trip tests
+# ===========================================================================
+
+
+class TestPipelineInputMinResourceChars:
+    def test_min_resource_chars_round_trips_through_json(self, tmp_path: Path) -> None:
+        """Verify min_resource_chars serialized into pipeline_input.json is read back."""
+        from news_recap.recap.storage.pipeline_io import read_pipeline_input
+
+        payload = {
+            "business_date": "2026-01-01",
+            "articles": [],
+            "preferences": {"max_headline_chars": 120, "language": "ru"},
+            "routing_defaults": {
+                "default_agent": "codex",
+                "task_type_profile_map": {},
+                "command_templates": {},
+                "models": {},
+                "task_type_timeout_map": {},
+            },
+            "agent_override": None,
+            "min_resource_chars": 500,
+        }
+        (tmp_path / "pipeline_input.json").write_text(
+            json.dumps(payload, ensure_ascii=False),
+            "utf-8",
+        )
+        inp = read_pipeline_input(str(tmp_path))
+        assert inp.min_resource_chars == 500
+
+    def test_min_resource_chars_defaults_when_missing(self, tmp_path: Path) -> None:
+        """Legacy pipeline_input.json without min_resource_chars uses the default."""
+        from news_recap.recap.storage.pipeline_io import (
+            _DEFAULT_MIN_RESOURCE_CHARS,
+            read_pipeline_input,
+        )
+
+        payload = {
+            "business_date": "2026-01-01",
+            "articles": [],
+            "preferences": {"max_headline_chars": 120, "language": "ru"},
+            "routing_defaults": {
+                "default_agent": "codex",
+                "task_type_profile_map": {},
+                "command_templates": {},
+                "models": {},
+                "task_type_timeout_map": {},
+            },
+            "agent_override": None,
+        }
+        (tmp_path / "pipeline_input.json").write_text(
+            json.dumps(payload, ensure_ascii=False),
+            "utf-8",
+        )
+        inp = read_pipeline_input(str(tmp_path))
+        assert inp.min_resource_chars == _DEFAULT_MIN_RESOURCE_CHARS

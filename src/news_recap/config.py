@@ -24,6 +24,7 @@ class IngestionSettings:
     clean_text_max_chars: int = 12_000
     gc_retention_days: int = 7
     digest_lookback_days: int = 3
+    min_resource_chars: int = 200
 
 
 @dataclass(slots=True)
@@ -148,6 +149,7 @@ class Settings:
                 clean_text_max_chars=int(os.getenv("NEWS_RECAP_CLEAN_TEXT_MAX_CHARS", "12000")),
                 gc_retention_days=int(os.getenv("NEWS_RECAP_GC_RETENTION_DAYS", "7")),
                 digest_lookback_days=int(os.getenv("NEWS_RECAP_DIGEST_LOOKBACK_DAYS", "3")),
+                min_resource_chars=int(os.getenv("NEWS_RECAP_MIN_RESOURCE_CHARS", "200")),
             ),
             dedup=DedupSettings(
                 enabled=_env_bool("NEWS_RECAP_DEDUP_ENABLED", default=False),

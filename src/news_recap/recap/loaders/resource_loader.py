@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from news_recap.http.fetcher import HttpFetcher
 from news_recap.http.html_extractor import extract_text
@@ -35,17 +38,71 @@ class ResourceLoader:
         *,
         fetcher: HttpFetcher | None = None,
         max_chars: int = 50_000,
+        max_workers: int = 10,
+        max_per_domain: int = 3,
     ) -> None:
         self._fetcher = fetcher or HttpFetcher()
         self._owns_fetcher = fetcher is None
         self._max_chars = max_chars
+        self._max_workers = max_workers
+        self._max_per_domain = max_per_domain
+        self._domain_semaphores: dict[str, threading.Semaphore] = {}
+        self._sem_lock = threading.Lock()
 
     def load(self, url: str) -> LoadedResource:
         """Load content from a URL, auto-detecting YouTube vs HTML."""
-
         if is_youtube_url(url):
             return self._load_youtube(url)
         return self._load_html(url)
+
+    def load_batch(
+        self,
+        entries: list[tuple[str, str]],
+    ) -> dict[str, LoadedResource]:
+        """Fetch multiple URLs concurrently with per-domain rate limiting.
+
+        *entries* is a list of ``(source_id, url)`` pairs.
+        Returns a dict keyed by ``source_id`` — always contains one entry
+        per input, even on failure.
+        """
+        if not entries:
+            return {}
+
+        for _, url in entries:
+            domain = urlparse(url).netloc.lower()
+            if domain not in self._domain_semaphores:
+                self._domain_semaphores[domain] = threading.Semaphore(self._max_per_domain)
+
+        results: dict[str, LoadedResource] = {}
+
+        with ThreadPoolExecutor(max_workers=self._max_workers) as pool:
+            future_to_sid = {pool.submit(self._safe_load, sid, url): sid for sid, url in entries}
+            for future in as_completed(future_to_sid):
+                sid = future_to_sid[future]
+                results[sid] = future.result()
+
+        return results
+
+    def _safe_load(self, source_id: str, url: str) -> LoadedResource:
+        """Load a single URL with domain semaphore and crash isolation."""
+        domain = urlparse(url).netloc.lower()
+        with self._sem_lock:
+            sem = self._domain_semaphores.setdefault(
+                domain,
+                threading.Semaphore(self._max_per_domain),
+            )
+        try:
+            with sem:
+                return self.load(url)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Unexpected error loading %s (%s): %s", source_id, url, exc)
+            return LoadedResource(
+                url=url,
+                text="",
+                content_type="",
+                is_success=False,
+                error=f"unexpected: {exc}",
+            )
 
     def _load_youtube(self, url: str) -> LoadedResource:
         result = fetch_transcript(url, max_chars=self._max_chars)

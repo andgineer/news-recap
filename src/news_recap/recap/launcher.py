@@ -14,13 +14,38 @@ from news_recap.config import Settings, configure_prefect_runtime, resolve_prefe
 from news_recap.ingestion.repository import IngestionStore
 from news_recap.recap.agents.routing import RoutingDefaults
 from news_recap.recap.flow import recap_flow
-from news_recap.recap.models import DigestArticle
-from news_recap.recap.runner import (
-    UserPreferences,
-    build_routing_defaults,
-)
+from news_recap.recap.models import DigestArticle, UserPreferences
+from news_recap.recap.storage.pipeline_io import _DEFAULT_MIN_RESOURCE_CHARS
 
 logger = logging.getLogger(__name__)
+
+
+def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
+    """Build RoutingDefaults from Settings for the recap pipeline."""
+    return RoutingDefaults(
+        default_agent=settings.orchestrator.default_agent,
+        task_type_profile_map=settings.orchestrator.task_type_profile_map,
+        command_templates={
+            "claude": settings.orchestrator.claude_command_template,
+            "codex": settings.orchestrator.codex_command_template,
+            "gemini": settings.orchestrator.gemini_command_template,
+        },
+        models={
+            "claude": {
+                "fast": settings.orchestrator.claude_model_fast,
+                "quality": settings.orchestrator.claude_model_quality,
+            },
+            "codex": {
+                "fast": settings.orchestrator.codex_model_fast,
+                "quality": settings.orchestrator.codex_model_quality,
+            },
+            "gemini": {
+                "fast": settings.orchestrator.gemini_model_fast,
+                "quality": settings.orchestrator.gemini_model_quality,
+            },
+        },
+        task_type_timeout_map=settings.orchestrator.task_type_timeout_map,
+    )
 
 
 @dataclass(slots=True)
@@ -42,6 +67,7 @@ def _write_pipeline_input(  # noqa: PLR0913
     preferences: UserPreferences,
     routing_defaults: RoutingDefaults,
     agent_override: str | None,
+    min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS,
 ) -> None:
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
     pipeline_dir.mkdir(parents=True, exist_ok=True)
@@ -51,6 +77,7 @@ def _write_pipeline_input(  # noqa: PLR0913
         "preferences": msgspec.structs.asdict(preferences),
         "routing_defaults": msgspec.structs.asdict(routing_defaults),
         "agent_override": agent_override,
+        "min_resource_chars": min_resource_chars,
     }
     import json
 
@@ -67,7 +94,7 @@ class RecapCliController:
         """Fetch articles from store, write pipeline_input.json, and run recap_flow."""
 
         settings = Settings.from_env(data_dir=command.data_dir)
-        routing_defaults = build_routing_defaults(settings)
+        routing_defaults = _build_routing_defaults(settings)
         business_date = command.business_date or datetime.now(tz=UTC).date()
         preferences = UserPreferences()
 
@@ -104,6 +131,7 @@ class RecapCliController:
             preferences=preferences,
             routing_defaults=routing_defaults,
             agent_override=command.agent_override,
+            min_resource_chars=settings.ingestion.min_resource_chars,
         )
         yield f"Pipeline dir: {pipeline_dir}"
         yield "Starting pipeline…"
