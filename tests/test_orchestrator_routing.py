@@ -24,6 +24,10 @@ def _defaults() -> RoutingDefaults:
             "highlights": "fast",
             "story": "quality",
         },
+        task_type_timeout_map={
+            "highlights": 600,
+            "story": 900,
+        },
         command_templates={
             "claude": 'claude --model {model} -- "Read task from {prompt_file}"',
             "codex": 'codex exec --model {model} "Read task from {prompt_file}"',

@@ -21,7 +21,7 @@ from news_recap.recap.pipeline_io import read_pipeline_input
 from news_recap.recap.routing import resolve_routing_for_enqueue
 from news_recap.recap.runner import RecapPipelineError
 
-STEP_TIMEOUT = 600
+_DEFAULT_TIMEOUT = 600
 STEP_RETRIES = int(os.getenv("NEWS_RECAP_STEP_RETRIES", "1"))
 STEP_RETRY_DELAY = 30
 _GRACEFUL_SHUTDOWN = 30
@@ -37,7 +37,6 @@ def run_agent_step(
     pipeline_dir: str,
     step_name: str,
     task_id: str,
-    timeout_seconds: int = STEP_TIMEOUT,
 ) -> str:
     """Execute an LLM agent in a pre-materialized workdir and return task_id."""
     pf_logger = get_run_logger()
@@ -50,12 +49,19 @@ def run_agent_step(
         profile_override=None,
         model_override=None,
     )
-    pf_logger.info("[%s] agent=%s model=%s", step_name, routing.agent, routing.model)
+    timeout = inp.routing_defaults.task_type_timeout_map.get(step_name, _DEFAULT_TIMEOUT)
+    pf_logger.info(
+        "[%s] agent=%s model=%s timeout=%ds",
+        step_name,
+        routing.agent,
+        routing.model,
+        timeout,
+    )
 
     manifest_path = Path(pipeline_dir) / task_id / "meta" / "task_manifest.json"
     request = BackendRunRequest(
         manifest_path=manifest_path,
-        timeout_seconds=timeout_seconds,
+        timeout_seconds=timeout,
         agent=routing.agent,
         profile=routing.profile,
         model=routing.model,
@@ -68,7 +74,9 @@ def run_agent_step(
     result = CliAgentBackend().run(request)
     elapsed = time.monotonic() - step_start
 
-    pf_logger.info("[%s] Finished in %.1fs (exit=%s)", step_name, elapsed, result.exit_code)
+    m, s = divmod(int(elapsed), 60)
+    t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
+    pf_logger.info("[%s] Finished in %s (exit=%s)", step_name, t, result.exit_code)
 
     if result.timed_out:
         raise RecapPipelineError(step_name, "agent timed out")

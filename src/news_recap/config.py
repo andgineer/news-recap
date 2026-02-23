@@ -91,6 +91,16 @@ class OrchestratorSettings:
             "recap_compose": "quality",
         },
     )
+    task_type_timeout_map: dict[str, int] = field(
+        default_factory=lambda: {
+            "recap_classify": 900,
+            "recap_enrich": 600,
+            "recap_group": 600,
+            "recap_enrich_full": 600,
+            "recap_synthesize": 600,
+            "recap_compose": 600,
+        },
+    )
     codex_command_template: str = _DEFAULT_CODEX_CMD
     claude_command_template: str = _DEFAULT_CLAUDE_CMD
     gemini_command_template: str = _DEFAULT_GEMINI_CMD

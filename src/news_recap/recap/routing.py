@@ -46,6 +46,7 @@ class RoutingDefaults:
 
     default_agent: str
     task_type_profile_map: dict[str, str]
+    task_type_timeout_map: dict[str, int]
     command_templates: dict[str, str]
     models: dict[str, dict[str, str]]
 
@@ -53,6 +54,7 @@ class RoutingDefaults:
         return {
             "default_agent": self.default_agent,
             "task_type_profile_map": self.task_type_profile_map,
+            "task_type_timeout_map": self.task_type_timeout_map,
             "command_templates": self.command_templates,
             "models": self.models,
         }
@@ -63,6 +65,9 @@ class RoutingDefaults:
             default_agent=str(data["default_agent"]),
             task_type_profile_map={
                 str(k): str(v) for k, v in data["task_type_profile_map"].items()
+            },
+            task_type_timeout_map={
+                str(k): int(v) for k, v in data.get("task_type_timeout_map", {}).items()
             },
             command_templates={str(k): str(v) for k, v in data["command_templates"].items()},
             models={
@@ -112,6 +117,10 @@ class RoutingDefaults:
             task_type_profile_map={
                 task_type.lower(): profile.lower()
                 for task_type, profile in settings.task_type_profile_map.items()
+            },
+            task_type_timeout_map={
+                task_type.lower(): timeout
+                for task_type, timeout in settings.task_type_timeout_map.items()
             },
             command_templates=command_templates,
             models=models,
