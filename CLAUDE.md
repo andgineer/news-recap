@@ -23,19 +23,26 @@ Stress tests run in CI with `NEWS_RECAP_RUN_STRESS_TESTS=1` and `NEWS_RECAP_STRE
 Two subsystems share a file-based data directory (`.news_recap_data/`, configurable via `NEWS_RECAP_DATA_DIR`):
 
 ### Ingestion Pipeline (`src/news_recap/ingestion/`)
-RSS feeds → `RssSourceAdapter` (HTTP cache, pagination, defusedxml) → `FetchStageService` → `ArticleNormalizationService` (HTML cleaning, language detection) → `IngestionStore` (weekly-partitioned JSON files) → `DedupStageService` (sentence-transformers embeddings → cosine-similarity clustering).
+RSS feeds → `RssSourceAdapter` (HTTP cache, pagination, defusedxml) → `FetchStageService` → `ArticleNormalizationService` (HTML cleaning, language detection) → `IngestionStore` (daily-partitioned JSON files) → `DedupStageService` (sentence-transformers embeddings → cosine-similarity clustering).
 
-Entry point: `IngestionOrchestrator.run_daily()` in `pipeline.py`.
+Entry point: `run_daily_ingestion()` in `pipeline.py`.
 
 ### Recap Pipeline (`src/news_recap/recap/`)
-Task queue system that materializes per-task workdirs with JSON contracts → executes external CLI agents (`codex`/`claude`/`gemini`) as subprocesses → validates JSON output. Orchestrated by Prefect flows.
+Prefect-orchestrated pipeline: classify → enrich → group → deep-enrich → synthesize → compose.
+Materializes per-task workdirs with JSON contracts → executes external CLI agents (`codex`/`claude`/`gemini`) as subprocesses → validates JSON output.
+
+Subpackages:
+- **`tasks/`** — pipeline step implementations (`Classify`, `Enrich`, `Group`, etc.) subclassing `TaskLauncher`, plus prompt templates.
+- **`agents/`** — LLM agent execution (`ai_agent.py`), subprocess runner, routing resolution, mock agents (`echo.py`, `benchmark.py`).
+- **`storage/`** — workdir materialization (`workdir.py`), pipeline I/O (`pipeline_io.py`), output schemas.
+- **`loaders/`** — resource loading (HTTP fetch + text extraction for article enrichment).
 
 Entry point: `recap_flow()` in `flow.py`, launched via `RecapCliController` in `launcher.py`.
 
 ### Storage (`src/news_recap/storage/`)
 All persistence uses `msgspec.Struct` models serialized to JSON files via `storage/io.py`. No SQL database.
 
-- **Weekly article partitions**: `articles-YYYY-Www.json` — auto-GC on startup deletes files older than 2 weeks.
+- **Daily article partitions**: `articles-YYYY-MM-DD.json` — auto-GC on startup deletes partitions older than `gc_retention_days`.
 - **Feed state**: `feeds.json` — RSS HTTP cache and processing snapshots.
 - **Run history**: `runs.json` — recent ingestion runs, gaps, dedup results.
 - **Digest checkpoint**: `digest.json` — pipeline state saved after each phase for restart.
@@ -46,7 +53,7 @@ All persistence uses `msgspec.Struct` models serialized to JSON files via `stora
 - **`IngestionStore`** (`ingestion/repository.py`) owns all file I/O for ingestion. No raw file access in business logic.
 - **`msgspec.Struct`** for all domain models — same struct is used for storage, pipeline transfer, and agent serialization. No `to_dict()`/`from_dict()` boilerplate.
 - **File-based contracts** (`contracts.py`): task I/O uses JSON files in per-task workdirs managed by `TaskWorkdirManager`.
-- **Routing** (`routing.py`): `FrozenRouting` resolves agent + profile (fast/quality) → concrete model.
+- **Routing** (`agents/routing.py`): `FrozenRouting` resolves agent + profile (fast/quality) → concrete model.
 - **All settings** via `Settings.from_env()` in `config.py` (dataclass + env vars, no config files).
 
 ## Coding Conventions

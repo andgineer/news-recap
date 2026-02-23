@@ -17,24 +17,25 @@ from prefect import task
 from prefect.cache_policies import INPUTS
 from prefect.logging import get_run_logger
 
+from news_recap.recap.agents.routing import resolve_routing_for_enqueue
+from news_recap.recap.agents.subprocess import (
+    SubprocessError,
+    build_run_args,
+    run_subprocess,
+)
 from news_recap.recap.contracts import (
     TaskManifest,
     read_manifest,
     read_task_input,
 )
-from news_recap.recap.pipeline_io import read_pipeline_input
-from news_recap.recap.routing import resolve_routing_for_enqueue
 from news_recap.recap.runner import RecapPipelineError
-from news_recap.recap.task_subprocess import (
-    SubprocessError,
-    build_run_args,
-    run_subprocess,
-)
+from news_recap.recap.storage.pipeline_io import read_pipeline_input
 
 _DEFAULT_TIMEOUT = 600
 STEP_RETRIES = int(os.getenv("NEWS_RECAP_STEP_RETRIES", "1"))
 STEP_RETRY_DELAY = 30
 _GRACEFUL_SHUTDOWN = 30
+_TAIL_LINES = 30
 
 
 # ---------------------------------------------------------------------------
@@ -42,18 +43,19 @@ _GRACEFUL_SHUTDOWN = 30
 # ---------------------------------------------------------------------------
 
 
-@task(
-    cache_policy=INPUTS,
-    persist_result=True,
-    retries=STEP_RETRIES,
-    retry_delay_seconds=STEP_RETRY_DELAY,
-)
+@task(cache_policy=INPUTS, persist_result=True)
 def run_ai_agent(
     pipeline_dir: str,
     step_name: str,
     task_id: str,
 ) -> str:
-    """Execute an LLM agent in a pre-materialized workdir and return task_id."""
+    """Execute an LLM agent with internal retries, return *task_id* on success.
+
+    Retries are handled inside the function (not by Prefect) so that
+    intermediate failures produce clean log lines instead of tracebacks.
+    On final failure the task raises ``RecapPipelineError`` so Prefect
+    correctly marks it as Failed.
+    """
     pf_logger = get_run_logger()
 
     inp = read_pipeline_input(pipeline_dir)
@@ -65,35 +67,60 @@ def run_ai_agent(
         model_override=None,
     )
     timeout = inp.routing_defaults.task_type_timeout_map.get(step_name, _DEFAULT_TIMEOUT)
-    pf_logger.info(
-        "[%s] agent=%s model=%s timeout=%ds",
-        step_name,
-        routing.agent,
-        routing.model,
-        timeout,
-    )
 
+    max_attempts = 1 + STEP_RETRIES
     manifest_path = Path(pipeline_dir) / task_id / "meta" / "task_manifest.json"
+    error = "unknown failure"
 
-    step_start = time.monotonic()
-    result = _run_agent_cli(
-        manifest_path=manifest_path,
-        timeout_seconds=timeout,
-        command_template=routing.command_template,
-        model=routing.model,
-    )
-    elapsed = time.monotonic() - step_start
+    for attempt in range(max_attempts):
+        pf_logger.info(
+            "[%s] agent=%s model=%s timeout=%ds%s",
+            step_name,
+            routing.agent,
+            routing.model,
+            timeout,
+            f" (attempt {attempt + 1}/{max_attempts})" if max_attempts > 1 else "",
+        )
 
-    m, s = divmod(int(elapsed), 60)
-    t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
-    pf_logger.info("[%s] Finished in %s (exit=%s)", step_name, t, result.exit_code)
+        step_start = time.monotonic()
+        result = _run_agent_cli(
+            manifest_path=manifest_path,
+            timeout_seconds=timeout,
+            command_template=routing.command_template,
+            model=routing.model,
+        )
+        elapsed = time.monotonic() - step_start
 
-    if result.timed_out:
-        raise RecapPipelineError(step_name, "agent timed out")
-    if result.exit_code != 0:
-        raise RecapPipelineError(step_name, f"agent exit code {result.exit_code}")
+        m, s = divmod(int(elapsed), 60)
+        t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
+        pf_logger.info("[%s] Finished in %s (exit=%s)", step_name, t, result.exit_code)
 
-    return task_id
+        if result.exit_code == 0:
+            return task_id
+
+        _log_agent_output(pf_logger, step_name, result)
+        error = "agent timed out" if result.timed_out else f"agent exit code {result.exit_code}"
+
+        if attempt < max_attempts - 1:
+            pf_logger.info("[%s] Retrying in %ds…", step_name, STEP_RETRY_DELAY)
+            time.sleep(STEP_RETRY_DELAY)
+
+    raise RecapPipelineError(step_name, error)
+
+
+def _log_agent_output(logger, step_name: str, result) -> None:
+    """Read the tail of agent stderr/stdout and log it for quick diagnosis."""
+    for label, path in [("stderr", result.stderr_path), ("stdout", result.stdout_path)]:
+        try:
+            text = path.read_text("utf-8", errors="replace").strip()
+        except OSError:
+            continue
+        if not text:
+            continue
+        lines = text.splitlines()
+        tail = lines[-_TAIL_LINES:]
+        truncated = f"(last {_TAIL_LINES}/{len(lines)} lines)\n" if len(lines) > _TAIL_LINES else ""
+        logger.error("[%s] agent %s:\n%s%s", step_name, label, truncated, "\n".join(tail))
 
 
 # ---------------------------------------------------------------------------

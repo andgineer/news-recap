@@ -16,14 +16,14 @@ from typing import Any
 
 import msgspec
 
+from news_recap.recap.agents.routing import RoutingDefaults, resolve_routing_for_enqueue
 from news_recap.recap.contracts import ArticleIndexEntry, TaskInputContract
+from news_recap.recap.loaders.resource_loader import ResourceLoader
 from news_recap.recap.models import DigestArticle
-from news_recap.recap.prompts import PROMPTS_BY_TASK_TYPE
-from news_recap.recap.resource_loader import ResourceLoader
-from news_recap.recap.routing import RoutingDefaults, resolve_routing_for_enqueue
 from news_recap.recap.runner import UserPreferences
-from news_recap.recap.schemas import SCHEMAS_BY_TASK_TYPE
-from news_recap.recap.workdir import TaskWorkdirManager
+from news_recap.recap.storage.schemas import SCHEMAS_BY_TASK_TYPE
+from news_recap.recap.storage.workdir import TaskWorkdirManager
+from news_recap.recap.tasks.prompts import PROMPTS_BY_TASK_TYPE
 
 logger = logging.getLogger(__name__)
 

@@ -13,8 +13,8 @@ from typing import Any
 
 from prefect.logging import get_run_logger
 
+from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.contracts import ArticleIndexEntry
-from news_recap.recap.pipeline_io import load_resources, materialize_step, read_task_output
 from news_recap.recap.runner import (
     PipelineStepResult,
     articles_needing_full_text,
@@ -22,8 +22,8 @@ from news_recap.recap.runner import (
     parse_enrich_result,
     select_significant_events,
 )
-from news_recap.recap.task_ai_agent import run_ai_agent
-from news_recap.recap.task_base import FlowContext, TaskLauncher
+from news_recap.recap.storage.pipeline_io import load_resources, materialize_step, read_task_output
+from news_recap.recap.tasks.base import FlowContext, TaskLauncher
 
 
 def _run_enrich(

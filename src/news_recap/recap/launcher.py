@@ -12,9 +12,9 @@ import msgspec
 
 from news_recap.config import Settings, configure_prefect_runtime, resolve_prefect_mode
 from news_recap.ingestion.repository import IngestionStore
+from news_recap.recap.agents.routing import RoutingDefaults
 from news_recap.recap.flow import recap_flow
 from news_recap.recap.models import DigestArticle
-from news_recap.recap.routing import RoutingDefaults
 from news_recap.recap.runner import (
     UserPreferences,
     build_routing_defaults,

@@ -17,9 +17,9 @@ from typing import Any
 
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.models import Digest
-from news_recap.recap.pipeline_io import PipelineInput
 from news_recap.recap.runner import PipelineRunResult
-from news_recap.recap.workdir import TaskWorkdirManager
+from news_recap.recap.storage.pipeline_io import PipelineInput
+from news_recap.recap.storage.workdir import TaskWorkdirManager
 from news_recap.storage.io import save_msgspec
 
 logger = logging.getLogger(__name__)

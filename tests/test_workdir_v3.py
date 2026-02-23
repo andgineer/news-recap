@@ -12,7 +12,7 @@ from news_recap.recap.contracts import (
     TaskInputContract,
     read_manifest,
 )
-from news_recap.recap.workdir import TaskWorkdirManager
+from news_recap.recap.storage.workdir import TaskWorkdirManager
 
 
 @pytest.fixture

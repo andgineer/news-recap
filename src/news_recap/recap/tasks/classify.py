@@ -7,7 +7,7 @@ from typing import Any
 
 from prefect.logging import get_run_logger
 
-from news_recap.recap.pipeline_io import materialize_step
+from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.runner import (
     PipelineStepResult,
     RecapPipelineError,
@@ -15,8 +15,8 @@ from news_recap.recap.runner import (
     parse_classify_batch_stdout,
     split_into_classify_batches,
 )
-from news_recap.recap.task_ai_agent import run_ai_agent
-from news_recap.recap.task_base import TaskLauncher
+from news_recap.recap.storage.pipeline_io import materialize_step
+from news_recap.recap.tasks.base import TaskLauncher
 
 _MIN_BATCH_SUCCESS_RATE = 0.8
 
@@ -60,19 +60,20 @@ class Classify(TaskLauncher):
         for i, batch, future in futures:
             try:
                 tid = future.result()
-                verdicts_path = ctx.pdir / tid / "output" / "agent_stdout.log"
-                kept, enrich = parse_classify_batch_stdout(verdicts_path, batch)
-                all_kept.extend(kept)
-                all_enrich.extend(enrich)
-                ctx.result.steps.append(
-                    PipelineStepResult(f"classify batch {i + 1}", tid, "completed"),
-                )
-            except Exception:  # noqa: BLE001
-                pf_logger.exception("classify batch %d failed", i + 1)
+            except RecapPipelineError as exc:
+                pf_logger.error("classify batch %d failed: %s", i + 1, exc)
                 failed_batches += 1
                 ctx.result.steps.append(
                     PipelineStepResult(f"classify batch {i + 1}", None, "failed"),
                 )
+                continue
+            verdicts_path = ctx.pdir / tid / "output" / "agent_stdout.log"
+            kept, enrich = parse_classify_batch_stdout(verdicts_path, batch)
+            all_kept.extend(kept)
+            all_enrich.extend(enrich)
+            ctx.result.steps.append(
+                PipelineStepResult(f"classify batch {i + 1}", tid, "completed"),
+            )
 
         if failed_batches > 0:
             success_rate = (n_batches - failed_batches) / n_batches

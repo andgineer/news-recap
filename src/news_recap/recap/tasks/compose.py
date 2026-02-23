@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from news_recap.recap.pipeline_io import materialize_step, read_task_output
+from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.runner import PipelineStepResult, events_to_resource_files
-from news_recap.recap.task_ai_agent import run_ai_agent
-from news_recap.recap.task_base import TaskLauncher
+from news_recap.recap.storage.pipeline_io import materialize_step, read_task_output
+from news_recap.recap.tasks.base import TaskLauncher
 
 
 class Compose(TaskLauncher):

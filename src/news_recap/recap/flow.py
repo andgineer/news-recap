@@ -18,20 +18,20 @@ from prefect import flow
 from prefect.logging import get_run_logger
 
 from news_recap.recap.models import Digest
-from news_recap.recap.pipeline_io import read_pipeline_input
 from news_recap.recap.runner import (
     PipelineRunResult,
     PipelineStepResult,
     RecapPipelineError,
     to_article_index,
 )
-from news_recap.recap.task_base import FlowContext, StopPipelineError
-from news_recap.recap.task_classify import Classify
-from news_recap.recap.task_compose import Compose
-from news_recap.recap.task_enrich import Enrich, EnrichFull
-from news_recap.recap.task_group import Group
-from news_recap.recap.task_synthesize import Synthesize
-from news_recap.recap.workdir import TaskWorkdirManager
+from news_recap.recap.storage.pipeline_io import read_pipeline_input
+from news_recap.recap.storage.workdir import TaskWorkdirManager
+from news_recap.recap.tasks.base import FlowContext, StopPipelineError
+from news_recap.recap.tasks.classify import Classify
+from news_recap.recap.tasks.compose import Compose
+from news_recap.recap.tasks.enrich import Enrich, EnrichFull
+from news_recap.recap.tasks.group import Group
+from news_recap.recap.tasks.synthesize import Synthesize
 from news_recap.storage.io import load_msgspec
 
 _DIGEST_FILENAME = "digest.json"

@@ -17,10 +17,10 @@ from uuid import uuid4
 import msgspec
 
 from news_recap.config import Settings
+from news_recap.recap.agents.routing import RoutingDefaults
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.models import DigestArticle
-from news_recap.recap.prompts import RECAP_CLASSIFY_BATCH_PROMPT
-from news_recap.recap.routing import RoutingDefaults
+from news_recap.recap.tasks.prompts import RECAP_CLASSIFY_BATCH_PROMPT
 
 logger = logging.getLogger(__name__)
 

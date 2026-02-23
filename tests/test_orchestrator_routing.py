@@ -4,7 +4,7 @@ import allure
 
 from news_recap.config import OrchestratorSettings
 from news_recap.recap.contracts import TaskInputContract
-from news_recap.recap.routing import (
+from news_recap.recap.agents.routing import (
     ROUTING_SCHEMA_VERSION,
     RoutingDefaults,
     resolve_routing_for_enqueue,

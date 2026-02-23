@@ -47,9 +47,10 @@ def build_run_args(
     """Render *command_template* with **values** and return ``(run_args, command_head)``.
 
     All keyword arguments (except *os_name*) are substituted into the
-    template.  Every value is shell-quoted on Unix (``Path`` values use
-    POSIX notation); on Windows the existing ``list2cmdline`` quoting
-    applies.
+    template.  ``Path`` values are shell-quoted on Unix (using POSIX
+    notation); ``str`` values are inserted raw because they may contain
+    multi-word CLI argument fragments (e.g. ``--model gpt-5.2 -c effort=low``).
+    On Windows the existing ``list2cmdline`` quoting applies to all values.
     """
     stripped = command_template.strip()
     if not stripped:
@@ -71,8 +72,11 @@ def build_run_args(
             command_head = rendered.split(maxsplit=1)[0]
             return rendered, command_head
 
-        quoted = {k: shlex.quote(v) for k, v in str_values.items()}
-        rendered = stripped.format(**quoted)
+        unix_values = {
+            k: shlex.quote(v.as_posix()) if isinstance(v, Path) else str(v)
+            for k, v in values.items()
+        }
+        rendered = stripped.format(**unix_values)
     except KeyError as error:
         raise SubprocessError(
             f"Unsupported command template placeholder: {error}",
