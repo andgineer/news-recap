@@ -55,6 +55,10 @@ from news_recap.storage.sqlmodel_models import (
     ArticleResource,
     DedupCluster,
     IngestionRun,
+    RecapDigest,
+    RecapDigestBlock,
+    RecapEvent,
+    RecapEventArticle,
     RssFeedState,
     RssProcessingSnapshot,
     UserArticle,
@@ -1150,7 +1154,438 @@ class SQLiteRepository:
             session.commit()
 
     # ---------------------------------------------------------------------------
-    # Intelligence domain: stories, monitors, outputs, feedback, retrieval
+    # Recap pipeline: digest lifecycle, verdicts, events, blocks
+    # ---------------------------------------------------------------------------
+
+    def create_or_resume_digest(
+        self,
+        *,
+        business_date: object,
+        pipeline_dir: str,
+    ) -> tuple[str, bool]:
+        """Find existing draft digest for the date or create a new one.
+
+        Returns ``(digest_id, created)``.
+        """
+        from datetime import date as date_type
+
+        bd = business_date if isinstance(business_date, date_type) else business_date  # type: ignore[assignment]
+        with Session(self.engine) as session:
+            existing = session.exec(
+                select(RecapDigest).where(
+                    RecapDigest.user_id == self.user_id,
+                    RecapDigest.business_date == bd,
+                    RecapDigest.status == "draft",
+                ),
+            ).one_or_none()
+            if existing is not None:
+                return existing.digest_id, False
+
+            digest_id = str(uuid4())
+            now = utc_now()
+            session.add(
+                RecapDigest(
+                    digest_id=digest_id,
+                    user_id=self.user_id,
+                    business_date=bd,
+                    status="draft",
+                    pipeline_dir=pipeline_dir,
+                    created_at=now,
+                    updated_at=now,
+                ),
+            )
+            session.commit()
+            return digest_id, True
+
+    def get_digest(self, digest_id: str) -> RecapDigest | None:
+        with Session(self.engine) as session:
+            return session.exec(
+                select(RecapDigest).where(
+                    RecapDigest.digest_id == digest_id,
+                    RecapDigest.user_id == self.user_id,
+                ),
+            ).one_or_none()
+
+    def assign_articles_to_digest(
+        self,
+        *,
+        digest_id: str,
+        limit: int | None = None,
+    ) -> int:
+        """Bind unassigned active user_articles to a digest. Returns count assigned."""
+        with Session(self.engine) as session:
+            statement = (
+                select(UserArticle)
+                .where(
+                    UserArticle.user_id == self.user_id,
+                    UserArticle.state == "active",
+                    col(UserArticle.recap_digest_id).is_(None),
+                )
+                .order_by(col(UserArticle.discovered_at).desc())
+            )
+            if limit is not None:
+                statement = statement.limit(limit)
+            rows = session.exec(statement).all()
+            for row in rows:
+                row.recap_digest_id = digest_id
+                session.add(row)
+            session.commit()
+            return len(rows)
+
+    def get_unclassified_articles(
+        self,
+        digest_id: str,
+    ) -> list[SourceCorpusEntry]:
+        """Articles bound to digest with no verdict yet."""
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(Article, UserArticle)
+                .join(UserArticle, col(UserArticle.article_id) == col(Article.article_id))
+                .where(
+                    UserArticle.user_id == self.user_id,
+                    UserArticle.recap_digest_id == digest_id,
+                    col(UserArticle.recap_verdict).is_(None),
+                )
+                .order_by(col(Article.article_id)),
+            ).all()
+            return [
+                SourceCorpusEntry(
+                    source_id=f"article:{a.article_id}",
+                    article_id=a.article_id,
+                    title=a.title,
+                    url=a.url,
+                    source=a.source_domain,
+                    published_at=_to_utc_aware_datetime(a.published_at),
+                    clean_text=a.clean_text or "",
+                )
+                for a, _ua in rows
+            ]
+
+    def save_verdicts(
+        self,
+        session: Session,
+        verdicts: dict[str, str],
+    ) -> int:
+        """Write verdicts (article_id -> ok/trash/enrich) within an existing session."""
+        count = 0
+        for article_id, verdict in verdicts.items():
+            row = session.exec(
+                select(UserArticle).where(
+                    UserArticle.user_id == self.user_id,
+                    UserArticle.article_id == article_id,
+                ),
+            ).one_or_none()
+            if row is not None:
+                row.recap_verdict = verdict
+                session.add(row)
+                count += 1
+        return count
+
+    def get_articles_needing_enrichment(
+        self,
+        digest_id: str,
+    ) -> list[SourceCorpusEntry]:
+        """Articles with verdict='enrich' and no enriched_title yet."""
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(Article, UserArticle)
+                .join(UserArticle, col(UserArticle.article_id) == col(Article.article_id))
+                .where(
+                    UserArticle.user_id == self.user_id,
+                    UserArticle.recap_digest_id == digest_id,
+                    UserArticle.recap_verdict == "enrich",
+                    col(UserArticle.recap_enriched_title).is_(None),
+                )
+                .order_by(col(Article.article_id)),
+            ).all()
+            return [
+                SourceCorpusEntry(
+                    source_id=f"article:{a.article_id}",
+                    article_id=a.article_id,
+                    title=a.title,
+                    url=a.url,
+                    source=a.source_domain,
+                    published_at=_to_utc_aware_datetime(a.published_at),
+                    clean_text=a.clean_text or "",
+                )
+                for a, _ua in rows
+            ]
+
+    def save_enrichments(
+        self,
+        session: Session,
+        enrichments: dict[str, dict[str, str]],
+    ) -> int:
+        """Write enriched title/text within an existing session."""
+        count = 0
+        for article_id, data in enrichments.items():
+            row = session.exec(
+                select(UserArticle).where(
+                    UserArticle.user_id == self.user_id,
+                    UserArticle.article_id == article_id,
+                ),
+            ).one_or_none()
+            if row is not None:
+                if data.get("new_title"):
+                    row.recap_enriched_title = data["new_title"]
+                if data.get("clean_text"):
+                    row.recap_enriched_text = data["clean_text"]
+                session.add(row)
+                count += 1
+        return count
+
+    def get_kept_articles(
+        self,
+        digest_id: str,
+    ) -> list[SourceCorpusEntry]:
+        """All articles with verdict in ('ok', 'enrich') for this digest."""
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(Article, UserArticle)
+                .join(UserArticle, col(UserArticle.article_id) == col(Article.article_id))
+                .where(
+                    UserArticle.user_id == self.user_id,
+                    UserArticle.recap_digest_id == digest_id,
+                    col(UserArticle.recap_verdict).in_(["ok", "enrich"]),
+                )
+                .order_by(col(Article.article_id)),
+            ).all()
+            return [
+                SourceCorpusEntry(
+                    source_id=f"article:{a.article_id}",
+                    article_id=a.article_id,
+                    title=ua.recap_enriched_title or a.title,
+                    url=a.url,
+                    source=a.source_domain,
+                    published_at=_to_utc_aware_datetime(a.published_at),
+                    clean_text=ua.recap_enriched_text or a.clean_text or "",
+                )
+                for a, ua in rows
+            ]
+
+    def count_events_for_digest(self, digest_id: str) -> int:
+        with Session(self.engine) as session:
+            return int(
+                session.exec(
+                    select(func.count())
+                    .select_from(RecapEvent)
+                    .where(RecapEvent.digest_id == digest_id),
+                ).one(),
+            )
+
+    def save_events(
+        self,
+        session: Session,
+        digest_id: str,
+        events: list[dict[str, object]],
+    ) -> None:
+        """Idempotent event save: DELETE existing + INSERT new, within caller's session."""
+        session.exec(
+            delete(RecapEvent).where(col(RecapEvent.digest_id) == digest_id),
+        )
+        now = utc_now()
+        for event in events:
+            event_id = str(event.get("event_id", str(uuid4())[:8]))
+            session.add(
+                RecapEvent(
+                    event_id=event_id,
+                    user_id=self.user_id,
+                    digest_id=digest_id,
+                    title=str(event.get("title", "")),
+                    significance=str(event.get("significance", "medium")),
+                    created_at=now,
+                    updated_at=now,
+                ),
+            )
+            session.flush()
+            for aid in event.get("article_ids", []):  # type: ignore[union-attr]
+                session.add(
+                    RecapEventArticle(
+                        event_id=event_id,
+                        article_id=str(aid),
+                        user_id=self.user_id,
+                    ),
+                )
+
+    def get_events_needing_narrative(self, digest_id: str) -> list[RecapEvent]:
+        with Session(self.engine) as session:
+            return list(
+                session.exec(
+                    select(RecapEvent).where(
+                        RecapEvent.digest_id == digest_id,
+                        col(RecapEvent.narrative).is_(None),
+                    ),
+                ).all(),
+            )
+
+    def get_all_events(self, digest_id: str) -> list[RecapEvent]:
+        with Session(self.engine) as session:
+            return list(
+                session.exec(
+                    select(RecapEvent)
+                    .where(RecapEvent.digest_id == digest_id)
+                    .order_by(col(RecapEvent.event_id)),
+                ).all(),
+            )
+
+    def get_event_article_ids(self, event_id: str) -> list[str]:
+        with Session(self.engine) as session:
+            return list(
+                session.exec(
+                    select(RecapEventArticle.article_id).where(
+                        RecapEventArticle.event_id == event_id,
+                    ),
+                ).all(),
+            )
+
+    def save_narratives(
+        self,
+        session: Session,
+        narratives: dict[str, str],
+    ) -> int:
+        """Write event narratives within an existing session."""
+        count = 0
+        for event_id, narrative in narratives.items():
+            row = session.exec(
+                select(RecapEvent).where(RecapEvent.event_id == event_id),
+            ).one_or_none()
+            if row is not None:
+                row.narrative = narrative
+                row.updated_at = utc_now()
+                session.add(row)
+                count += 1
+        return count
+
+    def get_articles_needing_full_text(
+        self,
+        digest_id: str,
+        event_ids: list[str],
+    ) -> list[SourceCorpusEntry]:
+        """Articles in given events with no recap_enriched_text yet."""
+        if not event_ids:
+            return []
+        with Session(self.engine) as session:
+            rows = session.exec(
+                select(Article, UserArticle)
+                .join(UserArticle, col(UserArticle.article_id) == col(Article.article_id))
+                .join(
+                    RecapEventArticle,
+                    col(RecapEventArticle.article_id) == col(Article.article_id),
+                )
+                .where(
+                    UserArticle.user_id == self.user_id,
+                    UserArticle.recap_digest_id == digest_id,
+                    col(RecapEventArticle.event_id).in_(event_ids),
+                    col(UserArticle.recap_enriched_text).is_(None),
+                )
+                .order_by(col(Article.article_id)),
+            ).all()
+            seen: set[str] = set()
+            result: list[SourceCorpusEntry] = []
+            for a, ua in rows:
+                if a.article_id in seen:
+                    continue
+                seen.add(a.article_id)
+                result.append(
+                    SourceCorpusEntry(
+                        source_id=f"article:{a.article_id}",
+                        article_id=a.article_id,
+                        title=ua.recap_enriched_title or a.title,
+                        url=a.url,
+                        source=a.source_domain,
+                        published_at=_to_utc_aware_datetime(a.published_at),
+                        clean_text=a.clean_text or "",
+                    ),
+                )
+            return result
+
+    def save_digest_blocks(
+        self,
+        session: Session,
+        digest_id: str,
+        blocks: list[dict[str, object]],
+    ) -> None:
+        """Idempotent block save: DELETE existing + INSERT new."""
+        session.exec(
+            delete(RecapDigestBlock).where(col(RecapDigestBlock.digest_id) == digest_id),
+        )
+        now = utc_now()
+        for i, block in enumerate(blocks):
+            source_ids = block.get("source_ids", [])
+            session.add(
+                RecapDigestBlock(
+                    user_id=self.user_id,
+                    digest_id=digest_id,
+                    block_order=i,
+                    text=str(block.get("text", "")),
+                    source_ids_json=json.dumps(source_ids, ensure_ascii=False),
+                    created_at=now,
+                ),
+            )
+
+    def set_digest_status(
+        self,
+        session: Session,
+        digest_id: str,
+        status: str,
+    ) -> None:
+        row = session.exec(
+            select(RecapDigest).where(RecapDigest.digest_id == digest_id),
+        ).one_or_none()
+        if row is not None:
+            row.status = status
+            row.updated_at = utc_now()
+            session.add(row)
+
+    def trash_digest(
+        self,
+        digest_id: str,
+        *,
+        drop_enrichment: bool = False,
+        force: bool = False,
+    ) -> bool:
+        """Delete a digest and release its articles. Returns True if trashed."""
+        with Session(self.engine) as session:
+            digest = session.exec(
+                select(RecapDigest).where(
+                    RecapDigest.digest_id == digest_id,
+                    RecapDigest.user_id == self.user_id,
+                ),
+            ).one_or_none()
+            if digest is None:
+                return False
+            if digest.status != "draft" and not force:
+                raise ValueError(
+                    f"Digest {digest_id} has status={digest.status!r}. "
+                    "Use --force to trash non-draft digests.",
+                )
+
+            articles = session.exec(
+                select(UserArticle).where(
+                    UserArticle.user_id == self.user_id,
+                    UserArticle.recap_digest_id == digest_id,
+                ),
+            ).all()
+            for ua in articles:
+                ua.recap_digest_id = None
+                ua.recap_verdict = None
+                if drop_enrichment:
+                    ua.recap_enriched_title = None
+                    ua.recap_enriched_text = None
+                session.add(ua)
+
+            session.exec(
+                delete(RecapDigestBlock).where(col(RecapDigestBlock.digest_id) == digest_id),
+            )
+            session.exec(
+                delete(RecapEvent).where(col(RecapEvent.digest_id) == digest_id),
+            )
+            session.delete(digest)
+            session.commit()
+            return True
+
+    # ---------------------------------------------------------------------------
+    # Retrieval corpus
     # ---------------------------------------------------------------------------
 
     def list_user_retrieval_articles(

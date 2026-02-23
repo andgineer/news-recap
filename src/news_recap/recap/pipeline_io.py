@@ -8,11 +8,17 @@ a Prefect runtime.
 Prefect inspects parameter annotations at runtime for the Inputs tab.
 """
 
+import hashlib
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from time import sleep
 from typing import Any
+
+from sqlalchemy.exc import OperationalError
+from sqlmodel import Session
 
 from news_recap.recap.contracts import ArticleIndexEntry, TaskInputContract
 from news_recap.recap.models import SourceCorpusEntry
@@ -24,6 +30,69 @@ from news_recap.recap.schemas import SCHEMAS_BY_TASK_TYPE
 from news_recap.recap.workdir import TaskWorkdirManager
 
 logger = logging.getLogger(__name__)
+
+
+class DebugStopError(Exception):
+    """Raised inside a DB write to trigger transaction rollback in debug mode."""
+
+
+def commit_with_retry(
+    engine: object,
+    write_fn: Callable[[Session], None],
+    *,
+    max_attempts: int = 3,
+) -> None:
+    """Open a fresh session+transaction, apply writes, commit. Retry on SQLite lock/busy."""
+    for attempt in range(max_attempts):
+        session = Session(engine)  # type: ignore[arg-type]
+        try:
+            with session.begin():
+                write_fn(session)
+            return
+        except DebugStopError:
+            raise
+        except OperationalError as e:
+            msg = str(e)
+            is_transient = "database is locked" in msg or "database is busy" in msg
+            if is_transient and attempt < max_attempts - 1:
+                sleep(0.5 * 2**attempt)
+                continue
+            raise
+        finally:
+            session.close()
+
+
+def compute_input_hash(pipeline_dir: Path, task_id: str) -> str:
+    """SHA-256 of rendered prompt + articles_index files for the given task."""
+    task_dir = pipeline_dir / task_id / "input"
+    h = hashlib.sha256()
+    for name in ("task_prompt.txt", "articles_index.json"):
+        path = task_dir / name
+        if path.exists():
+            h.update(path.read_bytes())
+    prompt_path = task_dir / "task_input.json"
+    if prompt_path.exists():
+        h.update(prompt_path.read_bytes())
+    return h.hexdigest()
+
+
+def save_input_hash(pipeline_dir: Path, task_id: str, input_hash: str) -> None:
+    meta_dir = pipeline_dir / task_id / "meta"
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    (meta_dir / "input_hash.txt").write_text(input_hash, "utf-8")
+
+
+def check_cached_output(pipeline_dir: Path, task_id: str, input_hash: str) -> bool:
+    """Return True if agent output exists and input_hash matches."""
+    hash_path = pipeline_dir / task_id / "meta" / "input_hash.txt"
+    if not hash_path.exists():
+        return False
+    stored = hash_path.read_text("utf-8").strip()
+    if stored != input_hash:
+        return False
+    stdout_path = pipeline_dir / task_id / "output" / "agent_stdout.log"
+    result_path = pipeline_dir / task_id / "output" / "agent_result.json"
+    return stdout_path.exists() or result_path.exists()
 
 
 def read_task_output(workdir_root: Path, task_id: str) -> dict[str, Any]:

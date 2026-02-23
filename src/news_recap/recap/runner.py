@@ -442,6 +442,7 @@ def build_routing_defaults(settings: Settings) -> RoutingDefaults:
     return RoutingDefaults(
         default_agent=settings.orchestrator.default_agent,
         task_type_profile_map=settings.orchestrator.task_type_profile_map,
+        task_type_timeout_map=settings.orchestrator.task_type_timeout_map,
         command_templates={
             "claude": settings.orchestrator.claude_command_template,
             "codex": settings.orchestrator.codex_command_template,

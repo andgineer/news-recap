@@ -128,14 +128,37 @@ def upgrade() -> None:
     )
 
     op.create_table(
+        "recap_digests",
+        sa.Column("digest_id", sa.String(), nullable=False),
+        sa.Column("user_id", sa.String(), nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("status", sa.String(), nullable=False, server_default="draft"),
+        sa.Column("title", sa.String(), nullable=True),
+        sa.Column("pipeline_dir", sa.String(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("digest_id"),
+    )
+
+    op.create_table(
         "user_articles",
         sa.Column("user_id", sa.String(), server_default="default_user", nullable=False),
         sa.Column("article_id", sa.String(), nullable=False),
         sa.Column("discovered_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("state", sa.String(), nullable=False, server_default="active"),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("recap_digest_id", sa.String(), nullable=True),
+        sa.Column("recap_verdict", sa.String(), nullable=True),
+        sa.Column("recap_enriched_title", sa.Text(), nullable=True),
+        sa.Column("recap_enriched_text", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["article_id"], ["articles.article_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["recap_digest_id"],
+            ["recap_digests.digest_id"],
+            ondelete="SET NULL",
+        ),
         sa.PrimaryKeyConstraint("user_id", "article_id", name="pk_user_articles"),
     )
 
@@ -262,6 +285,52 @@ def upgrade() -> None:
         ),
     )
 
+    op.create_table(
+        "recap_events",
+        sa.Column("event_id", sa.String(), nullable=False),
+        sa.Column("user_id", sa.String(), nullable=False),
+        sa.Column("digest_id", sa.String(), nullable=False),
+        sa.Column("title", sa.String(), nullable=False),
+        sa.Column("significance", sa.String(), nullable=False),
+        sa.Column("narrative", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["digest_id"], ["recap_digests.digest_id"], ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("event_id"),
+    )
+
+    op.create_table(
+        "recap_event_articles",
+        sa.Column("event_id", sa.String(), nullable=False),
+        sa.Column("article_id", sa.String(), nullable=False),
+        sa.Column("user_id", sa.String(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["event_id"], ["recap_events.event_id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(["article_id"], ["articles.article_id"]),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
+        sa.PrimaryKeyConstraint("event_id", "article_id"),
+    )
+
+    op.create_table(
+        "recap_digest_blocks",
+        sa.Column("block_id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(), nullable=False),
+        sa.Column("digest_id", sa.String(), nullable=False),
+        sa.Column("block_order", sa.Integer(), nullable=False),
+        sa.Column("text", sa.Text(), nullable=False),
+        sa.Column("source_ids_json", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["digest_id"], ["recap_digests.digest_id"], ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("block_id"),
+    )
+
     op.create_index(
         "idx_articles_hash_published",
         "articles",
@@ -303,6 +372,16 @@ def upgrade() -> None:
     op.create_index("idx_article_resources_lookup", "article_resources", ["url_hash", "user_id"])
     op.create_index("idx_dedup_clusters_scope_run", "dedup_clusters", ["user_id", "run_id"])
     op.create_index("idx_article_dedup_scope_run", "article_dedup", ["user_id", "run_id"])
+    op.create_index("idx_user_articles_digest", "user_articles", ["recap_digest_id"])
+    op.create_index(
+        "uq_recap_digests_user_date_draft",
+        "recap_digests",
+        ["user_id", "business_date"],
+        unique=True,
+        sqlite_where=sa.text("status = 'draft'"),
+    )
+    op.create_index("idx_recap_events_digest", "recap_events", ["digest_id"])
+    op.create_index("idx_recap_digest_blocks_digest", "recap_digest_blocks", ["digest_id"])
 
     op.execute(
         sa.text(
@@ -316,6 +395,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("idx_recap_digest_blocks_digest", table_name="recap_digest_blocks")
+    op.drop_index("idx_recap_events_digest", table_name="recap_events")
+    op.drop_index("uq_recap_digests_user_date_draft", table_name="recap_digests")
+    op.drop_index("idx_user_articles_digest", table_name="user_articles")
     op.drop_index("idx_article_dedup_scope_run", table_name="article_dedup")
     op.drop_index("idx_dedup_clusters_scope_run", table_name="dedup_clusters")
     op.drop_index("idx_article_resources_lookup", table_name="article_resources")
@@ -325,6 +408,9 @@ def downgrade() -> None:
     op.drop_index("uq_articles_fallback_key", table_name="articles")
     op.drop_index("uq_ingestion_runs_scope_source_running", table_name="ingestion_runs")
     op.drop_index("idx_articles_hash_published", table_name="articles")
+    op.drop_table("recap_digest_blocks")
+    op.drop_table("recap_event_articles")
+    op.drop_table("recap_events")
     op.drop_table("article_dedup")
     op.drop_table("dedup_clusters")
     op.drop_table("article_resources")
@@ -333,6 +419,7 @@ def downgrade() -> None:
     op.drop_table("article_external_ids")
     op.drop_table("user_articles")
     op.drop_table("articles")
+    op.drop_table("recap_digests")
     op.drop_table("rss_processing_snapshots")
     op.drop_table("rss_feed_states")
     op.drop_table("ingestion_gaps")

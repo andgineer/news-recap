@@ -19,6 +19,7 @@ from news_recap.ingestion.controllers import (
 from news_recap.recap.launcher import (
     RecapCliController,
     RecapRunCommand,
+    RecapTrashCommand,
 )
 
 click.rich_click.USE_MARKDOWN = True
@@ -315,12 +316,34 @@ def recap() -> None:
     default=False,
     help="Stop pipeline after classify step (skip enrich, group, synthesize).",
 )
-def recap_run(
+@click.option(
+    "--debug-step",
+    "debug_step",
+    type=click.Choice(
+        ["classify", "enrich", "group", "deep-enrich", "synthesize", "compose"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Run up to this step, execute it, rollback its DB writes, and stop.",
+)
+@click.option(
+    "--stop-after",
+    "stop_after",
+    type=click.Choice(
+        ["classify", "enrich", "group", "deep-enrich", "synthesize", "compose"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Commit this step then stop (don't continue to later steps).",
+)
+def recap_run(  # noqa: PLR0913
     db_path: Path | None,
     business_date: datetime | None,
     agent: str | None,
     article_limit: int | None,
     classify_only: bool,
+    debug_step: str | None,
+    stop_after: str | None,
 ) -> None:
     """Run the full news digest pipeline."""
 
@@ -332,6 +355,43 @@ def recap_run(
                 agent_override=agent,
                 article_limit=article_limit,
                 classify_only=classify_only,
+                debug_step=debug_step,
+                stop_after=stop_after,
+            ),
+        ),
+    )
+
+
+@recap.command("trash")
+@click.option("--db-path", type=click.Path(path_type=Path), default=None, help="SQLite DB path.")
+@click.option("--digest-id", default=None, help="Digest ID to trash. Defaults to today's draft.")
+@click.option(
+    "--drop-enrichment",
+    is_flag=True,
+    default=False,
+    help="Also clear enriched titles and texts (force re-enrichment).",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Allow trashing non-draft digests (ready/published).",
+)
+def recap_trash(
+    db_path: Path | None,
+    digest_id: str | None,
+    drop_enrichment: bool,
+    force: bool,
+) -> None:
+    """Delete a digest and release its articles for reuse."""
+
+    _emit_lines(
+        RECAP_CONTROLLER.trash_digest(
+            RecapTrashCommand(
+                db_path=db_path,
+                digest_id=digest_id,
+                drop_enrichment=drop_enrichment,
+                force=force,
             ),
         ),
     )

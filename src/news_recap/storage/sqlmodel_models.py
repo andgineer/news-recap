@@ -1,4 +1,4 @@
-"""SQLModel ORM tables for ingestion storage."""
+"""SQLModel ORM tables for ingestion and recap storage."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     Column,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -187,6 +188,7 @@ class UserArticle(SQLModel, table=True):
     __table_args__ = (
         PrimaryKeyConstraint("user_id", "article_id", name="pk_user_articles"),
         Index("idx_user_articles_user_discovered", "user_id", "discovered_at"),
+        Index("idx_user_articles_digest", "recap_digest_id"),
     )
 
     user_id: str = Field(
@@ -208,6 +210,16 @@ class UserArticle(SQLModel, table=True):
     discovered_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     state: str = Field(default="active", index=True)
     deleted_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    recap_digest_id: str | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("recap_digests.digest_id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    recap_verdict: str | None = Field(default=None, index=True)
+    recap_enriched_title: str | None = Field(default=None, sa_column=Column(Text))
+    recap_enriched_text: str | None = Field(default=None, sa_column=Column(Text))
 
 
 class ArticleExternalId(SQLModel, table=True):
@@ -372,3 +384,108 @@ class ArticleDedup(SQLModel, table=True):
     cluster_id: str = Field(index=True)
     is_representative: bool
     similarity_to_rep: float
+
+
+# ---------------------------------------------------------------------------
+# Recap pipeline tables
+# ---------------------------------------------------------------------------
+
+
+class RecapDigest(SQLModel, table=True):
+    __tablename__ = "recap_digests"  # type: ignore[bad-override]
+    __table_args__ = (
+        Index(
+            "uq_recap_digests_user_date_draft",
+            "user_id",
+            "business_date",
+            unique=True,
+            sqlite_where=text("status = 'draft'"),
+        ),
+    )
+
+    digest_id: str = Field(primary_key=True)
+    user_id: str = Field(
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    business_date: datetime = Field(sa_column=Column(Date, nullable=False))
+    status: str = Field(default="draft", index=True)
+    title: str | None = None
+    pipeline_dir: str | None = None
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class RecapEvent(SQLModel, table=True):
+    __tablename__ = "recap_events"  # type: ignore[bad-override]
+
+    event_id: str = Field(primary_key=True)
+    user_id: str = Field(
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    digest_id: str = Field(
+        sa_column=Column(
+            ForeignKey("recap_digests.digest_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    title: str
+    significance: str
+    narrative: str | None = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class RecapEventArticle(SQLModel, table=True):
+    __tablename__ = "recap_event_articles"  # type: ignore[bad-override]
+    __table_args__ = (PrimaryKeyConstraint("event_id", "article_id"),)
+
+    event_id: str = Field(
+        sa_column=Column(
+            ForeignKey("recap_events.event_id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+    )
+    article_id: str = Field(
+        sa_column=Column(
+            ForeignKey("articles.article_id"),
+            nullable=False,
+        ),
+    )
+    user_id: str = Field(
+        sa_column=Column(
+            ForeignKey("users.user_id"),
+            nullable=False,
+        ),
+    )
+
+
+class RecapDigestBlock(SQLModel, table=True):
+    __tablename__ = "recap_digest_blocks"  # type: ignore[bad-override]
+
+    block_id: int | None = Field(default=None, primary_key=True)
+    user_id: str = Field(
+        sa_column=Column(
+            ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+    )
+    digest_id: str = Field(
+        sa_column=Column(
+            ForeignKey("recap_digests.digest_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    block_order: int
+    text: str = Field(sa_column=Column(Text, nullable=False))
+    source_ids_json: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
