@@ -60,12 +60,12 @@
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
-            <a id="prevFileLink" class="nav" href="z_8034ccf3fff5054b_routing_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a id="prevFileLink" class="nav" href="z_8034ccf3fff5054b_models_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a id="nextFileLink" class="nav" href="z_8034ccf3fff5054b_schemas_py.html">&#xbb; next</a>
+            <a id="nextFileLink" class="nav" href="z_dee3d79f00d8d762_pipeline_io_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-23 13:46 +0000
+            created at 2026-02-23 15:29 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -99,10 +99,10 @@
     <p class="run"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t"><span class="key">import</span> <span class="nam">msgspec</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">config</span> <span class="key">import</span> <span class="nam">Settings</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">contracts</span> <span class="key">import</span> <span class="nam">ArticleIndexEntry</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">models</span> <span class="key">import</span> <span class="nam">DigestArticle</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">prompts</span> <span class="key">import</span> <span class="nam">RECAP_CLASSIFY_BATCH_PROMPT</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">routing</span> <span class="key">import</span> <span class="nam">RoutingDefaults</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">agents</span><span class="op">.</span><span class="nam">routing</span> <span class="key">import</span> <span class="nam">RoutingDefaults</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">contracts</span> <span class="key">import</span> <span class="nam">ArticleIndexEntry</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">models</span> <span class="key">import</span> <span class="nam">DigestArticle</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t"><span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">tasks</span><span class="op">.</span><span class="nam">prompts</span> <span class="key">import</span> <span class="nam">RECAP_CLASSIFY_BATCH_PROMPT</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t"><span class="nam">logger</span> <span class="op">=</span> <span class="nam">logging</span><span class="op">.</span><span class="nam">getLogger</span><span class="op">(</span><span class="nam">__name__</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -540,12 +540,12 @@
 <footer>
     <div class="content">
         <p>
-            <a class="nav" href="z_8034ccf3fff5054b_routing_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a class="nav" href="z_8034ccf3fff5054b_models_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a class="nav" href="z_8034ccf3fff5054b_schemas_py.html">&#xbb; next</a>
+            <a class="nav" href="z_dee3d79f00d8d762_pipeline_io_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-23 13:46 +0000
+            created at 2026-02-23 15:29 +0000
         </p>
     </div>
 </footer>
