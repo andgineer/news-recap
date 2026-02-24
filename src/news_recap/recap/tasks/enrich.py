@@ -42,7 +42,7 @@ _MAX_BATCH = 10
 _MIN_BATCH = 7
 _MAX_ARTICLE_CHARS = 30_000
 _MAX_ROUNDS = 3
-_MAX_PARALLEL = 5
+_MAX_PARALLEL = 3
 
 _ARTICLE_FILE_RE = re.compile(r"^(\d+)\.txt$")
 
