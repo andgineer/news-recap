@@ -10,9 +10,11 @@ Prefect inspects parameter annotations at runtime for the Inputs tab.
 
 import json
 import logging
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import msgspec
 
@@ -126,87 +128,86 @@ def materialize_step(  # noqa: PLR0913
     return task_id
 
 
-def load_resources(
-    entries: list[ArticleIndexEntry],
-    *,
-    cache_dir: Path | None = None,
-    loader: ResourceLoader | None = None,
-    min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS,
-) -> dict[str, bytes | str]:
-    """Fetch full-text article content, returning a filename-to-JSON map.
+_MAX_LOGGED_FAILURES = 20
 
-    Fetches URLs concurrently via ``ResourceLoader.load_batch()``.
-    When *cache_dir* is provided, uses a file-based cache so that
-    ``Enrich`` and ``EnrichFull`` share fetched content.
-    """
-    url_entries = [(e.source_id, e.url) for e in entries if e.url]
-    if not url_entries:
-        return {}
 
-    total = len(url_entries)
-    logger.info("Loading resources for %d articles…", total)
+def _log_load_failures(
+    failures: list[tuple[str, str, str | None]],
+) -> None:
+    if not failures:
+        return
+    shown = failures[:_MAX_LOGGED_FAILURES]
+    lines = [f"Failed resources ({len(failures)} total):"]
+    for sid, url, error in shown:
+        lines.append(f"  {sid} ({url}): {error}")
+    if len(failures) > _MAX_LOGGED_FAILURES:
+        lines.append(f"  ... and {len(failures) - _MAX_LOGGED_FAILURES} more")
+    logger.warning("\n".join(lines))
 
-    owns_loader = loader is None
-    loader = loader or ResourceLoader()
-    try:
-        loaded_map, cache_hits = _fetch_all(url_entries, loader, cache_dir)
-    finally:
-        if owns_loader:
-            loader.close()
 
-    entry_map = {e.source_id: e for e in entries}
-    resources: dict[str, bytes | str] = {}
-    failed = 0
-    filtered = 0
+def _collect_load_stats(
+    loaded_map: dict[str, LoadedResource],
+) -> tuple[
+    Counter[str],
+    Counter[str],
+    Counter[str],
+    int,
+    int,
+    int,
+    int,
+    list[tuple[str, str, str | None]],
+]:
+    html_domains: Counter[str] = Counter()
+    html_ok: Counter[str] = Counter()
+    html_bytes: Counter[str] = Counter()
+    yt_total = yt_ok = yt_blocked = yt_bytes = 0
+    failures: list[tuple[str, str, str | None]] = []
 
-    for processed, (source_id, loaded) in enumerate(loaded_map.items(), 1):
-        if not loaded.is_success or not loaded.text:
-            failed += 1
-            logger.warning("Failed to load %s: %s", source_id, loaded.error)
+    for source_id, loaded in loaded_map.items():
+        if not loaded.is_success and not loaded.is_blocked:
+            failures.append((source_id, loaded.url, loaded.error))
+        if loaded.content_type.startswith("youtube/"):
+            yt_total += 1
+            if loaded.is_success:
+                yt_ok += 1
+                yt_bytes += len(loaded.text)
+            elif loaded.is_blocked:
+                yt_blocked += 1
         else:
-            threshold = _quality_threshold(loaded, min_resource_chars)
-            if len(loaded.text) < threshold:
-                filtered += 1
-                logger.warning(
-                    "Skipping %s: text too short (%d < %d chars)",
-                    source_id,
-                    len(loaded.text),
-                    threshold,
-                )
-            else:
-                entry = entry_map[source_id]
-                safe_id = source_id.replace(":", "_").replace("/", "_")
-                resources[f"{safe_id}.json"] = json.dumps(
-                    {
-                        "article_id": source_id,
-                        "title": entry.title,
-                        "url": entry.url,
-                        "source": entry.source,
-                        "text": loaded.text,
-                        "content_type": loaded.content_type,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            domain = urlparse(loaded.url).netloc.lower()
+            html_domains[domain] += 1
+            if loaded.is_success:
+                html_ok[domain] += 1
+                html_bytes[domain] += len(loaded.text)
 
-        if processed % _PROGRESS_INTERVAL == 0:
-            logger.info(
-                "Resources: %d/%d processed, %d loaded, %d failed, %d cached",
-                processed,
-                total,
-                len(resources),
-                failed,
-                cache_hits,
-            )
+    return html_domains, html_ok, html_bytes, yt_total, yt_ok, yt_blocked, yt_bytes, failures
 
-    logger.info(
-        "Resource loading complete: %d loaded (%d cached), %d failed, %d below quality threshold",
-        len(resources),
-        cache_hits,
-        failed,
-        filtered,
+
+def _log_load_summary(loaded_map: dict[str, LoadedResource]) -> None:
+    """Log per-domain breakdown and individual failures."""
+    if not loaded_map:
+        return
+
+    html_domains, html_ok, html_bytes, yt_total, yt_ok, yt_blocked, yt_bytes, failures = (
+        _collect_load_stats(loaded_map)
     )
-    return resources
+
+    lines = ["Resource loading summary:"]
+    if yt_total:
+        lines.append(
+            f"  YouTube: {yt_ok}/{yt_total} transcripts"
+            f" ({yt_bytes / 1024:.0f} KB)" + (f", {yt_blocked} blocked" if yt_blocked else ""),
+        )
+    top = html_domains.most_common(10)
+    if top:
+        lines.append(f"  HTML domains (top {len(top)}):")
+        for domain, count in top:
+            ok = html_ok[domain]
+            kb = html_bytes[domain] / 1024
+            lines.append(f"    {domain}: {ok}/{count} loaded ({kb:.0f} KB)")
+
+    logger.info("\n".join(lines))
+    _log_load_failures(failures)
 
 
 def load_resource_texts(
@@ -235,6 +236,8 @@ def load_resource_texts(
     finally:
         if owns_loader:
             loader.close()
+
+    _log_load_summary(loaded_map)
 
     entry_map = {e.source_id: e for e in entries}
     result: dict[str, tuple[str, str]] = {}

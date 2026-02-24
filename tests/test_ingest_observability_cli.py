@@ -52,7 +52,7 @@ def _seed_observability_dataset(data_dir: Path) -> str:
     store = IngestionStore(data_dir)
 
     run_id = store.start_run(source="rss")
-    published_at = datetime(2026, 2, 17, 12, 0, tzinfo=UTC)
+    published_at = datetime.now(tz=UTC)
 
     first = store.upsert_article(
         article=_article(

@@ -1,20 +1,18 @@
-"""Tests for ResourceLoader, ResourceCache, and load_resources."""
+"""Tests for ResourceLoader, ResourceCache, and load_resource_texts."""
 
 from __future__ import annotations
 
 import json
-import logging
 import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.loaders.resource_cache import ResourceCache
 from news_recap.recap.loaders.resource_loader import LoadedResource, ResourceLoader
-from news_recap.recap.storage.pipeline_io import load_resources
+from news_recap.recap.storage.pipeline_io import load_resource_texts
 
 
 # ---------------------------------------------------------------------------
@@ -372,29 +370,28 @@ class TestResourceCache:
 
 
 # ===========================================================================
-# load_resources integration tests
+# load_resource_texts integration tests
 # ===========================================================================
 
 
-class TestLoadResources:
-    def test_load_resources_empty_entries(self) -> None:
-        assert load_resources([]) == {}
+class TestLoadResourceTexts:
+    def test_empty_entries(self) -> None:
+        assert load_resource_texts([]) == {}
 
-    def test_load_resources_returns_json_map(self) -> None:
+    def test_returns_title_text_map(self) -> None:
         loader = MagicMock(spec=ResourceLoader)
         loader.load_batch.return_value = {
             "art:1": _ok("https://example.com/1", text="Full article text " * 20),
         }
         entries = [_entry("art:1", "https://example.com/1")]
-        result = load_resources(entries, loader=loader)
+        result = load_resource_texts(entries, loader=loader)
         assert len(result) == 1
-        key = list(result.keys())[0]
-        assert key.endswith(".json")
-        data = json.loads(result[key])
-        assert data["article_id"] == "art:1"
-        assert data["text"] == "Full article text " * 20
+        assert "art:1" in result
+        title, text = result["art:1"]
+        assert title == "Title art:1"
+        assert text == "Full article text " * 20
 
-    def test_load_resources_filters_short_content(self) -> None:
+    def test_filters_short_content(self) -> None:
         loader = MagicMock(spec=ResourceLoader)
         loader.load_batch.return_value = {
             "a1": _ok("https://example.com/1", text="short"),
@@ -404,13 +401,11 @@ class TestLoadResources:
             _entry("a1", "https://example.com/1"),
             _entry("a2", "https://example.com/2"),
         ]
-        result = load_resources(entries, loader=loader, min_resource_chars=200)
+        result = load_resource_texts(entries, loader=loader, min_resource_chars=200)
         assert len(result) == 1
-        key = list(result.keys())[0]
-        data = json.loads(result[key])
-        assert data["article_id"] == "a2"
+        assert "a2" in result
 
-    def test_load_resources_youtube_lower_threshold(self) -> None:
+    def test_youtube_lower_threshold(self) -> None:
         loader = MagicMock(spec=ResourceLoader)
         loader.load_batch.return_value = {
             "yt1": LoadedResource(
@@ -421,47 +416,34 @@ class TestLoadResources:
             ),
         }
         entries = [_entry("yt1", "https://youtube.com/watch?v=abc")]
-        result = load_resources(entries, loader=loader, min_resource_chars=200)
+        result = load_resource_texts(entries, loader=loader, min_resource_chars=200)
         assert len(result) == 1
 
-    def test_load_resources_custom_min_resource_chars(self) -> None:
-        """Content accepted at a custom threshold that would be filtered at the default."""
+    def test_custom_min_resource_chars(self) -> None:
         loader = MagicMock(spec=ResourceLoader)
         loader.load_batch.return_value = {
             "a1": _ok("https://example.com/1", text="x" * 50),
         }
         entries = [_entry("a1", "https://example.com/1")]
-        result = load_resources(entries, loader=loader, min_resource_chars=30)
+        result = load_resource_texts(entries, loader=loader, min_resource_chars=30)
         assert len(result) == 1
 
-        result_strict = load_resources(entries, loader=loader, min_resource_chars=100)
+        result_strict = load_resource_texts(entries, loader=loader, min_resource_chars=100)
         assert len(result_strict) == 0
 
-    def test_load_resources_emits_progress_log(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Progress log is emitted every _PROGRESS_INTERVAL items."""
-        loader = MagicMock(spec=ResourceLoader)
-        loader.load_batch.return_value = {
-            f"a{i}": _ok(f"https://example.com/{i}", text="ok " * 200) for i in range(15)
-        }
-        entries = [_entry(f"a{i}", f"https://example.com/{i}") for i in range(15)]
-        with caplog.at_level(logging.INFO, logger="news_recap.recap.storage.pipeline_io"):
-            load_resources(entries, loader=loader)
-        progress_msgs = [r.message for r in caplog.records if "processed" in r.message]
-        assert len(progress_msgs) >= 1
-
-    def test_load_resources_with_cache(self, tmp_path: Path) -> None:
+    def test_with_cache(self, tmp_path: Path) -> None:
         loader = MagicMock(spec=ResourceLoader)
         loader.load_batch.return_value = {
             "a1": _ok("https://example.com/1", text="loaded " * 100),
         }
         entries = [_entry("a1", "https://example.com/1")]
-        result1 = load_resources(entries, cache_dir=tmp_path, loader=loader)
+        result1 = load_resource_texts(entries, cache_dir=tmp_path, loader=loader)
         assert len(result1) == 1
         loader.load_batch.assert_called_once()
 
         loader.load_batch.reset_mock()
         loader.load_batch.return_value = {}
-        result2 = load_resources(entries, cache_dir=tmp_path, loader=loader)
+        result2 = load_resource_texts(entries, cache_dir=tmp_path, loader=loader)
         assert len(result2) == 1
         loader.load_batch.assert_not_called()
 
