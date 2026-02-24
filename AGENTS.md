@@ -25,7 +25,7 @@
 - `./scripts/build-docs.sh --copy-assets en` then `mkdocs serve -f docs/_mkdocs.yml`: local docs preview flow.
 
 ## Coding Style & Naming Conventions
-- Python 3.12+ with 4-space indentation and explicit, readable names.
+- Python 3.13+ with 4-space indentation and explicit, readable names.
 - Naming: `snake_case` for modules/functions/variables, `UPPER_CASE` for constants, `CapWords` for classes.
 - Use `msgspec.Struct` for domain models (immutable data); `dataclasses` only for mutable counters.
 - Type hints for public functions and CLI-related logic where practical.

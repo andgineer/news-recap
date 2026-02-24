@@ -30,6 +30,18 @@ def _fail(url: str = "https://example.com", error: str = "timeout") -> LoadedRes
     return LoadedResource(url=url, text="", content_type="", is_success=False, error=error)
 
 
+def _blocked(url: str = "https://youtube.com/watch?v=abc") -> LoadedResource:
+    from news_recap.http.youtube_extractor import IP_BLOCKED_ERROR
+
+    return LoadedResource(
+        url=url,
+        text="",
+        content_type="youtube/transcript",
+        is_success=False,
+        error=IP_BLOCKED_ERROR,
+    )
+
+
 def _entry(sid: str, url: str = "https://example.com/a") -> ArticleIndexEntry:
     return ArticleIndexEntry(source_id=sid, title=f"Title {sid}", url=url, source="test")
 
@@ -175,6 +187,72 @@ class TestResourceLoaderBatch:
         assert len(results) == 6
         assert max_concurrent["peak"] <= 2
 
+    @patch("news_recap.recap.loaders.resource_loader.fetch_transcript")
+    def test_youtube_batch_aborts_on_ip_block(self, mock_fetch: MagicMock) -> None:
+        """When YouTube blocks us, remaining videos are not fetched."""
+        from news_recap.http.youtube_extractor import IP_BLOCKED_ERROR, TranscriptResult
+
+        call_count = {"n": 0}
+
+        def _fake_transcript(url, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                return TranscriptResult(
+                    text="",
+                    language="",
+                    is_success=False,
+                    error=IP_BLOCKED_ERROR,
+                )
+            return TranscriptResult(text="ok", language="en", is_success=True)
+
+        mock_fetch.side_effect = _fake_transcript
+        loader = ResourceLoader(yt_delay=0)
+        entries = [
+            ("yt1", "https://www.youtube.com/watch?v=aaaaaaaaa01"),
+            ("yt2", "https://www.youtube.com/watch?v=aaaaaaaaa02"),
+            ("yt3", "https://www.youtube.com/watch?v=aaaaaaaaa03"),
+            ("yt4", "https://www.youtube.com/watch?v=aaaaaaaaa04"),
+        ]
+        results = loader.load_batch(entries)
+        assert results["yt1"].is_success
+        assert results["yt2"].is_blocked
+        assert "yt3" not in results
+        assert "yt4" not in results
+        assert call_count["n"] == 2
+
+    @patch("news_recap.recap.loaders.resource_loader.fetch_transcript")
+    def test_youtube_stops_when_html_finishes(self, mock_fetch: MagicMock) -> None:
+        """YouTube thread stops when HTML is done — not all videos need to be fetched."""
+        from news_recap.http.youtube_extractor import TranscriptResult
+
+        call_count = {"n": 0}
+
+        def _slow_transcript(url, **kwargs):
+            call_count["n"] += 1
+            time.sleep(0.05)
+            return TranscriptResult(text="ok", language="en", is_success=True)
+
+        mock_fetch.side_effect = _slow_transcript
+
+        fetcher = MagicMock()
+        fetcher.fetch.return_value = MagicMock(
+            is_success=True,
+            content="<html><body><p>text</p></body></html>",
+            content_type="text/html",
+        )
+        loader = ResourceLoader(fetcher=fetcher, yt_delay=0.5)
+        entries = [
+            ("h1", "https://example.com/1"),
+            ("yt1", "https://www.youtube.com/watch?v=aaaaaaaaa01"),
+            ("yt2", "https://www.youtube.com/watch?v=aaaaaaaaa02"),
+            ("yt3", "https://www.youtube.com/watch?v=aaaaaaaaa03"),
+            ("yt4", "https://www.youtube.com/watch?v=aaaaaaaaa04"),
+            ("yt5", "https://www.youtube.com/watch?v=aaaaaaaaa05"),
+        ]
+        results = loader.load_batch(entries)
+        assert "h1" in results
+        assert call_count["n"] < 5
+
     def test_load_batch_worker_crash_does_not_kill_batch(self) -> None:
         def _crash_fetch(url: str):
             if "crash" in url:
@@ -217,10 +295,21 @@ class TestResourceCache:
         cache = ResourceCache(tmp_path)
         assert cache.get("nonexistent", expected_url="https://x.com") is None
 
-    def test_cache_does_not_store_failures(self, tmp_path: Path) -> None:
+    def test_cache_stores_permanent_failures(self, tmp_path: Path) -> None:
         cache = ResourceCache(tmp_path)
         cache.put("art:1", _fail("https://example.com"))
-        assert cache.get("art:1", expected_url="https://example.com") is None
+        cached = cache.get("art:1", expected_url="https://example.com")
+        assert cached is not None
+        assert cached.is_success is False
+        assert cached.error == "timeout"
+
+    def test_cache_does_not_store_ip_blocks(self, tmp_path: Path) -> None:
+        """IP blocks are temporary — they must not be cached."""
+        cache = ResourceCache(tmp_path)
+        resource = _blocked("https://youtube.com/watch?v=abc")
+        assert resource.is_blocked
+        cache.put("yt:1", resource)
+        assert cache.get("yt:1", expected_url="https://youtube.com/watch?v=abc") is None
 
     def test_cache_corrupt_file_returns_none(self, tmp_path: Path) -> None:
         cache = ResourceCache(tmp_path)

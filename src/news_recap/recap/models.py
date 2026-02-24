@@ -8,26 +8,24 @@ import msgspec
 
 from news_recap.recap.contracts import ArticleIndexEntry
 
-_DEFAULT_NOT_INTERESTING = "horoscopes, medical advice, sports (except Russia), Epstein files"
-_DEFAULT_INTERESTING = "Russia, Serbia, war in Ukraine"
+_DEFAULT_TRASH = "horoscopes, medical advice, sports (except Russia), Epstein files"
+_DEFAULT_FOLLOW = "Russia, Serbia, war in Ukraine"
 
 
 class UserPreferences(msgspec.Struct):
     """User preferences for digest composition."""
 
     max_headline_chars: int = 120
-    interesting: str = _DEFAULT_INTERESTING
-    not_interesting: str = _DEFAULT_NOT_INTERESTING
+    follow: str = _DEFAULT_FOLLOW
+    trash: str = _DEFAULT_TRASH
     language: str = "ru"
 
     def format_for_prompt(self) -> str:
         parts: list[str] = []
-        if self.not_interesting:
-            parts.append(f"DISCARD these topics (always trash): {self.not_interesting}")
-        if self.interesting:
-            parts.append(
-                f"PRIORITY topics (user wants extra detail): {self.interesting}",
-            )
+        if self.trash:
+            parts.append(f"TRASH: {self.trash}")
+        if self.follow:
+            parts.append(f"FOLLOW: {self.follow}")
         return "\n".join(parts) if parts else "no specific preferences"
 
     def to_dict(self) -> dict[str, object]:

@@ -10,9 +10,11 @@ from urllib.parse import urlparse
 
 from news_recap.http.fetcher import HttpFetcher
 from news_recap.http.html_extractor import extract_text
-from news_recap.http.youtube_extractor import fetch_transcript, is_youtube_url
+from news_recap.http.youtube_extractor import IP_BLOCKED_ERROR, fetch_transcript, is_youtube_url
 
 logger = logging.getLogger(__name__)
+
+_YT_DELAY_SECONDS = 3.0
 
 
 @dataclass(slots=True)
@@ -25,12 +27,23 @@ class LoadedResource:
     is_success: bool
     error: str | None = None
 
+    @property
+    def is_blocked(self) -> bool:
+        """True when the failure was caused by an IP/bot block (temporary)."""
+        return self.error == IP_BLOCKED_ERROR
+
 
 class ResourceLoader:
     """Load and extract text content from article URLs.
 
-    Handles both regular web pages (via HTML extraction) and YouTube videos
-    (via subtitle/transcript extraction). Uses the shared http module.
+    YouTube and HTML are processed on separate paths:
+
+    * **HTML** — concurrent via ``ThreadPoolExecutor`` with per-domain
+      semaphores (``max_per_domain`` concurrent requests per host).
+    * **YouTube** — sequential in a dedicated thread with a configurable
+      delay between requests.  The YouTube thread is **stopped early**
+      when all HTML resources finish loading — whatever transcripts were
+      fetched by that point is good enough.
     """
 
     def __init__(
@@ -40,12 +53,14 @@ class ResourceLoader:
         max_chars: int = 50_000,
         max_workers: int = 10,
         max_per_domain: int = 3,
+        yt_delay: float = _YT_DELAY_SECONDS,
     ) -> None:
         self._fetcher = fetcher or HttpFetcher()
         self._owns_fetcher = fetcher is None
         self._max_chars = max_chars
         self._max_workers = max_workers
         self._max_per_domain = max_per_domain
+        self._yt_delay = yt_delay
         self._domain_semaphores: dict[str, threading.Semaphore] = {}
         self._sem_lock = threading.Lock()
 
@@ -62,29 +77,67 @@ class ResourceLoader:
         """Fetch multiple URLs concurrently with per-domain rate limiting.
 
         *entries* is a list of ``(source_id, url)`` pairs.
-        Returns a dict keyed by ``source_id`` — always contains one entry
-        per input, even on failure.
+        Returns a dict keyed by ``source_id``.  YouTube entries that
+        were not reached before HTML finished are simply omitted from the
+        result (not marked as failures).
         """
         if not entries:
             return {}
 
+        html_entries = []
+        yt_entries = []
+        for sid, url in entries:
+            if is_youtube_url(url):
+                yt_entries.append((sid, url))
+            else:
+                html_entries.append((sid, url))
+
+        results: dict[str, LoadedResource] = {}
+        yt_results: dict[str, LoadedResource] = {}
+        stop = threading.Event()
+
+        yt_thread = None
+        if yt_entries:
+            yt_thread = threading.Thread(
+                target=self._load_youtube_batch,
+                args=(yt_entries, yt_results, stop),
+                daemon=True,
+            )
+            yt_thread.start()
+
+        if html_entries:
+            self._load_html_batch(html_entries, results)
+
+        if yt_thread is not None:
+            stop.set()
+            yt_thread.join(timeout=5.0)
+            results.update(yt_results)
+
+        return results
+
+    # ------------------------------------------------------------------
+    # HTML: concurrent with per-domain semaphores
+    # ------------------------------------------------------------------
+
+    def _load_html_batch(
+        self,
+        entries: list[tuple[str, str]],
+        results: dict[str, LoadedResource],
+    ) -> None:
         for _, url in entries:
             domain = urlparse(url).netloc.lower()
             if domain not in self._domain_semaphores:
                 self._domain_semaphores[domain] = threading.Semaphore(self._max_per_domain)
 
-        results: dict[str, LoadedResource] = {}
-
         with ThreadPoolExecutor(max_workers=self._max_workers) as pool:
-            future_to_sid = {pool.submit(self._safe_load, sid, url): sid for sid, url in entries}
+            future_to_sid = {
+                pool.submit(self._safe_load_html, sid, url): sid for sid, url in entries
+            }
             for future in as_completed(future_to_sid):
                 sid = future_to_sid[future]
                 results[sid] = future.result()
 
-        return results
-
-    def _safe_load(self, source_id: str, url: str) -> LoadedResource:
-        """Load a single URL with domain semaphore and crash isolation."""
+    def _safe_load_html(self, source_id: str, url: str) -> LoadedResource:
         domain = urlparse(url).netloc.lower()
         with self._sem_lock:
             sem = self._domain_semaphores.setdefault(
@@ -93,7 +146,7 @@ class ResourceLoader:
             )
         try:
             with sem:
-                return self.load(url)
+                return self._load_html(url)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Unexpected error loading %s (%s): %s", source_id, url, exc)
             return LoadedResource(
@@ -103,6 +156,71 @@ class ResourceLoader:
                 is_success=False,
                 error=f"unexpected: {exc}",
             )
+
+    # ------------------------------------------------------------------
+    # YouTube: sequential in a dedicated thread, stops when signalled
+    # ------------------------------------------------------------------
+
+    def _load_youtube_batch(
+        self,
+        entries: list[tuple[str, str]],
+        results: dict[str, LoadedResource],
+        stop: threading.Event,
+    ) -> None:
+        total = len(entries)
+        ok = 0
+        for i, (sid, url) in enumerate(entries):
+            if stop.is_set():
+                logger.info(
+                    "YouTube: stopping after %d/%d (HTML finished, %d transcripts loaded)",
+                    i,
+                    total,
+                    ok,
+                )
+                return
+
+            try:
+                res = self._load_youtube(url)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Unexpected error loading YouTube %s: %s", sid, exc)
+                res = LoadedResource(
+                    url=url,
+                    text="",
+                    content_type="youtube/transcript",
+                    is_success=False,
+                    error=f"unexpected: {exc}",
+                )
+            results[sid] = res
+
+            if res.is_blocked:
+                skipped = total - i - 1
+                logger.warning(
+                    "YouTube IP blocked after %d/%d videos — aborting remaining %d",
+                    i + 1,
+                    total,
+                    skipped,
+                )
+                return
+
+            if res.is_success:
+                ok += 1
+            if (i + 1) % 10 == 0 or (i + 1) == total:
+                logger.info("YouTube: %d/%d processed (%d transcripts)", i + 1, total, ok)
+
+            if i < total - 1 and stop.wait(timeout=self._yt_delay):
+                logger.info(
+                    "YouTube: stopping after %d/%d (HTML finished, %d transcripts loaded)",
+                    i + 1,
+                    total,
+                    ok,
+                )
+                return
+
+        logger.info("YouTube done: %d/%d transcripts loaded", ok, total)
+
+    # ------------------------------------------------------------------
+    # Single-URL loaders
+    # ------------------------------------------------------------------
 
     def _load_youtube(self, url: str) -> LoadedResource:
         result = fetch_transcript(url, max_chars=self._max_chars)

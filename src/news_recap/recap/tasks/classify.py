@@ -1,4 +1,4 @@
-"""Task launcher: batch-classify articles into ok / enrich / trash."""
+"""Task launcher: batch-classify articles into ok / vague / follow / trash."""
 
 from __future__ import annotations
 
@@ -63,8 +63,8 @@ def split_into_classify_batches(
 
     preamble_len = len(
         RECAP_CLASSIFY_BATCH_PROMPT.format(
-            discard_policy=preferences.not_interesting or "none",
-            priority_policy=preferences.interesting or "none",
+            trash_policy=preferences.trash or "none",
+            follow_policy=preferences.follow or "none",
             expected_count=0,
             headlines_block="",
         ),
@@ -107,52 +107,71 @@ def build_classify_batch_prompt(
     """
     headlines_block = "\n".join(f"{i + 1}\t{e.title}" for i, e in enumerate(entries))
     return RECAP_CLASSIFY_BATCH_PROMPT.format(
-        discard_policy=preferences.not_interesting or "none",
-        priority_policy=preferences.interesting or "none",
+        trash_policy=preferences.trash or "none",
+        follow_policy=preferences.follow or "none",
         expected_count=len(entries),
         headlines_block=headlines_block,
     )
 
 
-def parse_classify_batch_stdout(  # noqa: C901, PLR0912
+_VALID_VERDICTS = {"ok", "vague", "follow", "trash"}
+
+
+def _parse_verdict_line(line: str) -> tuple[str, str] | None:
+    """Extract ``(number, verdict)`` from a stdout line.
+
+    Accepts both ``NUMBER: VERDICT`` and ``NUMBER<TAB>VERDICT`` formats.
+    """
+    for sep in (":", "\t"):
+        if sep in line:
+            parts = line.split(sep, 1)
+            num, verdict = parts[0].strip(), parts[1].strip().lower()
+            if verdict in _VALID_VERDICTS:
+                return num, verdict
+            break
+    parts = line.split(None, 1)
+    if len(parts) == 2:  # noqa: PLR2004
+        num, verdict = parts[0].strip(), parts[1].strip().lower()
+        if verdict in _VALID_VERDICTS:
+            return num, verdict
+    return None
+
+
+def _extract_verdicts(text: str, valid_nums: set[str]) -> dict[str, str]:
+    """Parse verdict lines from agent output, optionally delimited by markers."""
+    begin_idx = text.find("BEGIN_VERDICTS")
+    end_idx = text.find("END_VERDICTS")
+    if begin_idx != -1 and end_idx != -1 and end_idx > begin_idx:
+        text = text[begin_idx + len("BEGIN_VERDICTS") : end_idx]
+
+    parsed: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        result = _parse_verdict_line(line)
+        if result is not None and result[0] in valid_nums:
+            parsed[result[0]] = result[1]
+    return parsed
+
+
+def parse_classify_batch_stdout(
     stdout_path: Path,
     entries: list[DigestArticle],
 ) -> tuple[list[str], list[str]]:
     """Parse batch classification verdicts from agent stdout log.
 
-    Each verdict line: ``N<TAB>(ok|enrich|trash)``.
+    Each verdict line: ``N: ok|vague|follow|trash``.
     Sets ``entry.verdict`` on each ``DigestArticle``.
-    Returns ``(kept_ids, enrich_ids)``.
+    Returns ``(kept_ids, enrich_ids)`` where *enrich_ids* includes
+    both ``vague`` and ``follow`` articles (both need resource loading).
     """
     if not stdout_path.exists():
         logger.warning("Verdicts file not found: %s — defaulting all to ok", stdout_path)
         return [e.article_id for e in entries], []
 
-    text = stdout_path.read_text("utf-8")
-
-    begin_idx = text.find("BEGIN_VERDICTS")
-    end_idx = text.find("END_VERDICTS")
-    if begin_idx != -1 and end_idx != -1 and end_idx > begin_idx:
-        verdicts_text = text[begin_idx + len("BEGIN_VERDICTS") : end_idx]
-    else:
-        verdicts_text = text
-
     valid_nums = {str(i + 1) for i in range(len(entries))}
-
-    parsed: dict[str, str] = {}
-    for raw_line in verdicts_text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        parts = line.split("\t", 1)
-        if len(parts) != 2:  # noqa: PLR2004
-            parts = line.split(None, 1)
-        if len(parts) != 2:  # noqa: PLR2004
-            continue
-        num, verdict = parts[0].strip(), parts[1].strip().lower()
-        if num not in valid_nums or verdict not in ("ok", "enrich", "trash"):
-            continue
-        parsed[num] = verdict
+    parsed = _extract_verdicts(stdout_path.read_text("utf-8"), valid_nums)
 
     recognition_rate = len(parsed) / len(entries) if entries else 1.0
     if recognition_rate < _MIN_RECOGNITION_RATE:
@@ -175,7 +194,7 @@ def parse_classify_batch_stdout(  # noqa: C901, PLR0912
         if verdict == "trash":
             continue
         kept.append(e.article_id)
-        if verdict == "enrich":
+        if verdict in ("vague", "follow"):
             enrich.append(e.article_id)
 
     return kept, enrich
@@ -187,7 +206,7 @@ def parse_classify_batch_stdout(  # noqa: C901, PLR0912
 
 
 class Classify(TaskLauncher):
-    """Split articles into batches and ask the LLM to verdict each as ok / enrich / trash."""
+    """Batch-classify articles as ok / vague / follow / trash."""
 
     name = "classify"
 
@@ -201,7 +220,7 @@ class Classify(TaskLauncher):
                 continue
             if a.article_id in ctx.article_map:
                 kept.append(ctx.article_map[a.article_id])
-            if a.verdict == "enrich":
+            if a.verdict in ("vague", "follow"):
                 enrich_ids.append(a.article_id)
         ctx.state["kept_entries"] = kept
         ctx.state["enrich_ids"] = enrich_ids

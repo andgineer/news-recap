@@ -16,8 +16,8 @@ RECAP_CLASSIFY_PROMPT = """\
 You are a news editor deciding which headlines to keep for a daily digest.
 
 Two reference files describe your editorial policy:
-- input/_discard.txt — describes categories of stories to discard
-- input/_priority.txt — describes categories where the reader wants deeper coverage
+- input/_trash.txt — describes categories of stories to discard
+- input/_follow.txt — describes topics the reader wants to follow
 
 These are topic descriptions, not keyword lists. A headline may relate to a
 described category even without sharing any exact words with the description.
@@ -25,55 +25,53 @@ Read these files carefully and understand the editorial intent behind each categ
 
 Headline files are in input/resources/ as {{id}}_in.txt (one headline per file).
 
-For each headline, read it and reason: what real-world story does this headline
-refer to? Then decide:
+For each headline, read it and decide:
 
-1. Is the headline clear enough that you can tell what the story is about
-   and whether it relates to any category described in DISCARD or PRIORITY?
-   If you cannot tell → verdict is "enrich" (headline needs rewriting).
-
-2. Can the story be attributed to any category described in _discard.txt?
+1. Can the story be attributed to a category described in _trash.txt?
    If yes → verdict is "trash".
 
-3. Otherwise → verdict is "ok".
-   PRIORITY categories are NOT a filter. They indicate where the reader wants
-   extra detail later. Keep all world news that does not match DISCARD.
+2. Does the story match a topic described in _follow.txt?
+   If yes → verdict is "follow".
 
-Write each verdict (one word: ok, enrich, or trash) to output/results/{{id}}_out.txt.
+3. Is the headline too vague to identify the specific story?
+   If yes → verdict is "vague".
+
+4. Otherwise → verdict is "ok".
+
+Write each verdict (one word: ok, vague, follow, or trash) to output/results/{{id}}_out.txt.
 Process every headline file.
 """
 
 RECAP_CLASSIFY_BATCH_PROMPT = """\
 You are a news editor deciding which headlines to keep for a daily digest.
 
-EDITORIAL POLICY — DISCARD these categories:
-{discard_policy}
+EDITORIAL POLICY — TRASH:
+{trash_policy}
 
-EDITORIAL POLICY — PRIORITY (reader wants deeper coverage):
-{priority_policy}
+EDITORIAL POLICY — FOLLOW:
+{follow_policy}
 
 These are topic descriptions, not keyword lists. A headline may relate to a
 described category even without sharing any exact words with the description.
 
 For each headline below, decide:
-1. Too unclear to tell what the story is about → enrich
-2. Story matches a DISCARD category → trash
-3. Otherwise → ok
-
-PRIORITY categories are NOT a filter. They indicate where the reader wants
-extra detail later. Keep all world news that does not match DISCARD.
+1. Story matches a TRASH category → trash
+2. Story matches a FOLLOW topic → follow
+3. Headline too vague to identify the specific story → vague
+4. Otherwise → ok
 
 Do NOT write any scripts, use any tools, or read any files.
 Read the headlines below and print your verdicts directly to stdout.
 
 Print EXACTLY {expected_count} lines to stdout,
 one per headline, in the same order as the list below.
-Format: NUMBER<TAB>VERDICT  (tab-separated, VERDICT is one of: ok, enrich, trash)
+Format: NUMBER: VERDICT  (VERDICT is one of: ok, vague, follow, trash)
 
-Example output (3 headlines):
-1	ok
-2	trash
-3	enrich
+Example output (4 headlines):
+1: ok
+2: trash
+3: vague
+4: follow
 
 === HEADLINES ===
 {headlines_block}"""

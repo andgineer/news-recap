@@ -63,7 +63,13 @@ class ResourceCache:
         )
 
     def put(self, source_id: str, resource: LoadedResource) -> None:
-        """Cache a load result (success or failure)."""
+        """Cache a load result (success or permanent failure).
+
+        Temporary failures (IP blocks) are **not** cached so that the next
+        pipeline run retries them.
+        """
+        if resource.is_blocked:
+            return
         path = self._dir / f"{_safe_id(source_id)}.json"
         data = {
             "url": resource.url,

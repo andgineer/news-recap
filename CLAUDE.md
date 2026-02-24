@@ -58,7 +58,7 @@ All persistence uses `msgspec.Struct` models serialized to JSON files via `stora
 
 ## Coding Conventions
 
-- Python 3.12+, type hints on public functions, `msgspec.Struct` for domain models, `dataclasses` for mutable counters.
+- Python 3.13+, type hints on public functions, `msgspec.Struct` for domain models, `dataclasses` for mutable counters.
 - `snake_case` functions/vars, `UPPER_CASE` constants, `CapWords` classes.
 - Ruff enforces formatting (~100 char lines) and linting; pyrefly for type checking.
 - Target 85%+ test coverage. Tests use `pytest` with `click.testing` for CLI tests.

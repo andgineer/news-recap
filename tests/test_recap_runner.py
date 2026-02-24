@@ -193,7 +193,7 @@ class TestBuildClassifyBatchPrompt:
         assert "7" in prompt
 
     def test_contains_policies(self):
-        prefs = _make_prefs(not_interesting="sports", interesting="politics")
+        prefs = _make_prefs(trash="sports", follow="politics")
         prompt = build_classify_batch_prompt([_make_entry("x")], prefs)
         assert "sports" in prompt
         assert "politics" in prompt
@@ -209,17 +209,36 @@ class TestParseClassifyBatchStdout:
         p.write_text(content, "utf-8")
         return p
 
-    def test_basic_parsing(self, tmp_path):
-        entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
+    def test_basic_colon_format(self, tmp_path):
+        entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3"), _make_entry("a4")]
         stdout = self._write_stdout(
             tmp_path,
-            "BEGIN_VERDICTS\n1\tok\n2\ttrash\n3\tenrich\nEND_VERDICTS",
+            "1: ok\n2: trash\n3: vague\n4: follow\n",
         )
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "a1" in kept
         assert "a2" not in kept
         assert "a3" in kept
+        assert "a4" in kept
+        assert sorted(enrich) == ["a3", "a4"]
+
+    def test_tab_format_still_works(self, tmp_path):
+        entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
+        stdout = self._write_stdout(
+            tmp_path,
+            "BEGIN_VERDICTS\n1\tok\n2\ttrash\n3\tvague\nEND_VERDICTS",
+        )
+        kept, enrich = parse_classify_batch_stdout(stdout, entries)
+        assert "a1" in kept
+        assert "a2" not in kept
         assert enrich == ["a3"]
+
+    def test_follow_counts_as_enrich(self, tmp_path):
+        entries = [_make_entry("a1"), _make_entry("a2")]
+        stdout = self._write_stdout(tmp_path, "1: follow\n2: ok\n")
+        kept, enrich = parse_classify_batch_stdout(stdout, entries)
+        assert kept == ["a1", "a2"]
+        assert enrich == ["a1"]
 
     def test_missing_file_defaults_all_ok(self, tmp_path):
         entries = [_make_entry("a1"), _make_entry("a2")]
@@ -230,7 +249,7 @@ class TestParseClassifyBatchStdout:
 
     def test_missing_markers_scans_full_text(self, tmp_path):
         entries = [_make_entry("a1")]
-        stdout = self._write_stdout(tmp_path, "1\tok\n")
+        stdout = self._write_stdout(tmp_path, "1: ok\n")
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "a1" in kept
 
@@ -248,16 +267,14 @@ class TestParseClassifyBatchStdout:
         import pytest
 
         entries = [_make_entry(str(i)) for i in range(10)]
-        stdout = self._write_stdout(tmp_path, "BEGIN_VERDICTS\n1\tok\nEND_VERDICTS")
+        stdout = self._write_stdout(tmp_path, "BEGIN_VERDICTS\n1: ok\nEND_VERDICTS")
         with pytest.raises(RecapPipelineError):
             parse_classify_batch_stdout(stdout, entries)
 
     def test_missing_ids_default_to_ok(self, tmp_path):
         entries = [_make_entry(f"x{i}") for i in range(5)]
-        content = (
-            "BEGIN_VERDICTS\n" + "\n".join(f"{i + 1}\tok" for i in range(4)) + "\nEND_VERDICTS"
-        )
-        stdout = self._write_stdout(tmp_path, content)
+        content = "\n".join(f"{i + 1}: ok" for i in range(4))
+        stdout = self._write_stdout(tmp_path, f"BEGIN_VERDICTS\n{content}\nEND_VERDICTS")
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "x4" in kept
         assert len(kept) == 5
