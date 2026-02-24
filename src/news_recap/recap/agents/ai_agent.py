@@ -9,6 +9,7 @@ Prefect inspects parameter annotations at runtime for the Inputs tab.
 """
 
 import os
+import re
 import shlex
 import time
 from pathlib import Path
@@ -114,8 +115,8 @@ _MIN_STDOUT_BYTES = 20
 def _has_existing_output(manifest: TaskManifest, step_name: str) -> bool:
     """Check if agent output files already exist from a previous run.
 
-    For classify tasks the output is in stdout; for other tasks it is
-    in ``output_result_path`` (agent_result.json).
+    For classify tasks the output is in stdout; for enrich tasks it is
+    in ``output/articles/``; for other tasks in ``output_result_path``.
     """
     result_path = Path(manifest.output_result_path)
     if result_path.exists() and result_path.stat().st_size > 0:
@@ -124,6 +125,13 @@ def _has_existing_output(manifest: TaskManifest, step_name: str) -> bool:
     if step_name.startswith("recap_classify"):
         stdout_path = Path(manifest.output_stdout_path)
         if stdout_path.exists() and stdout_path.stat().st_size > _MIN_STDOUT_BYTES:
+            return True
+
+    if step_name.startswith("recap_enrich"):
+        articles_dir = Path(manifest.workdir) / "output" / "articles"
+        if articles_dir.is_dir() and any(
+            f for f in articles_dir.iterdir() if re.match(r"^\d+\.txt$", f.name)
+        ):
             return True
 
     return False

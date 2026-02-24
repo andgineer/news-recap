@@ -23,9 +23,17 @@ from news_recap.recap.tasks.classify import (
     split_into_classify_batches,
 )
 from news_recap.recap.tasks.enrich import (
+    EnrichEntry,
+    _MAX_ARTICLE_CHARS,
+    _MAX_BATCH,
+    _MIN_BATCH,
     articles_needing_full_text,
+    build_enrich_prompt,
     build_event_payloads,
+    parse_enrich_output_files,
     select_significant_events,
+    split_into_enrich_batches,
+    write_enrich_input_files,
 )
 from news_recap.recap.tasks.group import merge_enriched_into_index, parse_group_result
 
@@ -135,6 +143,180 @@ class TestEventsToResourceFiles:
         result = events_to_resource_files(events)
         assert "event_e1.json" in result
         assert '"event_id"' in result["event_e1.json"]
+
+
+# ---------------------------------------------------------------------------
+# Enrich file-based I/O helpers
+# ---------------------------------------------------------------------------
+
+
+def _enrich_entry(article_id: str, title: str = "", text: str = "") -> EnrichEntry:
+    return EnrichEntry(
+        article_id=article_id,
+        title=title or f"Title {article_id}",
+        text=text or f"Body text for {article_id}.",
+    )
+
+
+class TestBuildEnrichPrompt:
+    def test_is_static_string(self):
+        prompt = build_enrich_prompt()
+        assert "input/articles/" in prompt
+        assert "output/articles/" in prompt
+        assert "{" not in prompt
+
+    def test_contains_instructions(self):
+        prompt = build_enrich_prompt()
+        assert "headline" in prompt.lower()
+        assert "excerpt" in prompt.lower()
+
+
+class TestWriteEnrichInputFiles:
+    def test_creates_numbered_files(self, tmp_path):
+        entries = [_enrich_entry("a1"), _enrich_entry("a2")]
+        write_enrich_input_files(tmp_path, entries)
+        d = tmp_path / "input" / "articles"
+        assert (d / "1.txt").exists()
+        assert (d / "2.txt").exists()
+        assert not (d / "3.txt").exists()
+
+    def test_file_format(self, tmp_path):
+        entries = [_enrich_entry("a1", title="My Title", text="Para one.\n\nPara two.")]
+        write_enrich_input_files(tmp_path, entries)
+        content = (tmp_path / "input" / "articles" / "1.txt").read_text("utf-8")
+        lines = content.split("\n", 2)
+        assert lines[0] == "My Title"
+        assert lines[1] == ""
+        assert "Para one." in lines[2]
+        assert "Para two." in lines[2]
+
+    def test_truncates_long_text(self, tmp_path):
+        long_text = "x" * (_MAX_ARTICLE_CHARS + 5000)
+        entries = [_enrich_entry("a1", text=long_text)]
+        write_enrich_input_files(tmp_path, entries)
+        content = (tmp_path / "input" / "articles" / "1.txt").read_text("utf-8")
+        body = content.split("\n\n", 1)[1]
+        assert len(body.strip()) == _MAX_ARTICLE_CHARS
+
+
+class TestSplitIntoEnrichBatches:
+    def test_empty_returns_empty(self):
+        assert split_into_enrich_batches([]) == []
+
+    def test_small_list_one_batch(self):
+        entries = [_enrich_entry(str(i)) for i in range(10)]
+        batches = split_into_enrich_batches(entries)
+        assert len(batches) == 1
+        assert len(batches[0]) == 10
+
+    def test_splits_on_max_batch(self):
+        n = _MAX_BATCH + _MIN_BATCH
+        entries = [_enrich_entry(str(i)) for i in range(n)]
+        batches = split_into_enrich_batches(entries)
+        assert len(batches) == 2
+        assert all(len(b) <= _MAX_BATCH for b in batches)
+        assert sum(len(b) for b in batches) == n
+
+    def test_tiny_trailing_batch_merged(self):
+        n = _MAX_BATCH + _MIN_BATCH - 1
+        entries = [_enrich_entry(str(i)) for i in range(n)]
+        batches = split_into_enrich_batches(entries)
+        assert len(batches) == 1
+
+    def test_all_entries_preserved(self):
+        entries = [_enrich_entry(str(i)) for i in range(250)]
+        batches = split_into_enrich_batches(entries)
+        all_ids = [e.article_id for batch in batches for e in batch]
+        assert sorted(all_ids) == sorted(str(i) for i in range(250))
+
+
+def _write_output_article(tmp_path: Path, n: int, title: str, text: str) -> None:
+    d = tmp_path / "output" / "articles"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{n}.txt").write_text(f"{title}\n\n{text}\n", "utf-8")
+
+
+class TestParseEnrichOutputFiles:
+    def test_basic_parse(self, tmp_path):
+        entries = [_enrich_entry("a1"), _enrich_entry("a2")]
+        _write_output_article(tmp_path, 1, "New Title 1", "Excerpt one.")
+        _write_output_article(tmp_path, 2, "New Title 2", "Excerpt two.")
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert result["a1"]["new_title"] == "New Title 1"
+        assert result["a1"]["clean_text"] == "Excerpt one."
+        assert result["a2"]["new_title"] == "New Title 2"
+
+    def test_missing_output_dir(self, tmp_path):
+        entries = [_enrich_entry("a1")]
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert result == {}
+
+    def test_skips_non_numeric_filenames(self, tmp_path):
+        entries = [_enrich_entry("a1")]
+        _write_output_article(tmp_path, 1, "Good", "Text.")
+        d = tmp_path / "output" / "articles"
+        (d / "readme.txt").write_text("ignore me", "utf-8")
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert len(result) == 1
+
+    def test_skips_out_of_range(self, tmp_path):
+        entries = [_enrich_entry("a1")]
+        _write_output_article(tmp_path, 1, "Good", "Text.")
+        _write_output_article(tmp_path, 0, "Zero", "Bad.")
+        _write_output_article(tmp_path, 99, "Far", "Bad.")
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert len(result) == 1
+
+    def test_skips_no_blank_line(self, tmp_path):
+        entries = [_enrich_entry("a1"), _enrich_entry("a2")]
+        _write_output_article(tmp_path, 2, "Good", "Valid text.")
+        d = tmp_path / "output" / "articles"
+        (d / "1.txt").write_text("Title without separator and body", "utf-8")
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert "a1" not in result
+        assert "a2" in result
+
+    def test_skips_empty_title(self, tmp_path):
+        entries = [_enrich_entry("a1"), _enrich_entry("a2")]
+        _write_output_article(tmp_path, 2, "Good", "Valid text.")
+        d = tmp_path / "output" / "articles"
+        (d / "1.txt").write_text("\n\nSome excerpt text.", "utf-8")
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert "a1" not in result
+        assert "a2" in result
+
+    def test_skips_empty_excerpt(self, tmp_path):
+        entries = [_enrich_entry("a1"), _enrich_entry("a2")]
+        _write_output_article(tmp_path, 2, "Good", "Valid text.")
+        d = tmp_path / "output" / "articles"
+        (d / "1.txt").write_text("A Title\n\n", "utf-8")
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert "a1" not in result
+        assert "a2" in result
+
+    def test_partial_output_accepted(self, tmp_path):
+        entries = [_enrich_entry(f"a{i}") for i in range(4)]
+        _write_output_article(tmp_path, 1, "T1", "Text 1.")
+        _write_output_article(tmp_path, 3, "T3", "Text 3.")
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert len(result) == 2
+        assert "a0" in result
+        assert "a2" in result
+
+    def test_low_recognition_returns_partial(self, tmp_path):
+        entries = [_enrich_entry(str(i)) for i in range(10)]
+        _write_output_article(tmp_path, 1, "T", "Text.")
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert len(result) == 1
+        assert "0" in result
+
+    def test_multiline_excerpt(self, tmp_path):
+        entries = [_enrich_entry("a1")]
+        excerpt = "Paragraph one.\n\nParagraph two.\n\nParagraph three."
+        _write_output_article(tmp_path, 1, "Title", excerpt)
+        result = parse_enrich_output_files(tmp_path, entries)
+        assert "Paragraph one." in result["a1"]["clean_text"]
+        assert "Paragraph three." in result["a1"]["clean_text"]
 
 
 # ---------------------------------------------------------------------------

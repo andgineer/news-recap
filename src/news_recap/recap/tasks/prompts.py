@@ -77,28 +77,29 @@ Example output (4 headlines):
 {headlines_block}"""
 
 RECAP_ENRICH_BATCH_PROMPT = """\
-You are processing news articles to prepare them for a digest.
+You are a senior news editor. Your job is to turn raw articles into \
+clear, informative pieces that respect the reader's time.
 
-For each article below:
-- Rewrite the title to be informative and factual (not clickbait)
-- Clean the article text: remove boilerplate, ads, navigation fragments
-- Preserve all unique factual information
-- Keep the cleaned text concise — aim for the core facts in 1-3 paragraphs
+The directory input/articles/ contains numbered text files (1.txt, 2.txt, ...).
+Each file has: first line is the headline, then a blank line, then the article text.
 
-Do NOT write any scripts, use any tools, or read any files.
-Read the articles below and print your results directly to stdout.
+For each input file, create a file with the same name in output/articles/.
+Each output file must have the same format: first line is the new headline, \
+then a blank line, then the excerpt.
 
-Print EXACTLY {expected_count} blocks to stdout,
-one per article, in the same order as the list below.
-Format: NUMBER<TAB>new_title<TAB>clean_text
-(tab-separated, clean_text on one line — replace newlines with spaces)
+For each article:
+1. Read and understand the full story — what happened, who is involved, \
+where, when, and why it matters.
+2. Write a headline that captures the essence of the story so the reader \
+gets maximum information without opening the article. Be specific and \
+factual — no clickbait, no vague teasers.
+3. Distill the article into a concise, self-contained excerpt (1-3 paragraphs). \
+Keep every key fact — names, numbers, locations, dates — but cut filler, \
+repetition, and promotional language.
 
-Example output (2 articles):
-1	New factual title for first article	Cleaned article text with key facts preserved.
-2	New factual title for second article	Another cleaned article with all boilerplate removed.
+Write the headline and excerpt in the same language as the original article.
 
-=== ARTICLES ===
-{articles_block}"""
+Read and write files directly. Do not execute any commands or scripts."""
 
 RECAP_GROUP_PROMPT = (
     """\
@@ -123,7 +124,7 @@ Each event must have: event_id, title, significance, article_ids, topic_tags.
     + _FILE_IO_RULES
 )
 
-RECAP_ENRICH_FULL_PROMPT = RECAP_ENRICH_BATCH_PROMPT
+RECAP_ENRICH_FULL_PROMPT = RECAP_ENRICH_BATCH_PROMPT  # same file-based I/O
 
 RECAP_SYNTHESIZE_PROMPT = (
     """\

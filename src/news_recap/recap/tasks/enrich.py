@@ -4,13 +4,14 @@
 * ``EnrichFull`` — deep-enriches articles from significant events, then
   builds event payloads for downstream synthesis.
 
-Uses the same batch/stdout pattern as Classify: article text is embedded in
-the prompt, the agent prints tab-separated results to stdout.
+Uses file-based I/O: each article is written as a separate file in
+``input/articles/``, the agent writes rewritten files to ``output/articles/``.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,15 +33,16 @@ logger = logging.getLogger(__name__)
 
 MIN_ARTICLES_FOR_SIGNIFICANT_EVENT = 2
 
-_MAX_PROMPT_CHARS = 100_000
 _MAX_BATCH = 20
 _MIN_BATCH = 3
-_MIN_RECOGNITION_RATE = 0.5
-_MAX_ARTICLE_CHARS = 8_000
+_MAX_ARTICLE_CHARS = 30_000
+_MAX_ROUNDS = 3
+
+_ARTICLE_FILE_RE = re.compile(r"^(\d+)\.txt$")
 
 
 # ---------------------------------------------------------------------------
-# Batching / prompt / parse (enrich-specific)
+# Batching / prompt / file I/O (enrich-specific)
 # ---------------------------------------------------------------------------
 
 
@@ -54,34 +56,13 @@ class EnrichEntry:
 
 
 def split_into_enrich_batches(entries: list[EnrichEntry]) -> list[list[EnrichEntry]]:
-    """Split enrichment entries into char-budget-aware batches."""
+    """Split enrichment entries into batches of up to ``_MAX_BATCH``."""
     if not entries:
         return []
 
-    preamble_len = len(
-        RECAP_ENRICH_BATCH_PROMPT.format(expected_count=0, articles_block=""),
-    )
-    budget = max(1, _MAX_PROMPT_CHARS - preamble_len)
-
     batches: list[list[EnrichEntry]] = []
-    current: list[EnrichEntry] = []
-    current_chars = 0
-
-    for entry in entries:
-        text = entry.text[:_MAX_ARTICLE_CHARS]
-        line = f"0\t{entry.title}\t{text}\n"
-        line_chars = len(line)
-        over_budget = current_chars + line_chars > budget
-        over_max = len(current) >= _MAX_BATCH
-        if current and (over_budget or over_max):
-            batches.append(current)
-            current = []
-            current_chars = 0
-        current.append(entry)
-        current_chars += line_chars
-
-    if current:
-        batches.append(current)
+    for i in range(0, len(entries), _MAX_BATCH):
+        batches.append(entries[i : i + _MAX_BATCH])
 
     if len(batches) >= 2 and len(batches[-1]) < _MIN_BATCH:  # noqa: PLR2004
         batches[-2].extend(batches.pop())
@@ -89,64 +70,78 @@ def split_into_enrich_batches(entries: list[EnrichEntry]) -> list[list[EnrichEnt
     return batches
 
 
-def build_enrich_batch_prompt(entries: list[EnrichEntry]) -> str:
-    """Build inline enrich prompt with article text embedded."""
-    lines: list[str] = []
-    for i, e in enumerate(entries):
-        text = e.text[:_MAX_ARTICLE_CHARS].replace("\n", " ").replace("\t", " ")
-        lines.append(f"{i + 1}\t{e.title}\t{text}")
-    articles_block = "\n".join(lines)
-    return RECAP_ENRICH_BATCH_PROMPT.format(
-        expected_count=len(entries),
-        articles_block=articles_block,
-    )
+def build_enrich_prompt() -> str:
+    """Return the static enrich prompt (no template variables)."""
+    return RECAP_ENRICH_BATCH_PROMPT
 
 
-def parse_enrich_batch_stdout(
-    stdout_path: Path,
+def write_enrich_input_files(
+    workdir: Path,
+    entries: list[EnrichEntry],
+) -> None:
+    """Write each article as ``input/articles/N.txt`` in the task workdir."""
+    articles_dir = workdir / "input" / "articles"
+    articles_dir.mkdir(parents=True, exist_ok=True)
+    (workdir / "output" / "articles").mkdir(parents=True, exist_ok=True)
+    for i, entry in enumerate(entries):
+        text = entry.text[:_MAX_ARTICLE_CHARS]
+        content = f"{entry.title}\n\n{text}\n"
+        (articles_dir / f"{i + 1}.txt").write_text(content, "utf-8")
+
+
+def parse_enrich_output_files(
+    workdir: Path,
     entries: list[EnrichEntry],
 ) -> dict[str, dict[str, str]]:
-    """Parse batch enrichment results from agent stdout.
+    """Parse enrichment results from ``output/articles/*.txt``.
 
-    Each output line: ``N<TAB>new_title<TAB>clean_text``.
+    Each output file has: line 1 = new title, blank line, rest = excerpt.
     Returns ``{article_id: {new_title, clean_text}}``.
     """
-    if not stdout_path.exists():
-        logger.warning("Enrich stdout not found: %s", stdout_path)
+    output_dir = workdir / "output" / "articles"
+    if not output_dir.is_dir():
+        logger.warning("Enrich output dir not found: %s", output_dir)
         return {}
 
-    text = stdout_path.read_text("utf-8")
-    valid_nums = {str(i + 1) for i in range(len(entries))}
-
     parsed: dict[str, dict[str, str]] = {}
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        parts = line.split("\t", 2)
-        if len(parts) < 3:  # noqa: PLR2004
-            continue
-        num = parts[0].strip()
-        if num not in valid_nums:
-            continue
-        idx = int(num) - 1
-        aid = entries[idx].article_id
-        parsed[aid] = {
-            "new_title": parts[1].strip(),
-            "clean_text": parts[2].strip(),
-        }
+    count = len(entries)
 
-    recognition_rate = len(parsed) / len(entries) if entries else 1.0
-    if recognition_rate < _MIN_RECOGNITION_RATE:
-        raise RecapPipelineError(
-            "recap_enrich",
-            f"Agent enriched only {len(parsed)}/{len(entries)} ({recognition_rate:.0%})",
-        )
-    if recognition_rate < 1.0:
+    for path in sorted(output_dir.iterdir()):
+        m = _ARTICLE_FILE_RE.match(path.name)
+        if not m:
+            logger.warning("Skipping non-article file in output: %s", path.name)
+            continue
+        n = int(m.group(1))
+        if n < 1 or n > count:
+            logger.warning("Out-of-range article file: %s (expected 1..%d)", path.name, count)
+            continue
+
+        raw = path.read_text("utf-8").strip()
+        blank_pos = raw.find("\n\n")
+        if blank_pos < 0:
+            logger.warning("No blank-line separator in %s — skipping", path.name)
+            continue
+        new_title = raw[:blank_pos].strip()
+        clean_text = raw[blank_pos + 2 :].strip()
+        if not new_title:
+            logger.warning("Empty title in %s — skipping", path.name)
+            continue
+        if not clean_text:
+            logger.warning("Empty excerpt in %s — skipping", path.name)
+            continue
+
+        aid = entries[n - 1].article_id
+        parsed[aid] = {"new_title": new_title, "clean_text": clean_text}
+
+    if entries and len(parsed) < len(entries):
+        missing = [
+            f"{i + 1} ({e.article_id})" for i, e in enumerate(entries) if e.article_id not in parsed
+        ]
         logger.warning(
-            "Batch enrich: %d/%d recognised — missing articles skipped",
+            "Batch enrich: %d/%d recognised — missing: %s",
             len(parsed),
             len(entries),
+            ", ".join(missing),
         )
 
     return parsed
@@ -231,7 +226,12 @@ def _run_enrich(
     step_name: str,
     resource_entries: list[ArticleIndexEntry],
 ) -> dict[str, dict[str, str]]:
-    """Shared enrichment: load resources, batch, run agent, parse stdout."""
+    """Shared enrichment: load resources, batch, write input files, run agent, parse output.
+
+    Articles not processed by the agent are requeued for subsequent rounds
+    (up to ``_MAX_ROUNDS``).  Agent failures (process crash) are **not**
+    retried — only partial output triggers a requeue.
+    """
     pf_logger = get_run_logger()
     loaded = load_resource_texts(
         resource_entries,
@@ -243,59 +243,86 @@ def _run_enrich(
         pf_logger.info("[%s] No resources loaded — skipping agent call", step_name)
         return {}
 
-    enrich_entries = [
+    remaining = [
         EnrichEntry(article_id=sid, title=title, text=text) for sid, (title, text) in loaded.items()
     ]
-    batches = split_into_enrich_batches(enrich_entries)
-    n_batches = len(batches)
-    pf_logger.info(
-        "[%s] %d articles -> %d batch(es)",
-        step_name,
-        len(enrich_entries),
-        n_batches,
-    )
+    total = len(remaining)
+    pf_logger.info("[%s] %d articles to enrich", step_name, total)
 
+    prompt = build_enrich_prompt()
     all_enriched: dict[str, dict[str, str]] = {}
-    failed_batches = 0
-    for i, batch in enumerate(batches):
-        prompt = build_enrich_batch_prompt(batch)
-        task_id = materialize_step(
-            ctx.workdir_mgr,
-            ctx.inp,
-            step_name=step_name,
-            batch=i + 1,
-            prompt=prompt,
-        )
-        pf_logger.info("[%s] Batch %d/%d — %d articles", step_name, i + 1, n_batches, len(batch))
-        try:
-            tid = run_ai_agent.with_options(task_run_name=task_id)(
-                pipeline_dir=str(ctx.pdir),
-                step_name=step_name,
-                task_id=task_id,
-            )
-        except RecapPipelineError as exc:
-            pf_logger.error("%s batch %d failed: %s", step_name, i + 1, exc)
-            failed_batches += 1
-            ctx.result.steps.append(
-                PipelineStepResult(f"{step_name} batch {i + 1}", None, "failed"),
-            )
-            continue
-        stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
-        batch_result = parse_enrich_batch_stdout(stdout_path, batch)
-        all_enriched.update(batch_result)
-        ctx.result.steps.append(
-            PipelineStepResult(f"{step_name} batch {i + 1}", tid, "completed"),
-        )
+    batch_counter = 0
 
-    if failed_batches > 0:
-        pf_logger.warning(
-            "[%s] %d/%d batches failed — partial results",
+    for round_num in range(1, _MAX_ROUNDS + 1):
+        if not remaining:
+            break
+
+        enriched_before = len(all_enriched)
+        batches = split_into_enrich_batches(remaining)
+        pf_logger.info(
+            "[%s] Round %d: %d articles -> %d batch(es)",
             step_name,
-            failed_batches,
-            n_batches,
+            round_num,
+            len(remaining),
+            len(batches),
+        )
+        remaining = []
+
+        for batch in batches:
+            batch_counter += 1
+            task_id = materialize_step(
+                ctx.workdir_mgr,
+                ctx.inp,
+                step_name=step_name,
+                batch=batch_counter,
+                prompt=prompt,
+            )
+            write_enrich_input_files(ctx.pdir / task_id, batch)
+
+            pf_logger.info(
+                "[%s] Batch %d — %d articles",
+                step_name,
+                batch_counter,
+                len(batch),
+            )
+            try:
+                tid = run_ai_agent.with_options(task_run_name=task_id)(
+                    pipeline_dir=str(ctx.pdir),
+                    step_name=step_name,
+                    task_id=task_id,
+                )
+            except RecapPipelineError as exc:
+                pf_logger.error("%s batch %d failed: %s", step_name, batch_counter, exc)
+                ctx.result.steps.append(
+                    PipelineStepResult(f"{step_name} batch {batch_counter}", None, "failed"),
+                )
+                continue
+
+            batch_result = parse_enrich_output_files(ctx.pdir / tid, batch)
+            all_enriched.update(batch_result)
+            ctx.result.steps.append(
+                PipelineStepResult(f"{step_name} batch {batch_counter}", tid, "completed"),
+            )
+            remaining.extend(e for e in batch if e.article_id not in batch_result)
+
+        if remaining and len(all_enriched) == enriched_before:
+            pf_logger.warning(
+                "[%s] No progress in round %d — stopping retries",
+                step_name,
+                round_num,
+            )
+            break
+
+    if remaining:
+        pf_logger.warning(
+            "[%s] %d/%d articles still unprocessed after %d round(s)",
+            step_name,
+            len(remaining),
+            total,
+            _MAX_ROUNDS,
         )
 
-    pf_logger.info("[%s] %d articles enriched", step_name, len(all_enriched))
+    pf_logger.info("[%s] %d/%d articles enriched", step_name, len(all_enriched), total)
     return all_enriched
 
 
@@ -309,11 +336,18 @@ class Enrich(TaskLauncher):
         enrich_ids: list[str] = ctx.state.get("enrich_ids", [])
         resource_entries = [ctx.article_map[sid] for sid in enrich_ids if sid in ctx.article_map]
 
-        ctx.state["enriched_articles"] = _run_enrich(
+        enriched = _run_enrich(
             ctx,
             step_name="recap_enrich",
             resource_entries=resource_entries,
         )
+        ctx.state["enriched_articles"] = enriched
+
+        by_id = {a.article_id: a for a in ctx.digest.articles}
+        for aid, data in enriched.items():
+            if aid in by_id:
+                by_id[aid].enriched_title = data.get("new_title")
+                by_id[aid].enriched_text = data.get("clean_text")
 
 
 class EnrichFull(TaskLauncher):
