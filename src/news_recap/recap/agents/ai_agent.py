@@ -9,7 +9,6 @@ Prefect inspects parameter annotations at runtime for the Inputs tab.
 """
 
 import os
-import re
 import shlex
 import time
 from pathlib import Path
@@ -41,18 +40,13 @@ _TAIL_LINES = 30
 # ---------------------------------------------------------------------------
 
 
-@task(cache_policy=INPUTS, persist_result=True)
+@task(cache_policy=INPUTS, persist_result=True, retries=2, retry_delay_seconds=30)
 def run_ai_agent(
     pipeline_dir: str,
     step_name: str,
     task_id: str,
 ) -> str:
     """Execute an LLM agent, return *task_id* on success.
-
-    Before launching the subprocess, checks whether the agent output
-    already exists on disk (from a previous pipeline run that crashed
-    after the agent finished).  If so, the expensive agent call is
-    skipped entirely.
 
     On failure the task raises ``RecapPipelineError`` so Prefect
     correctly marks it as Failed.
@@ -61,10 +55,6 @@ def run_ai_agent(
 
     manifest_path = Path(pipeline_dir) / task_id / "meta" / "task_manifest.json"
     manifest = read_manifest(manifest_path)
-
-    if _has_existing_output(manifest, step_name):
-        pf_logger.info("[%s] Reusing existing agent output — skipping agent call", step_name)
-        return task_id
 
     inp = read_pipeline_input(pipeline_dir)
     routing = resolve_routing_for_enqueue(
@@ -103,38 +93,6 @@ def run_ai_agent(
     _log_agent_output(pf_logger, step_name, result)
     error = "agent timed out" if result.timed_out else f"agent exit code {result.exit_code}"
     raise RecapPipelineError(step_name, error)
-
-
-# ---------------------------------------------------------------------------
-# Output detection — skip agent if output already present on disk
-# ---------------------------------------------------------------------------
-
-_MIN_STDOUT_BYTES = 20
-
-
-def _has_existing_output(manifest: TaskManifest, step_name: str) -> bool:
-    """Check if agent output files already exist from a previous run.
-
-    For classify tasks the output is in stdout; for enrich tasks it is
-    in ``output/articles/``; for other tasks in ``output_result_path``.
-    """
-    result_path = Path(manifest.output_result_path)
-    if result_path.exists() and result_path.stat().st_size > 0:
-        return True
-
-    if step_name.startswith("recap_classify"):
-        stdout_path = Path(manifest.output_stdout_path)
-        if stdout_path.exists() and stdout_path.stat().st_size > _MIN_STDOUT_BYTES:
-            return True
-
-    if step_name.startswith("recap_enrich"):
-        articles_dir = Path(manifest.workdir) / "output" / "articles"
-        if articles_dir.is_dir() and any(
-            f for f in articles_dir.iterdir() if re.match(r"^\d+\.txt$", f.name)
-        ):
-            return True
-
-    return False
 
 
 def _log_agent_output(logger, step_name: str, result) -> None:

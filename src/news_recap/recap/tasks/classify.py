@@ -11,7 +11,7 @@ from prefect.logging import get_run_logger
 
 from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.models import DigestArticle, UserPreferences
-from news_recap.recap.storage.pipeline_io import materialize_step
+from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
     PipelineStepResult,
     RecapPipelineError,
@@ -26,6 +26,7 @@ _MIN_BATCH_SUCCESS_RATE = 0.8
 _MAX_PROMPT_CHARS = 60_000
 _MIN_BATCH = 50
 _MAX_BATCH = 300
+_MAX_PARALLEL = 5
 _MIN_RECOGNITION_RATE = 0.8
 
 
@@ -38,11 +39,12 @@ def split_into_classify_batches(
     entries: list[DigestArticle],
     preferences: UserPreferences,
 ) -> list[list[DigestArticle]]:
-    """Split entries into char-budget-aware batches for batch classify.
+    """Split entries into evenly-sized batches for parallel classify.
 
-    Packs headlines greedily up to ``_MAX_PROMPT_CHARS`` total chars
-    or ``_MAX_BATCH`` entries per batch.  A trailing batch smaller
-    than ``_MIN_BATCH`` is merged into the previous one.
+    Maximizes parallelism (up to ``_MAX_PARALLEL`` batches) while keeping
+    each batch between ``_MIN_BATCH`` and ``_MAX_BATCH`` articles.
+    A char-budget safety check may produce extra splits when headlines
+    are unusually long.
 
     >>> from news_recap.recap.models import DigestArticle, UserPreferences
     >>> prefs = UserPreferences()
@@ -60,6 +62,12 @@ def split_into_classify_batches(
     """
     if not entries:
         return []
+
+    n = len(entries)
+    min_batches = -(-n // _MAX_BATCH)
+    max_batches = max(1, n // _MIN_BATCH)
+    n_batches = max(min_batches, min(_MAX_PARALLEL, max_batches))
+    effective_max = -(-n // n_batches)
 
     preamble_len = len(
         RECAP_CLASSIFY_BATCH_PROMPT.format(
@@ -79,7 +87,7 @@ def split_into_classify_batches(
         line = f"{idx + 1}\t{entry.title}\n"
         line_chars = len(line)
         over_budget = current_chars + line_chars > budget
-        over_max = len(current) >= _MAX_BATCH
+        over_max = len(current) >= effective_max
         if current and (over_budget or over_max):
             batches.append(current)
             current = []
@@ -89,9 +97,6 @@ def split_into_classify_batches(
 
     if current:
         batches.append(current)
-
-    if len(batches) >= 2 and len(batches[-1]) < _MIN_BATCH:  # noqa: PLR2004
-        batches[-2].extend(batches.pop())
 
     return batches
 
@@ -228,51 +233,87 @@ class Classify(TaskLauncher):
     def execute(self) -> None:
         ctx = self.ctx
         pf_logger = get_run_logger()
-        batches = split_into_classify_batches(ctx.inp.articles, ctx.inp.preferences)
+
+        already_classified = {a.article_id for a in ctx.digest.articles if a.verdict is not None}
+        to_classify = [a for a in ctx.inp.articles if a.article_id not in already_classified]
+
+        if already_classified:
+            pf_logger.info(
+                "[classify] %d already classified, %d remaining",
+                len(already_classified),
+                len(to_classify),
+            )
+
+        if not to_classify:
+            self.restore_state()
+            return
+
+        batches = split_into_classify_batches(to_classify, ctx.inp.preferences)
         debug_max = int(os.getenv("NEWS_RECAP_CLASSIFY_MAX_BATCHES", "0")) or None
         if debug_max:
             batches = batches[:debug_max]
+        pf_logger.info("[classify] %d articles -> %d batch(es)", len(to_classify), len(batches))
+
+        self._submit_and_collect(batches, to_classify, pf_logger)
+        self._sync_verdicts(to_classify, pf_logger)
+
+        unclassified = sum(1 for a in ctx.digest.articles if a.verdict is None)
+        if unclassified > 0:
+            self.fully_completed = False
+
+    def _submit_and_collect(
+        self,
+        batches: list[list[DigestArticle]],
+        to_classify: list[DigestArticle],  # noqa: ARG002
+        pf_logger: Any,
+    ) -> int:
+        """Submit classify batches in parallel windows and collect results."""
+        ctx = self.ctx
         n_batches = len(batches)
-        pf_logger.info("[classify] %d articles -> %d batch(es)", len(ctx.inp.articles), n_batches)
-
-        futures: list[tuple[int, list[Any], Any]] = []
-        for i, batch in enumerate(batches):
-            prompt = build_classify_batch_prompt(batch, ctx.inp.preferences)
-            task_id = materialize_step(
-                ctx.workdir_mgr,
-                ctx.inp,
-                step_name="recap_classify",
-                batch=i + 1,
-                prompt=prompt,
-            )
-            pf_logger.info("[classify] Batch %d/%d — %d headlines", i + 1, n_batches, len(batch))
-            future = run_ai_agent.with_options(task_run_name=task_id).submit(
-                pipeline_dir=str(ctx.pdir),
-                step_name="recap_classify",
-                task_id=task_id,
-            )
-            futures.append((i, batch, future))
-
-        all_kept: list[str] = []
-        all_enrich: list[str] = []
         failed_batches = 0
-        for i, batch, future in futures:
-            try:
-                tid = future.result()
-            except RecapPipelineError as exc:
-                pf_logger.error("classify batch %d failed: %s", i + 1, exc)
-                failed_batches += 1
-                ctx.result.steps.append(
-                    PipelineStepResult(f"classify batch {i + 1}", None, "failed"),
+        batch_counter = next_batch_number(ctx.pdir, "recap_classify") - 1
+
+        for window_start in range(0, n_batches, _MAX_PARALLEL):
+            window = batches[window_start : window_start + _MAX_PARALLEL]
+
+            futures: list[tuple[int, list[Any], Any]] = []
+            for batch in window:
+                batch_counter += 1
+                prompt = build_classify_batch_prompt(batch, ctx.inp.preferences)
+                task_id = materialize_step(
+                    ctx.workdir_mgr,
+                    ctx.inp,
+                    step_name="recap_classify",
+                    batch=batch_counter,
+                    prompt=prompt,
                 )
-                continue
-            verdicts_path = ctx.pdir / tid / "output" / "agent_stdout.log"
-            kept, enrich = parse_classify_batch_stdout(verdicts_path, batch)
-            all_kept.extend(kept)
-            all_enrich.extend(enrich)
-            ctx.result.steps.append(
-                PipelineStepResult(f"classify batch {i + 1}", tid, "completed"),
-            )
+                pf_logger.info(
+                    "[classify] Batch %d — %d headlines",
+                    batch_counter,
+                    len(batch),
+                )
+                future = run_ai_agent.with_options(task_run_name=task_id).submit(
+                    pipeline_dir=str(ctx.pdir),
+                    step_name="recap_classify",
+                    task_id=task_id,
+                )
+                futures.append((batch_counter, batch, future))
+
+            for bnum, batch, future in futures:
+                try:
+                    tid = future.result()
+                except RecapPipelineError as exc:
+                    pf_logger.error("classify batch %d failed: %s", bnum, exc)
+                    failed_batches += 1
+                    ctx.result.steps.append(
+                        PipelineStepResult(f"classify batch {bnum}", None, "failed"),
+                    )
+                    continue
+                verdicts_path = ctx.pdir / tid / "output" / "agent_stdout.log"
+                parse_classify_batch_stdout(verdicts_path, batch)
+                ctx.result.steps.append(
+                    PipelineStepResult(f"classify batch {bnum}", tid, "completed"),
+                )
 
         if failed_batches > 0:
             success_rate = (n_batches - failed_batches) / n_batches
@@ -286,11 +327,24 @@ class Classify(TaskLauncher):
                 failed_batches,
                 n_batches,
             )
+        return failed_batches
+
+    def _sync_verdicts(self, to_classify: list[DigestArticle], pf_logger: Any) -> None:
+        """Sync new verdicts into digest and update state."""
+        ctx = self.ctx
+        digest_by_id = {a.article_id: a for a in ctx.digest.articles}
+        for a in to_classify:
+            if a.verdict is not None and a.article_id in digest_by_id:
+                digest_by_id[a.article_id].verdict = a.verdict
+
+        all_kept = [a.article_id for a in ctx.digest.articles if a.verdict and a.verdict != "trash"]
+        all_enrich = [a.article_id for a in ctx.digest.articles if a.verdict in ("vague", "follow")]
 
         ctx.state["kept_entries"] = [
             ctx.article_map[sid] for sid in all_kept if sid in ctx.article_map
         ]
         ctx.state["enrich_ids"] = all_enrich
+
         pf_logger.info(
             "Classify: %d kept, %d discarded, %d need enrichment",
             len(all_kept),

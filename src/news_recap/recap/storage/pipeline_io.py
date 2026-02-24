@@ -82,6 +82,23 @@ def make_task_id(step_name: str, batch: int | None = None) -> str:
     return short
 
 
+def next_batch_number(pdir: Path, step_name: str) -> int:
+    """Return the next available batch number for *step_name* in *pdir*.
+
+    Scans existing workdirs like ``enrich-1``, ``enrich-2``, … and returns
+    ``max + 1`` so resumed runs don't collide with earlier batches.
+    """
+    prefix = step_name.removeprefix("recap_") + "-"
+    highest = 0
+    if pdir.is_dir():
+        for d in pdir.iterdir():
+            if d.is_dir() and d.name.startswith(prefix):
+                suffix = d.name[len(prefix) :]
+                if suffix.isdigit():
+                    highest = max(highest, int(suffix))
+    return highest + 1
+
+
 def materialize_step(  # noqa: PLR0913
     workdir_mgr: TaskWorkdirManager,
     inp: PipelineInput,
@@ -262,6 +279,34 @@ def load_resource_texts(
         failed,
         filtered,
     )
+    return result
+
+
+def load_cached_resource_texts(
+    entries: list[ArticleIndexEntry],
+    *,
+    cache_dir: Path,
+    min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS,
+) -> dict[str, tuple[str, str]]:
+    """Read previously-loaded texts from ``ResourceCache`` (no network).
+
+    Returns ``{source_id: (title, text)}`` for entries that have a valid
+    cached resource.  Articles without a cache hit are silently skipped.
+    """
+    cache = ResourceCache(cache_dir)
+    result: dict[str, tuple[str, str]] = {}
+
+    for entry in entries:
+        if not entry.url:
+            continue
+        cached = cache.get(entry.source_id, expected_url=entry.url)
+        if cached is None or not cached.is_success or not cached.text:
+            continue
+        threshold = _quality_threshold(cached, min_resource_chars)
+        if len(cached.text) < threshold:
+            continue
+        result[entry.source_id] = (entry.title, cached.text)
+
     return result
 
 

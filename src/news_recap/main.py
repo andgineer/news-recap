@@ -282,12 +282,19 @@ def recap() -> None:
     default=None,
     help="Stop pipeline after this phase (e.g. --stop-after classify).",
 )
-def recap_run(
+@click.option(
+    "--fresh",
+    is_flag=True,
+    default=False,
+    help="Ignore any incomplete pipeline and start a new one.",
+)
+def recap_run(  # noqa: PLR0913
     data_dir: Path | None,
     business_date: datetime | None,
     agent: str | None,
     article_limit: int | None,
     stop_after: str | None,
+    fresh: bool,
 ) -> None:
     """Run the full news digest pipeline."""
 
@@ -299,6 +306,7 @@ def recap_run(
                 agent_override=agent,
                 article_limit=article_limit,
                 stop_after=stop_after,
+                fresh=fresh,
             ),
         ),
     )

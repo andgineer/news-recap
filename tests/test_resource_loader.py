@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.loaders.resource_cache import ResourceCache
 from news_recap.recap.loaders.resource_loader import LoadedResource, ResourceLoader
-from news_recap.recap.storage.pipeline_io import load_resource_texts
+from news_recap.recap.storage.pipeline_io import load_cached_resource_texts, load_resource_texts
 
 
 # ---------------------------------------------------------------------------
@@ -505,3 +505,42 @@ class TestPipelineInputMinResourceChars:
         )
         inp = read_pipeline_input(str(tmp_path))
         assert inp.min_resource_chars == _DEFAULT_MIN_RESOURCE_CHARS
+
+
+# ===========================================================================
+# load_cached_resource_texts tests
+# ===========================================================================
+
+
+class TestLoadCachedResourceTexts:
+    def test_empty_entries(self, tmp_path: Path) -> None:
+        assert load_cached_resource_texts([], cache_dir=tmp_path) == {}
+
+    def test_returns_cached_entries(self, tmp_path: Path) -> None:
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {
+            "a1": _ok("https://example.com/1", text="loaded " * 100),
+        }
+        entries = [_entry("a1", "https://example.com/1")]
+        load_resource_texts(entries, cache_dir=tmp_path, loader=loader)
+
+        result = load_cached_resource_texts(entries, cache_dir=tmp_path)
+        assert len(result) == 1
+        assert "a1" in result
+        assert result["a1"][0] == "Title a1"
+
+    def test_skips_uncached_entries(self, tmp_path: Path) -> None:
+        entries = [_entry("missing", "https://example.com/missing")]
+        result = load_cached_resource_texts(entries, cache_dir=tmp_path)
+        assert len(result) == 0
+
+    def test_respects_min_resource_chars(self, tmp_path: Path) -> None:
+        loader = MagicMock(spec=ResourceLoader)
+        loader.load_batch.return_value = {
+            "a1": _ok("https://example.com/1", text="short"),
+        }
+        entries = [_entry("a1", "https://example.com/1")]
+        load_resource_texts(entries, cache_dir=tmp_path, loader=loader)
+
+        result = load_cached_resource_texts(entries, cache_dir=tmp_path, min_resource_chars=200)
+        assert len(result) == 0

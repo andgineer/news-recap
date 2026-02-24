@@ -1,6 +1,8 @@
 """Prefect @flow for the recap pipeline.
 
-Orchestrates classify -> enrich -> group -> enrich_full -> synthesize -> compose.
+Orchestrates classify -> load_resources -> enrich -> group -> enrich_full
+-> synthesize -> compose.
+
 Each step lives in its own ``task_*.py`` module and subclasses ``TaskLauncher``
 which handles checkpoint skip/save and early stopping.
 
@@ -16,6 +18,7 @@ from uuid import uuid4
 
 from prefect import flow
 from prefect.logging import get_run_logger
+from prefect.task_runners import ConcurrentTaskRunner
 
 from news_recap.recap.models import Digest, to_article_index
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
@@ -31,6 +34,7 @@ from news_recap.recap.tasks.classify import Classify
 from news_recap.recap.tasks.compose import Compose
 from news_recap.recap.tasks.enrich import Enrich, EnrichFull
 from news_recap.recap.tasks.group import Group
+from news_recap.recap.tasks.load_resources import LoadResources
 from news_recap.recap.tasks.synthesize import Synthesize
 from news_recap.storage.io import load_msgspec
 
@@ -52,7 +56,7 @@ def _flow_run_name(
     return f"recap {business_date} {now}"
 
 
-@flow(name="recap_pipeline", flow_run_name=_flow_run_name)
+@flow(name="recap_pipeline", flow_run_name=_flow_run_name, task_runner=ConcurrentTaskRunner())  # type: ignore[no-matching-overload]
 def recap_flow(
     pipeline_dir: str,
     business_date: str,
@@ -71,8 +75,9 @@ def recap_flow(
     effective_stop = stop_after or os.getenv("NEWS_RECAP_STOP_AFTER") or None
 
     existing = _load_checkpoint(pdir)
-    if existing and existing.status != "failed":
+    if existing:
         digest = existing
+        digest.status = "running"
         pf_logger.info(
             "Resuming from checkpoint: %d completed task(s)",
             len(digest.completed_phases),
@@ -104,6 +109,7 @@ def recap_flow(
 
     try:
         Classify.run(ctx)
+        LoadResources.run(ctx)
         Enrich.run(ctx)
         Group.run(ctx)
         EnrichFull.run(ctx)

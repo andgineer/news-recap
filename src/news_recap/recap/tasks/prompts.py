@@ -99,7 +99,7 @@ repetition, and promotional language.
 
 Write the headline and excerpt in the same language as the original article.
 
-Read and write files directly. Do not execute any commands or scripts."""
+Read and write files directly. Do not install packages or run web searches."""
 
 RECAP_GROUP_PROMPT = (
     """\

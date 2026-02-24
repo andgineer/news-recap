@@ -62,7 +62,7 @@ class DigestArticle(msgspec.Struct):
     verdict: str | None = None
     enriched_title: str | None = None
     enriched_text: str | None = None
-    resource_text: str | None = None
+    resource_loaded: bool = False
 
 
 class DigestEvent(msgspec.Struct):

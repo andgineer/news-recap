@@ -101,12 +101,21 @@ class FlowContext:
 
 
 class TaskLauncher:
-    """Base for pipeline task launchers — handles checkpoint skip/save and early stopping."""
+    """Base for pipeline task launchers — handles checkpoint skip/save and early stopping.
+
+    Subclasses set ``fully_completed = False`` in ``execute()`` to
+    prevent the phase from being added to ``completed_phases``.  On the
+    next pipeline run the phase will re-execute, giving it a chance to
+    process remaining work.  Partial results are still saved to the
+    digest via ``save_checkpoint()``.
+    """
 
     name: str
+    fully_completed: bool
 
     def __init__(self, ctx: FlowContext) -> None:
         self.ctx = ctx
+        self.fully_completed = True
 
     @classmethod
     def run(cls, ctx: FlowContext) -> None:
@@ -117,9 +126,13 @@ class TaskLauncher:
             return
 
         logger.info("Running: %s", cls.name)
-        cls(ctx).execute()
+        instance = cls(ctx)
+        instance.execute()
 
-        ctx.digest.completed_phases.append(cls.name)
+        if instance.fully_completed:
+            ctx.digest.completed_phases.append(cls.name)
+        else:
+            logger.warning("%s partially completed — will retry on next run", cls.name)
         ctx.save_checkpoint()
 
         if ctx.stop_after and ctx.stop_after == cls.name:
