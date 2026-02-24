@@ -24,7 +24,7 @@
 | src/news\_recap/ingestion/sources/base.py                |       31 |        3 |     90% |46, 55, 64 |
 | src/news\_recap/ingestion/sources/rss.py                 |      424 |      116 |     73% |45, 56, 70, 81, 91, 100, 199, 324, 338, 351, 375-380, 401, 403, 414-454, 464-471, 480-503, 514-515, 521-522, 530-543, 594-632, 636-650, 660-662, 673-678, 682-685, 725, 730, 734, 753-754, 764, 772 |
 | src/news\_recap/main.py                                  |       60 |        1 |     98% |       294 |
-| src/news\_recap/recap/agents/ai\_agent.py                |      115 |       92 |     20% |59-104, 120-129, 134-144, 160-207, 235-247, 272-323 |
+| src/news\_recap/recap/agents/ai\_agent.py                |      120 |       96 |     20% |60-105, 121-137, 142-152, 168-215, 243-255, 280-331 |
 | src/news\_recap/recap/agents/benchmark.py                |       88 |       88 |      0% |     3-149 |
 | src/news\_recap/recap/agents/echo.py                     |       40 |       40 |      0% |     19-90 |
 | src/news\_recap/recap/agents/routing.py                  |      108 |       26 |     76% |43, 55-85, 124, 129, 154, 189, 191, 194, 196, 199, 201, 203, 205, 207, 236 |
@@ -41,12 +41,12 @@
 | src/news\_recap/recap/tasks/base.py                      |       71 |       13 |     82% |100, 109, 114-126, 129 |
 | src/news\_recap/recap/tasks/classify.py                  |      150 |       53 |     65% |131, 137, 215-226, 229-294 |
 | src/news\_recap/recap/tasks/compose.py                   |       16 |        8 |     50% |     22-42 |
-| src/news\_recap/recap/tasks/enrich.py                    |      157 |       99 |     37% |58-89, 94-99, 114-152, 198, 235-299, 308-312, 325-344 |
+| src/news\_recap/recap/tasks/enrich.py                    |      170 |       64 |     62% |127-128, 130-131, 193, 235-326, 335-350, 359-378 |
 | src/news\_recap/recap/tasks/group.py                     |       31 |       11 |     65% |     58-78 |
 | src/news\_recap/recap/tasks/prompts.py                   |       10 |        0 |    100% |           |
 | src/news\_recap/recap/tasks/synthesize.py                |       16 |        8 |     50% |     22-40 |
 | src/news\_recap/storage/io.py                            |       42 |        6 |     86% |33-36, 59, 73 |
-| **TOTAL**                                                | **3654** |  **969** | **73%** |           |
+| **TOTAL**                                                | **3672** |  **938** | **74%** |           |
 
 
 ## Setup coverage badge
