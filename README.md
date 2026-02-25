@@ -35,19 +35,19 @@
 | src/news\_recap/recap/loaders/resource\_cache.py         |       52 |        0 |    100% |           |
 | src/news\_recap/recap/loaders/resource\_loader.py        |      123 |       13 |     89% |85, 174-180, 184-186, 208, 219, 265, 274-275, 278, 281 |
 | src/news\_recap/recap/models.py                          |       56 |        8 |     86% |24-29, 32, 41 |
-| src/news\_recap/recap/storage/pipeline\_io.py            |      162 |       41 |     75% |38-45, 50, 79-82, 95-98, 113-145, 156-162, 185, 191-192, 206, 255, 266, 301 |
-| src/news\_recap/recap/storage/schemas.py                 |        8 |        0 |    100% |           |
+| src/news\_recap/recap/storage/pipeline\_io.py            |      155 |       36 |     77% |36-43, 48, 77-80, 93-96, 112-135, 146-152, 175, 181-182, 196, 245, 256, 291 |
+| src/news\_recap/recap/storage/schemas.py                 |        4 |        0 |    100% |           |
 | src/news\_recap/recap/storage/workdir.py                 |       55 |        0 |    100% |           |
 | src/news\_recap/recap/tasks/base.py                      |       76 |       15 |     80% |100, 123-139, 142 |
 | src/news\_recap/recap/tasks/classify.py                  |      177 |       74 |     58% |136, 142, 220-231, 234-262, 271-330, 334-348 |
-| src/news\_recap/recap/tasks/compose.py                   |       16 |        8 |     50% |     22-42 |
+| src/news\_recap/recap/tasks/compose.py                   |       19 |        9 |     53% |     24-50 |
 | src/news\_recap/recap/tasks/enrich.py                    |      217 |       34 |     84% |142-143, 145-146, 208, 255-256, 311-320, 365-372, 385, 398-399, 433, 455-462, 473-489 |
-| src/news\_recap/recap/tasks/group.py                     |       31 |       11 |     65% |     58-78 |
+| src/news\_recap/recap/tasks/group.py                     |       33 |       11 |     67% |     60-82 |
 | src/news\_recap/recap/tasks/load\_resources.py           |       57 |        6 |     89% |44, 86-87, 93-95 |
-| src/news\_recap/recap/tasks/prompts.py                   |       10 |        0 |    100% |           |
-| src/news\_recap/recap/tasks/synthesize.py                |       16 |        8 |     50% |     22-40 |
+| src/news\_recap/recap/tasks/prompts.py                   |        7 |        0 |    100% |           |
+| src/news\_recap/recap/tasks/synthesize.py                |       18 |        8 |     56% |     24-44 |
 | src/news\_recap/storage/io.py                            |       42 |        6 |     86% |33-36, 59, 73 |
-| **TOTAL**                                                | **3848** |  **953** | **75%** |           |
+| **TOTAL**                                                | **3841** |  **949** | **75%** |           |
 
 
 ## Setup coverage badge
