@@ -2,16 +2,6 @@
 
 from __future__ import annotations
 
-_FILE_IO_RULES = """
-IMPORTANT — execution rules:
-- Read task_manifest.json first to find the paths to input files and the output path.
-- Read all input files (articles_index.json, resource files) referenced in the manifest.
-- Write the result JSON to the output path specified in the manifest.
-- You MAY use short scripts to read/write JSON files if the data volume is large.
-- Do NOT write complex multi-file programs, web scrapers, or data pipelines.
-- Focus on ANALYSIS and producing the correct JSON output.
-"""
-
 RECAP_CLASSIFY_BATCH_PROMPT = """\
 You are a news editor deciding which headlines to keep for a daily digest.
 
@@ -71,73 +61,52 @@ Write the headline and excerpt in the same language as the original article.
 
 Read and write files directly. Do not install packages or run web searches."""
 
-RECAP_GROUP_PROMPT = (
-    """\
-You are grouping news articles into real-world events for a daily digest.
+RECAP_MAP_PROMPT = """\
+You are a senior news editor. Compress these headlines into around {max_blocks} \
+blocks for a daily digest.
 
-Articles are provided in articles_index. Each article has: source_id, title, url, source.
-Some articles may also have enriched text available in the input resources.
+A block = a group of headlines that can be described in one informative title \
+without mixing unrelated events. The title is 2-4 sentences telling the reader \
+what happened. The reader sees ONLY titles to understand the day's news.
 
-Your task:
-1. Identify distinct real-world events that multiple articles cover
-2. Group articles by event — an article can belong to exactly one event
-3. Assign significance: "high" for major breaking news, "medium" for noteworthy,
-   "low" for minor/local
-4. Articles that don't fit any event should be grouped as single-article events
+GOOD block: "Heavy snow hits western Serbia, Valjevo road blocked, traffic \
+disrupted across the region" — related events, one coherent picture.
+BAD block: "Snow in Serbia and 15 infants die in Sarajevo hospital" — unrelated \
+events forced into one title.
 
-Important: limit events to the most informative articles. For dominant events
-(e.g. a major conflict), include no more than 10 of the most informative articles.
+Merge aggressively when headlines belong together.
 
-Output format: write a JSON object with an "events" array to output_result_path.
-Each event must have: event_id, title, significance, article_ids, topic_tags.
-"""
-    + _FILE_IO_RULES
-)
+FOLLOW: {follow_policy}
 
-RECAP_SYNTHESIZE_PROMPT = (
-    """\
-You are synthesizing news events from multiple source articles.
+Do NOT write any scripts, use any tools, or read any files.
+Print your output directly to stdout.
 
-For each event file in the input resources directory:
-- Read all articles belonging to this event
-- Build a single INFORMATIVE narrative that combines all sources WITHOUT repetition
-- Preserve unique details from each source
-- The synthesis must be FACTUAL and INFORMATIVE — not literary or flowery
-- If original sources are overly literary, extract the facts and present them clearly
-- Create a 2-3 sentence summary and a list of key facts
+Output format:
+BLOCK: <2-4 sentence title>
+<comma-separated headline numbers>
 
-Write one output file per event to output_results_dir: event_{{event_id}}.json
-Each file must have: event_id, synthesis, summary, key_facts, sources_used.
+=== HEADLINES (format: NUMBER: HEADLINE) ===
+{headlines_block}"""
 
-Also write a summary to output_result_path:
-{{"status": "completed", "processed": <number of events>}}
-"""
-    + _FILE_IO_RULES
-)
+RECAP_REDUCE_PROMPT = """\
+You are a senior news editor. Several desks produced block lists independently. \
+Review the combined block titles below and produce a unified block list.
 
-RECAP_COMPOSE_PROMPT = (
-    """\
-You are composing the final daily news digest from synthesized events.
+Rules:
+- Merge all blocks that overlap in topic. If the merged result can be \
+described by one informative 2-4 sentence title — keep as one block. \
+If too broad for a single title — split so that each part has its own \
+informative title.
+- Target: around {max_blocks} blocks total.
 
-For each event file in the input resources directory:
-- Read the event synthesis, summary, and source articles
-- Group events into thematic blocks (e.g. "International", "Technology", "Economy")
-- For each event, create a recap with:
-  - headline: concise, informative (max {max_headline_chars} characters)
-  - body: factual informative description of the event
-  - sources: list of original article titles with URLs (for reader reference)
+BLOCK TITLES:
+{block_index}
 
-Balance the digest:
-- Don't let one dominant event overshadow the rest
-- Include variety across themes
-- Order themes by significance/interest
+In input/blocks/ there is one file per block. Each file has:
+- Line 1: block title
+- Remaining lines: article_id: headline
 
-User preferences:
-{preferences}
-
-Output format: write a JSON object with "theme_blocks" array to output_result_path.
-Each theme_block has: theme, recaps[]. Each recap has: headline, body, sources[].
-Also include a "meta" object with: total_events, total_themes, date.
-"""
-    + _FILE_IO_RULES
-)
+Write final blocks to output/blocks/ in the same format.
+Merged blocks = combined article lists with new title.
+Split blocks = articles redistributed across new files.
+Unchanged blocks = copy as-is."""

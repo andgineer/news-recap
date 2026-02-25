@@ -65,23 +65,15 @@ class DigestArticle(msgspec.Struct):
     resource_loaded: bool = False
 
 
-class DigestEvent(msgspec.Struct):
-    """Grouped event with denormalized articles."""
-
-    event_id: str
-    title: str
-    significance: str
-    articles: list[DigestArticle]
-    narrative: str | None = None
-
-
 class DigestBlock(msgspec.Struct):
-    """Composed digest block."""
+    """A thematic block in the final digest.
 
-    theme: str
-    headline: str
-    body: str
-    sources: list[dict[str, str]]
+    ``title`` is a 2-4 sentence summary produced by MAP/REDUCE.
+    ``article_ids`` references the source articles that belong to this block.
+    """
+
+    title: str
+    article_ids: list[str]
 
 
 class Digest(msgspec.Struct):
@@ -92,6 +84,5 @@ class Digest(msgspec.Struct):
     status: str
     pipeline_dir: str
     articles: list[DigestArticle]
-    events: list[DigestEvent] = []
     blocks: list[DigestBlock] = []
     completed_phases: list[str] = []

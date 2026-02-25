@@ -1,7 +1,6 @@
 """Prefect @flow for the recap pipeline.
 
-Orchestrates classify -> load_resources -> enrich -> group -> enrich_full
--> synthesize -> compose.
+Orchestrates classify -> load_resources -> enrich -> map_blocks -> reduce_blocks.
 
 Each step lives in its own ``task_*.py`` module and subclasses ``TaskLauncher``
 which handles checkpoint skip/save and early stopping.
@@ -31,11 +30,10 @@ from news_recap.recap.tasks.base import (
     StopPipelineError,
 )
 from news_recap.recap.tasks.classify import Classify
-from news_recap.recap.tasks.compose import Compose
-from news_recap.recap.tasks.enrich import Enrich, EnrichFull
-from news_recap.recap.tasks.group import Group
+from news_recap.recap.tasks.enrich import Enrich
 from news_recap.recap.tasks.load_resources import LoadResources
-from news_recap.recap.tasks.synthesize import Synthesize
+from news_recap.recap.tasks.map_blocks import MapBlocks
+from news_recap.recap.tasks.reduce_blocks import ReduceBlocks
 from news_recap.storage.io import load_msgspec
 
 _DIGEST_FILENAME = "digest.json"
@@ -111,10 +109,8 @@ def recap_flow(
         Classify.run(ctx)
         LoadResources.run(ctx)
         Enrich.run(ctx)
-        Group.run(ctx)
-        EnrichFull.run(ctx)
-        Synthesize.run(ctx)
-        Compose.run(ctx)
+        MapBlocks.run(ctx)
+        ReduceBlocks.run(ctx)
 
         digest.status = "completed"
         ctx.save_checkpoint()

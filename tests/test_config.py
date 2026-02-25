@@ -126,10 +126,11 @@ def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatc
     task_map = settings.orchestrator.task_model_map
     assert "recap_classify" in task_map
     assert "recap_enrich" in task_map
-    assert "recap_synthesize" in task_map
+    assert "recap_map" in task_map
+    assert "recap_reduce" in task_map
     assert task_map["recap_classify"]["codex"] == "--model gpt-5.2 -c model_reasoning_effort=low"
-    assert task_map["recap_synthesize"]["codex"] == "--model gpt-5.2 -c model_reasoning_effort=high"
-    assert task_map["recap_synthesize"]["gemini"] == "--model gemini-2.5-pro"
+    assert task_map["recap_reduce"]["codex"] == "--model gpt-5.2 -c model_reasoning_effort=high"
+    assert task_map["recap_reduce"]["gemini"] == "--model gemini-2.5-pro"
     assert settings.orchestrator.codex_command_template == (
         "codex exec --sandbox workspace-write "
         "-c sandbox_workspace_write.network_access=true "

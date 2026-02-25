@@ -1,8 +1,4 @@
-"""Task launchers: enrich articles via LLM with loaded full-text resources.
-
-* ``Enrich`` — enriches articles flagged by classify as needing more context.
-* ``EnrichFull`` — deep-enriches articles from significant events, then
-  builds event payloads for downstream synthesis.
+"""Task launcher: enrich articles flagged by classify as needing more context.
 
 Uses file-based I/O: each article is written as a separate file in
 ``input/articles/``, the agent writes rewritten files to ``output/articles/``.
@@ -19,10 +15,8 @@ from typing import Any
 from prefect.logging import get_run_logger
 
 from news_recap.recap.agents.ai_agent import run_ai_agent
-from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.storage.pipeline_io import (
     load_cached_resource_texts,
-    load_resource_texts,
     materialize_step,
     next_batch_number,
 )
@@ -35,8 +29,6 @@ from news_recap.recap.tasks.base import (
 from news_recap.recap.tasks.prompts import RECAP_ENRICH_BATCH_PROMPT
 
 logger = logging.getLogger(__name__)
-
-MIN_ARTICLES_FOR_SIGNIFICANT_EVENT = 2
 
 _MAX_BATCH = 10
 _MIN_BATCH = 7
@@ -160,74 +152,6 @@ def parse_enrich_output_files(
         )
 
     return parsed
-
-
-# ---------------------------------------------------------------------------
-# Event helpers (used by EnrichFull and downstream tasks)
-# ---------------------------------------------------------------------------
-
-
-def select_significant_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Filter events to only significant ones (high/medium or multi-article)."""
-    return [
-        event
-        for event in events
-        if event.get("significance") in ("high", "medium")
-        or len(event.get("article_ids", [])) >= MIN_ARTICLES_FOR_SIGNIFICANT_EVENT
-    ]
-
-
-def articles_needing_full_text(
-    events: list[dict[str, Any]],
-    article_map: dict[str, ArticleIndexEntry],
-) -> list[ArticleIndexEntry]:
-    """Collect unique articles from significant events for full-text loading."""
-    seen: set[str] = set()
-    result: list[ArticleIndexEntry] = []
-    for event in events:
-        for aid in event.get("article_ids", []):
-            if aid not in seen and aid in article_map:
-                seen.add(aid)
-                result.append(article_map[aid])
-    return result
-
-
-def build_event_payloads(
-    events: list[dict[str, Any]],
-    enriched: dict[str, dict[str, str]],
-    enriched_full: dict[str, dict[str, str]],
-    article_map: dict[str, ArticleIndexEntry],
-) -> list[dict[str, Any]]:
-    """Merge enriched texts into event payloads for synthesis."""
-    payloads: list[dict[str, Any]] = []
-    for event in events:
-        articles_data: list[dict[str, Any]] = []
-        for aid in event.get("article_ids", []):
-            entry = article_map.get(aid)
-            if not entry:
-                continue
-            full = enriched_full.get(aid, {})
-            partial = enriched.get(aid, {})
-            text = full.get("clean_text") or partial.get("clean_text", "")
-            title = full.get("new_title") or partial.get("new_title") or entry.title
-            articles_data.append(
-                {
-                    "article_id": aid,
-                    "title": title,
-                    "url": entry.url,
-                    "source": entry.source,
-                    "text": text,
-                },
-            )
-        payloads.append(
-            {
-                "event_id": event.get("event_id", ""),
-                "title": event.get("title", ""),
-                "significance": event.get("significance", "medium"),
-                "articles": articles_data,
-            },
-        )
-    return payloads
 
 
 # ---------------------------------------------------------------------------
@@ -440,55 +364,3 @@ def _build_enrich_entries(
     return [
         EnrichEntry(article_id=sid, title=title, text=text) for sid, (title, text) in loaded.items()
     ]
-
-
-def _load_and_build_entries(
-    ctx: FlowContext,
-    index_entries: list[ArticleIndexEntry],
-) -> list[EnrichEntry]:
-    """Fetch resources over the network (with cache) and build ``EnrichEntry`` objects.
-
-    Unlike ``_build_enrich_entries`` (cache-only), this performs actual HTTP
-    fetches for articles not yet cached.  Used by ``EnrichFull`` which
-    operates on a different article set than ``LoadResources``.
-    """
-    if not index_entries:
-        return []
-    loaded = load_resource_texts(
-        index_entries,
-        cache_dir=ctx.pdir,
-        min_resource_chars=ctx.inp.min_resource_chars,
-    )
-    return [
-        EnrichEntry(article_id=sid, title=title, text=text) for sid, (title, text) in loaded.items()
-    ]
-
-
-class EnrichFull(TaskLauncher):
-    """Select significant events, load full article text, and enrich via LLM."""
-
-    name = "enrich_full"
-
-    def execute(self) -> None:
-        ctx = self.ctx
-        pf_logger = get_run_logger()
-        events: list[dict[str, Any]] = ctx.state["events"]
-        enriched_articles: dict[str, dict[str, str]] = ctx.state.get("enriched_articles", {})
-
-        significant = select_significant_events(events)
-        articles_for_full = articles_needing_full_text(significant, ctx.article_map)
-        pf_logger.info(
-            "Significant events: %d, articles needing full text: %d",
-            len(significant),
-            len(articles_for_full),
-        )
-
-        entries = _load_and_build_entries(ctx, articles_for_full)
-        enriched_full = _run_enrich(ctx, step_name="recap_enrich_full", entries=entries)
-
-        ctx.state["event_payloads"] = build_event_payloads(
-            events,
-            enriched_articles,
-            enriched_full,
-            ctx.article_map,
-        )

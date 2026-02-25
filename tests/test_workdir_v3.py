@@ -58,10 +58,10 @@ class TestV3WithExtraFiles:
     def test_output_results_dir_created(self, workdir_manager):
         result = workdir_manager.materialize(
             task_id="t3",
-            task_type="recap_synthesize",
-            task_input=TaskInputContract(task_type="recap_synthesize", prompt="test"),
+            task_type="recap_reduce",
+            task_input=TaskInputContract(task_type="recap_reduce", prompt="test"),
             articles_index=[],
-            extra_input_files={"event.json": "{}"},
+            extra_input_files={"block.txt": "title\na1: headline"},
         )
         assert result.manifest.output_results_dir is not None
         assert Path(result.manifest.output_results_dir).exists()
@@ -80,8 +80,8 @@ class TestV3WithExtraFiles:
     def test_manifest_round_trip(self, workdir_manager):
         result = workdir_manager.materialize(
             task_id="t5",
-            task_type="recap_group",
-            task_input=TaskInputContract(task_type="recap_group", prompt="test"),
+            task_type="recap_reduce",
+            task_input=TaskInputContract(task_type="recap_reduce", prompt="test"),
             articles_index=[],
             extra_input_files={"data.json": "{}"},
             output_schema_hint="custom schema",

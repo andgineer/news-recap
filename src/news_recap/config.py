@@ -82,10 +82,8 @@ class OrchestratorSettings:
         default_factory=lambda: {
             "recap_classify": 900,
             "recap_enrich": 600,
-            "recap_group": 600,
-            "recap_enrich_full": 600,
-            "recap_synthesize": 600,
-            "recap_compose": 600,
+            "recap_map": 300,
+            "recap_reduce": 600,
         },
     )
     codex_command_template: str = _DEFAULT_CODEX_CMD
@@ -360,22 +358,12 @@ def _default_task_model_map() -> dict[str, dict[str, str]]:
             "claude": "--model sonnet --effort low",
             "gemini": "--model gemini-2.5-flash",
         },
-        "recap_group": {
+        "recap_map": {
             "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
             "claude": "--model sonnet --effort low",
             "gemini": "--model gemini-2.5-flash",
         },
-        "recap_enrich_full": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
-            "claude": "--model sonnet --effort low",
-            "gemini": "--model gemini-2.5-flash",
-        },
-        "recap_synthesize": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=high",
-            "claude": "--model opus",
-            "gemini": "--model gemini-2.5-pro",
-        },
-        "recap_compose": {
+        "recap_reduce": {
             "codex": "--model gpt-5.2 -c model_reasoning_effort=high",
             "claude": "--model opus",
             "gemini": "--model gemini-2.5-pro",
@@ -387,7 +375,7 @@ def _collect_task_model_map() -> dict[str, dict[str, str]]:
     """Build task → agent → model overrides from env or defaults.
 
     Env format (CSV of ``task_type:agent=model_flags``):
-        ``NEWS_RECAP_LLM_TASK_MODEL_MAP=recap_synthesize:codex=--model gpt-5.2 ...``
+        ``NEWS_RECAP_LLM_TASK_MODEL_MAP=recap_reduce:codex=--model gpt-5.2 ...``
     """
     raw = os.getenv("NEWS_RECAP_LLM_TASK_MODEL_MAP", "").strip()
     if not raw:

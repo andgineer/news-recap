@@ -198,7 +198,9 @@ def _build_enriched_prompt(
     """Wrap the task prompt with manifest path and output contract."""
     manifest_path = f"{manifest.workdir}/meta/task_manifest.json"
 
-    if manifest.task_type.startswith(("recap_classify", "recap_enrich")):
+    if manifest.task_type.startswith(
+        ("recap_classify", "recap_enrich", "recap_map", "recap_reduce"),
+    ):
         return base_prompt
 
     if manifest.output_schema_hint or manifest.input_resources_dir:

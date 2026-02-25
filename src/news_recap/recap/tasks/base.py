@@ -8,13 +8,11 @@ here so every task module can import them without circular deps.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.models import Digest
@@ -60,15 +58,6 @@ class PipelineRunResult:
     digest: dict[str, Any] | None = None
     status: str = "running"
     error: str | None = None
-
-
-def events_to_resource_files(events: list[dict[str, Any]]) -> dict[str, bytes | str]:
-    """Serialize events as individual JSON files for LLM input."""
-    resources: dict[str, bytes | str] = {}
-    for event in events:
-        eid = event.get("event_id", str(uuid4())[:8])
-        resources[f"event_{eid}.json"] = json.dumps(event, ensure_ascii=False, indent=2)
-    return resources
 
 
 class StopPipelineError(Exception):
