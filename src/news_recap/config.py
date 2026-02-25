@@ -364,8 +364,8 @@ def _default_task_model_map() -> dict[str, dict[str, str]]:
             "gemini": "--model gemini-2.5-flash",
         },
         "recap_reduce": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=high",
-            "claude": "--model opus",
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
+            "claude": "--model opus --effort low",
             "gemini": "--model gemini-2.5-pro",
         },
     }
@@ -471,6 +471,9 @@ def _validate_command_template(*, name: str, template: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+_DEFAULT_PREFECT_API_URL = "http://localhost:4200/api"
+
+
 class PrefectMode(enum.Enum):
     """Execution mode for the Prefect-based recap pipeline."""
 
@@ -504,21 +507,19 @@ def configure_prefect_runtime(mode: PrefectMode) -> PrefectMode:
         os.environ.pop("PREFECT_API_URL", None)
         return PrefectMode.EPHEMERAL
 
-    api_url = os.getenv("PREFECT_API_URL", "").strip()
+    api_url = os.getenv("PREFECT_API_URL", "").strip() or _DEFAULT_PREFECT_API_URL
 
     if mode == PrefectMode.SERVER:
-        if not api_url:
-            raise ValueError(
-                "NEWS_RECAP_PREFECT_MODE=server requires PREFECT_API_URL to be set.",
-            )
         if not _probe_prefect_server(api_url):
             raise RuntimeError(
                 f"Prefect server at {api_url} is not reachable (mode=server, fail-fast).",
             )
+        os.environ["PREFECT_API_URL"] = api_url
         return PrefectMode.SERVER
 
-    if api_url and _probe_prefect_server(api_url):
+    if _probe_prefect_server(api_url):
         logger.info("Prefect server reachable at %s — using server mode", api_url)
+        os.environ["PREFECT_API_URL"] = api_url
         return PrefectMode.SERVER
 
     logger.info("No reachable Prefect server — falling back to ephemeral mode")

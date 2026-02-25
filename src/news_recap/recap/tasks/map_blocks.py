@@ -11,6 +11,7 @@ from prefect.logging import get_run_logger
 
 from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.contracts import ArticleIndexEntry
+from news_recap.recap.models import DigestBlock
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
     FlowContext,
@@ -284,3 +285,6 @@ class MapBlocks(TaskLauncher):
 
         pf_logger.info("[map] %d blocks from %d worker(s)", len(all_blocks), len(chunks))
         ctx.state["map_blocks"] = all_blocks
+        ctx.digest.blocks = [
+            DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in all_blocks
+        ]

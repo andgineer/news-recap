@@ -97,7 +97,6 @@ Rules:
 described by one informative 2-4 sentence title — keep as one block. \
 If too broad for a single title — split so that each part has its own \
 informative title.
-- Target: around {max_blocks} blocks total.
 
 BLOCK TITLES:
 {block_index}

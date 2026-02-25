@@ -13,7 +13,6 @@ from news_recap.recap.models import DigestBlock
 from news_recap.recap.storage.pipeline_io import materialize_step
 from news_recap.recap.tasks.base import (
     PipelineStepResult,
-    RecapPipelineError,
     TaskLauncher,
 )
 from news_recap.recap.tasks.prompts import RECAP_REDUCE_PROMPT
@@ -136,14 +135,10 @@ class ReduceBlocks(TaskLauncher):
             ctx.digest.blocks = []
             return
 
-        max_blocks = max(5, sum(len(b["article_ids"]) for b in map_blocks) // 15)
         headline_map = _build_article_headline_map(ctx.state, ctx.article_map)
         block_index = build_block_index(map_blocks)
 
-        prompt = RECAP_REDUCE_PROMPT.format(
-            max_blocks=max_blocks,
-            block_index=block_index,
-        )
+        prompt = RECAP_REDUCE_PROMPT.format(block_index=block_index)
 
         tid = materialize_step(
             ctx.workdir_mgr,
@@ -154,11 +149,7 @@ class ReduceBlocks(TaskLauncher):
 
         write_block_files(ctx.pdir / tid, map_blocks, headline_map)
 
-        pf_logger.info(
-            "[reduce] %d input blocks, target ~%d final blocks",
-            len(map_blocks),
-            max_blocks,
-        )
+        pf_logger.info("[reduce] %d input blocks", len(map_blocks))
 
         tid = run_ai_agent.with_options(task_run_name=tid)(
             pipeline_dir=str(ctx.pdir),

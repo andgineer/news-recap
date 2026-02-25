@@ -6,6 +6,7 @@ import allure
 import pytest
 
 from news_recap.config import (
+    _DEFAULT_PREFECT_API_URL,
     IngestionSettings,
     PrefectMode,
     RssSettings,
@@ -129,7 +130,7 @@ def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatc
     assert "recap_map" in task_map
     assert "recap_reduce" in task_map
     assert task_map["recap_classify"]["codex"] == "--model gpt-5.2 -c model_reasoning_effort=low"
-    assert task_map["recap_reduce"]["codex"] == "--model gpt-5.2 -c model_reasoning_effort=high"
+    assert task_map["recap_reduce"]["codex"] == "--model gpt-5.2 -c model_reasoning_effort=low"
     assert task_map["recap_reduce"]["gemini"] == "--model gemini-2.5-pro"
     assert settings.orchestrator.codex_command_template == (
         "codex exec --sandbox workspace-write "
@@ -193,10 +194,34 @@ class TestConfigurePrefectRuntime:
         assert result == PrefectMode.EPHEMERAL
         assert "PREFECT_API_URL" not in environ
 
-    def test_server_requires_api_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_server_uses_default_url_when_env_absent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv("PREFECT_API_URL", raising=False)
-        with pytest.raises(ValueError, match="requires PREFECT_API_URL"):
-            configure_prefect_runtime(PrefectMode.SERVER)
+        probed: list[str] = []
+        monkeypatch.setattr(
+            "news_recap.config._probe_prefect_server",
+            lambda url: (probed.append(url), True)[1],
+        )
+        result = configure_prefect_runtime(PrefectMode.SERVER)
+        assert result == PrefectMode.SERVER
+        assert probed == [_DEFAULT_PREFECT_API_URL]
+        assert environ["PREFECT_API_URL"] == _DEFAULT_PREFECT_API_URL
+
+    def test_server_uses_explicit_url_over_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        custom = "http://prefect.local:4200/api"
+        monkeypatch.setenv("PREFECT_API_URL", custom)
+        probed: list[str] = []
+        monkeypatch.setattr(
+            "news_recap.config._probe_prefect_server",
+            lambda url: (probed.append(url), True)[1],
+        )
+        result = configure_prefect_runtime(PrefectMode.SERVER)
+        assert result == PrefectMode.SERVER
+        assert probed == [custom]
+        assert environ["PREFECT_API_URL"] == custom
 
     def test_server_fails_fast_when_unreachable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PREFECT_API_URL", "http://localhost:4200/api")
@@ -204,10 +229,13 @@ class TestConfigurePrefectRuntime:
         with pytest.raises(RuntimeError, match="not reachable"):
             configure_prefect_runtime(PrefectMode.SERVER)
 
-    def test_server_succeeds_when_reachable(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("PREFECT_API_URL", "http://localhost:4200/api")
-        monkeypatch.setattr("news_recap.config._probe_prefect_server", lambda _: True)
-        assert configure_prefect_runtime(PrefectMode.SERVER) == PrefectMode.SERVER
+    def test_server_fails_fast_with_default_url_when_unreachable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("PREFECT_API_URL", raising=False)
+        monkeypatch.setattr("news_recap.config._probe_prefect_server", lambda _: False)
+        with pytest.raises(RuntimeError, match="not reachable"):
+            configure_prefect_runtime(PrefectMode.SERVER)
 
     def test_auto_falls_back_to_ephemeral(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PREFECT_API_URL", "http://localhost:4200/api")
@@ -222,8 +250,25 @@ class TestConfigurePrefectRuntime:
         result = configure_prefect_runtime(PrefectMode.AUTO)
         assert result == PrefectMode.SERVER
 
-    def test_auto_ephemeral_when_no_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_auto_probes_default_url_when_env_absent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv("PREFECT_API_URL", raising=False)
+        probed: list[str] = []
+        monkeypatch.setattr(
+            "news_recap.config._probe_prefect_server",
+            lambda url: (probed.append(url), True)[1],
+        )
+        result = configure_prefect_runtime(PrefectMode.AUTO)
+        assert result == PrefectMode.SERVER
+        assert probed == [_DEFAULT_PREFECT_API_URL]
+        assert environ["PREFECT_API_URL"] == _DEFAULT_PREFECT_API_URL
+
+    def test_auto_ephemeral_when_default_unreachable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("PREFECT_API_URL", raising=False)
+        monkeypatch.setattr("news_recap.config._probe_prefect_server", lambda _: False)
         result = configure_prefect_runtime(PrefectMode.AUTO)
         assert result == PrefectMode.EPHEMERAL
 
