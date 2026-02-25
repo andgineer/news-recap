@@ -15,8 +15,8 @@ IMPORTANT — execution rules:
 RECAP_CLASSIFY_BATCH_PROMPT = """\
 You are a news editor deciding which headlines to keep for a daily digest.
 
-EDITORIAL POLICY — TRASH:
-{trash_policy}
+EDITORIAL POLICY — EXCLUDE:
+{exclude_policy}
 
 EDITORIAL POLICY — FOLLOW:
 {follow_policy}
@@ -25,7 +25,7 @@ These are topic descriptions, not keyword lists. A headline may relate to a
 described category even without sharing any exact words with the description.
 
 For each headline below, decide:
-1. Story matches a TRASH category → trash
+1. Story matches an EXCLUDE category → exclude
 2. Story matches a FOLLOW topic → follow
 3. Headline too vague to identify the specific story → vague
 4. Otherwise → ok
@@ -35,11 +35,11 @@ Read the headlines below and print your verdicts directly to stdout.
 
 Print EXACTLY {expected_count} lines to stdout,
 one per headline, in the same order as the list below.
-Format: NUMBER: VERDICT  (VERDICT is one of: ok, vague, follow, trash)
+Format: NUMBER: VERDICT  (VERDICT is one of: ok, vague, follow, exclude)
 
 Example output (4 headlines):
 1: ok
-2: trash
+2: exclude
 3: vague
 4: follow
 

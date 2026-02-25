@@ -392,7 +392,7 @@ class TestBuildClassifyBatchPrompt:
         assert "7" in prompt
 
     def test_contains_policies(self):
-        prefs = _make_prefs(trash="sports", follow="politics")
+        prefs = _make_prefs(exclude="sports", follow="politics")
         prompt = build_classify_batch_prompt([_make_entry("x")], prefs)
         assert "sports" in prompt
         assert "politics" in prompt
@@ -412,7 +412,7 @@ class TestParseClassifyBatchStdout:
         entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3"), _make_entry("a4")]
         stdout = self._write_stdout(
             tmp_path,
-            "1: ok\n2: trash\n3: vague\n4: follow\n",
+            "1: ok\n2: exclude\n3: vague\n4: follow\n",
         )
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "a1" in kept
@@ -425,7 +425,7 @@ class TestParseClassifyBatchStdout:
         entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
         stdout = self._write_stdout(
             tmp_path,
-            "BEGIN_VERDICTS\n1\tok\n2\ttrash\n3\tvague\nEND_VERDICTS",
+            "BEGIN_VERDICTS\n1\tok\n2\texclude\n3\tvague\nEND_VERDICTS",
         )
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "a1" in kept
@@ -456,7 +456,7 @@ class TestParseClassifyBatchStdout:
         entries = [_make_entry("a1"), _make_entry("a2")]
         stdout = self._write_stdout(
             tmp_path,
-            "BEGIN_VERDICTS\n1 ok\n2 trash\nEND_VERDICTS",
+            "BEGIN_VERDICTS\n1 ok\n2 exclude\nEND_VERDICTS",
         )
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "a1" in kept

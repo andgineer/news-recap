@@ -4,7 +4,7 @@
 Reads articles_index.json from the task workdir and prints classify verdicts
 to stdout in the same format the real agent would use: ID<TAB>VERDICT.
 
-Distribution: ~80% ok, ~10% trash, ~10% enrich (deterministic by article index).
+Distribution: ~80% ok, ~10% exclude, ~10% enrich (deterministic by article index).
 
 Usage — set the agent command template env var to point here, then run normally:
 
@@ -39,10 +39,10 @@ def main() -> None:
 
     for i, article in enumerate(articles):
         source_id = article.get("source_id", f"unknown_{i}")
-        # Deterministic distribution: 80% ok, 10% trash, 10% enrich
+        # Deterministic distribution: 80% ok, 10% exclude, 10% enrich
         r = i % 10
         if r == 0:
-            verdict = "trash"
+            verdict = "exclude"
         elif r == 1:
             verdict = "enrich"
         else:

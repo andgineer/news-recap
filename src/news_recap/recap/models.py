@@ -8,7 +8,7 @@ import msgspec
 
 from news_recap.recap.contracts import ArticleIndexEntry
 
-_DEFAULT_TRASH = "horoscopes, medical advice, sports (except Russia), Epstein files"
+_DEFAULT_EXCLUDE = "horoscopes, medical advice, sports (except Russia), Epstein files"
 _DEFAULT_FOLLOW = "Russia, Serbia, war in Ukraine"
 
 
@@ -17,13 +17,13 @@ class UserPreferences(msgspec.Struct):
 
     max_headline_chars: int = 120
     follow: str = _DEFAULT_FOLLOW
-    trash: str = _DEFAULT_TRASH
+    exclude: str = _DEFAULT_EXCLUDE
     language: str = "ru"
 
     def format_for_prompt(self) -> str:
         parts: list[str] = []
-        if self.trash:
-            parts.append(f"TRASH: {self.trash}")
+        if self.exclude:
+            parts.append(f"EXCLUDE: {self.exclude}")
         if self.follow:
             parts.append(f"FOLLOW: {self.follow}")
         return "\n".join(parts) if parts else "no specific preferences"
