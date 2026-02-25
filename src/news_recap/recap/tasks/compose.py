@@ -6,11 +6,13 @@ from typing import Any
 
 from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.storage.pipeline_io import materialize_step, read_task_output
+from news_recap.recap.storage.schemas import RECAP_COMPOSE_OUTPUT_SCHEMA
 from news_recap.recap.tasks.base import (
     PipelineStepResult,
     TaskLauncher,
     events_to_resource_files,
 )
+from news_recap.recap.tasks.prompts import RECAP_COMPOSE_PROMPT
 
 
 class Compose(TaskLauncher):
@@ -26,12 +28,18 @@ class Compose(TaskLauncher):
             event_payloads,
         )
 
+        prompt = RECAP_COMPOSE_PROMPT.format(
+            preferences=ctx.inp.preferences.format_for_prompt(),
+            max_headline_chars=ctx.inp.preferences.max_headline_chars,
+        )
         tid = materialize_step(
             ctx.workdir_mgr,
             ctx.inp,
             step_name="recap_compose",
             article_entries=kept_entries,
+            prompt=prompt,
             extra_input_files=synth_resources,
+            schema_hint=RECAP_COMPOSE_OUTPUT_SCHEMA,
         )
         tid = run_ai_agent.with_options(task_run_name=tid)(
             pipeline_dir=str(ctx.pdir),

@@ -84,7 +84,7 @@ def split_into_classify_batches(
     current_chars = 0
 
     for idx, entry in enumerate(entries):
-        line = f"{idx + 1}\t{entry.title}\n"
+        line = f"{idx + 1}: {entry.title}\n"
         line_chars = len(line)
         over_budget = current_chars + line_chars > budget
         over_max = len(current) >= effective_max
@@ -110,7 +110,7 @@ def build_classify_batch_prompt(
     Uses sequential 1-based numbers as IDs (not UUIDs) — short numbers are
     unambiguous and agents reproduce them reliably.
     """
-    headlines_block = "\n".join(f"{i + 1}\t{e.title}" for i, e in enumerate(entries))
+    headlines_block = "\n".join(f"{i + 1}: {e.title}" for i, e in enumerate(entries))
     return RECAP_CLASSIFY_BATCH_PROMPT.format(
         trash_policy=preferences.trash or "none",
         follow_policy=preferences.follow or "none",

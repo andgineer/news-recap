@@ -23,9 +23,7 @@ from news_recap.recap.contracts import ArticleIndexEntry, TaskInputContract
 from news_recap.recap.loaders.resource_cache import ResourceCache
 from news_recap.recap.loaders.resource_loader import LoadedResource, ResourceLoader
 from news_recap.recap.models import DigestArticle, UserPreferences
-from news_recap.recap.storage.schemas import SCHEMAS_BY_TASK_TYPE
 from news_recap.recap.storage.workdir import TaskWorkdirManager
-from news_recap.recap.tasks.prompts import PROMPTS_BY_TASK_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +104,9 @@ def materialize_step(  # noqa: PLR0913
     step_name: str,
     batch: int | None = None,
     article_entries: list[ArticleIndexEntry] | None = None,
-    prompt: str | None = None,
+    prompt: str,
     extra_input_files: dict[str, bytes | str] | None = None,
+    schema_hint: str | None = None,
 ) -> str:
     """Create a task workdir with all input files and return the task_id."""
     task_id = make_task_id(step_name, batch)
@@ -120,15 +119,6 @@ def materialize_step(  # noqa: PLR0913
         profile_override=None,
         model_override=None,
     )
-
-    schema_hint: str | None = None
-    if prompt is None:
-        prompt_template = PROMPTS_BY_TASK_TYPE[step_name]
-        prompt = prompt_template.format(
-            preferences=inp.preferences.format_for_prompt(),
-            max_headline_chars=inp.preferences.max_headline_chars,
-        )
-        schema_hint = SCHEMAS_BY_TASK_TYPE.get(step_name)
 
     workdir_mgr.materialize(
         task_id=task_id,

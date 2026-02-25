@@ -12,36 +12,6 @@ IMPORTANT — execution rules:
 - Focus on ANALYSIS and producing the correct JSON output.
 """
 
-RECAP_CLASSIFY_PROMPT = """\
-You are a news editor deciding which headlines to keep for a daily digest.
-
-Two reference files describe your editorial policy:
-- input/_trash.txt — describes categories of stories to discard
-- input/_follow.txt — describes topics the reader wants to follow
-
-These are topic descriptions, not keyword lists. A headline may relate to a
-described category even without sharing any exact words with the description.
-Read these files carefully and understand the editorial intent behind each category.
-
-Headline files are in input/resources/ as {{id}}_in.txt (one headline per file).
-
-For each headline, read it and decide:
-
-1. Can the story be attributed to a category described in _trash.txt?
-   If yes → verdict is "trash".
-
-2. Does the story match a topic described in _follow.txt?
-   If yes → verdict is "follow".
-
-3. Is the headline too vague to identify the specific story?
-   If yes → verdict is "vague".
-
-4. Otherwise → verdict is "ok".
-
-Write each verdict (one word: ok, vague, follow, or trash) to output/results/{{id}}_out.txt.
-Process every headline file.
-"""
-
 RECAP_CLASSIFY_BATCH_PROMPT = """\
 You are a news editor deciding which headlines to keep for a daily digest.
 
@@ -73,7 +43,7 @@ Example output (4 headlines):
 3: vague
 4: follow
 
-=== HEADLINES ===
+=== HEADLINES (format: NUMBER: HEADLINE) ===
 {headlines_block}"""
 
 RECAP_ENRICH_BATCH_PROMPT = """\
@@ -124,8 +94,6 @@ Each event must have: event_id, title, significance, article_ids, topic_tags.
     + _FILE_IO_RULES
 )
 
-RECAP_ENRICH_FULL_PROMPT = RECAP_ENRICH_BATCH_PROMPT  # same file-based I/O
-
 RECAP_SYNTHESIZE_PROMPT = (
     """\
 You are synthesizing news events from multiple source articles.
@@ -173,12 +141,3 @@ Also include a "meta" object with: total_events, total_themes, date.
 """
     + _FILE_IO_RULES
 )
-
-PROMPTS_BY_TASK_TYPE: dict[str, str] = {
-    "recap_classify": RECAP_CLASSIFY_PROMPT,
-    "recap_enrich": RECAP_ENRICH_BATCH_PROMPT,
-    "recap_group": RECAP_GROUP_PROMPT,
-    "recap_enrich_full": RECAP_ENRICH_FULL_PROMPT,
-    "recap_synthesize": RECAP_SYNTHESIZE_PROMPT,
-    "recap_compose": RECAP_COMPOSE_PROMPT,
-}

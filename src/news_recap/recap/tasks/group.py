@@ -9,7 +9,9 @@ from prefect.logging import get_run_logger
 from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.storage.pipeline_io import materialize_step, read_task_output
+from news_recap.recap.storage.schemas import RECAP_GROUP_OUTPUT_SCHEMA
 from news_recap.recap.tasks.base import PipelineStepResult, TaskLauncher
+from news_recap.recap.tasks.prompts import RECAP_GROUP_PROMPT
 
 # ---------------------------------------------------------------------------
 # Group-specific helpers
@@ -66,6 +68,8 @@ class Group(TaskLauncher):
             ctx.inp,
             step_name="recap_group",
             article_entries=enriched_entries,
+            prompt=RECAP_GROUP_PROMPT,
+            schema_hint=RECAP_GROUP_OUTPUT_SCHEMA,
         )
         tid = run_ai_agent.with_options(task_run_name=tid)(
             pipeline_dir=str(ctx.pdir),

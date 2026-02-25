@@ -6,11 +6,13 @@ from typing import Any
 
 from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.storage.pipeline_io import materialize_step
+from news_recap.recap.storage.schemas import RECAP_SYNTHESIZE_OUTPUT_SCHEMA
 from news_recap.recap.tasks.base import (
     PipelineStepResult,
     TaskLauncher,
     events_to_resource_files,
 )
+from news_recap.recap.tasks.prompts import RECAP_SYNTHESIZE_PROMPT
 
 
 class Synthesize(TaskLauncher):
@@ -29,7 +31,9 @@ class Synthesize(TaskLauncher):
             ctx.inp,
             step_name="recap_synthesize",
             article_entries=kept_entries,
+            prompt=RECAP_SYNTHESIZE_PROMPT,
             extra_input_files=synth_resources,
+            schema_hint=RECAP_SYNTHESIZE_OUTPUT_SCHEMA,
         )
         tid = run_ai_agent.with_options(task_run_name=tid)(
             pipeline_dir=str(ctx.pdir),

@@ -2,25 +2,6 @@
 
 from __future__ import annotations
 
-RECAP_CLASSIFY_OUTPUT_SCHEMA = """\
-{
-  "status": "done"
-}
-
-Actual per-article verdicts go into output_results_dir as {id}_out.txt files,
-each containing exactly one word: ok, enrich, or trash."""
-
-RECAP_ENRICH_OUTPUT_SCHEMA = """\
-{
-  "enriched": [
-    {
-      "article_id": "<source_id>",
-      "new_title": "<informative headline rewritten from source>",
-      "clean_text": "<cleaned and de-duplicated article body>"
-    }
-  ]
-}"""
-
 RECAP_GROUP_OUTPUT_SCHEMA = """\
 {
   "events": [
@@ -33,8 +14,6 @@ RECAP_GROUP_OUTPUT_SCHEMA = """\
     }
   ]
 }"""
-
-RECAP_ENRICH_FULL_OUTPUT_SCHEMA = RECAP_ENRICH_OUTPUT_SCHEMA
 
 RECAP_SYNTHESIZE_OUTPUT_SCHEMA = """\
 {
@@ -78,12 +57,3 @@ RECAP_COMPOSE_OUTPUT_SCHEMA = """\
     "date": "<YYYY-MM-DD>"
   }
 }"""
-
-SCHEMAS_BY_TASK_TYPE: dict[str, str] = {
-    "recap_classify": RECAP_CLASSIFY_OUTPUT_SCHEMA,
-    "recap_enrich": RECAP_ENRICH_OUTPUT_SCHEMA,
-    "recap_group": RECAP_GROUP_OUTPUT_SCHEMA,
-    "recap_enrich_full": RECAP_ENRICH_FULL_OUTPUT_SCHEMA,
-    "recap_synthesize": RECAP_SYNTHESIZE_OUTPUT_SCHEMA,
-    "recap_compose": RECAP_COMPOSE_OUTPUT_SCHEMA,
-}
