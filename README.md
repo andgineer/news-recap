@@ -39,7 +39,7 @@
 | src/news\_recap/recap/storage/schemas.py                 |        4 |        0 |    100% |           |
 | src/news\_recap/recap/storage/workdir.py                 |       55 |        0 |    100% |           |
 | src/news\_recap/recap/tasks/base.py                      |       76 |       15 |     80% |100, 123-139, 142 |
-| src/news\_recap/recap/tasks/classify.py                  |      177 |       74 |     58% |136, 142, 220-231, 234-262, 271-330, 334-348 |
+| src/news\_recap/recap/tasks/classify.py                  |      177 |       74 |     58% |136, 142, 220-231, 234-262, 271-330, 334-350 |
 | src/news\_recap/recap/tasks/compose.py                   |       19 |        9 |     53% |     24-50 |
 | src/news\_recap/recap/tasks/enrich.py                    |      217 |       34 |     84% |142-143, 145-146, 208, 255-256, 311-320, 365-372, 385, 398-399, 433, 455-462, 473-489 |
 | src/news\_recap/recap/tasks/group.py                     |       33 |       11 |     67% |     60-82 |
