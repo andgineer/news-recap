@@ -75,15 +75,8 @@ class OrchestratorSettings:
 
     workdir_root: Path = Path(".news_recap_workdir")
     default_agent: str = "codex"
-    task_type_profile_map: dict[str, str] = field(
-        default_factory=lambda: {
-            "recap_classify": "fast",
-            "recap_enrich": "fast",
-            "recap_group": "fast",
-            "recap_enrich_full": "fast",
-            "recap_synthesize": "quality",
-            "recap_compose": "quality",
-        },
+    task_model_map: dict[str, dict[str, str]] = field(
+        default_factory=lambda: _default_task_model_map(),
     )
     task_type_timeout_map: dict[str, int] = field(
         default_factory=lambda: {
@@ -98,12 +91,6 @@ class OrchestratorSettings:
     codex_command_template: str = _DEFAULT_CODEX_CMD
     claude_command_template: str = _DEFAULT_CLAUDE_CMD
     gemini_command_template: str = _DEFAULT_GEMINI_CMD
-    codex_model_fast: str = "--model gpt-5.2 -c model_reasoning_effort=medium"
-    codex_model_quality: str = "--model gpt-5.2 -c model_reasoning_effort=high"
-    claude_model_fast: str = "--model sonnet --effort low"
-    claude_model_quality: str = "--model opus"
-    gemini_model_fast: str = "--model gemini-2.5-flash"
-    gemini_model_quality: str = "--model gemini-2.5-pro"
     worker_id: str = "worker-default"
     poll_interval_seconds: float = 2.0
     retry_base_seconds: int = 30
@@ -202,7 +189,7 @@ class Settings:
                     "NEWS_RECAP_GEMINI_COMMAND_TEMPLATE",
                     _DEFAULT_GEMINI_CMD,
                 ),
-                task_type_profile_map=_collect_task_type_profile_map(),
+                task_model_map=_collect_task_model_map(),
                 worker_id=os.getenv("NEWS_RECAP_LLM_WORKER_ID", "worker-default"),
                 poll_interval_seconds=float(
                     os.getenv("NEWS_RECAP_LLM_POLL_INTERVAL_SECONDS", "2.0"),
@@ -249,15 +236,18 @@ class Settings:
                 "NEWS_RECAP_LLM_DEFAULT_AGENT must be one of: codex, claude, gemini.",
             )
 
-        for task_type, profile in self.orchestrator.task_type_profile_map.items():
-            normalized_task_type = task_type.strip().lower()
-            normalized_profile = profile.strip().lower()
-            if not normalized_task_type:
-                raise ValueError("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP contains empty task_type.")
-            if normalized_profile not in {"fast", "quality"}:
-                raise ValueError(
-                    f"Unsupported model profile for task_type={task_type!r}: {profile!r}",
-                )
+        for task_type, agent_models in self.orchestrator.task_model_map.items():
+            if not task_type.strip():
+                raise ValueError("task_model_map contains empty task_type key.")
+            for agent, model in agent_models.items():
+                if agent not in supported_agents:
+                    raise ValueError(
+                        f"task_model_map[{task_type!r}] has unsupported agent: {agent!r}",
+                    )
+                if not model.strip():
+                    raise ValueError(
+                        f"task_model_map[{task_type!r}][{agent!r}] model must not be empty.",
+                    )
 
         for name, template in (
             ("codex_command_template", self.orchestrator.codex_command_template),
@@ -265,17 +255,6 @@ class Settings:
             ("gemini_command_template", self.orchestrator.gemini_command_template),
         ):
             _validate_command_template(name=name, template=template)
-
-        for field_name, model_id in (
-            ("codex_model_fast", self.orchestrator.codex_model_fast),
-            ("codex_model_quality", self.orchestrator.codex_model_quality),
-            ("claude_model_fast", self.orchestrator.claude_model_fast),
-            ("claude_model_quality", self.orchestrator.claude_model_quality),
-            ("gemini_model_fast", self.orchestrator.gemini_model_fast),
-            ("gemini_model_quality", self.orchestrator.gemini_model_quality),
-        ):
-            if not model_id.strip():
-                raise ValueError(f"OrchestratorSettings.{field_name} must not be empty.")
 
     def _validate_orchestrator_runtime_limits(self) -> None:
         if not self.orchestrator.worker_id.strip():
@@ -369,48 +348,68 @@ def _collect_feed_item_overrides() -> dict[str, int]:
     return overrides
 
 
-def _collect_task_type_profile_map() -> dict[str, str]:
-    default_map = (
-        "recap_classify=fast,recap_enrich=fast,recap_group=fast,"
-        "recap_enrich_full=fast,recap_synthesize=quality,recap_compose=quality"
-    )
-    raw = os.getenv("NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP", default_map).strip()
+def _default_task_model_map() -> dict[str, dict[str, str]]:
+    return {
+        "recap_classify": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
+            "claude": "--model sonnet --effort low",
+            "gemini": "--model gemini-2.5-flash",
+        },
+        "recap_enrich": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
+            "claude": "--model sonnet --effort low",
+            "gemini": "--model gemini-2.5-flash",
+        },
+        "recap_group": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
+            "claude": "--model sonnet --effort low",
+            "gemini": "--model gemini-2.5-flash",
+        },
+        "recap_enrich_full": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
+            "claude": "--model sonnet --effort low",
+            "gemini": "--model gemini-2.5-flash",
+        },
+        "recap_synthesize": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=high",
+            "claude": "--model opus",
+            "gemini": "--model gemini-2.5-pro",
+        },
+        "recap_compose": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=high",
+            "claude": "--model opus",
+            "gemini": "--model gemini-2.5-pro",
+        },
+    }
+
+
+def _collect_task_model_map() -> dict[str, dict[str, str]]:
+    """Build task → agent → model overrides from env or defaults.
+
+    Env format (CSV of ``task_type:agent=model_flags``):
+        ``NEWS_RECAP_LLM_TASK_MODEL_MAP=recap_synthesize:codex=--model gpt-5.2 ...``
+    """
+    raw = os.getenv("NEWS_RECAP_LLM_TASK_MODEL_MAP", "").strip()
     if not raw:
-        return {
-            "recap_classify": "fast",
-            "recap_enrich": "fast",
-            "recap_group": "fast",
-            "recap_enrich_full": "fast",
-            "recap_synthesize": "quality",
-            "recap_compose": "quality",
-        }
-    mapping: dict[str, str] = {}
+        return _default_task_model_map()
+
+    mapping: dict[str, dict[str, str]] = {}
     for part in raw.split(","):
         token = part.strip()
         if not token:
             continue
-        if "=" not in token:
+        if "=" not in token or ":" not in token.split("=", 1)[0]:
             raise ValueError(
-                "Invalid NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP entry: "
-                f"{token!r}. Expected format '<task_type>=<profile>'.",
+                "Invalid NEWS_RECAP_LLM_TASK_MODEL_MAP entry: "
+                f"{token!r}. Expected format '<task_type>:<agent>=<model_flags>'.",
             )
-        task_type, profile = token.split("=", 1)
-        normalized_task_type = task_type.strip().lower()
-        normalized_profile = profile.strip().lower()
-        if not normalized_task_type:
-            raise ValueError(
-                f"Invalid NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP task_type: {token!r}",
-            )
-        if normalized_profile not in {"fast", "quality"}:
-            raise ValueError(
-                "Invalid NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP profile: "
-                f"{normalized_profile!r} (expected fast or quality)",
-            )
-        mapping[normalized_task_type] = normalized_profile
-    if not mapping:
-        raise ValueError(
-            "NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP resolved to empty mapping.",
-        )
+        key, model = token.split("=", 1)
+        task_type, agent = key.rsplit(":", 1)
+        task_type = task_type.strip().lower()
+        agent = agent.strip().lower()
+        if not task_type or not agent:
+            raise ValueError(f"Invalid NEWS_RECAP_LLM_TASK_MODEL_MAP key: {key!r}")
+        mapping.setdefault(task_type, {})[agent] = model.strip()
     return mapping
 
 

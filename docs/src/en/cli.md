@@ -106,6 +106,17 @@ Key options:
 - `NEWS_RECAP_RSS_FEED_ITEMS` — per-feed item overrides (`<feed_url>|<items>,...`).
 
 ### LLM Agents
+
+> **Subscription vs API billing.** CLI agents (`claude`, `codex`, `gemini`) check
+> for vendor API keys first. If a key is set, usage is billed to your API account
+> (pay-per-token). To use your subscription's included quota instead, unset the key:
+>
+> ```bash
+> unset ANTHROPIC_API_KEY   # Claude — use Claude Pro/Max subscription
+> unset OPENAI_API_KEY      # Codex — use ChatGPT/Codex subscription
+> unset GEMINI_API_KEY      # Gemini — use Google AI subscription
+> ```
+
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — default agent (`codex`, `claude`, or `gemini`).
 - `NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP` — per-task-type model profile (`fast`/`quality`).
 - `NEWS_RECAP_CODEX_COMMAND_TEMPLATE` — command template for Codex agent.

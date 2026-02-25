@@ -3,7 +3,7 @@
 # news-recap
 
 `news-recap` is a CLI-first pipeline for collecting, cleaning, deduplicating news
-and producing daily recaps with LLM agents orchestrated by [Prefect](https://www.prefect.io/).
+and producing daily recaps with LLM agents.
 
 The key idea: instead of paying per-token via expensive LLM APIs, the pipeline drives
 CLI agents (Codex, Claude Code, Gemini CLI) that run under flat-rate ~$20/month

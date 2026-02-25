@@ -464,9 +464,8 @@ class TestPipelineInputMinResourceChars:
             "preferences": {"max_headline_chars": 120, "language": "ru"},
             "routing_defaults": {
                 "default_agent": "codex",
-                "task_type_profile_map": {},
+                "task_model_map": {},
                 "command_templates": {},
-                "models": {},
                 "task_type_timeout_map": {},
             },
             "agent_override": None,
@@ -492,9 +491,8 @@ class TestPipelineInputMinResourceChars:
             "preferences": {"max_headline_chars": 120, "language": "ru"},
             "routing_defaults": {
                 "default_agent": "codex",
-                "task_type_profile_map": {},
+                "task_model_map": {},
                 "command_templates": {},
-                "models": {},
                 "task_type_timeout_map": {},
             },
             "agent_override": None,

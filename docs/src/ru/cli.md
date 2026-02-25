@@ -106,6 +106,17 @@ news-recap recap run --limit 50
 - `NEWS_RECAP_RSS_FEED_ITEMS` — переопределения числа элементов по фидам (`<feed_url>|<items>,...`).
 
 ### LLM-агенты
+
+> **Подписка vs API-биллинг.** CLI-агенты (`claude`, `codex`, `gemini`) сначала
+> проверяют наличие API-ключа вендора. Если ключ задан, использование тарифицируется
+> через API-аккаунт (оплата за токены). Чтобы использовать лимиты подписки, сбросьте ключ:
+>
+> ```bash
+> unset ANTHROPIC_API_KEY   # Claude — использовать подписку Claude Pro/Max
+> unset OPENAI_API_KEY      # Codex — использовать подписку ChatGPT/Codex
+> unset GEMINI_API_KEY      # Gemini — использовать подписку Google AI
+> ```
+
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — агент по умолчанию (`codex`, `claude` или `gemini`).
 - `NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP` — профиль модели по типу задачи (`fast`/`quality`).
 - `NEWS_RECAP_CODEX_COMMAND_TEMPLATE` — шаблон команды для Codex.

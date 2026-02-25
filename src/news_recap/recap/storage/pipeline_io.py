@@ -116,7 +116,6 @@ def materialize_step(  # noqa: PLR0913
         defaults=inp.routing_defaults,
         task_type=step_name,
         agent_override=inp.agent_override,
-        profile_override=None,
         model_override=None,
     )
 

@@ -28,25 +28,11 @@ def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
     """Build RoutingDefaults from Settings for the recap pipeline."""
     return RoutingDefaults(
         default_agent=settings.orchestrator.default_agent,
-        task_type_profile_map=settings.orchestrator.task_type_profile_map,
+        task_model_map=settings.orchestrator.task_model_map,
         command_templates={
             "claude": settings.orchestrator.claude_command_template,
             "codex": settings.orchestrator.codex_command_template,
             "gemini": settings.orchestrator.gemini_command_template,
-        },
-        models={
-            "claude": {
-                "fast": settings.orchestrator.claude_model_fast,
-                "quality": settings.orchestrator.claude_model_quality,
-            },
-            "codex": {
-                "fast": settings.orchestrator.codex_model_fast,
-                "quality": settings.orchestrator.codex_model_quality,
-            },
-            "gemini": {
-                "fast": settings.orchestrator.gemini_model_fast,
-                "quality": settings.orchestrator.gemini_model_quality,
-            },
         },
         task_type_timeout_map=settings.orchestrator.task_type_timeout_map,
     )

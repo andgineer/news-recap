@@ -61,7 +61,6 @@ def run_ai_agent(
         defaults=inp.routing_defaults,
         task_type=step_name,
         agent_override=inp.agent_override,
-        profile_override=None,
         model_override=None,
     )
     timeout = inp.routing_defaults.task_type_timeout_map.get(step_name, _DEFAULT_TIMEOUT)
@@ -153,7 +152,6 @@ def _run_agent_cli(
     env["NEWS_RECAP_REPAIR_MODE"] = "0"
     env["NEWS_RECAP_LLM_AGENT"] = ""
     env["NEWS_RECAP_LLM_MODEL"] = model
-    env["NEWS_RECAP_LLM_MODEL_PROFILE"] = ""
 
     try:
         return run_subprocess(
