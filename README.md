@@ -5,7 +5,7 @@
 | Name                                                     |    Stmts |     Miss |   Cover |   Missing |
 |--------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
-| src/news\_recap/config.py                                |      262 |       47 |     82% |221, 225, 227, 233, 239, 242, 246, 261, 263, 265, 267, 271, 273, 301, 308, 324, 326, 336-337, 341, 384-401, 410, 412, 431-436, 442, 452, 459, 466 |
+| src/news\_recap/config.py                                |      263 |       47 |     82% |221, 225, 227, 233, 239, 242, 246, 261, 263, 265, 267, 271, 273, 301, 308, 324, 326, 336-337, 341, 384-401, 410, 412, 431-436, 442, 452, 459, 466 |
 | src/news\_recap/http/fetcher.py                          |       42 |        4 |     90% |47, 92, 95, 98 |
 | src/news\_recap/http/html\_extractor.py                  |       29 |        7 |     76% |47-49, 60-62, 69 |
 | src/news\_recap/http/youtube\_extractor.py               |       74 |       45 |     39% |38, 42-43, 67, 81-92, 101-126, 149-170 |
@@ -42,11 +42,11 @@
 | src/news\_recap/recap/tasks/classify.py                  |      177 |       74 |     58% |136, 142, 220-231, 234-262, 271-330, 334-350 |
 | src/news\_recap/recap/tasks/enrich.py                    |      171 |       19 |     89% |134-135, 137-138, 179-180, 235-244, 289-296, 309, 322-323, 357 |
 | src/news\_recap/recap/tasks/load\_resources.py           |       57 |        6 |     89% |44, 86-87, 93-95 |
-| src/news\_recap/recap/tasks/map\_blocks.py               |      144 |       46 |     68% |162, 199, 205-286 |
+| src/news\_recap/recap/tasks/map\_blocks.py               |      146 |       47 |     68% |163, 200, 206-288 |
 | src/news\_recap/recap/tasks/prompts.py                   |        5 |        0 |    100% |           |
-| src/news\_recap/recap/tasks/reduce\_blocks.py            |       97 |       38 |     61% |68-76, 100-101, 107, 114, 119, 130-191 |
+| src/news\_recap/recap/tasks/reduce\_blocks.py            |       96 |       37 |     61% |67-75, 99-100, 106, 113, 118, 129-182 |
 | src/news\_recap/storage/io.py                            |       42 |        6 |     86% |33-36, 59, 73 |
-| **TOTAL**                                                | **3916** |  **989** | **75%** |           |
+| **TOTAL**                                                | **3918** |  **989** | **75%** |           |
 
 
 ## Setup coverage badge
