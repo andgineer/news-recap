@@ -273,7 +273,7 @@ class Classify(TaskLauncher):
             step_name="recap_classify",
             step_label="classify batch",
             start_batch=next_batch_number(ctx.pdir, "recap_classify") - 1,
-            max_parallel=_MAX_PARALLEL,
+            max_parallel=ctx.inp.effective_max_parallel(_MAX_PARALLEL),
             prepare_fn=prepare,
             parse_fn=parse,
             pf_logger=pf_logger,

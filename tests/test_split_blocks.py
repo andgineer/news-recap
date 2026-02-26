@@ -112,9 +112,16 @@ def _make_entry(source_id: str, title: str = "") -> ArticleIndexEntry:
     )
 
 
+def _mock_inp():
+    from news_recap.recap.storage.pipeline_io import PipelineInput
+
+    inp = MagicMock(spec=PipelineInput)
+    inp.effective_max_parallel.return_value = 5
+    return inp
+
+
 def _make_split_ctx(tmp_path, split_tasks, articles=None):
     from news_recap.recap.models import Digest, DigestBlock
-    from news_recap.recap.storage.pipeline_io import PipelineInput
     from news_recap.recap.tasks.base import FlowContext
 
     pdir = tmp_path / "pipeline"
@@ -136,7 +143,7 @@ def _make_split_ctx(tmp_path, split_tasks, articles=None):
     ctx = FlowContext(
         pdir=pdir,
         workdir_mgr=MagicMock(),
-        inp=MagicMock(spec=PipelineInput),
+        inp=_mock_inp(),
         article_map={e.source_id: e for e in articles},
         digest=digest,
     )

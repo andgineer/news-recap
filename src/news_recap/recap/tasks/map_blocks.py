@@ -284,7 +284,7 @@ class MapBlocks(TaskLauncher):
             step_name="recap_map",
             step_label="map worker",
             start_batch=next_batch_number(ctx.pdir, "recap_map") - 1,
-            max_parallel=_MAX_PARALLEL,
+            max_parallel=ctx.inp.effective_max_parallel(_MAX_PARALLEL),
             prepare_fn=prepare,
             parse_fn=parse,
             pf_logger=pf_logger,

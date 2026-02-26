@@ -241,7 +241,7 @@ def _run_enrich(
             step_name=step_name,
             step_label=f"{step_name} batch",
             start_batch=batch_counter,
-            max_parallel=_MAX_PARALLEL,
+            max_parallel=ctx.inp.effective_max_parallel(_MAX_PARALLEL),
             prepare_fn=prepare,
             parse_fn=parse,
             pf_logger=pf_logger,

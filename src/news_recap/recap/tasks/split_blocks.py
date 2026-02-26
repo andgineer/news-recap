@@ -164,7 +164,7 @@ class SplitBlocks(TaskLauncher):
             step_name="recap_split",
             step_label="SPLIT worker",
             start_batch=start_batch,
-            max_parallel=_MAX_PARALLEL,
+            max_parallel=ctx.inp.effective_max_parallel(_MAX_PARALLEL),
             prepare_fn=prepare_fn,
             parse_fn=parse_fn,
             pf_logger=pf_logger,

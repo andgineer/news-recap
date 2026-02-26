@@ -10,6 +10,8 @@ from news_recap.recap.agents.routing import (
     resolve_routing_for_enqueue,
     resolve_routing_for_execution,
 )
+from news_recap.recap.models import UserPreferences
+from news_recap.recap.storage.pipeline_io import PipelineInput
 
 pytestmark = [
     allure.epic("LLM Runtime"),
@@ -160,3 +162,66 @@ def test_resolve_routing_raises_on_missing_task_type() -> None:
         assert "unknown_task" in str(error)
     else:  # pragma: no cover
         raise AssertionError("Expected ValueError for unknown task_type")
+
+
+# --- effective_max_parallel ------------------------------------------------
+
+
+def _pipeline_input(
+    agent_override: str | None = None,
+    agent_max_parallel: dict[str, int] | None = None,
+) -> PipelineInput:
+    rd = _defaults()
+    if agent_max_parallel is not None:
+        rd = RoutingDefaults(
+            default_agent=rd.default_agent,
+            task_model_map=rd.task_model_map,
+            task_type_timeout_map=rd.task_type_timeout_map,
+            command_templates=rd.command_templates,
+            agent_max_parallel=agent_max_parallel,
+        )
+    return PipelineInput(
+        articles=[],
+        preferences=UserPreferences.from_dict({}),
+        routing_defaults=rd,
+        agent_override=agent_override,
+    )
+
+
+def test_effective_max_parallel_codex_default() -> None:
+    """Codex has no agent_max_parallel cap — returns task_max."""
+    inp = _pipeline_input()
+    assert inp.effective_max_parallel(5) == 5
+
+
+def test_effective_max_parallel_claude_capped() -> None:
+    """Claude agent_max_parallel=2 caps task_max=5 to 2."""
+    inp = _pipeline_input(
+        agent_override="claude",
+        agent_max_parallel={"claude": 2, "codex": 5},
+    )
+    assert inp.effective_max_parallel(5) == 2
+
+
+def test_effective_max_parallel_task_max_lower() -> None:
+    """When task_max < vendor cap, task_max wins."""
+    inp = _pipeline_input(
+        agent_override="codex",
+        agent_max_parallel={"codex": 10},
+    )
+    assert inp.effective_max_parallel(3) == 3
+
+
+def test_effective_max_parallel_unknown_agent_returns_task_max() -> None:
+    """Unknown agent not in agent_max_parallel falls back to task_max."""
+    inp = _pipeline_input(agent_override="codex", agent_max_parallel={})
+    assert inp.effective_max_parallel(4) == 4
+
+
+def test_effective_max_parallel_uses_default_agent_when_no_override() -> None:
+    """When agent_override is None, default_agent ('codex') is used."""
+    inp = _pipeline_input(
+        agent_override=None,
+        agent_max_parallel={"codex": 2},
+    )
+    assert inp.effective_max_parallel(5) == 2

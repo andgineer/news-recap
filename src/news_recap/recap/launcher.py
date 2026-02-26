@@ -35,6 +35,7 @@ def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
             "gemini": settings.orchestrator.gemini_command_template,
         },
         task_type_timeout_map=settings.orchestrator.task_type_timeout_map,
+        agent_max_parallel=settings.orchestrator.agent_max_parallel,
     )
 
 

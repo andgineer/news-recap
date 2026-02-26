@@ -87,6 +87,9 @@ class OrchestratorSettings:
             "recap_split": 120,
         },
     )
+    agent_max_parallel: dict[str, int] = field(
+        default_factory=lambda: _default_agent_max_parallel(),
+    )
     codex_command_template: str = _DEFAULT_CODEX_CMD
     claude_command_template: str = _DEFAULT_CLAUDE_CMD
     gemini_command_template: str = _DEFAULT_GEMINI_CMD
@@ -189,6 +192,7 @@ class Settings:
                     _DEFAULT_GEMINI_CMD,
                 ),
                 task_model_map=_collect_task_model_map(),
+                agent_max_parallel=_default_agent_max_parallel(),
                 worker_id=os.getenv("NEWS_RECAP_LLM_WORKER_ID", "worker-default"),
                 poll_interval_seconds=float(
                     os.getenv("NEWS_RECAP_LLM_POLL_INTERVAL_SECONDS", "2.0"),
@@ -345,6 +349,10 @@ def _collect_feed_item_overrides() -> dict[str, int]:
             )
         overrides[feed_url] = items
     return overrides
+
+
+def _default_agent_max_parallel() -> dict[str, int]:
+    return {"codex": 3, "claude": 2, "gemini": 3}
 
 
 def _default_task_model_map() -> dict[str, dict[str, str]]:

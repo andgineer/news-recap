@@ -199,6 +199,7 @@ class TestClassifyExecutePartialPersist:
         inp = MagicMock(spec=PipelineInput)
         inp.articles = articles
         inp.preferences = _make_prefs()
+        inp.effective_max_parallel.return_value = 5
 
         digest = Digest(
             digest_id="test",

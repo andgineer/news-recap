@@ -40,6 +40,16 @@ class PipelineInput:
     agent_override: str | None
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS
 
+    def effective_max_parallel(self, task_max: int) -> int:
+        """Return the effective concurrency: ``min(task_max, agent_limit)``.
+
+        Uses the active agent (override or default) to look up the per-vendor
+        cap from ``routing_defaults.agent_max_parallel``.
+        """
+        agent = (self.agent_override or self.routing_defaults.default_agent).strip().lower()
+        vendor_max = self.routing_defaults.agent_max_parallel.get(agent, task_max)
+        return min(task_max, vendor_max)
+
 
 def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
     """Load ``pipeline_input.json`` from *pipeline_dir*."""

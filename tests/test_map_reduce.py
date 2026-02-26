@@ -179,6 +179,7 @@ class TestMapBlocksExecute:
         inp = MagicMock(spec=PipelineInput)
         inp.preferences = MagicMock()
         inp.preferences.follow = "none"
+        inp.effective_max_parallel.return_value = 5
 
         digest = Digest(
             digest_id="test",
