@@ -8,7 +8,7 @@
 | src/news\_recap/config.py                                |      263 |       47 |     82% |221, 225, 227, 233, 239, 242, 246, 261, 263, 265, 267, 271, 273, 301, 308, 324, 326, 336-337, 341, 384-401, 410, 412, 431-436, 442, 452, 459, 466 |
 | src/news\_recap/http/fetcher.py                          |       42 |        4 |     90% |47, 92, 95, 98 |
 | src/news\_recap/http/html\_extractor.py                  |       29 |        7 |     76% |47-49, 60-62, 69 |
-| src/news\_recap/http/youtube\_extractor.py               |       74 |       45 |     39% |38, 42-43, 67, 81-92, 101-126, 149-170 |
+| src/news\_recap/http/youtube\_extractor.py               |       94 |       15 |     84% |116-120, 140, 144, 158, 160-165, 190, 198 |
 | src/news\_recap/ingestion/cleaning.py                    |       53 |        1 |     98% |        75 |
 | src/news\_recap/ingestion/controllers.py                 |      120 |        8 |     93% |138, 160, 184, 207, 227, 265-266, 302 |
 | src/news\_recap/ingestion/dedup/calibration.py           |       66 |       32 |     52% |71-95, 105-107, 113-143 |
@@ -47,7 +47,7 @@
 | src/news\_recap/recap/tasks/prompts.py                   |        5 |        0 |    100% |           |
 | src/news\_recap/recap/tasks/reduce\_blocks.py            |       98 |       35 |     64% |62-70, 83-84, 90, 97, 100-101, 130-171 |
 | src/news\_recap/storage/io.py                            |       42 |        6 |     86% |33-36, 59, 73 |
-| **TOTAL**                                                | **3905** |  **891** | **77%** |           |
+| **TOTAL**                                                | **3925** |  **861** | **78%** |           |
 
 
 ## Setup coverage badge
