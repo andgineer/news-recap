@@ -220,9 +220,7 @@ class Classify(TaskLauncher):
         kept = []
         enrich_ids = []
         for a in ctx.digest.articles:
-            if a.verdict == "exclude":
-                continue
-            if a.article_id in ctx.article_map:
+            if a.verdict in ("ok", "follow") and a.article_id in ctx.article_map:
                 kept.append(ctx.article_map[a.article_id])
             if a.verdict in ("vague", "follow"):
                 enrich_ids.append(a.article_id)
@@ -302,9 +300,7 @@ class Classify(TaskLauncher):
             if a.verdict is not None and a.article_id in digest_by_id:
                 digest_by_id[a.article_id].verdict = a.verdict
 
-        all_kept = [
-            a.article_id for a in ctx.digest.articles if a.verdict and a.verdict != "exclude"
-        ]
+        all_kept = [a.article_id for a in ctx.digest.articles if a.verdict in ("ok", "follow")]
         all_enrich = [a.article_id for a in ctx.digest.articles if a.verdict in ("vague", "follow")]
 
         ctx.state["kept_entries"] = [
