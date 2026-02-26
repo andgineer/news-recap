@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_edbc1d63d483c2ca_enrich_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-26 16:27 +0000
+            created at 2026-02-26 16:49 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -355,7 +355,7 @@
     <p class="run run2"><span class="n"><a id="t273" href="#t273">273</a></span><span class="t">            <span class="nam">step_name</span><span class="op">=</span><span class="str">"recap_classify"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t274" href="#t274">274</a></span><span class="t">            <span class="nam">step_label</span><span class="op">=</span><span class="str">"classify batch"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t275" href="#t275">275</a></span><span class="t">            <span class="nam">start_batch</span><span class="op">=</span><span class="nam">next_batch_number</span><span class="op">(</span><span class="nam">ctx</span><span class="op">.</span><span class="nam">pdir</span><span class="op">,</span> <span class="str">"recap_classify"</span><span class="op">)</span> <span class="op">-</span> <span class="num">1</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t276" href="#t276">276</a></span><span class="t">            <span class="nam">max_parallel</span><span class="op">=</span><span class="nam">_MAX_PARALLEL</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t276" href="#t276">276</a></span><span class="t">            <span class="nam">max_parallel</span><span class="op">=</span><span class="nam">ctx</span><span class="op">.</span><span class="nam">inp</span><span class="op">.</span><span class="nam">effective_max_parallel</span><span class="op">(</span><span class="nam">_MAX_PARALLEL</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t277" href="#t277">277</a></span><span class="t">            <span class="nam">prepare_fn</span><span class="op">=</span><span class="nam">prepare</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t278" href="#t278">278</a></span><span class="t">            <span class="nam">parse_fn</span><span class="op">=</span><span class="nam">parse</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t279" href="#t279">279</a></span><span class="t">            <span class="nam">pf_logger</span><span class="op">=</span><span class="nam">pf_logger</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -405,7 +405,7 @@
             <a class="nav" href="z_edbc1d63d483c2ca_enrich_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-02-26 16:27 +0000
+            created at 2026-02-26 16:49 +0000
         </p>
     </div>
 </footer>

@@ -5,7 +5,7 @@
 | Name                                                     |    Stmts |     Miss |   Cover |   Missing |
 |--------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
-| src/news\_recap/config.py                                |      263 |       47 |     82% |222, 226, 228, 234, 240, 243, 247, 262, 264, 266, 268, 272, 274, 302, 309, 325, 327, 337-338, 342, 390-407, 416, 418, 437-442, 448, 458, 465, 472 |
+| src/news\_recap/config.py                                |      266 |       47 |     82% |226, 230, 232, 238, 244, 247, 251, 266, 268, 270, 272, 276, 278, 306, 313, 329, 331, 341-342, 346, 398-415, 424, 426, 445-450, 456, 466, 473, 480 |
 | src/news\_recap/http/fetcher.py                          |       42 |        4 |     90% |47, 92, 95, 98 |
 | src/news\_recap/http/html\_extractor.py                  |       29 |        7 |     76% |47-49, 60-62, 69 |
 | src/news\_recap/http/youtube\_extractor.py               |       94 |       15 |     84% |116-120, 140, 144, 158, 160-165, 190, 198 |
@@ -26,15 +26,15 @@
 | src/news\_recap/main.py                                  |       61 |        1 |     98% |       301 |
 | src/news\_recap/recap/agents/ai\_agent.py                |      119 |       74 |     38% |56-100, 105-115, 167-217, 225-236 |
 | src/news\_recap/recap/agents/echo.py                     |       20 |       20 |      0% |     19-53 |
-| src/news\_recap/recap/agents/routing.py                  |       94 |       17 |     82% |40, 52-60, 88, 114, 119, 143, 175, 177, 180, 182, 184, 186, 188 |
+| src/news\_recap/recap/agents/routing.py                  |       95 |       17 |     82% |41, 53-61, 90, 116, 121, 145, 177, 179, 182, 184, 186, 188, 190 |
 | src/news\_recap/recap/agents/subprocess.py               |      109 |       39 |     64% |22-23, 57, 68, 80-81, 88, 105-106, 125, 127, 131, 134, 145-146, 148, 172-205, 209-220 |
 | src/news\_recap/recap/contracts.py                       |       67 |       32 |     52% |49-50, 56-59, 65, 71-81, 87, 93-125, 131 |
 | src/news\_recap/recap/flow.py                            |       84 |       57 |     32% |45-59, 63-66, 73-74, 88-152 |
-| src/news\_recap/recap/launcher.py                        |       81 |       51 |     37% |29, 64-95, 109-118, 130-191 |
+| src/news\_recap/recap/launcher.py                        |       81 |       51 |     37% |29, 65-96, 110-119, 131-192 |
 | src/news\_recap/recap/loaders/resource\_cache.py         |       52 |        0 |    100% |           |
 | src/news\_recap/recap/loaders/resource\_loader.py        |      123 |       13 |     89% |85, 174-180, 184-186, 208, 219, 265, 274-275, 278, 281 |
 | src/news\_recap/recap/models.py                          |       47 |        8 |     83% |24-29, 32, 41 |
-| src/news\_recap/recap/storage/pipeline\_io.py            |      143 |       27 |     81% |59-62, 75-78, 92-112, 123-129, 152, 158-159, 173, 222, 233, 268 |
+| src/news\_recap/recap/storage/pipeline\_io.py            |      147 |       27 |     82% |69-72, 85-88, 102-122, 133-139, 162, 168-169, 183, 232, 243, 278 |
 | src/news\_recap/recap/storage/schemas.py                 |        1 |        1 |      0% |         7 |
 | src/news\_recap/recap/storage/workdir.py                 |       30 |       19 |     37% | 30, 40-71 |
 | src/news\_recap/recap/tasks/base.py                      |       52 |        6 |     88% |89-91, 100, 104, 107 |
@@ -47,7 +47,7 @@
 | src/news\_recap/recap/tasks/reduce\_blocks.py            |      142 |       31 |     78% |55, 166, 208-260 |
 | src/news\_recap/recap/tasks/split\_blocks.py             |       96 |        1 |     99% |       123 |
 | src/news\_recap/storage/io.py                            |       42 |        6 |     86% |33-36, 59, 73 |
-| **TOTAL**                                                | **3918** |  **748** | **81%** |           |
+| **TOTAL**                                                | **3926** |  **748** | **81%** |           |
 
 
 ## Setup coverage badge
