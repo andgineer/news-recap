@@ -533,6 +533,15 @@ class TestApplyReducePlan:
         assert len(splits) == 1
         assert splits[0].article_ids == ["a2", "a3", "a4"]
 
+    def test_deduplicates_article_ids(self):
+        blocks = [
+            {"title": "A", "article_ids": ["a1", "a2", "a3"]},
+            {"title": "B", "article_ids": ["a2", "a3", "a4"]},
+        ]
+        actions = [ReduceAction(kind="block", title="Merged", source_indices=[1, 2])]
+        final, _ = apply_reduce_plan(blocks, actions)
+        assert final[0].article_ids == ["a1", "a2", "a3", "a4"]
+
     def test_implicit_block_uses_original_title(self):
         blocks = [{"title": "Original", "article_ids": ["a1"]}]
         actions = [ReduceAction(kind="block", title="", source_indices=[1])]

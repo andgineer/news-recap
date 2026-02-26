@@ -10,6 +10,7 @@ Prefect inspects parameter annotations at runtime for the Inputs tab.
 
 import os
 import shlex
+import tempfile
 import time
 from pathlib import Path
 
@@ -114,6 +115,15 @@ def _log_agent_output(logger, step_name: str, result) -> None:
 # ---------------------------------------------------------------------------
 
 
+_INLINE_PROMPT_PREFIXES = (
+    "recap_classify",
+    "recap_enrich",
+    "recap_map",
+    "recap_reduce",
+    "recap_split",
+)
+
+
 def _run_agent_cli(
     *,
     manifest: TaskManifest,
@@ -143,6 +153,10 @@ def _run_agent_cli(
         prompt_file=Path("input") / "task_prompt.txt",
     )
 
+    use_isolated_dir = manifest.task_type.startswith(_INLINE_PROMPT_PREFIXES)
+    if use_isolated_dir:
+        run_args = _inject_skip_git_flag(run_args)
+
     cmd_line = run_args if isinstance(run_args, str) else shlex.join(run_args)
     meta_dir = Path(manifest.workdir) / "meta"
     meta_dir.mkdir(parents=True, exist_ok=True)
@@ -154,6 +168,15 @@ def _run_agent_cli(
     env["NEWS_RECAP_LLM_MODEL"] = model
 
     try:
+        if use_isolated_dir:
+            return _run_in_isolated_dir(
+                run_args=run_args,
+                env=env,
+                prompt_path=prompt_file,
+                timeout_seconds=timeout_seconds,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+            )
         return run_subprocess(
             run_args=run_args,
             env=env,
@@ -172,6 +195,53 @@ def _run_agent_cli(
             f"Agent failed to start: {error}",
             transient=True,
         ) from error
+
+
+def _inject_skip_git_flag(run_args: str | list[str]) -> str | list[str]:
+    """Insert ``--skip-git-repo-check`` after ``codex exec``."""
+    flag = "--skip-git-repo-check"
+    if isinstance(run_args, list):
+        if flag not in run_args:
+            try:
+                idx = run_args.index("exec") + 1
+            except ValueError:
+                idx = 1
+            run_args = [*run_args[:idx], flag, *run_args[idx:]]
+        return run_args
+    if flag not in run_args:
+        run_args = run_args.replace("codex exec", f"codex exec {flag}", 1)
+    return run_args
+
+
+def _run_in_isolated_dir(  # noqa: PLR0913
+    *,
+    run_args: str | list[str],
+    env: dict[str, str],
+    prompt_path: Path,
+    timeout_seconds: int,
+    stdout_path: Path,
+    stderr_path: Path,
+):
+    """Run the agent from a fresh temp directory to avoid git-repo context overhead.
+
+    Mirrors only ``input/task_prompt.txt`` into the temp dir so the
+    relative path in the command still resolves.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        dest = tmp / "input"
+        dest.mkdir()
+        dest_file = dest / "task_prompt.txt"
+        dest_file.write_text(prompt_path.read_text("utf-8"), "utf-8")
+
+        return run_subprocess(
+            run_args=run_args,
+            env=env,
+            cwd=tmp,
+            timeout_seconds=timeout_seconds,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+        )
 
 
 # ---------------------------------------------------------------------------

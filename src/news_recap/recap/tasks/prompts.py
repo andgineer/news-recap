@@ -101,18 +101,28 @@ event or storyline completely. Merge blocks that cover the same story — fully 
 partially. If after merging a block spans multiple distinct stories that deserve \
 separate titles, mark it as SPLIT.
 
-"Uncategorized" blocks contain leftover articles — merge each one into the \
-most relevant block, or keep as-is if no match.
+Blocks titled "Uncategorized" contain leftover articles that no desk claimed. \
+Assign each Uncategorized block to the single most relevant thematic block. \
+If no good match exists, mark the Uncategorized block as SPLIT so the next \
+step can redistribute its articles. Do NOT output any block titled \
+"Uncategorized".
 
 For each resulting block, write an informative title — the reader should \
 understand what happened from the title alone. Avoid vague labels like \
 "political news" or "terrible disaster".
+
+If a merged block contains more than 30 articles, it is almost certainly \
+too broad — mark it as SPLIT unless all articles genuinely cover one \
+specific event.
 
 If a merged block ended up too broad for one informative title, mark it \
 as SPLIT instead of BLOCK. A follow-up step will handle the splitting.
 
 Do NOT write any scripts, use any tools, or read any files.
 Print your output directly to stdout.
+
+CRITICAL: each source block number must appear in exactly one output line. \
+Never repeat a block number across multiple lines.
 
 Output format — one of two line types per block:
 
@@ -129,6 +139,11 @@ RECAP_SPLIT_PROMPT = """\
 You are a senior news editor. The block below is too broad for one informative \
 title. Split it into smaller blocks, each covering one specific event or \
 storyline.
+
+Group related articles aggressively — articles about the same country, event, \
+or topic belong together. Aim for roughly 5-15 blocks total. Do NOT create \
+single-article blocks unless an article is truly unrelated to every other \
+article in the list.
 
 For each resulting block, write an informative title — the reader should \
 understand what happened from the title alone.

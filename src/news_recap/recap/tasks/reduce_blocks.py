@@ -58,16 +58,11 @@ def _build_article_headline_map(
     return headline_map
 
 
-_MAX_TITLE_CHARS = 150
-
-
 def build_reduce_prompt(map_blocks: list[dict[str, Any]]) -> str:
     """Build the REDUCE prompt with numbered block titles and article counts."""
     lines = []
     for i, block in enumerate(map_blocks, 1):
         title = block["title"]
-        if len(title) > _MAX_TITLE_CHARS:
-            title = title[:_MAX_TITLE_CHARS].rsplit(" ", 1)[0] + "…"
         n = len(block["article_ids"])
         lines.append(f"{i}: {title} ({n} articles)")
     return RECAP_REDUCE_PROMPT.format(block_titles="\n".join(lines))
@@ -164,6 +159,8 @@ def apply_reduce_plan(
         for idx in action.source_indices:
             if 1 <= idx <= len(map_blocks):
                 merged_ids.extend(map_blocks[idx - 1]["article_ids"])
+
+        merged_ids = list(dict.fromkeys(merged_ids))
 
         if not merged_ids:
             continue
