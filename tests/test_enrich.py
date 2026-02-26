@@ -1,21 +1,23 @@
-"""Tests for enrich file-based I/O helpers and parallel integration."""
+"""Tests for enrich inline-prompt I/O helpers and parallel integration."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.models import DigestArticle
+from news_recap.recap.tasks.base import RecapPipelineError
 from news_recap.recap.tasks.enrich import (
     EnrichEntry,
+    _ARTICLE_SEPARATOR,
     _MAX_ARTICLE_CHARS,
     _MAX_BATCH,
-    _MAX_PARALLEL,
-    _MIN_BATCH,
+    _MAX_BATCH_CHARS,
     build_enrich_prompt,
-    parse_enrich_output_files,
+    parse_enrich_stdout,
     split_into_enrich_batches,
-    write_enrich_input_files,
 )
 
 
@@ -27,45 +29,45 @@ def _enrich_entry(article_id: str, title: str = "", text: str = "") -> EnrichEnt
     )
 
 
+# ---------------------------------------------------------------------------
+# build_enrich_prompt
+# ---------------------------------------------------------------------------
+
+
 class TestBuildEnrichPrompt:
-    def test_is_static_string(self):
-        prompt = build_enrich_prompt()
-        assert "input/articles/" in prompt
-        assert "output/articles/" in prompt
+    def test_embeds_articles_inline(self):
+        entries = [_enrich_entry("a1", title="First"), _enrich_entry("a2", title="Second")]
+        prompt = build_enrich_prompt(entries)
+        assert _ARTICLE_SEPARATOR in prompt
+        assert "1\nFirst" in prompt
+        assert "2\nSecond" in prompt
+
+    def test_no_unresolved_placeholders(self):
+        entries = [_enrich_entry("a1")]
+        prompt = build_enrich_prompt(entries)
         assert "{" not in prompt
 
-    def test_contains_instructions(self):
-        prompt = build_enrich_prompt()
-        assert "headline" in prompt.lower()
-        assert "excerpt" in prompt.lower()
+    def test_contains_expected_count(self):
+        entries = [_enrich_entry(str(i)) for i in range(5)]
+        prompt = build_enrich_prompt(entries)
+        assert "EXACTLY 5" in prompt
 
-
-class TestWriteEnrichInputFiles:
-    def test_creates_numbered_files(self, tmp_path):
-        entries = [_enrich_entry("a1"), _enrich_entry("a2")]
-        write_enrich_input_files(tmp_path, entries)
-        d = tmp_path / "input" / "articles"
-        assert (d / "1.txt").exists()
-        assert (d / "2.txt").exists()
-        assert not (d / "3.txt").exists()
-
-    def test_file_format(self, tmp_path):
-        entries = [_enrich_entry("a1", title="My Title", text="Para one.\n\nPara two.")]
-        write_enrich_input_files(tmp_path, entries)
-        content = (tmp_path / "input" / "articles" / "1.txt").read_text("utf-8")
-        lines = content.split("\n", 2)
-        assert lines[0] == "My Title"
-        assert lines[1] == ""
-        assert "Para one." in lines[2]
-        assert "Para two." in lines[2]
-
-    def test_truncates_long_text(self, tmp_path):
+    def test_truncates_long_text(self):
         long_text = "x" * (_MAX_ARTICLE_CHARS + 5000)
         entries = [_enrich_entry("a1", text=long_text)]
-        write_enrich_input_files(tmp_path, entries)
-        content = (tmp_path / "input" / "articles" / "1.txt").read_text("utf-8")
-        body = content.split("\n\n", 1)[1]
-        assert len(body.strip()) == _MAX_ARTICLE_CHARS
+        prompt = build_enrich_prompt(entries)
+        assert "x" * _MAX_ARTICLE_CHARS in prompt
+        assert "x" * (_MAX_ARTICLE_CHARS + 1) not in prompt
+
+    def test_article_body_included(self):
+        entries = [_enrich_entry("a1", title="Headline", text="Full article body here")]
+        prompt = build_enrich_prompt(entries)
+        assert "Full article body here" in prompt
+
+
+# ---------------------------------------------------------------------------
+# split_into_enrich_batches
+# ---------------------------------------------------------------------------
 
 
 class TestSplitIntoEnrichBatches:
@@ -73,125 +75,100 @@ class TestSplitIntoEnrichBatches:
         assert split_into_enrich_batches([]) == []
 
     def test_small_list_one_batch(self):
-        entries = [_enrich_entry(str(i)) for i in range(_MIN_BATCH)]
+        entries = [_enrich_entry(str(i)) for i in range(8)]
         batches = split_into_enrich_batches(entries)
         assert len(batches) == 1
-        assert len(batches[0]) == _MIN_BATCH
+        assert len(batches[0]) == 8
 
-    def test_maximizes_parallelism(self):
-        n = _MAX_BATCH * 3
-        entries = [_enrich_entry(str(i)) for i in range(n)]
+    def test_respects_max_batch(self):
+        entries = [_enrich_entry(str(i)) for i in range(_MAX_BATCH + 5)]
         batches = split_into_enrich_batches(entries)
-        assert len(batches) == min(_MAX_PARALLEL, n // _MIN_BATCH)
         assert all(len(b) <= _MAX_BATCH for b in batches)
-        assert sum(len(b) for b in batches) == n
+        assert sum(len(b) for b in batches) == _MAX_BATCH + 5
 
-    def test_even_distribution(self):
-        n = _MAX_BATCH * 2 + 1
-        entries = [_enrich_entry(str(i)) for i in range(n)]
+    def test_respects_char_budget(self):
+        big_text = "x" * 10_000
+        entries = [_enrich_entry(str(i), text=big_text) for i in range(20)]
         batches = split_into_enrich_batches(entries)
-        sizes = [len(b) for b in batches]
-        assert max(sizes) - min(sizes) <= 1
-
-    def test_respects_min_batch(self):
-        entries = [_enrich_entry(str(i)) for i in range(_MIN_BATCH + 1)]
-        batches = split_into_enrich_batches(entries)
-        assert len(batches) == 1
+        assert len(batches) > 1
+        for batch in batches:
+            total = sum(min(len(e.text), _MAX_ARTICLE_CHARS) + len(e.title) + 10 for e in batch)
+            assert total <= _MAX_BATCH_CHARS + _MAX_ARTICLE_CHARS
 
     def test_all_entries_preserved(self):
-        entries = [_enrich_entry(str(i)) for i in range(250)]
+        entries = [_enrich_entry(str(i)) for i in range(50)]
         batches = split_into_enrich_batches(entries)
         all_ids = [e.article_id for batch in batches for e in batch]
-        assert sorted(all_ids) == sorted(str(i) for i in range(250))
+        assert sorted(all_ids) == sorted(str(i) for i in range(50))
 
 
-def _write_output_article(tmp_path: Path, n: int, title: str, text: str) -> None:
-    d = tmp_path / "output" / "articles"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / f"{n}.txt").write_text(f"{title}\n\n{text}\n", "utf-8")
+# ---------------------------------------------------------------------------
+# parse_enrich_stdout
+# ---------------------------------------------------------------------------
 
 
-class TestParseEnrichOutputFiles:
+def _write_stdout(tmp_path: Path, content: str) -> Path:
+    p = tmp_path / "agent_stdout.log"
+    p.write_text(content, "utf-8")
+    return p
+
+
+class TestParseEnrichStdout:
     def test_basic_parse(self, tmp_path):
         entries = [_enrich_entry("a1"), _enrich_entry("a2")]
-        _write_output_article(tmp_path, 1, "New Title 1", "Excerpt one.")
-        _write_output_article(tmp_path, 2, "New Title 2", "Excerpt two.")
-        result = parse_enrich_output_files(tmp_path, entries)
-        assert result["a1"]["new_title"] == "New Title 1"
-        assert result["a1"]["clean_text"] == "Excerpt one."
-        assert result["a2"]["new_title"] == "New Title 2"
+        path = _write_stdout(tmp_path, "1\nNew Title One\n\n2\nNew Title Two\n\n")
+        result = parse_enrich_stdout(path, entries)
+        assert result == {"a1": "New Title One", "a2": "New Title Two"}
 
-    def test_missing_output_dir(self, tmp_path):
+    def test_missing_file_raises(self, tmp_path):
         entries = [_enrich_entry("a1")]
-        result = parse_enrich_output_files(tmp_path, entries)
-        assert result == {}
+        with pytest.raises(RecapPipelineError, match="stdout not found"):
+            parse_enrich_stdout(tmp_path / "nonexistent.log", entries)
 
-    def test_skips_non_numeric_filenames(self, tmp_path):
+    def test_out_of_range_skipped(self, tmp_path):
         entries = [_enrich_entry("a1")]
-        _write_output_article(tmp_path, 1, "Good", "Text.")
-        d = tmp_path / "output" / "articles"
-        (d / "readme.txt").write_text("ignore me", "utf-8")
-        result = parse_enrich_output_files(tmp_path, entries)
-        assert len(result) == 1
+        path = _write_stdout(tmp_path, "1\nGood Title\n\n99\nBad Title\n\n")
+        result = parse_enrich_stdout(path, entries)
+        assert result == {"a1": "Good Title"}
 
-    def test_skips_out_of_range(self, tmp_path):
+    def test_duplicate_ids_last_wins(self, tmp_path):
         entries = [_enrich_entry("a1")]
-        _write_output_article(tmp_path, 1, "Good", "Text.")
-        _write_output_article(tmp_path, 0, "Zero", "Bad.")
-        _write_output_article(tmp_path, 99, "Far", "Bad.")
-        result = parse_enrich_output_files(tmp_path, entries)
-        assert len(result) == 1
+        path = _write_stdout(tmp_path, "1\nFirst Version\n\n1\nSecond Version\n\n")
+        result = parse_enrich_stdout(path, entries)
+        assert result == {"a1": "Second Version"}
 
-    def test_skips_no_blank_line(self, tmp_path):
+    def test_empty_headline_skipped(self, tmp_path):
         entries = [_enrich_entry("a1"), _enrich_entry("a2")]
-        _write_output_article(tmp_path, 2, "Good", "Valid text.")
-        d = tmp_path / "output" / "articles"
-        (d / "1.txt").write_text("Title without separator and body", "utf-8")
-        result = parse_enrich_output_files(tmp_path, entries)
+        path = _write_stdout(tmp_path, "1\n  \n\n2\nGood Title\n\n")
+        result = parse_enrich_stdout(path, entries)
         assert "a1" not in result
-        assert "a2" in result
+        assert result["a2"] == "Good Title"
 
-    def test_skips_empty_title(self, tmp_path):
-        entries = [_enrich_entry("a1"), _enrich_entry("a2")]
-        _write_output_article(tmp_path, 2, "Good", "Valid text.")
-        d = tmp_path / "output" / "articles"
-        (d / "1.txt").write_text("\n\nSome excerpt text.", "utf-8")
-        result = parse_enrich_output_files(tmp_path, entries)
-        assert "a1" not in result
-        assert "a2" in result
+    def test_recognition_below_50_raises(self, tmp_path):
+        entries = [_enrich_entry(f"a{i}") for i in range(10)]
+        path = _write_stdout(tmp_path, "1\nOnly One\n\n")
+        with pytest.raises(RecapPipelineError, match="enriched only"):
+            parse_enrich_stdout(path, entries)
 
-    def test_skips_empty_excerpt(self, tmp_path):
-        entries = [_enrich_entry("a1"), _enrich_entry("a2")]
-        _write_output_article(tmp_path, 2, "Good", "Valid text.")
-        d = tmp_path / "output" / "articles"
-        (d / "1.txt").write_text("A Title\n\n", "utf-8")
-        result = parse_enrich_output_files(tmp_path, entries)
-        assert "a1" not in result
-        assert "a2" in result
-
-    def test_partial_output_accepted(self, tmp_path):
+    def test_partial_output_accepted_above_threshold(self, tmp_path):
         entries = [_enrich_entry(f"a{i}") for i in range(4)]
-        _write_output_article(tmp_path, 1, "T1", "Text 1.")
-        _write_output_article(tmp_path, 3, "T3", "Text 3.")
-        result = parse_enrich_output_files(tmp_path, entries)
-        assert len(result) == 2
-        assert "a0" in result
-        assert "a2" in result
+        stdout = "1\nT1\n\n2\nT2\n\n3\nT3\n\n"
+        path = _write_stdout(tmp_path, stdout)
+        result = parse_enrich_stdout(path, entries)
+        assert len(result) == 3
+        assert "a3" not in result
 
-    def test_low_recognition_returns_partial(self, tmp_path):
-        entries = [_enrich_entry(str(i)) for i in range(10)]
-        _write_output_article(tmp_path, 1, "T", "Text.")
-        result = parse_enrich_output_files(tmp_path, entries)
-        assert len(result) == 1
-        assert "0" in result
-
-    def test_multiline_excerpt(self, tmp_path):
+    def test_multiline_headline_joined(self, tmp_path):
         entries = [_enrich_entry("a1")]
-        excerpt = "Paragraph one.\n\nParagraph two.\n\nParagraph three."
-        _write_output_article(tmp_path, 1, "Title", excerpt)
-        result = parse_enrich_output_files(tmp_path, entries)
-        assert "Paragraph one." in result["a1"]["clean_text"]
-        assert "Paragraph three." in result["a1"]["clean_text"]
+        path = _write_stdout(tmp_path, "1\nFirst part\nSecond part\n\n")
+        result = parse_enrich_stdout(path, entries)
+        assert result["a1"] == "First part Second part"
+
+    def test_non_numeric_lines_ignored(self, tmp_path):
+        entries = [_enrich_entry("a1")]
+        path = _write_stdout(tmp_path, "Here is my analysis:\n\n1\nGood Title\n\n")
+        result = parse_enrich_stdout(path, entries)
+        assert result == {"a1": "Good Title"}
 
 
 # ---------------------------------------------------------------------------
@@ -254,24 +231,25 @@ class TestRunEnrichParallel:
         entries = self._make_enrich_entries(article_ids)
 
         batch_call_count = 0
+        prompts_by_task: dict[str, str] = {}
 
         def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
-            return f"enrich-{batch}"
+            tid = f"enrich-{batch}"
+            prompts_by_task[tid] = prompt
+            return tid
 
         def fake_agent_side_effect(*, pipeline_dir, step_name, task_id):
             nonlocal batch_call_count
             batch_call_count += 1
             workdir = ctx.pdir / task_id
-            input_dir = workdir / "input" / "articles"
-            output_dir = workdir / "output" / "articles"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            for f in sorted(input_dir.iterdir()):
-                lines = f.read_text("utf-8").strip().split("\n", 2)
-                title = lines[0]
-                (output_dir / f.name).write_text(
-                    f"New: {title}\n\nExcerpt for {title}.\n",
-                    "utf-8",
-                )
+            stdout_dir = workdir / "output"
+            stdout_dir.mkdir(parents=True, exist_ok=True)
+            import re
+
+            prompt_text = prompts_by_task.get(task_id, "")
+            nums = re.findall(r"===ARTICLE===\n(\d+)\n(.+)", prompt_text)
+            lines = [f"{num}\nNew: {title}\n" for num, title in nums]
+            (stdout_dir / "agent_stdout.log").write_text("\n".join(lines), "utf-8")
             return task_id
 
         mock_agent = MagicMock()
@@ -294,7 +272,7 @@ class TestRunEnrichParallel:
         assert len(enriched) == 25
         assert had_crash is False
         assert batch_call_count >= 2
-        assert all(enriched[sid]["new_title"].startswith("New:") for sid in article_ids)
+        assert all(enriched[sid].startswith("New:") for sid in article_ids)
 
     def test_partial_failure_triggers_retry(self, tmp_path, monkeypatch):
         """First round produces partial results; unprocessed articles retried in round 2."""
@@ -308,27 +286,29 @@ class TestRunEnrichParallel:
         entries = self._make_enrich_entries(article_ids)
 
         call_count = 0
+        prompts_by_task: dict[str, str] = {}
 
         def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
-            return f"enrich-{batch}"
+            tid = f"enrich-{batch}"
+            prompts_by_task[tid] = prompt
+            return tid
 
         def fake_agent_side_effect(*, pipeline_dir, step_name, task_id):
             nonlocal call_count
             call_count += 1
             workdir = ctx.pdir / task_id
-            input_dir = workdir / "input" / "articles"
-            output_dir = workdir / "output" / "articles"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            files = sorted(input_dir.iterdir())
-            for f in files:
-                n = int(f.stem)
-                if call_count == 1 and n > 3:
+            stdout_dir = workdir / "output"
+            stdout_dir.mkdir(parents=True, exist_ok=True)
+            import re
+
+            prompt_text = prompts_by_task.get(task_id, "")
+            nums = re.findall(r"===ARTICLE===\n(\d+)\n(.+)", prompt_text)
+            lines = []
+            for i, (num, title) in enumerate(nums):
+                if call_count == 1 and i >= 3:
                     continue
-                lines = f.read_text("utf-8").strip().split("\n", 2)
-                (output_dir / f.name).write_text(
-                    f"Enriched {lines[0]}\n\nExcerpt.\n",
-                    "utf-8",
-                )
+                lines.append(f"{num}\nEnriched {title}\n")
+            (stdout_dir / "agent_stdout.log").write_text("\n".join(lines), "utf-8")
             return task_id
 
         mock_agent = MagicMock()
@@ -352,8 +332,8 @@ class TestRunEnrichParallel:
         assert had_crash is False
         assert call_count == 2
 
-    def test_no_progress_stops_retries(self, tmp_path, monkeypatch):
-        """Agent produces no output files — loop stops after round 1 with warning."""
+    def test_empty_stdout_is_worker_crash(self, tmp_path, monkeypatch):
+        """Agent produces empty stdout — recognition error triggers had_crash."""
         from unittest.mock import MagicMock, patch
 
         from news_recap.recap.tasks import enrich as enrich_mod
@@ -372,7 +352,9 @@ class TestRunEnrichParallel:
             nonlocal call_count
             call_count += 1
             workdir = ctx.pdir / task_id
-            (workdir / "output" / "articles").mkdir(parents=True, exist_ok=True)
+            stdout_dir = workdir / "output"
+            stdout_dir.mkdir(parents=True, exist_ok=True)
+            (stdout_dir / "agent_stdout.log").write_text("", "utf-8")
             return task_id
 
         mock_agent = MagicMock()
@@ -380,11 +362,10 @@ class TestRunEnrichParallel:
             result=MagicMock(side_effect=lambda: fake_agent_no_output(**kw))
         )
 
-        mock_logger = MagicMock()
         with (
             patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
-            patch.object(enrich_mod, "get_run_logger", return_value=mock_logger),
+            patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
         ):
             result = enrich_mod._run_enrich(
                 ctx,
@@ -394,10 +375,8 @@ class TestRunEnrichParallel:
 
         enriched, had_crash = result
         assert len(enriched) == 0
-        assert had_crash is False
+        assert had_crash is True
         assert call_count == 1
-        warnings = [str(c) for c in mock_logger.warning.call_args_list if "No progress" in str(c)]
-        assert len(warnings) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -420,15 +399,21 @@ class TestEnrichCrashFlag:
 
         from news_recap.recap.tasks import enrich as enrich_mod
         from news_recap.recap.tasks import parallel as parallel_mod
-        from news_recap.recap.tasks.base import RecapPipelineError
 
         ctx = _make_fake_ctx(tmp_path)
-        entries = self._make_enrich_entries([f"art{i}" for i in range(20)])
+        big_text = "word " * 800
+        entries = [
+            EnrichEntry(article_id=f"art{i}", title=f"Title art{i}", text=big_text)
+            for i in range(20)
+        ]
 
         call_count = 0
+        prompts_by_task: dict[str, str] = {}
 
         def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
-            return f"enrich-{batch}"
+            tid = f"enrich-{batch}"
+            prompts_by_task[tid] = prompt
+            return tid
 
         def fake_agent(*, pipeline_dir, step_name, task_id):
             nonlocal call_count
@@ -436,15 +421,14 @@ class TestEnrichCrashFlag:
             if call_count == 2:
                 raise RecapPipelineError("recap_enrich", "agent crashed")
             workdir = ctx.pdir / task_id
-            input_dir = workdir / "input" / "articles"
-            output_dir = workdir / "output" / "articles"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            for f in sorted(input_dir.iterdir()):
-                lines = f.read_text("utf-8").strip().split("\n", 2)
-                (output_dir / f.name).write_text(
-                    f"New: {lines[0]}\n\nExcerpt.\n",
-                    "utf-8",
-                )
+            stdout_dir = workdir / "output"
+            stdout_dir.mkdir(parents=True, exist_ok=True)
+            import re
+
+            prompt_text = prompts_by_task.get(task_id, "")
+            nums = re.findall(r"===ARTICLE===\n(\d+)\n(.+)", prompt_text)
+            lines = [f"{num}\nNew: {title}\n" for num, title in nums]
+            (stdout_dir / "agent_stdout.log").write_text("\n".join(lines), "utf-8")
             return task_id
 
         mock_agent = MagicMock()
@@ -471,9 +455,7 @@ class TestEnrichCrashFlag:
         """Enrich.execute() persists partial enrichment and raises on crash."""
         from unittest.mock import MagicMock, patch
 
-        from news_recap.recap.contracts import ArticleIndexEntry
         from news_recap.recap.tasks import enrich as enrich_mod
-        from news_recap.recap.tasks.base import RecapPipelineError
         from news_recap.recap.tasks.enrich import Enrich
 
         ctx = _make_fake_ctx(tmp_path)
@@ -505,15 +487,7 @@ class TestEnrichCrashFlag:
         cached = {f"a{i}": (f"T{i}", "text " * 50) for i in range(3)}
 
         def fake_run_enrich(ctx, *, step_name, entries):
-            partial = {
-                entries[0].article_id: {
-                    "new_title": f"New {entries[0].title}",
-                    "clean_text": "ok",
-                },
-            }
-            return partial, True
-
-        import pytest
+            return {entries[0].article_id: f"New {entries[0].title}"}, True
 
         with (
             patch.object(enrich_mod, "load_cached_resource_texts", return_value=cached),
@@ -609,10 +583,7 @@ class TestEnrichCacheEmpty:
         cached = {"a0": ("T0", "text " * 50)}
 
         def fake_run_enrich(ctx, *, step_name, entries):
-            enriched = {
-                e.article_id: {"new_title": f"New {e.title}", "clean_text": "ok"} for e in entries
-            }
-            return enriched, False
+            return {e.article_id: f"New {e.title}" for e in entries}, False
 
         with (
             patch.object(enrich_mod, "load_cached_resource_texts", return_value=cached),

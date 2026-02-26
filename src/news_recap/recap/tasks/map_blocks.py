@@ -30,17 +30,17 @@ _BLOCK_RE = re.compile(r"^BLOCK:\s*(.+)$", re.IGNORECASE)
 
 def merge_enriched_into_index(
     entries: list[ArticleIndexEntry],
-    enriched: dict[str, dict[str, str]],
+    enriched: dict[str, str],
 ) -> list[ArticleIndexEntry]:
     """Update article titles from enrichment pass."""
     result: list[ArticleIndexEntry] = []
     for entry in entries:
-        enriched_data = enriched.get(entry.source_id)
-        if enriched_data and enriched_data.get("new_title"):
+        new_title = enriched.get(entry.source_id)
+        if new_title:
             result.append(
                 ArticleIndexEntry(
                     source_id=entry.source_id,
-                    title=enriched_data["new_title"],
+                    title=new_title,
                     url=entry.url,
                     source=entry.source,
                     published_at=entry.published_at,
@@ -225,7 +225,7 @@ class MapBlocks(TaskLauncher):
         pf_logger = get_run_logger()
 
         kept_entries: list[ArticleIndexEntry] = ctx.state["kept_entries"]
-        enriched_articles: dict[str, dict[str, str]] = ctx.state.get("enriched_articles", {})
+        enriched_articles: dict[str, str] = ctx.state.get("enriched_articles", {})
         entries = merge_enriched_into_index(kept_entries, enriched_articles)
 
         if not entries:

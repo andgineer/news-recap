@@ -80,16 +80,19 @@ rate above 30% raises `RecapPipelineError`.
 |---|---|
 | **Module** | `recap/tasks/enrich.py` |
 | **Task type** | `recap_enrich` |
-| **LLM I/O** | File-based: `input/articles/N.txt` → `output/articles/N.txt` |
+| **LLM I/O** | Inline prompt with article texts; agent prints new headlines to stdout |
 | **Reads state** | `enrich_ids` |
-| **Writes state** | `enriched_articles` — `dict[article_id, {"new_title": str, "clean_text": str}]` |
-| **Writes digest** | `articles[].enriched_title`, `articles[].enriched_text` |
+| **Writes state** | `enriched_articles` — `dict[article_id, str]` (article_id → new headline) |
+| **Writes digest** | `articles[].enriched_title` |
 
-Each article file has: line 1 = headline, blank line, body text (truncated
-to 30 000 chars). The agent writes output files in the same format: line 1
-= new headline, blank line, excerpt.
+Articles are embedded directly in the prompt, separated by `===ARTICLE===`.
+Each article block contains: number, headline, blank line, body text
+(truncated to 5 000 chars). The agent prints new headlines to stdout:
+number on one line, headline on the next, then a blank line.
 
-Batching: 7–10 articles per batch, up to 3 parallel workers. Unprocessed
+Batching: char-budget based — each batch stays within 60 000 chars of
+article text and at most 20 articles, up to 3 parallel workers.
+Recognition rate below 50% raises `RecapPipelineError`. Unprocessed
 articles are retried for up to 3 rounds. If a round makes no progress the
 loop stops early. Partial results are persisted; `fully_completed` is set
 to `False` so the step re-runs on the next pipeline invocation.

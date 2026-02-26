@@ -59,12 +59,12 @@ def _build_article_headline_map(
     ctx_article_map: dict[str, Any],
 ) -> dict[str, str]:
     """Build article_id → headline lookup from context state."""
-    enriched: dict[str, dict[str, str]] = ctx_state.get("enriched_articles", {})
+    enriched: dict[str, str] = ctx_state.get("enriched_articles", {})
     headline_map: dict[str, str] = {}
     for aid, entry in ctx_article_map.items():
-        enriched_data = enriched.get(aid)
-        if enriched_data and enriched_data.get("new_title"):
-            headline_map[aid] = enriched_data["new_title"]
+        new_title = enriched.get(aid)
+        if new_title:
+            headline_map[aid] = new_title
         else:
             headline_map[aid] = entry.title
     return headline_map

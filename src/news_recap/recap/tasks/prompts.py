@@ -37,29 +37,31 @@ Example output (4 headlines):
 {headlines_block}"""
 
 RECAP_ENRICH_BATCH_PROMPT = """\
-You are a senior news editor. Your job is to turn raw articles into \
-clear, informative pieces that respect the reader's time.
+You are a senior news editor. Your job is to rewrite article headlines so \
+the reader gets maximum information without opening the article.
 
-The directory input/articles/ contains numbered text files (1.txt, 2.txt, ...).
-Each file has: first line is the headline, then a blank line, then the article text.
+For each article below, write a headline that captures the essence of \
+the story — what happened, who is involved, where, when, and why it \
+matters. Be specific and factual — no clickbait, no vague teasers. \
+Write in the same language as the original article.
 
-For each input file, create a file with the same name in output/articles/.
-Each output file must have the same format: first line is the new headline, \
-then a blank line, then the excerpt.
+Do NOT write any scripts, use any tools, or read any files.
+Print your output directly to stdout.
 
-For each article:
-1. Read and understand the full story — what happened, who is involved, \
-where, when, and why it matters.
-2. Write a headline that captures the essence of the story so the reader \
-gets maximum information without opening the article. Be specific and \
-factual — no clickbait, no vague teasers.
-3. Distill the article into a concise, self-contained excerpt (1-3 paragraphs). \
-Keep every key fact — names, numbers, locations, dates — but cut filler, \
-repetition, and promotional language.
+Print EXACTLY {expected_count} entries. For each article, print:
+- The article number on its own line
+- The new headline on the next line
+- Then a blank line
 
-Write the headline and excerpt in the same language as the original article.
+Example output (2 articles):
+1
+Specific factual headline for first article
 
-Read and write files directly. Do not install packages or run web searches."""
+2
+Specific factual headline for second article
+
+=== ARTICLES ===
+{articles_block}"""
 
 RECAP_MAP_PROMPT = """\
 You are a senior news editor. Compress these headlines into around {max_blocks} \

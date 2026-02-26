@@ -36,7 +36,7 @@ class TestMergeEnrichedIntoIndex:
         entries = [
             ArticleIndexEntry(source_id="a1", title="Old", url="http://ex.com", source="src"),
         ]
-        enriched = {"a1": {"new_title": "New", "clean_text": "..."}}
+        enriched = {"a1": "New"}
         result = merge_enriched_into_index(entries, enriched)
         assert result[0].title == "New"
 
