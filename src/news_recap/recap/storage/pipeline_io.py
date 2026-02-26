@@ -13,7 +13,6 @@ import logging
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 import msgspec
@@ -29,23 +28,6 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_MIN_RESOURCE_CHARS = 200
 _PROGRESS_INTERVAL = 10
-
-
-def read_task_output(workdir_root: Path, task_id: str) -> dict[str, Any]:
-    """Read agent_result.json from a completed task workdir."""
-    path = workdir_root / task_id / "output" / "agent_result.json"
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text("utf-8"), strict=False)
-    except json.JSONDecodeError:
-        logger.warning("Invalid JSON in %s — returning empty result", path)
-        return {}
-
-
-def task_results_dir(workdir_root: Path, task_id: str) -> Path:
-    """Return the results subdirectory for a task."""
-    return workdir_root / task_id / "output" / "results"
 
 
 @dataclass(slots=True)
@@ -105,8 +87,6 @@ def materialize_step(  # noqa: PLR0913
     batch: int | None = None,
     article_entries: list[ArticleIndexEntry] | None = None,
     prompt: str,
-    extra_input_files: dict[str, bytes | str] | None = None,
-    schema_hint: str | None = None,
 ) -> str:
     """Create a task workdir with all input files and return the task_id."""
     task_id = make_task_id(step_name, batch)
@@ -128,8 +108,6 @@ def materialize_step(  # noqa: PLR0913
             metadata={"routing": routing.to_metadata()},
         ),
         articles_index=entries,
-        extra_input_files=extra_input_files,
-        output_schema_hint=schema_hint,
     )
     return task_id
 

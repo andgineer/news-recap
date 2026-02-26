@@ -29,22 +29,6 @@ class TaskInputContract:
 
 
 @dataclass(slots=True)
-class AgentOutputBlock:
-    """One output block with mandatory source mapping."""
-
-    text: str
-    source_ids: list[str]
-
-
-@dataclass(slots=True)
-class AgentOutputContract:
-    """Top-level output payload produced by backend."""
-
-    blocks: list[AgentOutputBlock]
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(slots=True)
 class TaskManifest:
     """Manifest stored with each queued task."""
 
@@ -57,12 +41,6 @@ class TaskManifest:
     output_result_path: str
     output_stdout_path: str
     output_stderr_path: str
-    continuity_summary_path: str | None = None
-    retrieval_context_path: str | None = None
-    story_context_path: str | None = None
-    input_resources_dir: str | None = None
-    output_results_dir: str | None = None
-    output_schema_hint: str | None = None
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -109,51 +87,6 @@ def write_articles_index(path: Path, articles: list[ArticleIndexEntry]) -> None:
     write_json(path, {"articles": [asdict(entry) for entry in articles]})
 
 
-def read_articles_index(path: Path) -> list[ArticleIndexEntry]:
-    """Deserialize allowed articles index."""
-
-    raw = load_json(path)
-    raw_articles = raw.get("articles")
-    if not isinstance(raw_articles, list):
-        raise TypeError("articles_index.articles must be an array")
-
-    entries: list[ArticleIndexEntry] = []
-    for item in raw_articles:
-        if not isinstance(item, dict):
-            raise TypeError("articles_index entry must be an object")
-        source_id = item.get("source_id")
-        title = item.get("title")
-        url = item.get("url")
-        source = item.get("source", "")
-        published_at = item.get("published_at")
-        if not isinstance(source_id, str) or not source_id.strip():
-            raise ValueError("articles_index.source_id must be a non-empty string")
-        if not isinstance(title, str):
-            raise TypeError("articles_index.title must be a string")
-        if not isinstance(url, str):
-            raise TypeError("articles_index.url must be a string")
-        if not isinstance(source, str):
-            raise TypeError("articles_index.source must be a string")
-        if published_at is not None and not isinstance(published_at, str):
-            raise ValueError("articles_index.published_at must be a string when provided")
-        entries.append(
-            ArticleIndexEntry(
-                source_id=source_id,
-                title=title,
-                url=url,
-                source=source,
-                published_at=published_at,
-            ),
-        )
-    return entries
-
-
-def write_agent_output(path: Path, payload: AgentOutputContract) -> None:
-    """Serialize backend output contract."""
-
-    write_json(path, asdict(payload))
-
-
 def read_manifest(path: Path) -> TaskManifest:
     """Load and validate task manifest."""
 
@@ -176,21 +109,6 @@ def read_manifest(path: Path) -> TaskManifest:
     if not isinstance(contract_version_raw, int) or contract_version_raw < 1:
         raise ValueError("task_manifest.contract_version must be an integer >= 1")
 
-    optional_str_fields = (
-        "continuity_summary_path",
-        "retrieval_context_path",
-        "story_context_path",
-        "input_resources_dir",
-        "output_results_dir",
-        "output_schema_hint",
-    )
-    optional_values: dict[str, str | None] = {}
-    for field_name in optional_str_fields:
-        field_value = raw.get(field_name)
-        if field_value is not None and not isinstance(field_value, str):
-            raise ValueError(f"task_manifest.{field_name} must be a string when provided")
-        optional_values[field_name] = str(field_value) if field_value is not None else None
-
     try:
         return TaskManifest(
             contract_version=int(contract_version_raw),
@@ -202,7 +120,6 @@ def read_manifest(path: Path) -> TaskManifest:
             output_result_path=str(raw["output_result_path"]),
             output_stdout_path=str(raw["output_stdout_path"]),
             output_stderr_path=str(raw["output_stderr_path"]),
-            **optional_values,
         )
     except Exception as error:  # noqa: BLE001
         raise ValueError(f"Invalid task manifest at {path}") from error
