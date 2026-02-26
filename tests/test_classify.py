@@ -140,12 +140,11 @@ class TestParseClassifyBatchStdout:
         assert kept == ["a1", "a2"]
         assert enrich == ["a1"]
 
-    def test_missing_file_defaults_all_ok(self, tmp_path):
+    def test_missing_file_raises(self, tmp_path):
         entries = [_make_entry("a1"), _make_entry("a2")]
         missing = tmp_path / "nonexistent.log"
-        kept, enrich = parse_classify_batch_stdout(missing, entries)
-        assert kept == ["a1", "a2"]
-        assert enrich == []
+        with pytest.raises(RecapPipelineError, match="Verdicts file not found"):
+            parse_classify_batch_stdout(missing, entries)
 
     def test_missing_markers_scans_full_text(self, tmp_path):
         entries = [_make_entry("a1")]
@@ -176,3 +175,104 @@ class TestParseClassifyBatchStdout:
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "x4" in kept
         assert len(kept) == 5
+
+
+class TestClassifyExecutePartialPersist:
+    """Verify that Classify.execute() syncs partial verdicts and raises on batch failure."""
+
+    def test_execute_partial_persist_and_raise(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from news_recap.recap.contracts import ArticleIndexEntry
+        from news_recap.recap.models import Digest
+        from news_recap.recap.storage.pipeline_io import PipelineInput
+        from news_recap.recap.tasks import classify as classify_mod
+        from news_recap.recap.tasks import parallel as parallel_mod
+        from news_recap.recap.tasks.base import FlowContext
+        from news_recap.recap.tasks.classify import Classify
+
+        pdir = tmp_path / "pipeline"
+        pdir.mkdir()
+
+        articles = [_make_entry(f"a{i}") for i in range(6)]
+
+        inp = MagicMock(spec=PipelineInput)
+        inp.articles = articles
+        inp.preferences = _make_prefs()
+
+        digest = Digest(
+            digest_id="test",
+            business_date="2026-01-01",
+            status="running",
+            pipeline_dir=str(pdir),
+            articles=[
+                DigestArticle(
+                    article_id=a.article_id,
+                    title=a.title,
+                    url=a.url,
+                    source=a.source,
+                    published_at=a.published_at,
+                    clean_text="",
+                )
+                for a in articles
+            ],
+        )
+
+        ctx = FlowContext(
+            pdir=pdir,
+            workdir_mgr=MagicMock(),
+            inp=inp,
+            article_map={
+                a.article_id: ArticleIndexEntry(
+                    source_id=a.article_id,
+                    title=a.title,
+                    url=a.url,
+                    source=a.source,
+                )
+                for a in articles
+            },
+            digest=digest,
+        )
+
+        batch_num = 0
+
+        def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
+            return f"classify-{batch}"
+
+        def fake_agent_side_effect(*, pipeline_dir, step_name, task_id):
+            nonlocal batch_num
+            batch_num += 1
+            if batch_num == 2:
+                raise RecapPipelineError("recap_classify", "agent crashed")
+            workdir = pdir / task_id / "output"
+            workdir.mkdir(parents=True, exist_ok=True)
+            content = "\n".join(f"{i + 1}: ok" for i in range(6))
+            (workdir / "agent_stdout.log").write_text(content, "utf-8")
+            return task_id
+
+        mock_agent = MagicMock()
+        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
+            result=MagicMock(side_effect=lambda: fake_agent_side_effect(**kw))
+        )
+
+        with (
+            patch.object(classify_mod, "materialize_step", side_effect=fake_materialize),
+            patch.object(parallel_mod, "run_ai_agent", mock_agent),
+            patch.object(classify_mod, "get_run_logger", return_value=MagicMock()),
+            patch.object(
+                classify_mod,
+                "split_into_classify_batches",
+                return_value=[
+                    articles[:3],
+                    articles[3:],
+                ],
+            ),
+        ):
+            with pytest.raises(RecapPipelineError, match="batch.*failed"):
+                inst = Classify(ctx)
+                inst.execute()
+
+        classified = [a for a in digest.articles if a.verdict is not None]
+        assert len(classified) >= 3
+        unclassified = [a for a in digest.articles if a.verdict is None]
+        assert len(unclassified) >= 3

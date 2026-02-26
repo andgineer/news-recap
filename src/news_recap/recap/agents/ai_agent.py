@@ -40,7 +40,7 @@ _TAIL_LINES = 30
 # ---------------------------------------------------------------------------
 
 
-@task(cache_policy=INPUTS, persist_result=True, retries=2, retry_delay_seconds=30)
+@task(cache_policy=INPUTS, persist_result=True)
 def run_ai_agent(
     pipeline_dir: str,
     step_name: str,

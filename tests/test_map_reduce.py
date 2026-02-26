@@ -133,10 +133,10 @@ class TestParseMapStdout:
         with pytest.raises(RecapPipelineError, match="coverage"):
             parse_map_stdout(stdout, entries, worker=1)
 
-    def test_missing_file_returns_empty(self, tmp_path):
+    def test_missing_file_raises(self, tmp_path):
         entries = [_make_index_entry("a0")]
-        blocks = parse_map_stdout(tmp_path / "missing.log", entries, worker=1)
-        assert blocks == []
+        with pytest.raises(RecapPipelineError, match="MAP stdout not found"):
+            parse_map_stdout(tmp_path / "missing.log", entries, worker=1)
 
     def test_ignores_invalid_numbers(self, tmp_path):
         entries = [_make_index_entry(f"a{i}") for i in range(3)]
@@ -156,6 +156,158 @@ class TestParseMapStdout:
         )
         blocks = parse_map_stdout(stdout, entries, worker=1)
         assert len(blocks) == 2
+
+
+class TestMapBlocksExecute:
+    """Integration tests for MapBlocks.execute() partial-persist and resume."""
+
+    def _make_ctx(self, tmp_path, entries):
+        from unittest.mock import MagicMock
+
+        from news_recap.recap.models import Digest
+        from news_recap.recap.storage.pipeline_io import PipelineInput
+        from news_recap.recap.tasks.base import FlowContext
+
+        pdir = tmp_path / "pipeline"
+        pdir.mkdir()
+
+        inp = MagicMock(spec=PipelineInput)
+        inp.preferences = MagicMock()
+        inp.preferences.follow = "none"
+
+        digest = Digest(
+            digest_id="test",
+            business_date="2026-01-01",
+            status="running",
+            pipeline_dir=str(pdir),
+            articles=[],
+        )
+
+        ctx = FlowContext(
+            pdir=pdir,
+            workdir_mgr=MagicMock(),
+            inp=inp,
+            article_map={e.source_id: e for e in entries},
+            digest=digest,
+        )
+        ctx.state["kept_entries"] = entries
+        ctx.state["enriched_articles"] = {}
+        return ctx
+
+    def test_resume_from_partial_blocks(self, tmp_path):
+        """Pre-populated digest.blocks -> only uncovered headlines sent to workers."""
+        from unittest.mock import MagicMock, patch
+
+        from news_recap.recap.models import DigestBlock
+        from news_recap.recap.tasks import map_blocks as map_mod
+        from news_recap.recap.tasks import parallel as parallel_mod
+        from news_recap.recap.tasks.map_blocks import MapBlocks
+
+        entries = [_make_index_entry(f"a{i}") for i in range(6)]
+        ctx = self._make_ctx(tmp_path, entries)
+
+        ctx.digest.blocks = [
+            DigestBlock(title="Existing", article_ids=["a0", "a1", "a2"]),
+        ]
+
+        submitted_chunks: list[list[ArticleIndexEntry]] = []
+
+        def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
+            return f"map-{batch}"
+
+        def fake_agent(*, pipeline_dir, step_name, task_id):
+            workdir = ctx.pdir / task_id / "output"
+            workdir.mkdir(parents=True, exist_ok=True)
+            (workdir / "agent_stdout.log").write_text(
+                "BLOCK: New block\n1, 2, 3\n",
+                "utf-8",
+            )
+            return task_id
+
+        orig_split = map_mod.split_into_map_chunks
+
+        def tracking_split(e):
+            submitted_chunks.extend(orig_split(e))
+            return orig_split(e)
+
+        mock_agent = MagicMock()
+        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
+            result=MagicMock(side_effect=lambda: fake_agent(**kw))
+        )
+
+        with (
+            patch.object(map_mod, "materialize_step", side_effect=fake_materialize),
+            patch.object(parallel_mod, "run_ai_agent", mock_agent),
+            patch.object(map_mod, "split_into_map_chunks", side_effect=tracking_split),
+            patch.object(map_mod, "get_run_logger", return_value=MagicMock()),
+        ):
+            inst = MapBlocks(ctx)
+            inst.execute()
+
+        worker_ids = {e.source_id for chunk in submitted_chunks for e in chunk}
+        assert "a0" not in worker_ids
+        assert "a1" not in worker_ids
+        assert "a2" not in worker_ids
+        assert len(ctx.digest.blocks) > 1
+
+    def test_failed_worker_persists_and_raises(self, tmp_path):
+        """One worker fails -> partial blocks saved to digest, RecapPipelineError raised."""
+        from unittest.mock import MagicMock, patch
+
+        import pytest
+
+        from news_recap.recap.tasks import map_blocks as map_mod
+        from news_recap.recap.tasks import parallel as parallel_mod
+        from news_recap.recap.tasks.base import RecapPipelineError
+        from news_recap.recap.tasks.map_blocks import MapBlocks
+
+        entries = [_make_index_entry(f"a{i}") for i in range(6)]
+        ctx = self._make_ctx(tmp_path, entries)
+
+        call_count = 0
+
+        def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
+            return f"map-{batch}"
+
+        def fake_agent(*, pipeline_dir, step_name, task_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RecapPipelineError("recap_map", "agent crashed")
+            workdir = ctx.pdir / task_id / "output"
+            workdir.mkdir(parents=True, exist_ok=True)
+            (workdir / "agent_stdout.log").write_text(
+                "BLOCK: Good block\n1, 2, 3\n",
+                "utf-8",
+            )
+            return task_id
+
+        mock_agent = MagicMock()
+        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
+            result=MagicMock(side_effect=lambda: fake_agent(**kw))
+        )
+
+        with (
+            patch.object(map_mod, "materialize_step", side_effect=fake_materialize),
+            patch.object(parallel_mod, "run_ai_agent", mock_agent),
+            patch.object(map_mod, "get_run_logger", return_value=MagicMock()),
+            patch.object(
+                map_mod,
+                "split_into_map_chunks",
+                return_value=[
+                    entries[:3],
+                    entries[3:],
+                ],
+            ),
+        ):
+            with pytest.raises(RecapPipelineError, match="Worker failure"):
+                inst = MapBlocks(ctx)
+                inst.execute()
+
+        assert inst.fully_completed is False
+        assert len(ctx.digest.blocks) >= 1
+        saved_ids = {aid for b in ctx.digest.blocks for aid in b.article_ids}
+        assert len(saved_ids) > 0
 
 
 class TestParseReduceOutput:

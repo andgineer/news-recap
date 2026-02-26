@@ -1,7 +1,7 @@
 """Base types and checkpoint machinery for the recap pipeline.
 
-Shared types (``RecapPipelineError``, ``PipelineStepResult``, …) live
-here so every task module can import them without circular deps.
+Shared types (``RecapPipelineError``, ``FlowContext``, …) live here so
+every task module can import them without circular deps.
 
 ``TaskLauncher`` is the base class for pipeline steps — see its docstring.
 """
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -38,28 +37,6 @@ class RecapPipelineError(RuntimeError):
         self.step = step
 
 
-@dataclass(slots=True)
-class PipelineStepResult:
-    """Result of a single pipeline step."""
-
-    step_name: str
-    task_id: str | None
-    status: str
-    error: str | None = None
-
-
-@dataclass(slots=True)
-class PipelineRunResult:
-    """Result of a complete pipeline run."""
-
-    pipeline_id: str
-    business_date: date
-    steps: list[PipelineStepResult] = field(default_factory=list)
-    digest: dict[str, Any] | None = None
-    status: str = "running"
-    error: str | None = None
-
-
 class StopPipelineError(Exception):
     """Sentinel raised when ``stop_after`` is reached.
 
@@ -80,7 +57,6 @@ class FlowContext:
     workdir_mgr: TaskWorkdirManager
     inp: PipelineInput
     article_map: dict[str, ArticleIndexEntry]
-    result: PipelineRunResult
     digest: Digest
     stop_after: str | None = None
     state: dict[str, Any] = field(default_factory=dict)

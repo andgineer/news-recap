@@ -14,7 +14,6 @@ from typing import Any
 
 from prefect.logging import get_run_logger
 
-from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.storage.pipeline_io import (
     load_cached_resource_texts,
     materialize_step,
@@ -22,10 +21,10 @@ from news_recap.recap.storage.pipeline_io import (
 )
 from news_recap.recap.tasks.base import (
     FlowContext,
-    PipelineStepResult,
     RecapPipelineError,
     TaskLauncher,
 )
+from news_recap.recap.tasks.parallel import submit_and_collect
 from news_recap.recap.tasks.prompts import RECAP_ENRICH_BATCH_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -159,109 +158,14 @@ def parse_enrich_output_files(
 # ---------------------------------------------------------------------------
 
 
-def _run_enrich(
-    ctx: FlowContext,
-    *,
+def _warn_unprocessed(
+    pf_logger: Any,
     step_name: str,
     entries: list[EnrichEntry],
-) -> dict[str, dict[str, str]]:
-    """Batch, write input files, run agents, parse output.
-
-    Resources must already be loaded; callers pass ready ``EnrichEntry``
-    objects.  Articles not processed by the agent are requeued for
-    subsequent rounds (up to ``_MAX_ROUNDS``).  Agent crashes are retried
-    by Prefect (``retries=2`` on ``run_ai_agent``); partial output
-    triggers requeue within our retry loop.
-    """
-    pf_logger = get_run_logger()
-
-    if not entries:
-        pf_logger.info("[%s] No articles to enrich", step_name)
-        return {}
-
-    remaining = list(entries)
-    total = len(remaining)
-    pf_logger.info("[%s] %d articles to enrich", step_name, total)
-
-    prompt = build_enrich_prompt()
-    all_enriched: dict[str, dict[str, str]] = {}
-    batch_counter = next_batch_number(ctx.pdir, step_name) - 1
-
-    for round_num in range(1, _MAX_ROUNDS + 1):
-        if not remaining:
-            break
-
-        enriched_before = len(all_enriched)
-        batches = split_into_enrich_batches(remaining)
-        pf_logger.info(
-            "[%s] Round %d: %d articles -> %d batch(es)",
-            step_name,
-            round_num,
-            len(remaining),
-            len(batches),
-        )
-        remaining = []
-
-        for window_start in range(0, len(batches), _MAX_PARALLEL):
-            window = batches[window_start : window_start + _MAX_PARALLEL]
-
-            futures: list[tuple[int, list[EnrichEntry], Any]] = []
-            for batch in window:
-                batch_counter += 1
-                task_id = materialize_step(
-                    ctx.workdir_mgr,
-                    ctx.inp,
-                    step_name=step_name,
-                    batch=batch_counter,
-                    prompt=prompt,
-                )
-                write_enrich_input_files(ctx.pdir / task_id, batch)
-                pf_logger.info(
-                    "[%s] Batch %d — %d articles",
-                    step_name,
-                    batch_counter,
-                    len(batch),
-                )
-                future = run_ai_agent.with_options(task_run_name=task_id).submit(
-                    pipeline_dir=str(ctx.pdir),
-                    step_name=step_name,
-                    task_id=task_id,
-                )
-                futures.append((batch_counter, batch, future))
-
-            for batch_num, batch, future in futures:
-                try:
-                    tid = future.result()
-                except RecapPipelineError as exc:
-                    pf_logger.error("%s batch %d failed: %s", step_name, batch_num, exc)
-                    ctx.result.steps.append(
-                        PipelineStepResult(
-                            f"{step_name} batch {batch_num}",
-                            None,
-                            "failed",
-                        ),
-                    )
-                    continue
-
-                batch_result = parse_enrich_output_files(ctx.pdir / tid, batch)
-                all_enriched.update(batch_result)
-                ctx.result.steps.append(
-                    PipelineStepResult(
-                        f"{step_name} batch {batch_num}",
-                        tid,
-                        "completed",
-                    ),
-                )
-                remaining.extend(e for e in batch if e.article_id not in batch_result)
-
-        if remaining and len(all_enriched) == enriched_before:
-            pf_logger.warning(
-                "[%s] No progress in round %d — stopping retries",
-                step_name,
-                round_num,
-            )
-            break
-
+    all_enriched: dict[str, dict[str, str]],
+    total: int,
+) -> None:
+    remaining = [e for e in entries if e.article_id not in all_enriched]
     if remaining:
         pf_logger.warning(
             "[%s] %d/%d articles still unprocessed after %d round(s)",
@@ -271,8 +175,102 @@ def _run_enrich(
             _MAX_ROUNDS,
         )
 
+
+def _run_enrich(
+    ctx: FlowContext,
+    *,
+    step_name: str,
+    entries: list[EnrichEntry],
+) -> tuple[dict[str, dict[str, str]], bool]:
+    """Batch, write input files, run agents, parse output.
+
+    Resources must already be loaded; callers pass ready ``EnrichEntry``
+    objects.  Articles not processed by the agent are requeued for
+    subsequent rounds (up to ``_MAX_ROUNDS``).  Partial agent output
+    triggers requeue within our retry loop.
+
+    Returns ``(enriched_dict, had_crash)``.  When *had_crash* is True
+    the caller should persist partial results and stop the pipeline.
+    """
+    pf_logger = get_run_logger()
+
+    if not entries:
+        pf_logger.info("[%s] No articles to enrich", step_name)
+        return {}, False
+
+    remaining = list(entries)
+    total = len(remaining)
+    pf_logger.info("[%s] %d articles to enrich", step_name, total)
+
+    prompt = build_enrich_prompt()
+    all_enriched: dict[str, dict[str, str]] = {}
+    batch_counter = next_batch_number(ctx.pdir, step_name) - 1
+    had_crash = False
+
+    def prepare(batch: list[EnrichEntry], batch_num: int) -> str:
+        task_id = materialize_step(
+            ctx.workdir_mgr,
+            ctx.inp,
+            step_name=step_name,
+            batch=batch_num,
+            prompt=prompt,
+        )
+        write_enrich_input_files(ctx.pdir / task_id, batch)
+        pf_logger.info("[%s] Batch %d — %d articles", step_name, batch_num, len(batch))
+        return task_id
+
+    def parse(task_id: str, batch: list[EnrichEntry], _batch_num: int) -> dict:
+        return parse_enrich_output_files(ctx.pdir / task_id, batch)
+
+    for round_num in range(1, _MAX_ROUNDS + 1):
+        if not remaining:
+            break
+
+        enriched_before = len(all_enriched)
+        round_entries = list(remaining)
+        batches = split_into_enrich_batches(round_entries)
+        pf_logger.info(
+            "[%s] Round %d: %d articles -> %d batch(es)",
+            step_name,
+            round_num,
+            len(round_entries),
+            len(batches),
+        )
+
+        batch_results, n_failed, batch_counter = submit_and_collect(
+            ctx,
+            batches,
+            step_name=step_name,
+            step_label=f"{step_name} batch",
+            start_batch=batch_counter,
+            max_parallel=_MAX_PARALLEL,
+            prepare_fn=prepare,
+            parse_fn=parse,
+            pf_logger=pf_logger,
+        )
+
+        for batch_result in batch_results:
+            all_enriched.update(batch_result)
+
+        if n_failed > 0:
+            had_crash = True
+            break
+
+        remaining = [e for e in round_entries if e.article_id not in all_enriched]
+
+        if remaining and len(all_enriched) == enriched_before:
+            pf_logger.warning(
+                "[%s] No progress in round %d — stopping retries",
+                step_name,
+                round_num,
+            )
+            break
+
+    if not had_crash:
+        _warn_unprocessed(pf_logger, step_name, entries, all_enriched, total)
+
     pf_logger.info("[%s] %d/%d articles enriched", step_name, len(all_enriched), total)
-    return all_enriched
+    return all_enriched, had_crash
 
 
 class Enrich(TaskLauncher):
@@ -332,7 +330,7 @@ class Enrich(TaskLauncher):
             self.fully_completed = False
             return
 
-        new_enriched = _run_enrich(ctx, step_name="recap_enrich", entries=entries)
+        new_enriched, had_crash = _run_enrich(ctx, step_name="recap_enrich", entries=entries)
 
         all_enriched = {**prev_enriched, **new_enriched}
         ctx.state["enriched_articles"] = all_enriched
@@ -342,6 +340,14 @@ class Enrich(TaskLauncher):
             if aid in by_id:
                 by_id[aid].enriched_title = data.get("new_title")
                 by_id[aid].enriched_text = data.get("clean_text")
+
+        if had_crash:
+            self.fully_completed = False
+            raise RecapPipelineError(
+                "recap_enrich",
+                f"Agent crash during enrichment"
+                f" ({len(new_enriched)}/{len(remaining_ids)} enriched)",
+            )
 
         if len(new_enriched) < len(remaining_ids):
             self.fully_completed = False

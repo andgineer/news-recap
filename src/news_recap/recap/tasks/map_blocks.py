@@ -9,16 +9,14 @@ from typing import Any
 
 from prefect.logging import get_run_logger
 
-from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.models import DigestBlock
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
-    FlowContext,
-    PipelineStepResult,
     RecapPipelineError,
     TaskLauncher,
 )
+from news_recap.recap.tasks.parallel import submit_and_collect
 from news_recap.recap.tasks.prompts import RECAP_MAP_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -27,7 +25,6 @@ _MAX_PARALLEL = 3
 _CHUNK_SIZE = 300
 _MIN_COVERAGE = 0.50
 _WARN_COVERAGE = 0.80
-_MIN_BATCH_SUCCESS_RATE = 0.5
 _BLOCK_RE = re.compile(r"^BLOCK:\s*(.+)$", re.IGNORECASE)
 
 
@@ -97,29 +94,13 @@ def build_map_prompt(
     )
 
 
-def parse_map_stdout(
-    stdout_path: Path,
-    entries: list[ArticleIndexEntry],
+def _parse_blocks_from_text(
+    text: str,
+    valid_nums: set[str],
+    num_to_id: dict[str, str],
     worker: int,
 ) -> list[dict[str, Any]]:
-    """Parse MAP worker stdout into blocks.
-
-    Expected format::
-
-        BLOCK: <title>
-        1, 3, 5, 12
-
-    Returns list of ``{"title": str, "article_ids": list[str], "worker": int}``.
-    Raises ``RecapPipelineError`` if headline coverage drops below 50%.
-    """
-    if not stdout_path.exists():
-        logger.warning("MAP stdout not found: %s — returning empty blocks", stdout_path)
-        return []
-
-    text = stdout_path.read_text("utf-8")
-    valid_nums = {str(i + 1) for i in range(len(entries))}
-    num_to_id = {str(i + 1): entries[i].source_id for i in range(len(entries))}
-
+    """Parse ``BLOCK:``/numbers sections from raw MAP worker stdout."""
     blocks: list[dict[str, Any]] = []
     current_title: str | None = None
     current_nums: list[str] = []
@@ -148,7 +129,15 @@ def parse_map_stdout(
                 if n in valid_nums and n not in current_nums:
                     current_nums.append(n)
     _flush()
+    return blocks
 
+
+def _validate_map_blocks(
+    blocks: list[dict[str, Any]],
+    entries: list[ArticleIndexEntry],
+    worker: int,
+) -> list[dict[str, Any]]:
+    """Check coverage, warn on duplicates, append uncategorized bucket."""
     assigned = {aid for b in blocks for aid in b["article_ids"]}
     all_ids = {e.source_id for e in entries}
     coverage = len(assigned) / len(entries) if entries else 1.0
@@ -190,6 +179,35 @@ def parse_map_stdout(
     return blocks
 
 
+def parse_map_stdout(
+    stdout_path: Path,
+    entries: list[ArticleIndexEntry],
+    worker: int,
+) -> list[dict[str, Any]]:
+    """Parse MAP worker stdout into blocks.
+
+    Expected format::
+
+        BLOCK: <title>
+        1, 3, 5, 12
+
+    Returns list of ``{"title": str, "article_ids": list[str], "worker": int}``.
+    Raises ``RecapPipelineError`` if headline coverage drops below 50%.
+    """
+    if not stdout_path.exists():
+        raise RecapPipelineError(
+            "recap_map",
+            f"MAP stdout not found: {stdout_path}",
+        )
+
+    text = stdout_path.read_text("utf-8")
+    valid_nums = {str(i + 1) for i in range(len(entries))}
+    num_to_id = {str(i + 1): entries[i].source_id for i in range(len(entries))}
+
+    blocks = _parse_blocks_from_text(text, valid_nums, num_to_id, worker)
+    return _validate_map_blocks(blocks, entries, worker)
+
+
 class MapBlocks(TaskLauncher):
     """Group headlines into titled blocks via parallel MAP workers."""
 
@@ -215,6 +233,23 @@ class MapBlocks(TaskLauncher):
             ctx.state["map_blocks"] = []
             return
 
+        existing_blocks: list[dict[str, Any]] = []
+        if ctx.digest.blocks:
+            existing_blocks = [
+                {"title": b.title, "article_ids": b.article_ids, "worker": 0}
+                for b in ctx.digest.blocks
+            ]
+            covered_ids = {aid for b in existing_blocks for aid in b["article_ids"]}
+            entries = [e for e in entries if e.source_id not in covered_ids]
+            pf_logger.info(
+                "[map] Resuming: %d blocks from checkpoint, %d uncovered headlines remain",
+                len(existing_blocks),
+                len(entries),
+            )
+            if not entries:
+                ctx.state["map_blocks"] = existing_blocks
+                return
+
         max_blocks = max(5, len(entries) // 15)
         chunks = split_into_map_chunks(entries)
         pf_logger.info(
@@ -227,55 +262,36 @@ class MapBlocks(TaskLauncher):
         follow_policy = ctx.inp.preferences.follow or "none"
         per_chunk_blocks = max(5, max_blocks // len(chunks))
 
-        all_blocks: list[dict[str, Any]] = []
-        batch_counter = next_batch_number(ctx.pdir, "recap_map") - 1
-
-        for window_start in range(0, len(chunks), _MAX_PARALLEL):
-            window = chunks[window_start : window_start + _MAX_PARALLEL]
-
-            futures: list[tuple[int, list[ArticleIndexEntry], Any]] = []
-            for chunk in window:
-                batch_counter += 1
-                prompt = build_map_prompt(chunk, follow_policy, per_chunk_blocks)
-                task_id = materialize_step(
-                    ctx.workdir_mgr,
-                    ctx.inp,
-                    step_name="recap_map",
-                    batch=batch_counter,
-                    prompt=prompt,
-                )
-                pf_logger.info("[map] Worker %d — %d headlines", batch_counter, len(chunk))
-                future = run_ai_agent.with_options(task_run_name=task_id).submit(
-                    pipeline_dir=str(ctx.pdir),
-                    step_name="recap_map",
-                    task_id=task_id,
-                )
-                futures.append((batch_counter, chunk, future))
-
-            for worker_num, chunk, future in futures:
-                try:
-                    tid = future.result()
-                    stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
-                    worker_blocks = parse_map_stdout(stdout_path, chunk, worker_num)
-                    all_blocks.extend(worker_blocks)
-                    ctx.result.steps.append(
-                        PipelineStepResult(f"map worker {worker_num}", tid, "completed"),
-                    )
-                except RecapPipelineError as exc:
-                    pf_logger.error("MAP worker %d failed: %s", worker_num, exc)
-                    ctx.result.steps.append(
-                        PipelineStepResult(f"map worker {worker_num}", None, "failed"),
-                    )
-
-        failed_workers = sum(
-            1 for s in ctx.result.steps if s.step_name.startswith("map worker") and s.status == "failed"
-        )
-        n_workers = len(chunks)
-        if n_workers > 0 and (n_workers - failed_workers) / n_workers < _MIN_BATCH_SUCCESS_RATE:
-            raise RecapPipelineError(
-                "recap_map",
-                f"Too many worker failures: {failed_workers}/{n_workers} failed",
+        def prepare(chunk: list[ArticleIndexEntry], batch_num: int) -> str:
+            prompt = build_map_prompt(chunk, follow_policy, per_chunk_blocks)
+            task_id = materialize_step(
+                ctx.workdir_mgr,
+                ctx.inp,
+                step_name="recap_map",
+                batch=batch_num,
+                prompt=prompt,
             )
+            pf_logger.info("[map] Worker %d — %d headlines", batch_num, len(chunk))
+            return task_id
+
+        def parse(task_id: str, chunk: list[ArticleIndexEntry], batch_num: int) -> list:
+            stdout_path = ctx.pdir / task_id / "output" / "agent_stdout.log"
+            return parse_map_stdout(stdout_path, chunk, batch_num)
+
+        batch_results, n_failed, _ = submit_and_collect(
+            ctx,
+            chunks,
+            step_name="recap_map",
+            step_label="map worker",
+            start_batch=next_batch_number(ctx.pdir, "recap_map") - 1,
+            max_parallel=_MAX_PARALLEL,
+            prepare_fn=prepare,
+            parse_fn=parse,
+            pf_logger=pf_logger,
+        )
+
+        new_blocks = [block for worker_blocks in batch_results for block in worker_blocks]
+        all_blocks = existing_blocks + new_blocks
 
         if not all_blocks:
             raise RecapPipelineError(
@@ -288,3 +304,10 @@ class MapBlocks(TaskLauncher):
         ctx.digest.blocks = [
             DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in all_blocks
         ]
+
+        if n_failed > 0:
+            self.fully_completed = False
+            raise RecapPipelineError(
+                "recap_map",
+                f"Worker failure(s) — {len(all_blocks)} blocks saved from successful workers",
+            )

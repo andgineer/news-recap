@@ -10,7 +10,7 @@ Prefect inspects parameter annotations at runtime for the Inputs tab.
 """
 
 import os
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -24,8 +24,6 @@ from news_recap.recap.storage.pipeline_io import read_pipeline_input
 from news_recap.recap.storage.workdir import TaskWorkdirManager
 from news_recap.recap.tasks.base import (
     FlowContext,
-    PipelineRunResult,
-    PipelineStepResult,
     RecapPipelineError,
     StopPipelineError,
 )
@@ -59,7 +57,7 @@ def recap_flow(
     pipeline_dir: str,
     business_date: str,
     stop_after: str | None = None,
-) -> PipelineRunResult:
+) -> None:
     """Top-level Prefect flow for the daily recap pipeline.
 
     *stop_after* halts the pipeline after the named task completes
@@ -90,8 +88,6 @@ def recap_flow(
         )
 
     article_entries = to_article_index(inp.articles)
-    bd = date.fromisoformat(business_date)
-    result = PipelineRunResult(pipeline_id=digest.digest_id, business_date=bd)
     pf_logger.info("Pipeline starting: %d articles, date=%s", len(inp.articles), business_date)
 
     ctx = FlowContext(
@@ -99,7 +95,6 @@ def recap_flow(
         workdir_mgr=workdir_mgr,
         inp=inp,
         article_map={e.source_id: e for e in article_entries},
-        result=result,
         digest=digest,
         stop_after=effective_stop,
     )
@@ -114,28 +109,19 @@ def recap_flow(
 
         digest.status = "completed"
         ctx.save_checkpoint()
-        result.status = "completed"
         pf_logger.info("Pipeline completed")
 
     except StopPipelineError:
         digest.status = "completed"
         ctx.save_checkpoint()
-        result.status = "completed"
         pf_logger.info("Pipeline stopped early (stop_after=%s)", effective_stop)
 
     except RecapPipelineError as exc:
-        result.steps.append(PipelineStepResult(exc.step, None, "failed", error=str(exc)))
         digest.status = "failed"
         ctx.save_checkpoint()
-        result.status = "failed"
-        result.error = str(exc)
         pf_logger.error("Pipeline failed: %s", exc)
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         digest.status = "failed"
         ctx.save_checkpoint()
-        result.status = "failed"
-        result.error = f"Unexpected error: {exc}"
         pf_logger.exception("Pipeline unexpected error")
-
-    return result

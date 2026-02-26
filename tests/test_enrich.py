@@ -201,12 +201,11 @@ class TestParseEnrichOutputFiles:
 
 def _make_fake_ctx(tmp_path):
     """Build a minimal FlowContext for _run_enrich tests."""
-    from datetime import date
     from unittest.mock import MagicMock
 
     from news_recap.recap.models import Digest
     from news_recap.recap.storage.pipeline_io import PipelineInput
-    from news_recap.recap.tasks.base import FlowContext, PipelineRunResult
+    from news_recap.recap.tasks.base import FlowContext
 
     pdir = tmp_path / "pipeline"
     pdir.mkdir()
@@ -222,7 +221,6 @@ def _make_fake_ctx(tmp_path):
         articles=[],
     )
 
-    result = PipelineRunResult(pipeline_id="test", business_date=date(2026, 1, 1))
     workdir_mgr = MagicMock()
     workdir_mgr.materialize.return_value = "enrich-1"
 
@@ -231,7 +229,6 @@ def _make_fake_ctx(tmp_path):
         workdir_mgr=workdir_mgr,
         inp=inp,
         article_map={},
-        result=result,
         digest=digest,
     )
 
@@ -250,6 +247,7 @@ class TestRunEnrichParallel:
         from unittest.mock import MagicMock, patch
 
         from news_recap.recap.tasks import enrich as enrich_mod
+        from news_recap.recap.tasks import parallel as parallel_mod
 
         ctx = _make_fake_ctx(tmp_path)
         article_ids = [f"art{i}" for i in range(25)]
@@ -283,7 +281,7 @@ class TestRunEnrichParallel:
 
         with (
             patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
-            patch.object(enrich_mod, "run_ai_agent", mock_agent),
+            patch.object(parallel_mod, "run_ai_agent", mock_agent),
             patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
         ):
             result = enrich_mod._run_enrich(
@@ -292,15 +290,18 @@ class TestRunEnrichParallel:
                 entries=entries,
             )
 
-        assert len(result) == 25
+        enriched, had_crash = result
+        assert len(enriched) == 25
+        assert had_crash is False
         assert batch_call_count >= 2
-        assert all(result[sid]["new_title"].startswith("New:") for sid in article_ids)
+        assert all(enriched[sid]["new_title"].startswith("New:") for sid in article_ids)
 
     def test_partial_failure_triggers_retry(self, tmp_path, monkeypatch):
         """First round produces partial results; unprocessed articles retried in round 2."""
         from unittest.mock import MagicMock, patch
 
         from news_recap.recap.tasks import enrich as enrich_mod
+        from news_recap.recap.tasks import parallel as parallel_mod
 
         ctx = _make_fake_ctx(tmp_path)
         article_ids = [f"art{i}" for i in range(5)]
@@ -337,7 +338,7 @@ class TestRunEnrichParallel:
 
         with (
             patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
-            patch.object(enrich_mod, "run_ai_agent", mock_agent),
+            patch.object(parallel_mod, "run_ai_agent", mock_agent),
             patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
         ):
             result = enrich_mod._run_enrich(
@@ -346,7 +347,9 @@ class TestRunEnrichParallel:
                 entries=entries,
             )
 
-        assert len(result) == 5
+        enriched, had_crash = result
+        assert len(enriched) == 5
+        assert had_crash is False
         assert call_count == 2
 
     def test_no_progress_stops_retries(self, tmp_path, monkeypatch):
@@ -354,6 +357,7 @@ class TestRunEnrichParallel:
         from unittest.mock import MagicMock, patch
 
         from news_recap.recap.tasks import enrich as enrich_mod
+        from news_recap.recap.tasks import parallel as parallel_mod
 
         ctx = _make_fake_ctx(tmp_path)
         article_ids = [f"art{i}" for i in range(5)]
@@ -379,7 +383,7 @@ class TestRunEnrichParallel:
         mock_logger = MagicMock()
         with (
             patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
-            patch.object(enrich_mod, "run_ai_agent", mock_agent),
+            patch.object(parallel_mod, "run_ai_agent", mock_agent),
             patch.object(enrich_mod, "get_run_logger", return_value=mock_logger),
         ):
             result = enrich_mod._run_enrich(
@@ -388,10 +392,141 @@ class TestRunEnrichParallel:
                 entries=entries,
             )
 
-        assert len(result) == 0
+        enriched, had_crash = result
+        assert len(enriched) == 0
+        assert had_crash is False
         assert call_count == 1
         warnings = [str(c) for c in mock_logger.warning.call_args_list if "No progress" in str(c)]
         assert len(warnings) == 1
+
+
+# ---------------------------------------------------------------------------
+# Crash-flag tests
+# ---------------------------------------------------------------------------
+
+
+class TestEnrichCrashFlag:
+    """Tests for crash-flag propagation in _run_enrich and Enrich.execute()."""
+
+    def _make_enrich_entries(self, ids):
+        return [
+            EnrichEntry(article_id=sid, title=f"Title {sid}", text=f"Full text for {sid}.")
+            for sid in ids
+        ]
+
+    def test_crash_flag_stops_and_returns_partial(self, tmp_path):
+        """One future raises RecapPipelineError -> returns (partial, True), no further rounds."""
+        from unittest.mock import MagicMock, patch
+
+        from news_recap.recap.tasks import enrich as enrich_mod
+        from news_recap.recap.tasks import parallel as parallel_mod
+        from news_recap.recap.tasks.base import RecapPipelineError
+
+        ctx = _make_fake_ctx(tmp_path)
+        entries = self._make_enrich_entries([f"art{i}" for i in range(20)])
+
+        call_count = 0
+
+        def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
+            return f"enrich-{batch}"
+
+        def fake_agent(*, pipeline_dir, step_name, task_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RecapPipelineError("recap_enrich", "agent crashed")
+            workdir = ctx.pdir / task_id
+            input_dir = workdir / "input" / "articles"
+            output_dir = workdir / "output" / "articles"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            for f in sorted(input_dir.iterdir()):
+                lines = f.read_text("utf-8").strip().split("\n", 2)
+                (output_dir / f.name).write_text(
+                    f"New: {lines[0]}\n\nExcerpt.\n",
+                    "utf-8",
+                )
+            return task_id
+
+        mock_agent = MagicMock()
+        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
+            result=MagicMock(side_effect=lambda: fake_agent(**kw))
+        )
+
+        with (
+            patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
+            patch.object(parallel_mod, "run_ai_agent", mock_agent),
+            patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
+        ):
+            enriched, had_crash = enrich_mod._run_enrich(
+                ctx,
+                step_name="recap_enrich",
+                entries=entries,
+            )
+
+        assert had_crash is True
+        assert len(enriched) > 0
+        assert len(enriched) < 20
+
+    def test_execute_raises_on_crash(self, tmp_path):
+        """Enrich.execute() persists partial enrichment and raises on crash."""
+        from unittest.mock import MagicMock, patch
+
+        from news_recap.recap.contracts import ArticleIndexEntry
+        from news_recap.recap.tasks import enrich as enrich_mod
+        from news_recap.recap.tasks.base import RecapPipelineError
+        from news_recap.recap.tasks.enrich import Enrich
+
+        ctx = _make_fake_ctx(tmp_path)
+        articles = [
+            DigestArticle(
+                article_id=f"a{i}",
+                title=f"T{i}",
+                url=f"https://example.com/a{i}",
+                source="s",
+                published_at="2026-01-01T00:00:00+00:00",
+                clean_text="body",
+                verdict="vague",
+                resource_loaded=True,
+            )
+            for i in range(3)
+        ]
+        ctx.digest.articles = list(articles)
+        ctx.article_map = {
+            f"a{i}": ArticleIndexEntry(
+                source_id=f"a{i}",
+                title=f"T{i}",
+                url=f"https://example.com/a{i}",
+                source="s",
+            )
+            for i in range(3)
+        }
+        ctx.state["enrich_ids"] = ["a0", "a1", "a2"]
+
+        cached = {f"a{i}": (f"T{i}", "text " * 50) for i in range(3)}
+
+        def fake_run_enrich(ctx, *, step_name, entries):
+            partial = {
+                entries[0].article_id: {
+                    "new_title": f"New {entries[0].title}",
+                    "clean_text": "ok",
+                },
+            }
+            return partial, True
+
+        import pytest
+
+        with (
+            patch.object(enrich_mod, "load_cached_resource_texts", return_value=cached),
+            patch.object(enrich_mod, "_run_enrich", side_effect=fake_run_enrich),
+            patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
+        ):
+            with pytest.raises(RecapPipelineError, match="crash"):
+                e = Enrich(ctx)
+                e.execute()
+
+        assert e.fully_completed is False
+        enriched_articles = [a for a in ctx.digest.articles if a.enriched_title]
+        assert len(enriched_articles) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -474,9 +609,10 @@ class TestEnrichCacheEmpty:
         cached = {"a0": ("T0", "text " * 50)}
 
         def fake_run_enrich(ctx, *, step_name, entries):
-            return {
+            enriched = {
                 e.article_id: {"new_title": f"New {e.title}", "clean_text": "ok"} for e in entries
             }
+            return enriched, False
 
         with (
             patch.object(enrich_mod, "load_cached_resource_texts", return_value=cached),

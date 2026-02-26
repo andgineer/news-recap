@@ -194,9 +194,7 @@ class TestConfigurePrefectRuntime:
         assert result == PrefectMode.EPHEMERAL
         assert "PREFECT_API_URL" not in environ
 
-    def test_server_uses_default_url_when_env_absent(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_server_uses_default_url_when_env_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("PREFECT_API_URL", raising=False)
         probed: list[str] = []
         monkeypatch.setattr(
@@ -208,9 +206,7 @@ class TestConfigurePrefectRuntime:
         assert probed == [_DEFAULT_PREFECT_API_URL]
         assert environ["PREFECT_API_URL"] == _DEFAULT_PREFECT_API_URL
 
-    def test_server_uses_explicit_url_over_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_server_uses_explicit_url_over_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         custom = "http://prefect.local:4200/api"
         monkeypatch.setenv("PREFECT_API_URL", custom)
         probed: list[str] = []
@@ -250,9 +246,7 @@ class TestConfigurePrefectRuntime:
         result = configure_prefect_runtime(PrefectMode.AUTO)
         assert result == PrefectMode.SERVER
 
-    def test_auto_probes_default_url_when_env_absent(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_auto_probes_default_url_when_env_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("PREFECT_API_URL", raising=False)
         probed: list[str] = []
         monkeypatch.setattr(
@@ -264,9 +258,7 @@ class TestConfigurePrefectRuntime:
         assert probed == [_DEFAULT_PREFECT_API_URL]
         assert environ["PREFECT_API_URL"] == _DEFAULT_PREFECT_API_URL
 
-    def test_auto_ephemeral_when_default_unreachable(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_auto_ephemeral_when_default_unreachable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("PREFECT_API_URL", raising=False)
         monkeypatch.setattr("news_recap.config._probe_prefect_server", lambda _: False)
         result = configure_prefect_runtime(PrefectMode.AUTO)

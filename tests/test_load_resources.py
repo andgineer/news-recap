@@ -24,12 +24,11 @@ class TestLoadResources:
         )
 
     def _make_ctx(self, tmp_path, articles, enrich_ids):
-        from datetime import date
         from unittest.mock import MagicMock
 
         from news_recap.recap.models import Digest
         from news_recap.recap.storage.pipeline_io import PipelineInput
-        from news_recap.recap.tasks.base import FlowContext, PipelineRunResult
+        from news_recap.recap.tasks.base import FlowContext
 
         pdir = tmp_path / "pipeline"
         pdir.mkdir()
@@ -56,7 +55,6 @@ class TestLoadResources:
             for a in articles
         ]
 
-        result = PipelineRunResult(pipeline_id="test", business_date=date(2026, 1, 1))
         workdir_mgr = MagicMock()
 
         ctx = FlowContext(
@@ -64,7 +62,6 @@ class TestLoadResources:
             workdir_mgr=workdir_mgr,
             inp=inp,
             article_map={e.source_id: e for e in article_entries},
-            result=result,
             digest=digest,
         )
         ctx.state["enrich_ids"] = enrich_ids

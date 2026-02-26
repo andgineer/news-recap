@@ -11,10 +11,7 @@ from prefect.logging import get_run_logger
 from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.models import DigestBlock
 from news_recap.recap.storage.pipeline_io import materialize_step
-from news_recap.recap.tasks.base import (
-    PipelineStepResult,
-    TaskLauncher,
-)
+from news_recap.recap.tasks.base import TaskLauncher
 from news_recap.recap.tasks.prompts import RECAP_REDUCE_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -27,9 +24,7 @@ def _block_filename(block: dict[str, Any], index: int) -> str:
 
 def build_block_index(map_blocks: list[dict[str, Any]]) -> str:
     """Build the inline block index text embedded in the REDUCE prompt."""
-    return "\n".join(
-        f"- {_block_filename(b, i)}: {b['title']}" for i, b in enumerate(map_blocks)
-    )
+    return "\n".join(f"- {_block_filename(b, i)}: {b['title']}" for i, b in enumerate(map_blocks))
 
 
 def write_block_files(
@@ -75,6 +70,38 @@ def _build_article_headline_map(
     return headline_map
 
 
+def _parse_block_file(path: Path) -> DigestBlock | None:
+    """Parse a single block ``.txt`` file, returning ``None`` on skip."""
+    text = path.read_text("utf-8").strip()
+    if not text:
+        logger.warning("Empty block file: %s", path.name)
+        return None
+
+    lines = text.splitlines()
+    title = lines[0].strip()
+    if not title:
+        logger.warning("Empty title in block file: %s", path.name)
+        return None
+
+    article_ids: list[str] = []
+    for raw_line in lines[1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        colon_pos = stripped.find(":")
+        if colon_pos > 0:
+            aid = stripped[:colon_pos].strip()
+            if aid:
+                article_ids.append(aid)
+        else:
+            article_ids.append(stripped)
+
+    if not article_ids:
+        logger.warning("No articles in block file: %s", path.name)
+        return None
+    return DigestBlock(title=title, article_ids=article_ids)
+
+
 def parse_reduce_output(output_dir: Path) -> list[DigestBlock]:
     """Parse output/blocks/*.txt files into ``DigestBlock`` objects.
 
@@ -88,35 +115,9 @@ def parse_reduce_output(output_dir: Path) -> list[DigestBlock]:
     for path in sorted(output_dir.iterdir()):
         if not path.name.endswith(".txt"):
             continue
-        text = path.read_text("utf-8").strip()
-        if not text:
-            logger.warning("Empty block file: %s", path.name)
-            continue
-
-        lines = text.splitlines()
-        title = lines[0].strip()
-        if not title:
-            logger.warning("Empty title in block file: %s", path.name)
-            continue
-
-        article_ids: list[str] = []
-        for line in lines[1:]:
-            line = line.strip()
-            if not line:
-                continue
-            colon_pos = line.find(":")
-            if colon_pos > 0:
-                aid = line[:colon_pos].strip()
-                if aid:
-                    article_ids.append(aid)
-            else:
-                article_ids.append(line)
-
-        if article_ids:
-            blocks.append(DigestBlock(title=title, article_ids=article_ids))
-        else:
-            logger.warning("No articles in block file: %s", path.name)
-
+        block = _parse_block_file(path)
+        if block is not None:
+            blocks.append(block)
     return blocks
 
 
@@ -160,23 +161,11 @@ class ReduceBlocks(TaskLauncher):
         output_dir = ctx.pdir / tid / "output" / "blocks"
         final_blocks = parse_reduce_output(output_dir)
 
-        if final_blocks:
-            ctx.result.steps.append(PipelineStepResult("recap_reduce", tid, "completed"))
-        else:
+        if not final_blocks:
             pf_logger.warning("[reduce] No output blocks parsed — falling back to MAP blocks")
-            ctx.result.steps.append(
-                PipelineStepResult(
-                    "recap_reduce", tid, "degraded", error="no output parsed, used MAP blocks"
-                ),
-            )
             final_blocks = [
                 DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in map_blocks
             ]
 
         ctx.digest.blocks = final_blocks
-        ctx.result.digest = {
-            "blocks": [
-                {"title": b.title, "article_ids": b.article_ids} for b in final_blocks
-            ],
-        }
         pf_logger.info("[reduce] Final digest: %d blocks", len(final_blocks))
