@@ -7,7 +7,13 @@ import re
 from dataclasses import dataclass
 
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import RequestBlocked
+from youtube_transcript_api._errors import (
+    AgeRestricted,
+    RequestBlocked,
+    TranscriptsDisabled,
+    VideoUnavailable,
+    VideoUnplayable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +26,20 @@ _YT_SHORTS_RE = re.compile(r"youtube\.com/shorts/")
 
 PREFERRED_LANGUAGES = ("ru", "en", "sr", "uk", "de", "fr")
 
+# Stable error codes returned in TranscriptResult.error.
 IP_BLOCKED_ERROR = "ip_blocked"
+SUBTITLES_DISABLED_ERROR = "subtitles_disabled"
+NO_TRANSCRIPTS_ERROR = "no_transcripts_available"
+VIDEO_UNAVAILABLE_ERROR = "video_unavailable"
+AGE_RESTRICTED_ERROR = "age_restricted"
+TRANSCRIPT_RETRIEVAL_FAILED_ERROR = "transcript_retrieval_failed"
+
+_PERMANENT_ERRORS: dict[type[Exception], str] = {
+    TranscriptsDisabled: SUBTITLES_DISABLED_ERROR,
+    VideoUnavailable: VIDEO_UNAVAILABLE_ERROR,
+    VideoUnplayable: VIDEO_UNAVAILABLE_ERROR,
+    AgeRestricted: AGE_RESTRICTED_ERROR,
+}
 
 
 @dataclass(slots=True)
@@ -41,6 +60,20 @@ class TranscriptResult:
 def _blocked(video_id: str) -> TranscriptResult:
     logger.warning("YouTube blocked request for %s (IP ban / bot detection)", video_id)
     return TranscriptResult(text="", language="", is_success=False, error=IP_BLOCKED_ERROR)
+
+
+def _permanent_failure(video_id: str, error_code: str) -> TranscriptResult:
+    """Return a definitive failure for a known, unactionable transcript error."""
+    logger.debug("No transcript for %s: %s", video_id, error_code)
+    return TranscriptResult(text="", language="", is_success=False, error=error_code)
+
+
+def _classify_permanent(exc: Exception) -> str | None:
+    """Return an error code if *exc* is a known permanent failure, else ``None``."""
+    for exc_type, code in _PERMANENT_ERRORS.items():
+        if isinstance(exc, exc_type):
+            return code
+    return None
 
 
 def extract_video_id(url: str) -> str | None:
@@ -87,7 +120,10 @@ def _fetch_preferred(
         return TranscriptResult(text=text, language=lang, is_success=True)
     except RequestBlocked:
         return _blocked(video_id)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        code = _classify_permanent(exc)
+        if code is not None:
+            return _permanent_failure(video_id, code)
         logger.debug("Primary transcript fetch failed for %s, trying fallback", video_id)
         return None
 
@@ -103,12 +139,15 @@ def _fetch_any(
     except RequestBlocked:
         return _blocked(video_id)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to get any transcript for %s: %s", video_id, exc)
+        code = _classify_permanent(exc)
+        if code is not None:
+            return _permanent_failure(video_id, code)
+        logger.warning("Transcript retrieval failed for %s: %s", video_id, type(exc).__name__)
         return TranscriptResult(
             text="",
             language="",
             is_success=False,
-            error=f"all transcript attempts failed: {exc}",
+            error=TRANSCRIPT_RETRIEVAL_FAILED_ERROR,
         )
 
     for transcript in transcript_list:
@@ -127,7 +166,7 @@ def _fetch_any(
         text="",
         language="",
         is_success=False,
-        error="no transcripts available",
+        error=NO_TRANSCRIPTS_ERROR,
     )
 
 

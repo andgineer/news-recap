@@ -90,16 +90,18 @@ class TestResourceLoaderSingle:
 
     @patch("news_recap.recap.loaders.resource_loader.fetch_transcript")
     def test_load_youtube_not_available(self, mock_fetch: MagicMock) -> None:
+        from news_recap.http.youtube_extractor import NO_TRANSCRIPTS_ERROR
+
         mock_fetch.return_value = MagicMock(
             is_success=False,
             text="",
             language="",
-            error="no transcripts available",
+            error=NO_TRANSCRIPTS_ERROR,
         )
         loader = ResourceLoader()
         result = loader.load("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         assert not result.is_success
-        assert result.error == "no transcripts available"
+        assert result.error == NO_TRANSCRIPTS_ERROR
 
     def test_load_autodetects_youtube_vs_html(self) -> None:
         fetcher = MagicMock()
