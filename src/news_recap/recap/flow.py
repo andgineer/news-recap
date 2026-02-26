@@ -19,6 +19,7 @@ from prefect import flow
 from prefect.logging import get_run_logger
 from prefect.task_runners import ConcurrentTaskRunner
 
+from news_recap.recap.agents.ai_agent import read_agent_usage
 from news_recap.recap.models import Digest, to_article_index
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 from news_recap.recap.storage.workdir import TaskWorkdirManager
@@ -36,6 +37,26 @@ from news_recap.recap.tasks.split_blocks import SplitBlocks
 from news_recap.storage.io import load_msgspec
 
 _DIGEST_FILENAME = "digest.json"
+_USAGE_FILENAME = "meta/usage.json"
+
+
+def _log_pipeline_token_summary(pf_logger: Any, pdir: Path) -> None:
+    """Scan all task workdirs for usage.json and log per-phase and total tokens."""
+    phase_tokens: dict[str, int] = {}
+    for usage_path in sorted(pdir.glob(f"*/{_USAGE_FILENAME}")):
+        task_dir = usage_path.parent.parent
+        _, tokens = read_agent_usage(task_dir)
+        if not tokens:
+            continue
+        phase = task_dir.name.rsplit("-", 1)[0]
+        phase_tokens[phase] = phase_tokens.get(phase, 0) + tokens
+
+    if not phase_tokens:
+        return
+
+    total = sum(phase_tokens.values())
+    parts = [f"{phase}={tokens:,}" for phase, tokens in phase_tokens.items()]
+    pf_logger.info("Token usage: %s | total=%s", ", ".join(parts), f"{total:,}")
 
 
 def _load_checkpoint(pdir: Path) -> Digest | None:
@@ -127,3 +148,5 @@ def recap_flow(
         digest.status = "failed"
         ctx.save_checkpoint()
         pf_logger.exception("Pipeline unexpected error")
+
+    _log_pipeline_token_summary(pf_logger, pdir)

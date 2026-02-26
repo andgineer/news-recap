@@ -8,7 +8,9 @@ enriches the prompt with manifest context, and delegates execution to
 Prefect inspects parameter annotations at runtime for the Inputs tab.
 """
 
+import json
 import os
+import re
 import shlex
 import tempfile
 import time
@@ -82,10 +84,14 @@ def run_ai_agent(
         model=routing.model,
     )
     elapsed = time.monotonic() - step_start
+    tokens = _parse_tokens_used(result.stderr_path)
 
     m, s = divmod(int(elapsed), 60)
     t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
-    pf_logger.info("[%s] Finished in %s (exit=%s)", step_name, t, result.exit_code)
+    tokens_str = f" tokens={tokens:,}" if tokens else ""
+    pf_logger.info("[%s] Finished in %s (exit=%s)%s", step_name, t, result.exit_code, tokens_str)
+
+    _save_usage(Path(pipeline_dir) / task_id, elapsed=elapsed, tokens=tokens)
 
     if result.exit_code == 0:
         return task_id
@@ -108,6 +114,42 @@ def _log_agent_output(logger, step_name: str, result) -> None:
         tail = lines[-_TAIL_LINES:]
         truncated = f"(last {_TAIL_LINES}/{len(lines)} lines)\n" if len(lines) > _TAIL_LINES else ""
         logger.error("[%s] agent %s:\n%s%s", step_name, label, truncated, "\n".join(tail))
+
+
+_TOKENS_RE = re.compile(r"tokens\s+used\s*\n\s*([\d,]+)", re.IGNORECASE)
+
+
+def _parse_tokens_used(stderr_path: Path) -> int | None:
+    """Extract token count from agent stderr (codex format: ``tokens used\\n12,033``)."""
+    try:
+        text = stderr_path.read_text("utf-8", errors="replace")
+    except OSError:
+        return None
+    m = _TOKENS_RE.search(text)
+    if m:
+        return int(m.group(1).replace(",", ""))
+    return None
+
+
+_USAGE_FILENAME = "meta/usage.json"
+
+
+def _save_usage(task_dir: Path, *, elapsed: float, tokens: int | None) -> None:
+    """Persist agent usage metrics for later aggregation."""
+    usage = {"elapsed_seconds": round(elapsed, 1), "tokens_used": tokens}
+    path = task_dir / _USAGE_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(usage), "utf-8")
+
+
+def read_agent_usage(task_dir: Path) -> tuple[float, int]:
+    """Read usage from a task workdir. Returns ``(elapsed, tokens)``."""
+    path = task_dir / _USAGE_FILENAME
+    try:
+        data = json.loads(path.read_text("utf-8"))
+        return float(data.get("elapsed_seconds", 0)), int(data.get("tokens_used") or 0)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return 0.0, 0
 
 
 # ---------------------------------------------------------------------------
