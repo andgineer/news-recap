@@ -1,8 +1,16 @@
-"""Task launcher: REDUCE phase — merge overlapping blocks into final digest."""
+"""Task launcher: REDUCE phase — merge overlapping MAP blocks.
+
+Reads block titles from MAP output, asks the LLM to merge overlapping
+blocks, and produces BLOCK / SPLIT actions.  BLOCK actions are applied
+in code (concatenate article lists); SPLIT actions are queued for the
+separate SPLIT phase.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -11,54 +19,34 @@ from prefect.logging import get_run_logger
 from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.models import DigestBlock
 from news_recap.recap.storage.pipeline_io import materialize_step
-from news_recap.recap.tasks.base import TaskLauncher
+from news_recap.recap.tasks.base import RecapPipelineError, TaskLauncher
 from news_recap.recap.tasks.prompts import RECAP_REDUCE_PROMPT
 
 logger = logging.getLogger(__name__)
 
 
-def _block_filename(block: dict[str, Any], index: int) -> str:
-    worker = block.get("worker", 0)
-    return f"w{worker}_b{index}.txt"
+@dataclass(slots=True)
+class ReduceAction:
+    """One BLOCK or SPLIT action parsed from the reduce agent stdout."""
+
+    kind: str  # "block" or "split"
+    title: str
+    source_indices: list[int] = field(default_factory=list)
 
 
-def build_block_index(map_blocks: list[dict[str, Any]]) -> str:
-    """Build the inline block index text embedded in the REDUCE prompt."""
-    return "\n".join(f"- {_block_filename(b, i)}: {b['title']}" for i, b in enumerate(map_blocks))
+@dataclass(slots=True)
+class SplitTask:
+    """A block that needs splitting — passed to the SPLIT phase."""
 
-
-def write_block_files(
-    workdir: Path,
-    map_blocks: list[dict[str, Any]],
-    article_map: dict[str, str],
-) -> None:
-    """Write block files to ``input/blocks/`` in the task workdir.
-
-    *article_map* maps ``article_id → headline`` for annotation.
-    Files are written directly (not via ``extra_input_files``) so paths
-    in the REDUCE prompt match the actual filesystem layout.
-    Also creates ``output/blocks/`` for agent output.
-    """
-    input_blocks = workdir / "input" / "blocks"
-    input_blocks.mkdir(parents=True, exist_ok=True)
-    (workdir / "output" / "blocks").mkdir(parents=True, exist_ok=True)
-
-    for i, block in enumerate(map_blocks):
-        filename = _block_filename(block, i)
-        title = block["title"]
-        lines = [title]
-        for aid in block["article_ids"]:
-            headline = article_map.get(aid, aid)
-            lines.append(f"{aid}: {headline}")
-
-        (input_blocks / filename).write_text("\n".join(lines) + "\n", "utf-8")
+    title: str
+    article_ids: list[str]
 
 
 def _build_article_headline_map(
     ctx_state: dict[str, Any],
     ctx_article_map: dict[str, Any],
 ) -> dict[str, str]:
-    """Build article_id → headline lookup from context state."""
+    """Build article_id -> headline lookup from context state."""
     enriched: dict[str, str] = ctx_state.get("enriched_articles", {})
     headline_map: dict[str, str] = {}
     for aid, entry in ctx_article_map.items():
@@ -70,61 +58,154 @@ def _build_article_headline_map(
     return headline_map
 
 
-def _parse_block_file(path: Path) -> DigestBlock | None:
-    """Parse a single block ``.txt`` file, returning ``None`` on skip."""
-    text = path.read_text("utf-8").strip()
-    if not text:
-        logger.warning("Empty block file: %s", path.name)
-        return None
-
-    lines = text.splitlines()
-    title = lines[0].strip()
-    if not title:
-        logger.warning("Empty title in block file: %s", path.name)
-        return None
-
-    article_ids: list[str] = []
-    for raw_line in lines[1:]:
-        stripped = raw_line.strip()
-        if not stripped:
-            continue
-        colon_pos = stripped.find(":")
-        if colon_pos > 0:
-            aid = stripped[:colon_pos].strip()
-            if aid:
-                article_ids.append(aid)
-        else:
-            article_ids.append(stripped)
-
-    if not article_ids:
-        logger.warning("No articles in block file: %s", path.name)
-        return None
-    return DigestBlock(title=title, article_ids=article_ids)
+_MAX_TITLE_CHARS = 150
 
 
-def parse_reduce_output(output_dir: Path) -> list[DigestBlock]:
-    """Parse output/blocks/*.txt files into ``DigestBlock`` objects.
+def build_reduce_prompt(map_blocks: list[dict[str, Any]]) -> str:
+    """Build the REDUCE prompt with numbered block titles and article counts."""
+    lines = []
+    for i, block in enumerate(map_blocks, 1):
+        title = block["title"]
+        if len(title) > _MAX_TITLE_CHARS:
+            title = title[:_MAX_TITLE_CHARS].rsplit(" ", 1)[0] + "…"
+        n = len(block["article_ids"])
+        lines.append(f"{i}: {title} ({n} articles)")
+    return RECAP_REDUCE_PROMPT.format(block_titles="\n".join(lines))
 
-    Each file has: line 1 = block title, remaining lines = ``article_id: headline``.
+
+def parse_reduce_stdout(
+    stdout_path: Path,
+    n_blocks: int,
+) -> list[ReduceAction]:
+    """Parse BLOCK/SPLIT lines from reduce agent stdout.
+
+    Returns a list of ``ReduceAction`` objects.  Validates that every
+    source block number (1..n_blocks) appears in exactly one action.
+    Omitted blocks are treated as implicit single-block BLOCK with their
+    original index.
     """
-    if not output_dir.is_dir():
-        logger.warning("REDUCE output dir not found: %s", output_dir)
-        return []
+    if not stdout_path.exists():
+        raise RecapPipelineError(
+            "recap_reduce",
+            f"REDUCE stdout not found: {stdout_path}",
+        )
 
-    blocks: list[DigestBlock] = []
-    for path in sorted(output_dir.iterdir()):
-        if not path.name.endswith(".txt"):
+    text = stdout_path.read_text("utf-8").strip()
+    if not text:
+        raise RecapPipelineError("recap_reduce", "REDUCE stdout is empty")
+
+    actions: list[ReduceAction] = []
+    seen: set[int] = set()
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith(("BLOCK:", "SPLIT:")):
+            kind = "block" if line.startswith("BLOCK:") else "split"
+            title = line.split(":", 1)[1].strip()
+            nums_line = lines[i + 1].strip() if i + 1 < len(lines) else ""
+            nums = _parse_numbers(nums_line)
+            deduped = [n for n in nums if n not in seen]
+            dups = [n for n in nums if n in seen]
+            if dups:
+                logger.warning("REDUCE: duplicate source blocks ignored: %s", dups)
+            if deduped:
+                actions.append(
+                    ReduceAction(kind=kind, title=title, source_indices=deduped),
+                )
+                seen.update(deduped)
+            else:
+                logger.warning("No source block numbers after %s line: %s", kind.upper(), title)
+            i += 2
+        else:
+            i += 1
+
+    if not actions:
+        raise RecapPipelineError("recap_reduce", "REDUCE stdout has no valid BLOCK/SPLIT lines")
+
+    missing = set(range(1, n_blocks + 1)) - seen
+    if missing:
+        logger.warning(
+            "REDUCE: %d block(s) omitted by agent, treating as unchanged: %s",
+            len(missing),
+            sorted(missing),
+        )
+        for m in sorted(missing):
+            actions.append(ReduceAction(kind="block", title="", source_indices=[m]))
+
+    return actions
+
+
+def _parse_numbers(line: str) -> list[int]:
+    """Parse comma-separated integers from a line."""
+    nums = []
+    for part in line.split(","):
+        token = part.strip()
+        if token.isdigit():
+            nums.append(int(token))
+    return nums
+
+
+def apply_reduce_plan(
+    map_blocks: list[dict[str, Any]],
+    actions: list[ReduceAction],
+) -> tuple[list[DigestBlock], list[SplitTask]]:
+    """Apply BLOCK/SPLIT actions to MAP blocks.
+
+    Returns ``(final_blocks, split_tasks)``.  BLOCK actions produce
+    ``DigestBlock`` objects directly.  SPLIT actions produce
+    ``SplitTask`` objects for the SPLIT phase.
+    """
+    final_blocks: list[DigestBlock] = []
+    split_tasks: list[SplitTask] = []
+
+    for action in actions:
+        merged_ids: list[str] = []
+        for idx in action.source_indices:
+            if 1 <= idx <= len(map_blocks):
+                merged_ids.extend(map_blocks[idx - 1]["article_ids"])
+
+        if not merged_ids:
             continue
-        block = _parse_block_file(path)
-        if block is not None:
-            blocks.append(block)
-    return blocks
+
+        title = action.title
+        if not title and len(action.source_indices) == 1:
+            title = map_blocks[action.source_indices[0] - 1]["title"]
+
+        if action.kind == "block":
+            final_blocks.append(DigestBlock(title=title, article_ids=merged_ids))
+        else:
+            split_tasks.append(SplitTask(title=title, article_ids=merged_ids))
+
+    return final_blocks, split_tasks
+
+
+_SPLIT_TASKS_FILENAME = "split_tasks.json"
+
+
+def _save_split_tasks(pdir: Path, tasks: list[SplitTask]) -> None:
+    """Persist split tasks to a JSON file so they survive pipeline restarts."""
+    data = [{"title": t.title, "article_ids": t.article_ids} for t in tasks]
+    (pdir / _SPLIT_TASKS_FILENAME).write_text(json.dumps(data), "utf-8")
+
+
+def _load_split_tasks(pdir: Path) -> list[SplitTask]:
+    """Load persisted split tasks, returning empty list if absent."""
+    path = pdir / _SPLIT_TASKS_FILENAME
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text("utf-8"))
+    return [SplitTask(title=d["title"], article_ids=d["article_ids"]) for d in data]
 
 
 class ReduceBlocks(TaskLauncher):
-    """Merge overlapping MAP blocks into the final digest via a single LLM agent."""
+    """Merge overlapping MAP blocks via inline prompt + stdout output."""
 
     name = "reduce_blocks"
+
+    def restore_state(self) -> None:
+        """Reconstruct ``split_tasks`` from persisted JSON for the SPLIT phase."""
+        self.ctx.state["split_tasks"] = _load_split_tasks(self.ctx.pdir)
 
     def execute(self) -> None:
         ctx = self.ctx
@@ -136,10 +217,7 @@ class ReduceBlocks(TaskLauncher):
             ctx.digest.blocks = []
             return
 
-        headline_map = _build_article_headline_map(ctx.state, ctx.article_map)
-        block_index = build_block_index(map_blocks)
-
-        prompt = RECAP_REDUCE_PROMPT.format(block_index=block_index)
+        prompt = build_reduce_prompt(map_blocks)
 
         tid = materialize_step(
             ctx.workdir_mgr,
@@ -147,8 +225,6 @@ class ReduceBlocks(TaskLauncher):
             step_name="recap_reduce",
             prompt=prompt,
         )
-
-        write_block_files(ctx.pdir / tid, map_blocks, headline_map)
 
         pf_logger.info("[reduce] %d input blocks", len(map_blocks))
 
@@ -158,14 +234,36 @@ class ReduceBlocks(TaskLauncher):
             task_id=tid,
         )
 
-        output_dir = ctx.pdir / tid / "output" / "blocks"
-        final_blocks = parse_reduce_output(output_dir)
+        stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
 
-        if not final_blocks:
-            pf_logger.warning("[reduce] No output blocks parsed — falling back to MAP blocks")
-            final_blocks = [
+        try:
+            actions = parse_reduce_stdout(stdout_path, len(map_blocks))
+        except RecapPipelineError:
+            pf_logger.warning("[reduce] Failed to parse stdout — falling back to MAP blocks")
+            ctx.digest.blocks = [
                 DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in map_blocks
             ]
+            return
+
+        final_blocks, split_tasks = apply_reduce_plan(map_blocks, actions)
+
+        if not final_blocks and not split_tasks:
+            pf_logger.warning("[reduce] Empty reduce plan — falling back to MAP blocks")
+            ctx.digest.blocks = [
+                DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in map_blocks
+            ]
+            return
 
         ctx.digest.blocks = final_blocks
-        pf_logger.info("[reduce] Final digest: %d blocks", len(final_blocks))
+        ctx.state["split_tasks"] = split_tasks
+        _save_split_tasks(ctx.pdir, split_tasks)
+
+        n_block = sum(1 for a in actions if a.kind == "block")
+        n_split = sum(1 for a in actions if a.kind == "split")
+        pf_logger.info(
+            "[reduce] %d BLOCK, %d SPLIT -> %d final blocks + %d to split",
+            n_block,
+            n_split,
+            len(final_blocks),
+            len(split_tasks),
+        )

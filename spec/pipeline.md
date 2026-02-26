@@ -23,18 +23,22 @@ flowchart TD
     loadRes --> enrichW
     enrichW --> mapW
     mapW --> reduce[ReduceBlocks]
-    reduce --> digest["Digest (blocks)"]
+    reduce --> split{SPLIT needed?}
+    split -->|No| digest["Digest (blocks)"]
+    split -->|Yes| splitW["SplitBlocks (parallel)"]
+    splitW --> digest
 ```
 
-The Prefect flow `recap_flow` runs the five steps in fixed order:
+The Prefect flow `recap_flow` runs the six steps in fixed order:
 
 1. **Classify** — batch-classify articles as `ok / vague / follow / exclude`.
 2. **LoadResources** — download full-text for articles needing enrichment.
 3. **Enrich** — rewrite headlines and extract excerpts via LLM agents.
 4. **MapBlocks** — group headlines into titled blocks (parallel workers).
-5. **ReduceBlocks** — merge overlapping blocks into the final digest.
+5. **ReduceBlocks** — merge overlapping block titles into a unified list.
+6. **SplitBlocks** — break broad blocks into thematic sub-blocks (parallel workers, only if reduce produced SPLIT markers).
 
-Steps 1, 3, and 4 run up to `_MAX_PARALLEL = 3` concurrent Prefect tasks.
+Steps 1, 3, 4, and 6 run up to `_MAX_PARALLEL` concurrent Prefect tasks.
 Steps 2 and 5 are single-threaded.
 
 ## Per-step contracts
@@ -128,19 +132,46 @@ block. Worker success rate below 50% or zero total blocks raises.
 |---|---|
 | **Module** | `recap/tasks/reduce_blocks.py` |
 | **Task type** | `recap_reduce` |
-| **LLM I/O** | Block index inline in prompt; file-based article lists (`input/blocks/` → `output/blocks/`) |
-| **Reads state** | `map_blocks`, `enriched_articles`, `ctx.article_map` |
-| **Writes digest** | `blocks` — `list[DigestBlock]` (final output) |
+| **LLM I/O** | All block titles inline in prompt; agent prints `BLOCK:` / `SPLIT:` lines to stdout |
+| **Reads state** | `map_blocks` |
+| **Writes state** | `split_tasks` — `list[SplitTask]` (blocks that need splitting) |
+| **Writes digest** | `blocks` — `list[DigestBlock]` (BLOCK-line results; SPLIT blocks added later) |
 
-A single LLM agent receives:
+A single LLM agent receives numbered block titles with article counts.
+The agent outputs one of two line types per block:
 
-- **In the prompt**: a block index listing each input file and its title.
-- **On disk**: `input/blocks/w{worker}_b{index}.txt` — one file per MAP
-  block. Line 1 = title, remaining lines = `article_id: headline`.
+```
+BLOCK: <informative title>
+<comma-separated source block numbers>
 
-The agent writes merged/split blocks to `output/blocks/*.txt` in the same
-format. Fallback: if no output blocks are parsed, MAP blocks are used
-directly and the step result status is set to `degraded`.
+SPLIT: <best-effort combined title>
+<comma-separated source block numbers>
+```
+
+BLOCK actions are applied in code — article IDs from source blocks are
+concatenated and the new title is used. SPLIT actions are queued for the
+next phase. Omitted source blocks are treated as implicit single-block
+BLOCK actions (with a warning). If stdout is missing or unparseable, the
+step falls back to MAP blocks as-is.
+
+### SplitBlocks
+
+| | |
+|---|---|
+| **Module** | `recap/tasks/split_blocks.py` |
+| **Task type** | `recap_split` |
+| **LLM I/O** | Article headlines inline in prompt; agent prints `BLOCK:` lines to stdout |
+| **Reads state** | `split_tasks`, `enriched_articles`, `ctx.article_map` |
+| **Writes digest** | Appends to `blocks` — `list[DigestBlock]` |
+
+Runs only when REDUCE produced SPLIT markers. Each split task is small
+(typically 5-20 articles) and independent — they run in parallel (up to
+5 concurrent workers). The agent receives numbered article headlines and
+outputs `BLOCK:` lines with article numbers. Coverage below 50% raises
+`RecapPipelineError`. Unassigned articles are appended to the last block.
+
+If the step is skipped (no split tasks), no work is done. On worker
+failure, partial results are saved and `RecapPipelineError` is raised.
 
 ## State and checkpointing
 

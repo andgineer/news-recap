@@ -15,9 +15,14 @@ from news_recap.recap.tasks.map_blocks import (
     split_into_map_chunks,
 )
 from news_recap.recap.tasks.reduce_blocks import (
-    build_block_index,
-    parse_reduce_output,
-    write_block_files,
+    ReduceAction,
+    ReduceBlocks,
+    SplitTask,
+    _load_split_tasks,
+    _save_split_tasks,
+    apply_reduce_plan,
+    build_reduce_prompt,
+    parse_reduce_stdout,
 )
 
 
@@ -310,85 +315,226 @@ class TestMapBlocksExecute:
         assert len(saved_ids) > 0
 
 
-class TestParseReduceOutput:
-    def test_basic_parse(self, tmp_path):
-        output_dir = tmp_path / "output" / "blocks"
-        output_dir.mkdir(parents=True)
-        (output_dir / "block1.txt").write_text("Snow in Serbia\na1: Snow story\na2: Road blocked\n")
-        (output_dir / "block2.txt").write_text("Tech updates\na3: AI launch\n")
-        blocks = parse_reduce_output(output_dir)
-        assert len(blocks) == 2
-        assert blocks[0].title == "Snow in Serbia"
-        assert blocks[0].article_ids == ["a1", "a2"]
-        assert blocks[1].article_ids == ["a3"]
-
-    def test_missing_dir_returns_empty(self, tmp_path):
-        blocks = parse_reduce_output(tmp_path / "nonexistent")
-        assert blocks == []
-
-    def test_skips_empty_files(self, tmp_path):
-        output_dir = tmp_path / "output" / "blocks"
-        output_dir.mkdir(parents=True)
-        (output_dir / "block1.txt").write_text("Good block\na1: headline\n")
-        (output_dir / "block2.txt").write_text("")
-        blocks = parse_reduce_output(output_dir)
-        assert len(blocks) == 1
-
-    def test_skips_non_txt_files(self, tmp_path):
-        output_dir = tmp_path / "output" / "blocks"
-        output_dir.mkdir(parents=True)
-        (output_dir / "block1.txt").write_text("Block\na1: headline\n")
-        (output_dir / "readme.md").write_text("ignore")
-        blocks = parse_reduce_output(output_dir)
-        assert len(blocks) == 1
-
-
-class TestWriteBlockFiles:
-    """Verify block files land in input/blocks/ (not input/resources/)."""
-
-    def test_files_written_to_input_blocks(self, tmp_path):
+class TestBuildReducePrompt:
+    def test_contains_numbered_titles(self):
         blocks = [
-            {"title": "Block A", "article_ids": ["a1", "a2"], "worker": 0},
-            {"title": "Block B", "article_ids": ["a3"], "worker": 1},
+            {"title": "Snow in Serbia", "article_ids": ["a1", "a2"]},
+            {"title": "Tech news", "article_ids": ["a3"]},
         ]
-        article_map = {"a1": "Headline 1", "a2": "Headline 2", "a3": "Headline 3"}
-        write_block_files(tmp_path, blocks, article_map)
+        prompt = build_reduce_prompt(blocks)
+        assert "1: Snow in Serbia (2 articles)" in prompt
+        assert "2: Tech news (1 articles)" in prompt
 
-        input_blocks = tmp_path / "input" / "blocks"
-        assert input_blocks.is_dir()
-        assert (input_blocks / "w0_b0.txt").exists()
-        assert (input_blocks / "w1_b1.txt").exists()
+    def test_contains_prompt_template(self):
+        blocks = [{"title": "Block A", "article_ids": ["a1"]}]
+        prompt = build_reduce_prompt(blocks)
+        assert "BLOCK TITLES" in prompt
+        assert "BLOCK:" in prompt
+        assert "SPLIT:" in prompt
 
-        content = (input_blocks / "w0_b0.txt").read_text("utf-8")
-        assert content.startswith("Block A\n")
-        assert "a1: Headline 1" in content
-        assert "a2: Headline 2" in content
 
-    def test_output_blocks_dir_created(self, tmp_path):
-        blocks = [{"title": "B", "article_ids": ["x"], "worker": 0}]
-        write_block_files(tmp_path, blocks, {"x": "H"})
-        assert (tmp_path / "output" / "blocks").is_dir()
+class TestParseReduceStdout:
+    def _write(self, tmp_path: Path, content: str) -> Path:
+        p = tmp_path / "agent_stdout.log"
+        p.write_text(content, "utf-8")
+        return p
 
-    def test_round_trip_with_parser(self, tmp_path):
-        """Written block files can be parsed back by parse_reduce_output."""
+    def test_basic_block_parse(self, tmp_path):
+        stdout = self._write(
+            tmp_path,
+            "BLOCK: Serbia FM hospitalized\n1\n\nBLOCK: Tech news\n2, 3\n",
+        )
+        actions = parse_reduce_stdout(stdout, 3)
+        assert len(actions) == 2
+        assert actions[0].kind == "block"
+        assert actions[0].title == "Serbia FM hospitalized"
+        assert actions[0].source_indices == [1]
+        assert actions[1].source_indices == [2, 3]
+
+    def test_split_action_parsed(self, tmp_path):
+        stdout = self._write(
+            tmp_path,
+            "SPLIT: Mixed Iran/US block\n1, 2\n\nBLOCK: Other\n3\n",
+        )
+        actions = parse_reduce_stdout(stdout, 3)
+        splits = [a for a in actions if a.kind == "split"]
+        assert len(splits) == 1
+        assert splits[0].title == "Mixed Iran/US block"
+        assert splits[0].source_indices == [1, 2]
+
+    def test_omitted_blocks_treated_as_implicit(self, tmp_path):
+        stdout = self._write(tmp_path, "BLOCK: Only first\n1\n")
+        actions = parse_reduce_stdout(stdout, 3)
+        assert len(actions) == 3
+        implicit = [a for a in actions if a.source_indices == [2] or a.source_indices == [3]]
+        assert len(implicit) == 2
+        for a in implicit:
+            assert a.kind == "block"
+            assert a.title == ""
+
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(RecapPipelineError, match="REDUCE stdout not found"):
+            parse_reduce_stdout(tmp_path / "missing.log", 3)
+
+    def test_empty_file_raises(self, tmp_path):
+        stdout = self._write(tmp_path, "")
+        with pytest.raises(RecapPipelineError, match="empty"):
+            parse_reduce_stdout(stdout, 3)
+
+    def test_duplicate_source_blocks_ignored(self, tmp_path):
+        stdout = self._write(
+            tmp_path,
+            "BLOCK: First\n1, 2\n\nBLOCK: Second\n2, 3\n",
+        )
+        actions = parse_reduce_stdout(stdout, 3)
+        assert len(actions) == 2
+        assert actions[0].source_indices == [1, 2]
+        assert actions[1].source_indices == [3]
+
+    def test_all_duplicates_skipped_block_dropped(self, tmp_path):
+        stdout = self._write(
+            tmp_path,
+            "BLOCK: First\n1, 2, 3\n\nBLOCK: Duplicate\n1, 2\n",
+        )
+        actions = parse_reduce_stdout(stdout, 3)
+        assert len(actions) == 1
+        assert actions[0].source_indices == [1, 2, 3]
+
+    def test_no_valid_lines_raises(self, tmp_path):
+        stdout = self._write(tmp_path, "Some random agent chatter\nNo blocks here\n")
+        with pytest.raises(RecapPipelineError, match="no valid BLOCK/SPLIT"):
+            parse_reduce_stdout(stdout, 3)
+
+
+class TestSplitTasksPersistence:
+    def test_round_trip(self, tmp_path):
+        tasks = [
+            SplitTask(title="Block A", article_ids=["a1", "a2"]),
+            SplitTask(title="Block B", article_ids=["a3"]),
+        ]
+        _save_split_tasks(tmp_path, tasks)
+        loaded = _load_split_tasks(tmp_path)
+        assert len(loaded) == 2
+        assert loaded[0].title == "Block A"
+        assert loaded[0].article_ids == ["a1", "a2"]
+        assert loaded[1].title == "Block B"
+
+    def test_load_missing_returns_empty(self, tmp_path):
+        assert _load_split_tasks(tmp_path) == []
+
+    def test_empty_list_round_trip(self, tmp_path):
+        _save_split_tasks(tmp_path, [])
+        assert _load_split_tasks(tmp_path) == []
+
+
+class TestReduceBlocksRestoreState:
+    def test_restore_loads_persisted_split_tasks(self, tmp_path):
+        from unittest.mock import MagicMock
+
+        from news_recap.recap.models import Digest
+        from news_recap.recap.tasks.base import FlowContext
+
+        pdir = tmp_path / "pipeline"
+        pdir.mkdir()
+
+        tasks = [SplitTask(title="Broad", article_ids=["a1", "a2"])]
+        _save_split_tasks(pdir, tasks)
+
+        digest = Digest(
+            digest_id="test",
+            business_date="2026-01-01",
+            status="running",
+            pipeline_dir=str(pdir),
+            articles=[],
+        )
+        ctx = FlowContext(
+            pdir=pdir,
+            workdir_mgr=MagicMock(),
+            inp=MagicMock(),
+            article_map={},
+            digest=digest,
+        )
+
+        inst = ReduceBlocks(ctx)
+        inst.restore_state()
+
+        loaded = ctx.state["split_tasks"]
+        assert len(loaded) == 1
+        assert loaded[0].title == "Broad"
+        assert loaded[0].article_ids == ["a1", "a2"]
+
+    def test_restore_empty_when_no_file(self, tmp_path):
+        from unittest.mock import MagicMock
+
+        from news_recap.recap.models import Digest
+        from news_recap.recap.tasks.base import FlowContext
+
+        pdir = tmp_path / "pipeline"
+        pdir.mkdir()
+
+        digest = Digest(
+            digest_id="test",
+            business_date="2026-01-01",
+            status="running",
+            pipeline_dir=str(pdir),
+            articles=[],
+        )
+        ctx = FlowContext(
+            pdir=pdir,
+            workdir_mgr=MagicMock(),
+            inp=MagicMock(),
+            article_map={},
+            digest=digest,
+        )
+
+        inst = ReduceBlocks(ctx)
+        inst.restore_state()
+
+        assert ctx.state["split_tasks"] == []
+
+
+class TestApplyReducePlan:
+    def test_block_action_concatenates_articles(self):
         blocks = [
-            {"title": "Snow in Serbia", "article_ids": ["a1", "a2"], "worker": 0},
+            {"title": "A", "article_ids": ["a1", "a2"]},
+            {"title": "B", "article_ids": ["a3"]},
         ]
-        article_map = {"a1": "Snow story", "a2": "Road blocked"}
-        write_block_files(tmp_path, blocks, article_map)
+        actions = [ReduceAction(kind="block", title="Merged AB", source_indices=[1, 2])]
+        final, splits = apply_reduce_plan(blocks, actions)
+        assert len(final) == 1
+        assert final[0].title == "Merged AB"
+        assert final[0].article_ids == ["a1", "a2", "a3"]
+        assert len(splits) == 0
 
-        parsed = parse_reduce_output(tmp_path / "input" / "blocks")
-        assert len(parsed) == 1
-        assert parsed[0].title == "Snow in Serbia"
-        assert parsed[0].article_ids == ["a1", "a2"]
-
-
-class TestBuildBlockIndex:
-    def test_index_matches_filenames(self):
+    def test_split_action_produces_split_task(self):
         blocks = [
-            {"title": "Block A", "article_ids": ["a1"], "worker": 0},
-            {"title": "Block B", "article_ids": ["a2"], "worker": 1},
+            {"title": "Mixed", "article_ids": ["a1", "a2", "a3"]},
         ]
-        index = build_block_index(blocks)
-        assert "w0_b0.txt: Block A" in index
-        assert "w1_b1.txt: Block B" in index
+        actions = [ReduceAction(kind="split", title="Mixed block", source_indices=[1])]
+        final, splits = apply_reduce_plan(blocks, actions)
+        assert len(final) == 0
+        assert len(splits) == 1
+        assert isinstance(splits[0], SplitTask)
+        assert splits[0].article_ids == ["a1", "a2", "a3"]
+
+    def test_mixed_plan(self):
+        blocks = [
+            {"title": "A", "article_ids": ["a1"]},
+            {"title": "B", "article_ids": ["a2"]},
+            {"title": "C", "article_ids": ["a3", "a4"]},
+        ]
+        actions = [
+            ReduceAction(kind="block", title="Keep A", source_indices=[1]),
+            ReduceAction(kind="split", title="Broad BC", source_indices=[2, 3]),
+        ]
+        final, splits = apply_reduce_plan(blocks, actions)
+        assert len(final) == 1
+        assert final[0].title == "Keep A"
+        assert len(splits) == 1
+        assert splits[0].article_ids == ["a2", "a3", "a4"]
+
+    def test_implicit_block_uses_original_title(self):
+        blocks = [{"title": "Original", "article_ids": ["a1"]}]
+        actions = [ReduceAction(kind="block", title="", source_indices=[1])]
+        final, _ = apply_reduce_plan(blocks, actions)
+        assert final[0].title == "Original"

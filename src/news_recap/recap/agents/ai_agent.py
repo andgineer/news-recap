@@ -199,7 +199,7 @@ def _build_enriched_prompt(
     manifest_path = f"{manifest.workdir}/meta/task_manifest.json"
 
     if manifest.task_type.startswith(
-        ("recap_classify", "recap_enrich", "recap_map", "recap_reduce"),
+        ("recap_classify", "recap_enrich", "recap_map", "recap_reduce", "recap_split"),
     ):
         return base_prompt
 

@@ -91,23 +91,56 @@ BLOCK: <2-4 sentence title>
 {headlines_block}"""
 
 RECAP_REDUCE_PROMPT = """\
-You are a senior news editor. Several desks produced block lists independently. \
-Review the combined block titles below and produce a unified block list.
+You are a senior news editor. Several desks independently produced block lists \
+for today's digest. Your job: merge blocks that cover the same specific events \
+or storylines, then write a unified block list.
 
-Rules:
-- Merge all blocks that overlap in topic. If the merged result can be \
-described by one informative 2-4 sentence title — keep as one block. \
-If too broad for a single title — split so that each part has its own \
-informative title.
+Each desk saw only a fraction of today's articles, so their block lists overlap \
+and have gaps. Your job is to produce a unified list where each block covers one \
+event or storyline completely. Merge blocks that cover the same story — fully or \
+partially. If after merging a block spans multiple distinct stories that deserve \
+separate titles, mark it as SPLIT.
 
-BLOCK TITLES:
-{block_index}
+"Uncategorized" blocks contain leftover articles — merge each one into the \
+most relevant block, or keep as-is if no match.
 
-In input/blocks/ there is one file per block. Each file has:
-- Line 1: block title
-- Remaining lines: article_id: headline
+For each resulting block, write an informative title — the reader should \
+understand what happened from the title alone. Avoid vague labels like \
+"political news" or "terrible disaster".
 
-Write final blocks to output/blocks/ in the same format.
-Merged blocks = combined article lists with new title.
-Split blocks = articles redistributed across new files.
-Unchanged blocks = copy as-is."""
+If a merged block ended up too broad for one informative title, mark it \
+as SPLIT instead of BLOCK. A follow-up step will handle the splitting.
+
+Do NOT write any scripts, use any tools, or read any files.
+Print your output directly to stdout.
+
+Output format — one of two line types per block:
+
+BLOCK: <informative title>
+<comma-separated source block numbers>
+
+SPLIT: <best-effort combined title>
+<comma-separated source block numbers>
+
+=== BLOCK TITLES ===
+{block_titles}"""
+
+RECAP_SPLIT_PROMPT = """\
+You are a senior news editor. The block below is too broad for one informative \
+title. Split it into smaller blocks, each covering one specific event or \
+storyline.
+
+For each resulting block, write an informative title — the reader should \
+understand what happened from the title alone.
+
+Do NOT write any scripts, use any tools, or read any files.
+Print your output directly to stdout.
+
+Output format:
+BLOCK: <informative title>
+<comma-separated article numbers>
+
+Every article number must appear in exactly one block.
+
+=== ARTICLES ===
+{articles_block}"""

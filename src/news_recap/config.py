@@ -84,6 +84,7 @@ class OrchestratorSettings:
             "recap_enrich": 600,
             "recap_map": 300,
             "recap_reduce": 600,
+            "recap_split": 120,
         },
     )
     codex_command_template: str = _DEFAULT_CODEX_CMD
@@ -367,6 +368,11 @@ def _default_task_model_map() -> dict[str, dict[str, str]]:
             "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
             "claude": "--model opus --effort low",
             "gemini": "--model gemini-2.5-pro",
+        },
+        "recap_split": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
+            "claude": "--model sonnet --effort low",
+            "gemini": "--model gemini-2.5-flash",
         },
     }
 
