@@ -64,59 +64,75 @@ Specific factual headline for second article
 {articles_block}"""
 
 RECAP_MAP_PROMPT = """\
-You are a senior news editor. Compress these headlines into around {max_blocks} \
-blocks for a daily digest.
+You are a senior news editor. Group ALL headlines below into blocks.
 
-A block = a group of headlines that can be described in one informative title \
-without mixing unrelated events. The title is 2-4 sentences telling the reader \
-what happened. The reader sees ONLY titles to understand the day's news.
+Group headlines so that the essential information from all articles in a block \
+fits into an informative title of 1-3 sentences. The reader should understand \
+what happened from the title alone.
 
-GOOD block: "Heavy snow hits western Serbia, Valjevo road blocked, traffic \
-disrupted across the region" — related events, one coherent picture.
-BAD block: "Snow in Serbia and 15 infants die in Sarajevo hospital" — unrelated \
-events forced into one title.
+Headlines about the same event, the same country's affairs, or the same ongoing \
+story belong in one block if they can be jointly described in 1-3 informative \
+sentences.
 
-Merge aggressively when headlines belong together.
+Do NOT mix genuinely unrelated events. "Swiss resort fire and Venice carnival" \
+in one block is unacceptable.
+Do NOT create newspaper-section blocks like "Sports and Culture" or "World News". \
+Each block must describe specific news, not a topic category.
+Do NOT mix genuinely unrelated news in one block.
 
-FOLLOW: {follow_policy}
+GOOD title: "Heavy snow hits Serbia; most roads cleared but the Valjevo road \
+remains blocked."
+BAD title: "Flooding in Nepal" — no details on casualties or scale.
+BAD title: "10,000 programmers laid off" — where? why?
+BAD: "Serbian news" — not informative.
+BAD: "Global politics" — a category, not an event description.
+BAD: "Crime and Legal Matters" — this is a newspaper section, not a story.
+BAD: "Travel, Culture and Sports" — unrelated topics dumped together.
+BAD: "Diverse Global Developments" — meaningless catch-all.
+If a headline does not fit any group, it is better as a single-article block \
+with an informative title than forced into an unrelated category.
+
+Every headline number must appear in exactly one block.
+Do not skip any headline.
+
+FOLLOW (give extra attention): {follow_policy}
 
 Do NOT write any scripts, use any tools, or read any files.
 Print your output directly to stdout.
 
 Output format:
-BLOCK: <2-4 sentence title>
+BLOCK: <informative title>
 <comma-separated headline numbers>
 
-=== HEADLINES (format: NUMBER: HEADLINE) ===
+=== HEADLINES ({headline_count} total, format: NUMBER: HEADLINE) ===
 {headlines_block}"""
 
 RECAP_REDUCE_PROMPT = """\
-You are a senior news editor. Several desks independently produced block lists \
-for today's digest. Your job: merge blocks that cover the same specific events \
-or storylines, then write a unified block list.
+You are a senior news editor. Several desks independently produced block lists. \
+Your job: merge blocks that overlap, then write a unified list.
 
-Each desk saw only a fraction of today's articles, so their block lists overlap \
-and have gaps. Your job is to produce a unified list where each block covers one \
-event or storyline completely. Merge blocks that cover the same story — fully or \
-partially. If after merging a block spans multiple distinct stories that deserve \
-separate titles, mark it as SPLIT.
+Each desk saw only a fraction of today's articles. Merge blocks whose articles \
+can be described together in an informative title of up to 5 sentences. \
+The reader should understand what happened from the title alone.
 
-Blocks titled "Uncategorized" contain leftover articles that no desk claimed. \
-Assign each Uncategorized block to the single most relevant thematic block. \
-If no good match exists, mark the Uncategorized block as SPLIT so the next \
-step can redistribute its articles. Do NOT output any block titled \
-"Uncategorized".
+Do NOT merge blocks about genuinely unrelated subjects into one.
+Do NOT create newspaper-section blocks like "Sports and Culture" or "World News". \
+Each block must describe specific news, not a topic category.
 
-For each resulting block, write an informative title — the reader should \
-understand what happened from the title alone. Avoid vague labels like \
-"political news" or "terrible disaster".
+GOOD title: "Serbian Interior Minister Dačić hospitalized with severe pneumonia; \
+Vučić, Dodik and police unions express support; slight improvement reported."
+BAD: "Serbian news" — not informative.
+BAD: "Global politics" — a category, not an event description.
+BAD: "Crime and Legal Matters" — a newspaper section, not a story.
+BAD: "Social and societal issues" — meaningless catch-all.
+BAD: "European politics" — too broad, not specific news.
 
-If a merged block contains more than 30 articles, it is almost certainly \
-too broad — mark it as SPLIT unless all articles genuinely cover one \
-specific event.
+Blocks titled "Uncategorized" — merge into the most relevant block, or mark \
+as SPLIT. Never output "Uncategorized".
 
-If a merged block ended up too broad for one informative title, mark it \
-as SPLIT instead of BLOCK. A follow-up step will handle the splitting.
+More than 30 articles in one block — almost certainly too broad, mark as SPLIT.
+
+Too broad for 5 informative sentences — mark as SPLIT.
 
 Do NOT write any scripts, use any tools, or read any files.
 Print your output directly to stdout.
@@ -136,17 +152,20 @@ SPLIT: <best-effort combined title>
 {block_titles}"""
 
 RECAP_SPLIT_PROMPT = """\
-You are a senior news editor. The block below is too broad for one informative \
-title. Split it into smaller blocks, each covering one specific event or \
-storyline.
+You are a senior news editor. The block below is too broad. Split it into \
+smaller blocks.
 
-Group related articles aggressively — articles about the same country, event, \
-or topic belong together. Aim for roughly 5-15 blocks total. Do NOT create \
-single-article blocks unless an article is truly unrelated to every other \
-article in the list.
-
-For each resulting block, write an informative title — the reader should \
+Each block's title — up to 5 informative sentences. The reader should \
 understand what happened from the title alone.
+
+Do NOT mix genuinely unrelated articles in one block.
+Do NOT create blocks with vague titles like "Political news" or "Various \
+developments". Each title must describe specific news.
+
+A single-article block is acceptable when an article has nothing in common \
+with the rest.
+
+Every article number must appear in exactly one block.
 
 Do NOT write any scripts, use any tools, or read any files.
 Print your output directly to stdout.
@@ -154,8 +173,6 @@ Print your output directly to stdout.
 Output format:
 BLOCK: <informative title>
 <comma-separated article numbers>
-
-Every article number must appear in exactly one block.
 
 === ARTICLES ===
 {articles_block}"""

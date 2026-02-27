@@ -82,8 +82,8 @@ class OrchestratorSettings:
         default_factory=lambda: {
             "recap_classify": 900,
             "recap_enrich": 600,
-            "recap_map": 300,
-            "recap_reduce": 600,
+            "recap_map": 600,
+            "recap_reduce": 1200,
             "recap_split": 120,
         },
     )

@@ -79,23 +79,23 @@ class TestSplitIntoMapChunks:
 class TestBuildMapPrompt:
     def test_contains_headlines(self):
         entries = [_make_index_entry("a1", "Breaking news")]
-        prompt = build_map_prompt(entries, "Russia", 10)
+        prompt = build_map_prompt(entries, "Russia")
         assert "Breaking news" in prompt
         assert "1: Breaking news" in prompt
 
     def test_contains_follow_policy(self):
         entries = [_make_index_entry("a1")]
-        prompt = build_map_prompt(entries, "Russia, Serbia", 10)
+        prompt = build_map_prompt(entries, "Russia, Serbia")
         assert "Russia, Serbia" in prompt
 
-    def test_contains_max_blocks(self):
-        entries = [_make_index_entry("a1")]
-        prompt = build_map_prompt(entries, "none", 42)
-        assert "42" in prompt
+    def test_contains_headline_count(self):
+        entries = [_make_index_entry(f"a{i}") for i in range(42)]
+        prompt = build_map_prompt(entries, "none")
+        assert "42 total" in prompt
 
     def test_contains_stdout_instruction(self):
         entries = [_make_index_entry("a1")]
-        prompt = build_map_prompt(entries, "none", 10)
+        prompt = build_map_prompt(entries, "none")
         assert "stdout" in prompt
         assert "BLOCK:" in prompt
 

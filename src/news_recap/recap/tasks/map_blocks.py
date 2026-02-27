@@ -83,13 +83,12 @@ def split_into_map_chunks(
 def build_map_prompt(
     entries: list[ArticleIndexEntry],
     follow_policy: str,
-    max_blocks: int,
 ) -> str:
     """Build the inline MAP prompt for a chunk of headlines."""
     headlines_block = "\n".join(f"{i + 1}: {e.title}" for i, e in enumerate(entries))
     return RECAP_MAP_PROMPT.format(
-        max_blocks=max_blocks,
         follow_policy=follow_policy or "none",
+        headline_count=len(entries),
         headlines_block=headlines_block,
     )
 
@@ -250,20 +249,17 @@ class MapBlocks(TaskLauncher):
                 ctx.state["map_blocks"] = existing_blocks
                 return
 
-        max_blocks = max(5, len(entries) // 15)
         chunks = split_into_map_chunks(entries)
         pf_logger.info(
-            "[map] %d headlines -> %d chunk(s), target ~%d blocks",
+            "[map] %d headlines -> %d chunk(s)",
             len(entries),
             len(chunks),
-            max_blocks,
         )
 
         follow_policy = ctx.inp.preferences.follow or "none"
-        per_chunk_blocks = max(5, max_blocks // len(chunks))
 
         def prepare(chunk: list[ArticleIndexEntry], batch_num: int) -> str:
-            prompt = build_map_prompt(chunk, follow_policy, per_chunk_blocks)
+            prompt = build_map_prompt(chunk, follow_policy)
             task_id = materialize_step(
                 ctx.workdir_mgr,
                 ctx.inp,
