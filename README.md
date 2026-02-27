@@ -44,10 +44,10 @@
 | src/news\_recap/recap/tasks/map\_blocks.py               |      144 |        8 |     94% |151, 217, 231-233, 249-250, 293 |
 | src/news\_recap/recap/tasks/parallel.py                  |       51 |       10 |     80% |80-87, 107, 128 |
 | src/news\_recap/recap/tasks/prompts.py                   |        6 |        0 |    100% |           |
-| src/news\_recap/recap/tasks/reduce\_blocks.py            |      142 |       31 |     78% |55, 166, 208-260 |
+| src/news\_recap/recap/tasks/reduce\_blocks.py            |      237 |       74 |     69% |63, 174, 216-233, 330-350, 366-390, 398-474, 483-496 |
 | src/news\_recap/recap/tasks/split\_blocks.py             |       96 |        1 |     99% |       123 |
 | src/news\_recap/storage/io.py                            |       42 |        6 |     86% |33-36, 59, 73 |
-| **TOTAL**                                                | **3924** |  **748** | **81%** |           |
+| **TOTAL**                                                | **4019** |  **791** | **80%** |           |
 
 
 ## Setup coverage badge
