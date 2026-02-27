@@ -124,6 +124,19 @@ def _write_pipeline_input(  # noqa: PLR0913
     )
 
 
+def _patch_agent_override(pipeline_dir: Path, agent: str) -> str | None:
+    """Patch ``agent_override`` in an existing ``pipeline_input.json``.
+
+    Returns the previous value (or ``None`` if unset).
+    """
+    path = pipeline_dir / "pipeline_input.json"
+    raw = json.loads(path.read_text("utf-8"))
+    old = raw.get("agent_override")
+    raw["agent_override"] = agent.strip().lower()
+    path.write_text(json.dumps(raw, ensure_ascii=False, default=str), "utf-8")
+    return old
+
+
 class RecapCliController:
     """Load articles, materialize pipeline inputs, and launch the Prefect flow."""
 
@@ -161,6 +174,10 @@ class RecapCliController:
                 f"({len(digest.completed_phases)} phase(s) done: "
                 f"{', '.join(digest.completed_phases) or 'none'})"
             )
+            if command.agent_override:
+                new_agent = command.agent_override.strip().lower()
+                old_agent = _patch_agent_override(pipeline_dir, new_agent)
+                yield f"Agent override changed: {old_agent or 'default'} -> {new_agent}"
         else:
             fetch_limit = command.article_limit or 2000
             articles = store.list_retrieval_articles(
