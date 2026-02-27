@@ -4,6 +4,10 @@ Reads block titles from MAP output, asks the LLM to merge overlapping
 blocks, and produces BLOCK / SPLIT actions.  BLOCK actions are applied
 in code (concatenate article lists); SPLIT actions are queued for the
 separate SPLIT phase.
+
+When the number of MAP blocks exceeds ``_REDUCE_CHUNK_LIMIT``, a
+tree-reduce is used: blocks are chunked and reduced in parallel, then
+the combined results are reduced once more.
 """
 
 from __future__ import annotations
@@ -18,11 +22,15 @@ from prefect.logging import get_run_logger
 
 from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.models import DigestBlock
-from news_recap.recap.storage.pipeline_io import materialize_step
+from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import RecapPipelineError, TaskLauncher
+from news_recap.recap.tasks.parallel import submit_and_collect
 from news_recap.recap.tasks.prompts import RECAP_REDUCE_PROMPT
 
 logger = logging.getLogger(__name__)
+
+_REDUCE_CHUNK_LIMIT = 200
+_FINAL_REDUCE_LIMIT = 200
 
 
 @dataclass(slots=True)
@@ -195,8 +203,122 @@ def _load_split_tasks(pdir: Path) -> list[SplitTask]:
     return [SplitTask(title=d["title"], article_ids=d["article_ids"]) for d in data]
 
 
+def _run_single_reduce(
+    ctx: Any,
+    blocks: list[dict[str, Any]],
+    *,
+    batch: int | None = None,
+) -> tuple[list[DigestBlock], list[SplitTask]]:
+    """Execute one REDUCE call and return ``(final_blocks, split_tasks)``.
+
+    On parse failure, raises ``RecapPipelineError``.
+    """
+    prompt = build_reduce_prompt(blocks)
+    tid = materialize_step(
+        ctx.workdir_mgr,
+        ctx.inp,
+        step_name="recap_reduce",
+        prompt=prompt,
+        batch=batch,
+    )
+
+    tid = run_ai_agent.with_options(task_run_name=tid)(
+        pipeline_dir=str(ctx.pdir),
+        step_name="recap_reduce",
+        task_id=tid,
+    )
+
+    stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
+    actions = parse_reduce_stdout(stdout_path, len(blocks))
+    return apply_reduce_plan(blocks, actions)
+
+
+def _interleave_by_worker(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reorder blocks so that each consecutive run mixes different MAP workers.
+
+    MAP workers produce non-overlapping blocks internally; overlaps only
+    exist *between* workers.  Round-robin interleaving ensures each chunk
+    fed to a REDUCE pass sees blocks from multiple workers, maximising
+    duplicate detection.
+    """
+    by_worker: dict[int, list[dict[str, Any]]] = {}
+    for b in blocks:
+        w = b.get("worker", 0)
+        by_worker.setdefault(w, []).append(b)
+
+    if len(by_worker) <= 1:
+        return blocks
+
+    iterators = [iter(v) for v in by_worker.values()]
+    result: list[dict[str, Any]] = []
+    while iterators:
+        remaining = []
+        for it in iterators:
+            val = next(it, None)
+            if val is not None:
+                result.append(val)
+                remaining.append(it)
+        iterators = remaining
+    return result
+
+
+def _chunk_blocks(
+    blocks: list[dict[str, Any]],
+    chunk_size: int,
+) -> list[list[dict[str, Any]]]:
+    """Split *blocks* into roughly-even chunks of at most *chunk_size*."""
+    if not blocks:
+        return []
+    n_chunks = max(1, -(-len(blocks) // chunk_size))
+    base, extra = divmod(len(blocks), n_chunks)
+    chunks: list[list[dict[str, Any]]] = []
+    start = 0
+    for i in range(n_chunks):
+        size = base + (1 if i < extra else 0)
+        chunks.append(blocks[start : start + size])
+        start += size
+    return chunks
+
+
+def _blocks_to_dicts(
+    blocks: list[DigestBlock],
+    splits: list[SplitTask],
+) -> list[dict[str, Any]]:
+    """Convert REDUCE results back to dict format for a subsequent pass.
+
+    A ``kind`` field (``"block"`` or ``"split"``) is preserved so that
+    downstream code can reconstruct the correct types when the final
+    REDUCE pass is skipped.
+    """
+    result: list[dict[str, Any]] = []
+    for b in blocks:
+        result.append({"title": b.title, "article_ids": b.article_ids, "kind": "block"})
+    for s in splits:
+        result.append({"title": s.title, "article_ids": s.article_ids, "kind": "split"})
+    return result
+
+
+def _split_intermediate(
+    intermediate: list[dict[str, Any]],
+) -> tuple[list[DigestBlock], list[SplitTask]]:
+    """Reconstruct typed blocks/splits from intermediate dicts."""
+    blocks: list[DigestBlock] = []
+    splits: list[SplitTask] = []
+    for b in intermediate:
+        if b.get("kind") == "split":
+            splits.append(SplitTask(title=b["title"], article_ids=b["article_ids"]))
+        else:
+            blocks.append(DigestBlock(title=b["title"], article_ids=b["article_ids"]))
+    return blocks, splits
+
+
 class ReduceBlocks(TaskLauncher):
-    """Merge overlapping MAP blocks via inline prompt + stdout output."""
+    """Merge overlapping MAP blocks via inline prompt + stdout output.
+
+    When the block count exceeds ``_REDUCE_CHUNK_LIMIT``, a two-level
+    tree-reduce is used: blocks are chunked and reduced in parallel,
+    then the combined results optionally go through a final pass.
+    """
 
     name = "reduce_blocks"
 
@@ -214,8 +336,35 @@ class ReduceBlocks(TaskLauncher):
             ctx.digest.blocks = []
             return
 
-        prompt = build_reduce_prompt(map_blocks)
+        pf_logger.info("[reduce] %d input blocks", len(map_blocks))
 
+        if len(map_blocks) <= _REDUCE_CHUNK_LIMIT:
+            final_blocks, split_tasks = self._single_reduce(map_blocks, pf_logger)
+        else:
+            final_blocks, split_tasks = self._tree_reduce(map_blocks, pf_logger)
+
+        ctx.digest.blocks = final_blocks
+        ctx.state["split_tasks"] = split_tasks
+        _save_split_tasks(ctx.pdir, split_tasks)
+
+        pf_logger.info(
+            "[reduce] result: %d blocks + %d to split",
+            len(final_blocks),
+            len(split_tasks),
+        )
+
+    def _single_reduce(
+        self,
+        map_blocks: list[dict[str, Any]],
+        pf_logger: Any,
+    ) -> tuple[list[DigestBlock], list[SplitTask]]:
+        """Single-pass REDUCE (original behavior).
+
+        Agent errors (timeout, crash) propagate — no silent fallback.
+        Only parse failures trigger a fallback to the original MAP blocks.
+        """
+        ctx = self.ctx
+        prompt = build_reduce_prompt(map_blocks)
         tid = materialize_step(
             ctx.workdir_mgr,
             ctx.inp,
@@ -223,44 +372,125 @@ class ReduceBlocks(TaskLauncher):
             prompt=prompt,
         )
 
-        pf_logger.info("[reduce] %d input blocks", len(map_blocks))
-
         tid = run_ai_agent.with_options(task_run_name=tid)(
             pipeline_dir=str(ctx.pdir),
             step_name="recap_reduce",
             task_id=tid,
         )
 
-        stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
-
         try:
+            stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
             actions = parse_reduce_stdout(stdout_path, len(map_blocks))
+            return apply_reduce_plan(map_blocks, actions)
         except RecapPipelineError:
             pf_logger.warning("[reduce] Failed to parse stdout — falling back to MAP blocks")
-            ctx.digest.blocks = [
+            fallback = [
                 DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in map_blocks
             ]
-            return
+            return fallback, []
 
-        final_blocks, split_tasks = apply_reduce_plan(map_blocks, actions)
-
-        if not final_blocks and not split_tasks:
-            pf_logger.warning("[reduce] Empty reduce plan — falling back to MAP blocks")
-            ctx.digest.blocks = [
-                DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in map_blocks
-            ]
-            return
-
-        ctx.digest.blocks = final_blocks
-        ctx.state["split_tasks"] = split_tasks
-        _save_split_tasks(ctx.pdir, split_tasks)
-
-        n_block = sum(1 for a in actions if a.kind == "block")
-        n_split = sum(1 for a in actions if a.kind == "split")
+    def _tree_reduce(
+        self,
+        map_blocks: list[dict[str, Any]],
+        pf_logger: Any,
+    ) -> tuple[list[DigestBlock], list[SplitTask]]:
+        """Two-level tree-reduce for large block counts."""
+        ctx = self.ctx
+        interleaved = _interleave_by_worker(map_blocks)
+        chunks = _chunk_blocks(interleaved, _REDUCE_CHUNK_LIMIT)
         pf_logger.info(
-            "[reduce] %d BLOCK, %d SPLIT -> %d final blocks + %d to split",
-            n_block,
-            n_split,
-            len(final_blocks),
-            len(split_tasks),
+            "[reduce] tree-reduce: %d blocks -> %d chunk(s) of ≤%d",
+            len(map_blocks),
+            len(chunks),
+            _REDUCE_CHUNK_LIMIT,
         )
+
+        def prepare(chunk: list[dict[str, Any]], batch_num: int) -> str:
+            prompt = build_reduce_prompt(chunk)
+            task_id = materialize_step(
+                ctx.workdir_mgr,
+                ctx.inp,
+                step_name="recap_reduce",
+                batch=batch_num,
+                prompt=prompt,
+            )
+            pf_logger.info("[reduce] pass-1 chunk %d — %d blocks", batch_num, len(chunk))
+            return task_id
+
+        def parse(
+            task_id: str,
+            chunk: list[dict[str, Any]],
+            batch_num: int,
+        ) -> list[dict[str, Any]]:
+            stdout_path = ctx.pdir / task_id / "output" / "agent_stdout.log"
+            actions = parse_reduce_stdout(stdout_path, len(chunk))
+            blocks, splits = apply_reduce_plan(chunk, actions)
+            pf_logger.info(
+                "[reduce] pass-1 chunk %d: %d blocks + %d splits",
+                batch_num,
+                len(blocks),
+                len(splits),
+            )
+            return _blocks_to_dicts(blocks, splits)
+
+        chunk_results, n_failed, _ = submit_and_collect(
+            ctx,
+            chunks,
+            step_name="recap_reduce",
+            step_label="reduce chunk",
+            start_batch=next_batch_number(ctx.pdir, "recap_reduce") - 1,
+            max_parallel=ctx.inp.effective_max_parallel(len(chunks)),
+            prepare_fn=prepare,
+            parse_fn=parse,
+            pf_logger=pf_logger,
+        )
+
+        intermediate = [b for chunk_blocks in chunk_results for b in chunk_blocks]
+        pf_logger.info("[reduce] pass-1 produced %d intermediate blocks", len(intermediate))
+
+        if not intermediate:
+            pf_logger.warning("[reduce] pass-1 empty — falling back to MAP blocks")
+            fallback = [
+                DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in map_blocks
+            ]
+            return fallback, []
+
+        final_blocks, split_tasks = self._finish_tree_reduce(
+            ctx,
+            intermediate,
+            pf_logger,
+        )
+
+        if n_failed > 0:
+            self.fully_completed = False
+            ctx.digest.blocks = final_blocks
+            ctx.state["split_tasks"] = split_tasks
+            _save_split_tasks(ctx.pdir, split_tasks)
+            raise RecapPipelineError(
+                "recap_reduce",
+                f"Chunk failure(s) — {len(final_blocks)} blocks saved from successful chunks",
+            )
+
+        return final_blocks, split_tasks
+
+    def _finish_tree_reduce(
+        self,
+        ctx: Any,
+        intermediate: list[dict[str, Any]],
+        pf_logger: Any,
+    ) -> tuple[list[DigestBlock], list[SplitTask]]:
+        """Run final REDUCE pass or reconstruct typed results from pass-1."""
+        if len(intermediate) <= _FINAL_REDUCE_LIMIT:
+            pf_logger.info("[reduce] final pass on %d blocks", len(intermediate))
+            try:
+                return _run_single_reduce(ctx, intermediate, batch=0)
+            except RecapPipelineError:
+                pf_logger.warning("[reduce] final pass failed — using pass-1 results")
+                return _split_intermediate(intermediate)
+
+        pf_logger.info(
+            "[reduce] %d intermediate blocks > %d limit — skipping final pass",
+            len(intermediate),
+            _FINAL_REDUCE_LIMIT,
+        )
+        return _split_intermediate(intermediate)

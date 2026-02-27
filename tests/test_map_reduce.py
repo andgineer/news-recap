@@ -18,8 +18,12 @@ from news_recap.recap.tasks.reduce_blocks import (
     ReduceAction,
     ReduceBlocks,
     SplitTask,
+    _blocks_to_dicts,
+    _chunk_blocks,
+    _interleave_by_worker,
     _load_split_tasks,
     _save_split_tasks,
+    _split_intermediate,
     apply_reduce_plan,
     build_reduce_prompt,
     parse_reduce_stdout,
@@ -548,3 +552,123 @@ class TestApplyReducePlan:
         actions = [ReduceAction(kind="block", title="", source_indices=[1])]
         final, _ = apply_reduce_plan(blocks, actions)
         assert final[0].title == "Original"
+
+
+class TestInterleaveByWorker:
+    def test_single_worker_unchanged(self):
+        blocks = [{"title": f"B{i}", "article_ids": [], "worker": 1} for i in range(5)]
+        result = _interleave_by_worker(blocks)
+        assert result == blocks
+
+    def test_no_worker_key_unchanged(self):
+        blocks = [{"title": f"B{i}", "article_ids": []} for i in range(5)]
+        result = _interleave_by_worker(blocks)
+        assert result == blocks
+
+    def test_round_robin_two_workers(self):
+        blocks = [
+            {"title": "W1-A", "article_ids": [], "worker": 1},
+            {"title": "W1-B", "article_ids": [], "worker": 1},
+            {"title": "W2-A", "article_ids": [], "worker": 2},
+            {"title": "W2-B", "article_ids": [], "worker": 2},
+        ]
+        result = _interleave_by_worker(blocks)
+        workers = [b["worker"] for b in result]
+        assert workers == [1, 2, 1, 2]
+
+    def test_uneven_workers(self):
+        blocks = [
+            {"title": "W1-A", "article_ids": [], "worker": 1},
+            {"title": "W1-B", "article_ids": [], "worker": 1},
+            {"title": "W1-C", "article_ids": [], "worker": 1},
+            {"title": "W2-A", "article_ids": [], "worker": 2},
+        ]
+        result = _interleave_by_worker(blocks)
+        assert len(result) == 4
+        assert result[0]["worker"] == 1
+        assert result[1]["worker"] == 2
+        assert result[2]["worker"] == 1
+        assert result[3]["worker"] == 1
+
+    def test_preserves_all_blocks(self):
+        blocks = [
+            {"title": f"W{w}-{i}", "article_ids": [f"a{w}{i}"], "worker": w}
+            for w in range(1, 4)
+            for i in range(50)
+        ]
+        result = _interleave_by_worker(blocks)
+        assert len(result) == 150
+        assert set(b["title"] for b in result) == set(b["title"] for b in blocks)
+
+
+class TestChunkBlocks:
+    def test_single_chunk_when_small(self):
+        blocks = [{"title": f"B{i}", "article_ids": [f"a{i}"]} for i in range(50)]
+        chunks = _chunk_blocks(blocks, 200)
+        assert len(chunks) == 1
+        assert len(chunks[0]) == 50
+
+    def test_splits_into_even_chunks(self):
+        blocks = [{"title": f"B{i}", "article_ids": [f"a{i}"]} for i in range(400)]
+        chunks = _chunk_blocks(blocks, 200)
+        assert len(chunks) == 2
+        assert len(chunks[0]) == 200
+        assert len(chunks[1]) == 200
+
+    def test_uneven_split(self):
+        blocks = [{"title": f"B{i}", "article_ids": [f"a{i}"]} for i in range(350)]
+        chunks = _chunk_blocks(blocks, 200)
+        assert len(chunks) == 2
+        assert len(chunks[0]) + len(chunks[1]) == 350
+        assert all(len(c) <= 200 for c in chunks)
+
+    def test_empty_input(self):
+        assert _chunk_blocks([], 200) == []
+
+    def test_preserves_all_blocks(self):
+        blocks = [{"title": f"B{i}", "article_ids": [f"a{i}"]} for i in range(500)]
+        chunks = _chunk_blocks(blocks, 200)
+        flat = [b for c in chunks for b in c]
+        assert len(flat) == 500
+        assert flat == blocks
+
+
+class TestBlocksToDicts:
+    def test_converts_blocks_and_splits_with_kind(self):
+        from news_recap.recap.models import DigestBlock
+
+        blocks = [DigestBlock(title="Block A", article_ids=["a1", "a2"])]
+        splits = [SplitTask(title="Split B", article_ids=["a3"])]
+        result = _blocks_to_dicts(blocks, splits)
+        assert len(result) == 2
+        assert result[0] == {"title": "Block A", "article_ids": ["a1", "a2"], "kind": "block"}
+        assert result[1] == {"title": "Split B", "article_ids": ["a3"], "kind": "split"}
+
+    def test_empty(self):
+        assert _blocks_to_dicts([], []) == []
+
+
+class TestSplitIntermediate:
+    def test_separates_blocks_and_splits(self):
+        intermediate = [
+            {"title": "Keep", "article_ids": ["a1"], "kind": "block"},
+            {"title": "Broad", "article_ids": ["a2", "a3"], "kind": "split"},
+            {"title": "Keep 2", "article_ids": ["a4"], "kind": "block"},
+        ]
+        blocks, splits = _split_intermediate(intermediate)
+        assert len(blocks) == 2
+        assert len(splits) == 1
+        assert blocks[0].title == "Keep"
+        assert splits[0].title == "Broad"
+        assert splits[0].article_ids == ["a2", "a3"]
+
+    def test_missing_kind_defaults_to_block(self):
+        intermediate = [{"title": "No kind", "article_ids": ["a1"]}]
+        blocks, splits = _split_intermediate(intermediate)
+        assert len(blocks) == 1
+        assert len(splits) == 0
+
+    def test_empty(self):
+        blocks, splits = _split_intermediate([])
+        assert blocks == []
+        assert splits == []
