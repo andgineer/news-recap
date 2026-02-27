@@ -16,7 +16,7 @@ from news_recap.ingestion.models import (
     UpsertAction,
 )
 from news_recap.ingestion.repository import IngestionStore
-from news_recap.storage.io import day_key
+from news_recap.storage.io import day_key, gc_old_days
 
 pytestmark = [
     allure.epic("Daily Ingestion"),
@@ -377,3 +377,22 @@ def test_auto_gc_deletes_old_daily_partitions_on_init(tmp_path: Path) -> None:
     reopened = IngestionStore(tmp_path, gc_retention_days=7)
     reopened.init_schema()
     assert not (tmp_path / "ingestion" / f"articles-{old_dk}.json").exists()
+
+
+def test_gc_old_days_deletes_old_resource_directories(tmp_path: Path) -> None:
+    today = datetime.now(tz=UTC).date()
+    old_date = (today - timedelta(days=10)).isoformat()
+    recent_date = (today - timedelta(days=3)).isoformat()
+
+    res_dir = tmp_path / "resources"
+    (res_dir / old_date).mkdir(parents=True)
+    (res_dir / old_date / "art_1.json").write_text("{}", "utf-8")
+    (res_dir / recent_date).mkdir(parents=True)
+    (res_dir / recent_date / "art_2.json").write_text("{}", "utf-8")
+    (res_dir / "not-a-date").mkdir(parents=True)
+
+    deleted = gc_old_days(tmp_path, keep_days=7)
+    assert res_dir / old_date in deleted
+    assert not (res_dir / old_date).exists()
+    assert (res_dir / recent_date).exists()
+    assert (res_dir / "not-a-date").exists()

@@ -104,6 +104,7 @@ def _write_pipeline_input(  # noqa: PLR0913
     preferences: UserPreferences,
     routing_defaults: RoutingDefaults,
     agent_override: str | None,
+    data_dir: str,
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS,
 ) -> None:
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
@@ -114,6 +115,7 @@ def _write_pipeline_input(  # noqa: PLR0913
         "preferences": msgspec.structs.asdict(preferences),
         "routing_defaults": msgspec.structs.asdict(routing_defaults),
         "agent_override": agent_override,
+        "data_dir": data_dir,
         "min_resource_chars": min_resource_chars,
     }
     (pipeline_dir / "pipeline_input.json").write_text(
@@ -183,6 +185,7 @@ class RecapCliController:
                 preferences=preferences,
                 routing_defaults=routing_defaults,
                 agent_override=command.agent_override,
+                data_dir=str(settings.data_dir),
                 min_resource_chars=settings.ingestion.min_resource_chars,
             )
             yield f"New pipeline: {pipeline_dir}"

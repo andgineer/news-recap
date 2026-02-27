@@ -17,6 +17,7 @@ from news_recap.recap.storage.pipeline_io import (
     load_cached_resource_texts,
     materialize_step,
     next_batch_number,
+    resource_cache_dir,
 )
 from news_recap.recap.tasks.base import (
     FlowContext,
@@ -356,7 +357,7 @@ def _build_enrich_entries(
 
     loaded = load_cached_resource_texts(
         index_entries,
-        cache_dir=ctx.pdir,
+        cache_dir=resource_cache_dir(ctx.inp.data_dir, ctx.inp.business_date),
         min_resource_chars=ctx.inp.min_resource_chars,
     )
     return [

@@ -313,19 +313,15 @@ class TestResourceCache:
 
     def test_cache_corrupt_file_returns_none(self, tmp_path: Path) -> None:
         cache = ResourceCache(tmp_path)
-        cache_dir = tmp_path / "resource_cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        (cache_dir / "art_1.json").write_text("not valid json{{{", "utf-8")
+        (tmp_path / "art_1.json").write_text("not valid json{{{", "utf-8")
         assert cache.get("art:1", expected_url="https://x.com") is None
 
     def test_cache_non_dict_json_returns_none(self, tmp_path: Path) -> None:
         """Valid JSON that is not a dict (e.g. array or string) should be a cache miss."""
         cache = ResourceCache(tmp_path)
-        cache_dir = tmp_path / "resource_cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        (cache_dir / "art_1.json").write_text('["not", "a", "dict"]', "utf-8")
+        (tmp_path / "art_1.json").write_text('["not", "a", "dict"]', "utf-8")
         assert cache.get("art:1", expected_url="https://x.com") is None
-        (cache_dir / "art_2.json").write_text('"just a string"', "utf-8")
+        (tmp_path / "art_2.json").write_text('"just a string"', "utf-8")
         assert cache.get("art:2", expected_url="https://x.com") is None
 
     def test_cache_url_mismatch_invalidates(self, tmp_path: Path) -> None:
@@ -471,6 +467,7 @@ class TestPipelineInputMinResourceChars:
                 "task_type_timeout_map": {},
             },
             "agent_override": None,
+            "data_dir": str(tmp_path),
             "min_resource_chars": 500,
         }
         (tmp_path / "pipeline_input.json").write_text(

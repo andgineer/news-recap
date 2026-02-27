@@ -1,8 +1,9 @@
-"""File-based resource cache scoped to a pipeline directory.
+"""File-based resource cache with daily sharding.
 
 Stores loaded resources (successes *and* failures) as JSON files so that
-``Enrich`` and ``EnrichFull`` share fetched content without re-downloading
-or re-hitting APIs that already returned errors.
+pipeline steps share fetched content without re-downloading or re-hitting
+APIs that already returned errors.  The cache directory is provided by
+the caller (typically ``{data_dir}/resources/{business_date}/``).
 """
 
 from __future__ import annotations
@@ -16,18 +17,16 @@ from news_recap.recap.loaders.resource_loader import LoadedResource, ResourceLoa
 
 logger = logging.getLogger(__name__)
 
-_CACHE_SUBDIR = "resource_cache"
-
 
 def _safe_id(source_id: str) -> str:
     return source_id.replace(":", "_").replace("/", "_")
 
 
 class ResourceCache:
-    """Read-through cache backed by JSON files in ``{root}/resource_cache/``."""
+    """Read-through cache backed by JSON files in a caller-provided directory."""
 
-    def __init__(self, root: Path) -> None:
-        self._dir = root / _CACHE_SUBDIR
+    def __init__(self, cache_dir: Path) -> None:
+        self._dir = cache_dir
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def get(self, source_id: str, *, expected_url: str) -> LoadedResource | None:

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from prefect.logging import get_run_logger
 
-from news_recap.recap.storage.pipeline_io import load_resource_texts
+from news_recap.recap.storage.pipeline_io import load_resource_texts, resource_cache_dir
 from news_recap.recap.tasks.base import (
     RecapPipelineError,
     TaskLauncher,
@@ -96,7 +96,7 @@ class LoadResources(TaskLauncher):
 
         loaded = load_resource_texts(
             eligible,
-            cache_dir=ctx.pdir,
+            cache_dir=resource_cache_dir(ctx.inp.data_dir, ctx.inp.business_date),
             min_resource_chars=ctx.inp.min_resource_chars,
         )
 

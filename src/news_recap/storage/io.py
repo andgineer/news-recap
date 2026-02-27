@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
+import shutil
 import tempfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -60,20 +62,32 @@ def day_key(dt: datetime | None = None) -> str:
     return dt.astimezone().date().isoformat()
 
 
+_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
 def gc_old_days(data_dir: Path, *, keep_days: int = 7) -> list[Path]:
     """Delete daily partition files outside the *keep_days* retention window.
 
     With ``keep_days=7`` and today = Feb 19, keeps Feb 13..Feb 19 (7 days)
-    and deletes Feb 12 and older.  Returns list of deleted paths.
+    and deletes Feb 12 and older.  Returns list of deleted paths (both
+    article files and resource cache directories).
     """
     cutoff = (date.today() - timedelta(days=keep_days)).isoformat()
-    ingestion_dir = data_dir / "ingestion"
     deleted: list[Path] = []
-    if not ingestion_dir.exists():
-        return deleted
-    for f in ingestion_dir.glob("articles-*.json"):
-        day_str = f.stem.removeprefix("articles-")
-        if day_str <= cutoff:
-            f.unlink()
-            deleted.append(f)
+
+    ingestion_dir = data_dir / "ingestion"
+    if ingestion_dir.exists():
+        for f in ingestion_dir.glob("articles-*.json"):
+            day_str = f.stem.removeprefix("articles-")
+            if day_str <= cutoff:
+                f.unlink()
+                deleted.append(f)
+
+    resources_dir = data_dir / "resources"
+    if resources_dir.exists():
+        for d in resources_dir.iterdir():
+            if d.is_dir() and _DATE_RE.fullmatch(d.name) and d.name <= cutoff:
+                shutil.rmtree(d)
+                deleted.append(d)
+
     return deleted

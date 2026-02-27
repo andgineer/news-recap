@@ -38,6 +38,8 @@ class PipelineInput:
     preferences: UserPreferences
     routing_defaults: RoutingDefaults
     agent_override: str | None
+    data_dir: str
+    business_date: str
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS
 
     def effective_max_parallel(self, task_max: int) -> int:
@@ -51,6 +53,11 @@ class PipelineInput:
         return min(task_max, vendor_max)
 
 
+def resource_cache_dir(data_dir: str, business_date: str) -> Path:
+    """Return the date-sharded resource cache directory."""
+    return Path(data_dir) / "resources" / business_date
+
+
 def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
     """Load ``pipeline_input.json`` from *pipeline_dir*."""
     path = Path(pipeline_dir) / "pipeline_input.json"
@@ -60,6 +67,8 @@ def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
         preferences=UserPreferences.from_dict(raw["preferences"]),
         routing_defaults=RoutingDefaults.from_dict(raw["routing_defaults"]),
         agent_override=raw.get("agent_override"),
+        data_dir=raw.get("data_dir", ".news_recap_data"),
+        business_date=raw["business_date"],
         min_resource_chars=int(raw.get("min_resource_chars", _DEFAULT_MIN_RESOURCE_CHARS)),
     )
 
