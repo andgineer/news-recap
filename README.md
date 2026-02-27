@@ -30,7 +30,7 @@
 | src/news\_recap/recap/agents/subprocess.py               |      109 |       39 |     64% |22-23, 57, 68, 80-81, 88, 105-106, 125, 127, 131, 134, 145-146, 148, 172-205, 209-220 |
 | src/news\_recap/recap/contracts.py                       |       67 |       32 |     52% |49-50, 56-59, 65, 71-81, 87, 93-125, 131 |
 | src/news\_recap/recap/flow.py                            |       84 |       57 |     32% |45-59, 63-66, 73-74, 88-152 |
-| src/news\_recap/recap/launcher.py                        |       81 |       51 |     37% |29, 65-96, 111-121, 133-195 |
+| src/news\_recap/recap/launcher.py                        |       92 |       22 |     76% |66, 78, 81-83, 86-92, 96, 111-121, 182-208 |
 | src/news\_recap/recap/loaders/resource\_cache.py         |       51 |        0 |    100% |           |
 | src/news\_recap/recap/loaders/resource\_loader.py        |      123 |       13 |     89% |85, 174-180, 184-186, 208, 219, 265, 274-275, 278, 281 |
 | src/news\_recap/recap/models.py                          |       47 |        8 |     83% |24-29, 32, 41 |
@@ -47,7 +47,7 @@
 | src/news\_recap/recap/tasks/reduce\_blocks.py            |      237 |       74 |     69% |63, 174, 216-233, 330-350, 366-390, 398-474, 483-496 |
 | src/news\_recap/recap/tasks/split\_blocks.py             |       96 |        1 |     99% |       123 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
-| **TOTAL**                                                | **4028** |  **790** | **80%** |           |
+| **TOTAL**                                                | **4039** |  **761** | **81%** |           |
 
 
 ## Setup coverage badge
