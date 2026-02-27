@@ -14,7 +14,7 @@ from news_recap.recap.launcher import (
     RecapRunCommand,
     _patch_agent_override,
 )
-from news_recap.recap.models import Digest, DigestArticle
+from news_recap.recap.models import Digest
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 
 _BUSINESS_DATE = date(2026, 2, 19)
@@ -34,9 +34,7 @@ def _write_pipeline_input(tmp_path: Path, agent_override: str | None = "codex") 
         "agent_override": agent_override,
         "data_dir": str(tmp_path),
     }
-    (tmp_path / "pipeline_input.json").write_text(
-        json.dumps(payload, ensure_ascii=False), "utf-8"
-    )
+    (tmp_path / "pipeline_input.json").write_text(json.dumps(payload, ensure_ascii=False), "utf-8")
 
 
 def _write_digest(pipeline_dir: Path, completed_phases: list[str] | None = None) -> None:
