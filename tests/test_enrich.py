@@ -190,6 +190,7 @@ def _make_fake_ctx(tmp_path):
     inp = MagicMock(spec=PipelineInput)
     inp.min_resource_chars = 50
     inp.effective_max_parallel.return_value = 5
+    inp.launch_delay = 0.0
 
     digest = Digest(
         digest_id="test-digest",
@@ -326,7 +327,7 @@ class TestRunEnrichParallel:
         assert call_count == 2
 
     def test_empty_stdout_is_worker_crash(self, tmp_path, monkeypatch):
-        """Agent produces empty stdout — recognition error triggers had_crash."""
+        """Agent produces empty stdout — recognition error triggers crash_detail."""
         from unittest.mock import MagicMock, patch
 
         from news_recap.recap.tasks import enrich as enrich_mod
@@ -362,9 +363,9 @@ class TestRunEnrichParallel:
                 entries=entries,
             )
 
-        enriched, had_crash = result
+        enriched, crash_detail = result
         assert len(enriched) == 0
-        assert had_crash is True
+        assert crash_detail is not None
         assert call_count == 1
 
 
@@ -426,13 +427,13 @@ class TestEnrichCrashFlag:
             patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
         ):
-            enriched, had_crash = enrich_mod._run_enrich(
+            enriched, crash_detail = enrich_mod._run_enrich(
                 ctx,
                 step_name="recap_enrich",
                 entries=entries,
             )
 
-        assert had_crash is True
+        assert crash_detail is not None
         assert len(enriched) > 0
         assert len(enriched) < 20
 
@@ -478,7 +479,7 @@ class TestEnrichCrashFlag:
             patch.object(enrich_mod, "load_cached_resource_texts", return_value=cached),
             patch.object(enrich_mod, "_run_enrich", side_effect=fake_run_enrich),
         ):
-            with pytest.raises(RecapPipelineError, match="crash"):
+            with pytest.raises(RecapPipelineError, match="batch failed"):
                 e = Enrich(ctx)
                 e.execute()
 

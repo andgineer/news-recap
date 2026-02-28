@@ -370,8 +370,8 @@ class Enrich(TaskLauncher):
             self.fully_completed = False
             raise RecapPipelineError(
                 "recap_enrich",
-                f"Agent crash during enrichment"
-                f" ({len(new_enriched)}/{len(remaining_ids)} enriched)",
+                f"batch failed ({len(new_enriched)}/{len(remaining_ids)} enriched)"
+                " — see errors above",
             )
 
         if len(new_enriched) < len(remaining_ids):

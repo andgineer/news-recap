@@ -277,7 +277,7 @@ class Classify(TaskLauncher):
             self.fully_completed = False
             raise RecapPipelineError(
                 "recap_classify",
-                f"{n_failed}/{len(batches)} batch(es) failed",
+                f"{n_failed}/{len(batches)} batch(es) failed — see errors above",
             )
 
         unclassified = sum(1 for a in ctx.digest.articles if a.verdict is None)

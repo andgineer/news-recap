@@ -36,6 +36,7 @@ def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
         },
         task_type_timeout_map=settings.orchestrator.task_type_timeout_map,
         agent_max_parallel=settings.orchestrator.agent_max_parallel,
+        agent_launch_delay=settings.orchestrator.agent_launch_delay,
     )
 
 

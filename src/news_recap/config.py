@@ -84,10 +84,15 @@ class OrchestratorSettings:
             "recap_map": 600,
             "recap_reduce": 1200,
             "recap_split": 120,
+            "recap_group_sections": 600,
+            "recap_summarize": 600,
         },
     )
     agent_max_parallel: dict[str, int] = field(
         default_factory=lambda: _default_agent_max_parallel(),
+    )
+    agent_launch_delay: dict[str, float] = field(
+        default_factory=lambda: {"gemini": 3.0},
     )
     codex_command_template: str = _DEFAULT_CODEX_CMD
     claude_command_template: str = _DEFAULT_CLAUDE_CMD
@@ -351,7 +356,7 @@ def _collect_feed_item_overrides() -> dict[str, int]:
 
 
 def _default_agent_max_parallel() -> dict[str, int]:
-    return {"codex": 3, "claude": 2, "gemini": 1}
+    return {"codex": 3, "claude": 2, "gemini": 3}
 
 
 def _default_task_model_map() -> dict[str, dict[str, str]]:
@@ -377,6 +382,16 @@ def _default_task_model_map() -> dict[str, dict[str, str]]:
             "gemini": "--model gemini-2.5-pro",
         },
         "recap_split": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
+            "claude": "--model sonnet --effort low",
+            "gemini": "--model gemini-2.5-flash",
+        },
+        "recap_group_sections": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
+            "claude": "--model sonnet --effort low",
+            "gemini": "--model gemini-2.5-flash",
+        },
+        "recap_summarize": {
             "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
             "claude": "--model sonnet --effort low",
             "gemini": "--model gemini-2.5-flash",

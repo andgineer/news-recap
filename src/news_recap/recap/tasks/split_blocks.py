@@ -160,7 +160,14 @@ class SplitBlocks(TaskLauncher):
         )
 
         new_blocks: list[DigestBlock] = []
-        for block_list in results:
+        for i, block_list in enumerate(results):
+            src = split_tasks[i]
+            logger.info(
+                "[split] block %d (%d articles) -> %d sub-blocks",
+                i + 1,
+                len(src.article_ids),
+                len(block_list),
+            )
             new_blocks.extend(block_list)
 
         ctx.digest.blocks.extend(new_blocks)
@@ -174,7 +181,7 @@ class SplitBlocks(TaskLauncher):
             )
             raise RecapPipelineError(
                 "recap_split",
-                f"Worker failure: {n_failed}/{len(split_tasks)} splits failed",
+                f"{n_failed}/{len(split_tasks)} splits failed — see errors above",
             )
 
         logger.info(

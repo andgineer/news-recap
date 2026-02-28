@@ -40,15 +40,23 @@ class PipelineInput:
     business_date: str
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS
 
+    @property
+    def active_agent(self) -> str:
+        return (self.agent_override or self.routing_defaults.default_agent).strip().lower()
+
     def effective_max_parallel(self, task_max: int) -> int:
         """Return the effective concurrency: ``min(task_max, agent_limit)``.
 
         Uses the active agent (override or default) to look up the per-vendor
         cap from ``routing_defaults.agent_max_parallel``.
         """
-        agent = (self.agent_override or self.routing_defaults.default_agent).strip().lower()
-        vendor_max = self.routing_defaults.agent_max_parallel.get(agent, task_max)
+        vendor_max = self.routing_defaults.agent_max_parallel.get(self.active_agent, task_max)
         return min(task_max, vendor_max)
+
+    @property
+    def launch_delay(self) -> float:
+        """Seconds to wait between launching concurrent agents for this vendor."""
+        return self.routing_defaults.agent_launch_delay.get(self.active_agent, 0.0)
 
 
 def resource_cache_dir(data_dir: str, business_date: str) -> Path:
@@ -126,7 +134,7 @@ def _collect_load_stats(
     return html_domains, html_ok, html_bytes, yt_total, yt_ok, yt_blocked, yt_bytes, failures
 
 
-def _log_load_summary(loaded_map: dict[str, LoadedResource]) -> None:
+def _log_load_summary(loaded_map: dict[str, LoadedResource], cache_hits: int = 0) -> None:
     """Log per-domain breakdown and individual failures."""
     if not loaded_map:
         return
@@ -135,7 +143,10 @@ def _log_load_summary(loaded_map: dict[str, LoadedResource]) -> None:
         _collect_load_stats(loaded_map)
     )
 
-    lines = ["Resource loading summary:"]
+    header = "Resource loading summary:"
+    if cache_hits:
+        header += f" ({cache_hits}/{len(loaded_map)} from cache)"
+    lines = [header]
     if yt_total:
         lines.append(
             f"  YouTube: {yt_ok}/{yt_total} transcripts"
@@ -180,7 +191,7 @@ def load_resource_texts(
         if owns_loader:
             loader.close()
 
-    _log_load_summary(loaded_map)
+    _log_load_summary(loaded_map, cache_hits)
 
     entry_map = {e.source_id: e for e in entries}
     result: dict[str, tuple[str, str]] = {}

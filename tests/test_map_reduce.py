@@ -184,6 +184,7 @@ class TestMapBlocksExecute:
         inp.preferences = MagicMock()
         inp.preferences.follow = "none"
         inp.effective_max_parallel.return_value = 5
+        inp.launch_delay = 0.0
 
         digest = Digest(
             digest_id="test",
@@ -302,7 +303,7 @@ class TestMapBlocksExecute:
                 ],
             ),
         ):
-            with pytest.raises(RecapPipelineError, match="Worker failure"):
+            with pytest.raises(RecapPipelineError, match="worker.*failed"):
                 inst = MapBlocks(ctx)
                 inst.execute()
 

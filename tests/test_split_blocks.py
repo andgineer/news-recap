@@ -117,6 +117,7 @@ def _mock_inp():
 
     inp = MagicMock(spec=PipelineInput)
     inp.effective_max_parallel.return_value = 5
+    inp.launch_delay = 0.0
     return inp
 
 
@@ -234,7 +235,7 @@ class TestSplitBlocksExecute:
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
             patch.object(mod, "next_batch_number", return_value=1),
         ):
-            with pytest.raises(RecapPipelineError, match="Worker failure"):
+            with pytest.raises(RecapPipelineError, match="splits failed"):
                 inst = SplitBlocks(ctx)
                 inst.execute()
 

@@ -36,6 +36,7 @@ class RoutingDefaults(msgspec.Struct):
     task_type_timeout_map: dict[str, int]
     command_templates: dict[str, str]
     agent_max_parallel: dict[str, int] = msgspec.field(default_factory=dict)
+    agent_launch_delay: dict[str, float] = msgspec.field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return msgspec.structs.asdict(self)

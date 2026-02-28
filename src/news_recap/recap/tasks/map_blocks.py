@@ -296,5 +296,6 @@ class MapBlocks(TaskLauncher):
             self.fully_completed = False
             raise RecapPipelineError(
                 "recap_map",
-                f"Worker failure(s) — {len(all_blocks)} blocks saved from successful workers",
+                f"{n_failed} worker(s) failed"
+                f" — {len(all_blocks)} blocks saved from successful workers",
             )

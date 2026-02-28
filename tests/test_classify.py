@@ -200,6 +200,7 @@ class TestClassifyExecutePartialPersist:
         inp.articles = articles
         inp.preferences = _make_prefs()
         inp.effective_max_parallel.return_value = 5
+        inp.launch_delay = 0.0
 
         digest = Digest(
             digest_id="test",
