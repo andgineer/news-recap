@@ -5,7 +5,7 @@
 | Name                                                     |    Stmts |     Miss |   Cover |   Missing |
 |--------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
-| src/news\_recap/config.py                                |      225 |       47 |     79% |225, 229, 231, 237, 243, 246, 250, 265, 267, 269, 271, 275, 277, 305, 312, 328, 330, 340-341, 345, 397-414, 423, 425, 444-449, 455, 465, 472, 479 |
+| src/news\_recap/config.py                                |      226 |       47 |     79% |230, 234, 236, 242, 248, 251, 255, 270, 272, 274, 276, 280, 282, 310, 317, 333, 335, 345-346, 350, 412-429, 438, 440, 459-464, 470, 480, 487, 494 |
 | src/news\_recap/http/fetcher.py                          |       42 |        4 |     90% |47, 92, 95, 98 |
 | src/news\_recap/http/html\_extractor.py                  |       29 |        7 |     76% |47-49, 60-62, 69 |
 | src/news\_recap/http/youtube\_extractor.py               |       94 |       15 |     84% |116-120, 140, 144, 158, 160-165, 190, 198 |
@@ -26,15 +26,15 @@
 | src/news\_recap/main.py                                  |       70 |        1 |     99% |       316 |
 | src/news\_recap/recap/agents/ai\_agent.py                |      137 |       90 |     34% |45-92, 96-99, 120-123, 128-143, 195-245, 253-264 |
 | src/news\_recap/recap/agents/echo.py                     |       20 |       20 |      0% |     19-53 |
-| src/news\_recap/recap/agents/routing.py                  |       95 |       17 |     82% |41, 53-61, 90, 116, 121, 145, 177, 179, 182, 184, 186, 188, 190 |
+| src/news\_recap/recap/agents/routing.py                  |       96 |       17 |     82% |42, 54-62, 91, 117, 122, 146, 178, 180, 183, 185, 187, 189, 191 |
 | src/news\_recap/recap/agents/subprocess.py               |      109 |       39 |     64% |22-23, 57, 68, 80-81, 88, 105-106, 125, 127, 131, 134, 145-146, 148, 172-205, 209-220 |
 | src/news\_recap/recap/contracts.py                       |       67 |       32 |     52% |49-50, 56-59, 65, 71-81, 87, 93-125, 131 |
 | src/news\_recap/recap/flow.py                            |       82 |       56 |     32% |45-59, 63-66, 79-144 |
-| src/news\_recap/recap/launcher.py                        |       89 |       22 |     75% |66, 78, 81-83, 86-92, 96, 111-121, 178-204 |
+| src/news\_recap/recap/launcher.py                        |       89 |       22 |     75% |67, 79, 82-84, 87-93, 97, 112-122, 179-205 |
 | src/news\_recap/recap/loaders/resource\_cache.py         |       51 |        0 |    100% |           |
 | src/news\_recap/recap/loaders/resource\_loader.py        |      123 |       13 |     89% |85, 174-180, 184-186, 208, 219, 265, 274-275, 278, 281 |
 | src/news\_recap/recap/models.py                          |       52 |        8 |     85% |24-29, 32, 41 |
-| src/news\_recap/recap/storage/pipeline\_io.py            |      135 |       14 |     90% |82-88, 111, 117-118, 132, 181, 192, 227 |
+| src/news\_recap/recap/storage/pipeline\_io.py            |      143 |       15 |     90% |59, 90-96, 119, 125-126, 140, 192, 203, 238 |
 | src/news\_recap/recap/storage/schemas.py                 |        1 |        1 |      0% |         7 |
 | src/news\_recap/recap/storage/workdir.py                 |       53 |       32 |     40% |35, 45-76, 84-87, 100-103, 117-137 |
 | src/news\_recap/recap/tasks/base.py                      |       65 |       11 |     83% |61-72, 124-126, 135, 139, 142 |
@@ -46,10 +46,10 @@
 | src/news\_recap/recap/tasks/parallel.py                  |       53 |       10 |     81% |82-89, 110, 131 |
 | src/news\_recap/recap/tasks/prompts.py                   |        8 |        0 |    100% |           |
 | src/news\_recap/recap/tasks/reduce\_blocks.py            |      226 |       69 |     69% |65, 168, 210-213, 310-328, 344-356, 364-440, 449-462 |
-| src/news\_recap/recap/tasks/split\_blocks.py             |       90 |        1 |     99% |       114 |
+| src/news\_recap/recap/tasks/split\_blocks.py             |       92 |        1 |     99% |       114 |
 | src/news\_recap/recap/tasks/summarize.py                 |       40 |        9 |     78% |     72-86 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
-| **TOTAL**                                                | **4197** |  **804** | **81%** |           |
+| **TOTAL**                                                | **4209** |  **805** | **81%** |           |
 
 
 ## Setup coverage badge
