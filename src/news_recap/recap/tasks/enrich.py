@@ -108,9 +108,7 @@ def _parse_separated_chunks(chunks: list[str], valid_nums: set[str]) -> dict[str
         if num_idx is None:
             continue
         num = lines[num_idx].strip()
-        headline = " ".join(
-            line.strip() for line in lines[num_idx + 1 :] if line.strip()
-        )
+        headline = " ".join(line.strip() for line in lines[num_idx + 1 :] if line.strip())
         if headline:
             parsed[num] = headline
     return parsed

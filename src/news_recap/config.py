@@ -92,7 +92,7 @@ class OrchestratorSettings:
         default_factory=lambda: _default_agent_max_parallel(),
     )
     agent_launch_delay: dict[str, float] = field(
-        default_factory=lambda: {"gemini": 3.0},
+        default_factory=lambda: {"gemini": 3.0, "claude": 3.0, "codex": 3.0},
     )
     codex_command_template: str = _DEFAULT_CODEX_CMD
     claude_command_template: str = _DEFAULT_CLAUDE_CMD

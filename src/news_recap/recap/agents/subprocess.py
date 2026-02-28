@@ -6,13 +6,17 @@ AI agents, routing, or prompt contracts.
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 import shlex
 import string
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class SubprocessError(RuntimeError):
@@ -159,6 +163,16 @@ def _escape_windows_embedded_quote_value(value: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+_STDERR_POLL_INTERVAL = 5.0
+_HEARTBEAT_INTERVAL = 60.0
+
+_STDERR_NOTABLE_RE = re.compile(
+    r"quota|rate.?limit|429|too many requests|overloaded|retrying|"
+    r"cancelled|Operation cancelled|exhausted.*capacity",
+    re.IGNORECASE,
+)
+
+
 def run_subprocess(  # noqa: PLR0913
     *,
     run_args: str | list[str],
@@ -167,6 +181,7 @@ def run_subprocess(  # noqa: PLR0913
     timeout_seconds: int,
     stdout_path: Path,
     stderr_path: Path,
+    log_label: str = "",
 ) -> SubprocessResult:
     """Run a subprocess with timeout, capturing stdout/stderr to files."""
     with (
@@ -182,6 +197,9 @@ def run_subprocess(  # noqa: PLR0913
             text=True,
         )
         start_monotonic = time.monotonic()
+        last_stderr_check = start_monotonic
+        last_heartbeat = start_monotonic
+        stderr_offset = 0
 
         while True:
             returncode = process.poll()
@@ -193,7 +211,10 @@ def run_subprocess(  # noqa: PLR0913
                     stderr_path=stderr_path,
                 )
 
-            if time.monotonic() - start_monotonic >= timeout_seconds:
+            now = time.monotonic()
+            elapsed = now - start_monotonic
+
+            if elapsed >= timeout_seconds:
                 _terminate_process(process)
                 return SubprocessResult(
                     exit_code=124,
@@ -202,7 +223,58 @@ def run_subprocess(  # noqa: PLR0913
                     stderr_path=stderr_path,
                 )
 
+            if now - last_stderr_check >= _STDERR_POLL_INTERVAL:
+                stderr_offset = _check_stderr(
+                    stderr_path,
+                    stderr_offset,
+                    log_label,
+                )
+                last_stderr_check = now
+
+            if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
+                remaining = timeout_seconds - int(elapsed)
+                stdout_size = _file_size(stdout_path)
+                stderr_size = _file_size(stderr_path)
+                logger.info(
+                    "[%s] still running (%ds elapsed, %ds until timeout,"
+                    " stdout=%d bytes, stderr=%d bytes)",
+                    log_label,
+                    int(elapsed),
+                    remaining,
+                    stdout_size,
+                    stderr_size,
+                )
+                last_heartbeat = now
+
             time.sleep(0.1)
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _check_stderr(path: Path, offset: int, label: str) -> int:
+    """Read new bytes from *path* since *offset*, log notable lines."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return offset
+    if size <= offset:
+        return offset
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            fh.seek(offset)
+            new_text = fh.read()
+    except OSError:
+        return offset
+    for raw_line in new_text.splitlines():
+        stripped = raw_line.strip()
+        if stripped and _STDERR_NOTABLE_RE.search(stripped):
+            logger.warning("[%s] agent: %s", label, stripped)
+    return size
 
 
 def _terminate_process(process: subprocess.Popen[str] | subprocess.Popen[bytes]) -> None:

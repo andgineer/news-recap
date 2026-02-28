@@ -8,6 +8,7 @@ that logic so each step only supplies *prepare* and *parse* callbacks.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -68,6 +69,12 @@ def submit_and_collect(  # noqa: PLR0913, C901
     results: list = []
     batch_num = start_batch
     completed_task_ids: list[str] = []
+    launch_delay = ctx.inp.launch_delay
+
+    def _run_with_delay(delay: float, **kwargs: Any) -> str:
+        if delay > 0:
+            time.sleep(delay)
+        return run_ai_agent(**kwargs)
 
     with ThreadPoolExecutor(max_workers=max_parallel) as executor:
         for window_start in range(0, len(items), max_parallel):
@@ -75,7 +82,7 @@ def submit_and_collect(  # noqa: PLR0913, C901
 
             futures: list[tuple[int, Any, Any, str]] = []
             prepare_exc: Exception | None = None
-            for item in window:
+            for idx, item in enumerate(window):
                 batch_num += 1
                 try:
                     task_id = prepare_fn(item, batch_num)
@@ -88,7 +95,8 @@ def submit_and_collect(  # noqa: PLR0913, C901
                     prepare_exc = exc
                     break
                 future = executor.submit(
-                    run_ai_agent,
+                    _run_with_delay,
+                    delay=idx * launch_delay,
                     pipeline_dir=str(ctx.pdir),
                     step_name=step_name,
                     task_id=task_id,

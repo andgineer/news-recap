@@ -68,6 +68,7 @@ def run_ai_agent(
         timeout_seconds=timeout,
         command_template=routing.command_template,
         model=routing.model,
+        log_label=step_name,
     )
     elapsed = time.monotonic() - step_start
     tokens = _parse_tokens_used(result.stderr_path)
@@ -190,6 +191,7 @@ def _run_agent_cli(
     timeout_seconds: int,
     command_template: str,
     model: str,
+    log_label: str = "",
 ):
     """Render command and run the agent process in an isolated temp dir."""
     task_input = read_task_input(Path(manifest.task_input_path))
@@ -235,6 +237,7 @@ def _run_agent_cli(
                 timeout_seconds=timeout_seconds,
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
+                log_label=log_label,
             )
     except FileNotFoundError as error:
         raise SubprocessError(
