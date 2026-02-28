@@ -37,6 +37,41 @@ class RecapPipelineError(RuntimeError):
         self.step = step
 
 
+def read_agent_stdout(stdout_path: Path, step_name: str) -> str:
+    """Read agent stdout, raising ``RecapPipelineError`` if the file is missing or empty."""
+    if not stdout_path.exists():
+        raise RecapPipelineError(step_name, f"stdout not found: {stdout_path}")
+    text = stdout_path.read_text("utf-8")
+    if not text.strip():
+        raise RecapPipelineError(step_name, "stdout is empty")
+    return text
+
+
+def run_single_agent(
+    ctx: FlowContext,
+    step_name: str,
+    prompt: str,
+    batch: int | None = None,
+) -> Path:
+    """Materialize a task, run the agent, and return the stdout path.
+
+    Encapsulates the materialize → invoke → locate stdout pattern used
+    by single-call phases (group_sections, summarize, reduce single-pass).
+    """
+    from news_recap.recap.agents.ai_agent import run_ai_agent
+    from news_recap.recap.storage.workdir import materialize_step
+
+    tid = materialize_step(
+        ctx.workdir_mgr,
+        ctx.inp,
+        step_name=step_name,
+        prompt=prompt,
+        batch=batch,
+    )
+    tid = run_ai_agent(pipeline_dir=str(ctx.pdir), step_name=step_name, task_id=tid)
+    return ctx.pdir / tid / "output" / "agent_stdout.log"
+
+
 class StopPipelineError(Exception):
     """Sentinel raised when ``stop_after`` is reached.
 

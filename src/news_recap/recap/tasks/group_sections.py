@@ -12,12 +12,13 @@ import logging
 import re
 from pathlib import Path
 
-from prefect.logging import get_run_logger
-
-from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.models import DigestBlock, DigestSection
-from news_recap.recap.storage.pipeline_io import materialize_step
-from news_recap.recap.tasks.base import RecapPipelineError, TaskLauncher
+from news_recap.recap.tasks.base import (
+    RecapPipelineError,
+    TaskLauncher,
+    read_agent_stdout,
+    run_single_agent,
+)
 from news_recap.recap.tasks.prompts import RECAP_GROUP_SECTIONS_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -49,15 +50,7 @@ def parse_group_sections_stdout(
     - single-block sections are merged into the nearest neighbour
     - orphan blocks are appended to the last section
     """
-    if not stdout_path.exists():
-        raise RecapPipelineError(
-            "recap_group_sections",
-            f"GROUP_SECTIONS stdout not found: {stdout_path}",
-        )
-
-    text = stdout_path.read_text("utf-8").strip()
-    if not text:
-        raise RecapPipelineError("recap_group_sections", "GROUP_SECTIONS stdout is empty")
+    text = read_agent_stdout(stdout_path, "recap_group_sections").strip()
 
     raw_sections = _parse_section_lines(text, n_blocks)
 
@@ -197,16 +190,15 @@ class GroupSections(TaskLauncher):
 
     def execute(self) -> None:
         ctx = self.ctx
-        pf_logger = get_run_logger()
         blocks = ctx.digest.blocks
 
         if not blocks:
-            pf_logger.info("[group_sections] No blocks to group")
+            logger.info("[group_sections] No blocks to group")
             ctx.digest.recaps = []
             return
 
         if len(blocks) <= _MIN_BLOCKS_FOR_LLM - 1:
-            pf_logger.info(
+            logger.info(
                 "[group_sections] Only %d block(s) — using fallback section",
                 len(blocks),
             )
@@ -217,24 +209,11 @@ class GroupSections(TaskLauncher):
             return
 
         prompt = build_group_sections_prompt(blocks)
-        tid = materialize_step(
-            ctx.workdir_mgr,
-            ctx.inp,
-            step_name="recap_group_sections",
-            prompt=prompt,
-        )
-
-        tid = run_ai_agent.with_options(task_run_name=tid)(
-            pipeline_dir=str(ctx.pdir),
-            step_name="recap_group_sections",
-            task_id=tid,
-        )
-
-        stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
+        stdout_path = run_single_agent(ctx, "recap_group_sections", prompt)
         try:
             ctx.digest.recaps = parse_group_sections_stdout(stdout_path, len(blocks))
         except RecapPipelineError:
-            pf_logger.warning(
+            logger.warning(
                 "[group_sections] Failed to parse stdout — falling back to single section",
             )
             ctx.digest.recaps = _build_fallback_sections(
@@ -242,7 +221,7 @@ class GroupSections(TaskLauncher):
                 ctx.inp.preferences.language,
             )
 
-        pf_logger.info(
+        logger.info(
             "[group_sections] %d blocks -> %d sections",
             len(blocks),
             len(ctx.digest.recaps),

@@ -18,12 +18,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from prefect.logging import get_run_logger
-
-from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.models import DigestBlock
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
-from news_recap.recap.tasks.base import RecapPipelineError, TaskLauncher
+from news_recap.recap.tasks.base import (
+    RecapPipelineError,
+    TaskLauncher,
+    read_agent_stdout,
+    run_single_agent,
+)
 from news_recap.recap.tasks.parallel import submit_and_collect
 from news_recap.recap.tasks.prompts import RECAP_REDUCE_PROMPT
 
@@ -87,15 +89,7 @@ def parse_reduce_stdout(
     Omitted blocks are treated as implicit single-block BLOCK with their
     original index.
     """
-    if not stdout_path.exists():
-        raise RecapPipelineError(
-            "recap_reduce",
-            f"REDUCE stdout not found: {stdout_path}",
-        )
-
-    text = stdout_path.read_text("utf-8").strip()
-    if not text:
-        raise RecapPipelineError("recap_reduce", "REDUCE stdout is empty")
+    text = read_agent_stdout(stdout_path, "recap_reduce").strip()
 
     actions: list[ReduceAction] = []
     seen: set[int] = set()
@@ -214,21 +208,7 @@ def _run_single_reduce(
     On parse failure, raises ``RecapPipelineError``.
     """
     prompt = build_reduce_prompt(blocks)
-    tid = materialize_step(
-        ctx.workdir_mgr,
-        ctx.inp,
-        step_name="recap_reduce",
-        prompt=prompt,
-        batch=batch,
-    )
-
-    tid = run_ai_agent.with_options(task_run_name=tid)(
-        pipeline_dir=str(ctx.pdir),
-        step_name="recap_reduce",
-        task_id=tid,
-    )
-
-    stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
+    stdout_path = run_single_agent(ctx, "recap_reduce", prompt, batch=batch)
     actions = parse_reduce_stdout(stdout_path, len(blocks))
     return apply_reduce_plan(blocks, actions)
 
@@ -328,26 +308,24 @@ class ReduceBlocks(TaskLauncher):
 
     def execute(self) -> None:
         ctx = self.ctx
-        pf_logger = get_run_logger()
-
         map_blocks: list[dict[str, Any]] = ctx.state.get("map_blocks", [])
         if not map_blocks:
-            pf_logger.info("[reduce] No blocks to reduce")
+            logger.info("[reduce] No blocks to reduce")
             ctx.digest.blocks = []
             return
 
-        pf_logger.info("[reduce] %d input blocks", len(map_blocks))
+        logger.info("[reduce] %d input blocks", len(map_blocks))
 
         if len(map_blocks) <= _REDUCE_CHUNK_LIMIT:
-            final_blocks, split_tasks = self._single_reduce(map_blocks, pf_logger)
+            final_blocks, split_tasks = self._single_reduce(map_blocks, logger)
         else:
-            final_blocks, split_tasks = self._tree_reduce(map_blocks, pf_logger)
+            final_blocks, split_tasks = self._tree_reduce(map_blocks, logger)
 
         ctx.digest.blocks = final_blocks
         ctx.state["split_tasks"] = split_tasks
         _save_split_tasks(ctx.pdir, split_tasks)
 
-        pf_logger.info(
+        logger.info(
             "[reduce] result: %d blocks + %d to split",
             len(final_blocks),
             len(split_tasks),
@@ -356,7 +334,7 @@ class ReduceBlocks(TaskLauncher):
     def _single_reduce(
         self,
         map_blocks: list[dict[str, Any]],
-        pf_logger: Any,
+        logger: Any,
     ) -> tuple[list[DigestBlock], list[SplitTask]]:
         """Single-pass REDUCE (original behavior).
 
@@ -365,25 +343,13 @@ class ReduceBlocks(TaskLauncher):
         """
         ctx = self.ctx
         prompt = build_reduce_prompt(map_blocks)
-        tid = materialize_step(
-            ctx.workdir_mgr,
-            ctx.inp,
-            step_name="recap_reduce",
-            prompt=prompt,
-        )
-
-        tid = run_ai_agent.with_options(task_run_name=tid)(
-            pipeline_dir=str(ctx.pdir),
-            step_name="recap_reduce",
-            task_id=tid,
-        )
 
         try:
-            stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
+            stdout_path = run_single_agent(ctx, "recap_reduce", prompt)
             actions = parse_reduce_stdout(stdout_path, len(map_blocks))
             return apply_reduce_plan(map_blocks, actions)
         except RecapPipelineError:
-            pf_logger.warning("[reduce] Failed to parse stdout — falling back to MAP blocks")
+            logger.warning("[reduce] Failed to parse stdout — falling back to MAP blocks")
             fallback = [
                 DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in map_blocks
             ]
@@ -392,13 +358,13 @@ class ReduceBlocks(TaskLauncher):
     def _tree_reduce(
         self,
         map_blocks: list[dict[str, Any]],
-        pf_logger: Any,
+        logger: Any,
     ) -> tuple[list[DigestBlock], list[SplitTask]]:
         """Two-level tree-reduce for large block counts."""
         ctx = self.ctx
         interleaved = _interleave_by_worker(map_blocks)
         chunks = _chunk_blocks(interleaved, _REDUCE_CHUNK_LIMIT)
-        pf_logger.info(
+        logger.info(
             "[reduce] tree-reduce: %d blocks -> %d chunk(s) of ≤%d",
             len(map_blocks),
             len(chunks),
@@ -414,7 +380,7 @@ class ReduceBlocks(TaskLauncher):
                 batch=batch_num,
                 prompt=prompt,
             )
-            pf_logger.info("[reduce] pass-1 chunk %d — %d blocks", batch_num, len(chunk))
+            logger.info("[reduce] pass-1 chunk %d — %d blocks", batch_num, len(chunk))
             return task_id
 
         def parse(
@@ -425,7 +391,7 @@ class ReduceBlocks(TaskLauncher):
             stdout_path = ctx.pdir / task_id / "output" / "agent_stdout.log"
             actions = parse_reduce_stdout(stdout_path, len(chunk))
             blocks, splits = apply_reduce_plan(chunk, actions)
-            pf_logger.info(
+            logger.info(
                 "[reduce] pass-1 chunk %d: %d blocks + %d splits",
                 batch_num,
                 len(blocks),
@@ -442,14 +408,14 @@ class ReduceBlocks(TaskLauncher):
             max_parallel=ctx.inp.effective_max_parallel(len(chunks)),
             prepare_fn=prepare,
             parse_fn=parse,
-            pf_logger=pf_logger,
+            logger=logger,
         )
 
         intermediate = [b for chunk_blocks in chunk_results for b in chunk_blocks]
-        pf_logger.info("[reduce] pass-1 produced %d intermediate blocks", len(intermediate))
+        logger.info("[reduce] pass-1 produced %d intermediate blocks", len(intermediate))
 
         if not intermediate:
-            pf_logger.warning("[reduce] pass-1 empty — falling back to MAP blocks")
+            logger.warning("[reduce] pass-1 empty — falling back to MAP blocks")
             fallback = [
                 DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in map_blocks
             ]
@@ -458,7 +424,7 @@ class ReduceBlocks(TaskLauncher):
         final_blocks, split_tasks = self._finish_tree_reduce(
             ctx,
             intermediate,
-            pf_logger,
+            logger,
         )
 
         if n_failed > 0:
@@ -477,18 +443,18 @@ class ReduceBlocks(TaskLauncher):
         self,
         ctx: Any,
         intermediate: list[dict[str, Any]],
-        pf_logger: Any,
+        logger: Any,
     ) -> tuple[list[DigestBlock], list[SplitTask]]:
         """Run final REDUCE pass or reconstruct typed results from pass-1."""
         if len(intermediate) <= _FINAL_REDUCE_LIMIT:
-            pf_logger.info("[reduce] final pass on %d blocks", len(intermediate))
+            logger.info("[reduce] final pass on %d blocks", len(intermediate))
             try:
                 return _run_single_reduce(ctx, intermediate, batch=0)
             except RecapPipelineError:
-                pf_logger.warning("[reduce] final pass failed — using pass-1 results")
+                logger.warning("[reduce] final pass failed — using pass-1 results")
                 return _split_intermediate(intermediate)
 
-        pf_logger.info(
+        logger.info(
             "[reduce] %d intermediate blocks > %d limit — skipping final pass",
             len(intermediate),
             _FINAL_REDUCE_LIMIT,

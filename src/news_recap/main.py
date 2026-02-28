@@ -1,5 +1,6 @@
 """CLI entrypoint for news-recap."""
 
+import logging
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,20 @@ from news_recap.recap.launcher import (
     RecapCliController,
     RecapRunCommand,
 )
+
+
+def _configure_logging() -> None:
+    root = logging.getLogger("news_recap")
+    if not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s - %(message)s"),
+        )
+        root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+
+_configure_logging()
 
 click.rich_click.USE_MARKDOWN = True
 INGESTION_CONTROLLER = IngestionCliController()

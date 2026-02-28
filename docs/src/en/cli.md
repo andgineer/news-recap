@@ -126,10 +126,6 @@ Key options:
 - `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` / `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY`
 - `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` / `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY`
 
-### Prefect
-- `NEWS_RECAP_PREFECT_MODE` — `ephemeral` (default), `server`, or `auto`.
-- `PREFECT_API_URL` — Prefect server URL (required when mode is `server`).
-
 ## Help
 
 ```bash

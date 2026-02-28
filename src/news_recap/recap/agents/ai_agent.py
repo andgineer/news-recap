@@ -1,23 +1,19 @@
-"""Prefect @task that executes an LLM agent as a CLI subprocess.
+"""Execute an LLM agent as a CLI subprocess.
 
-The task receives a pre-materialized workdir path, resolves agent routing,
+The function receives a pre-materialized workdir path, resolves agent routing,
 and delegates execution to ``task_subprocess``.
-
-``from __future__ import annotations`` is intentionally NOT used —
-Prefect inspects parameter annotations at runtime for the Inputs tab.
 """
 
+from __future__ import annotations
+
 import json
+import logging
 import os
 import re
 import shlex
 import tempfile
 import time
 from pathlib import Path
-
-from prefect import task
-from prefect.cache_policies import INPUTS
-from prefect.logging import get_run_logger
 
 from news_recap.recap.agents.routing import resolve_routing_for_enqueue
 from news_recap.recap.agents.subprocess import (
@@ -33,27 +29,18 @@ from news_recap.recap.contracts import (
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 from news_recap.recap.tasks.base import RecapPipelineError
 
+logger = logging.getLogger(__name__)
+
 _DEFAULT_TIMEOUT = 600
 _TAIL_LINES = 30
 
 
-# ---------------------------------------------------------------------------
-# Prefect task
-# ---------------------------------------------------------------------------
-
-
-@task(cache_policy=INPUTS, persist_result=True)
 def run_ai_agent(
     pipeline_dir: str,
     step_name: str,
     task_id: str,
 ) -> str:
-    """Execute an LLM agent, return *task_id* on success.
-
-    On failure the task raises ``RecapPipelineError`` so Prefect
-    correctly marks it as Failed.
-    """
-    pf_logger = get_run_logger()
+    """Execute an LLM agent, return *task_id* on success."""
 
     manifest_path = Path(pipeline_dir) / task_id / "meta" / "task_manifest.json"
     manifest = read_manifest(manifest_path)
@@ -67,7 +54,7 @@ def run_ai_agent(
     )
     timeout = inp.routing_defaults.task_type_timeout_map.get(step_name, _DEFAULT_TIMEOUT)
 
-    pf_logger.info(
+    logger.info(
         "[%s] agent=%s model=%s timeout=%ds",
         step_name,
         routing.agent,
@@ -88,16 +75,52 @@ def run_ai_agent(
     m, s = divmod(int(elapsed), 60)
     t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
     tokens_str = f" tokens={tokens:,}" if tokens else ""
-    pf_logger.info("[%s] Finished in %s (exit=%s)%s", step_name, t, result.exit_code, tokens_str)
+    logger.info("[%s] Finished in %s (exit=%s)%s", step_name, t, result.exit_code, tokens_str)
 
     _save_usage(Path(pipeline_dir) / task_id, elapsed=elapsed, tokens=tokens)
 
     if result.exit_code == 0:
         return task_id
 
-    _log_agent_output(pf_logger, step_name, result)
-    error = "agent timed out" if result.timed_out else f"agent exit code {result.exit_code}"
+    _log_agent_output(logger, step_name, result)
+    if result.timed_out:
+        error = f"{routing.agent}: agent timed out"
+    else:
+        stderr_text = _read_stderr_safe(result.stderr_path)
+        summary = _summarise_stderr(stderr_text) if stderr_text else None
+        error = f"{routing.agent}: {summary}" if summary else f"agent exit code {result.exit_code}"
     raise RecapPipelineError(step_name, error)
+
+
+def _read_stderr_safe(path: Path) -> str:
+    try:
+        return path.read_text("utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+
+
+_KNOWN_ERRORS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"RetryableQuotaError:.*exhausted your capacity", re.IGNORECASE),
+        "Gemini API quota exhausted (rate limit) — reduce parallelism or wait",
+    ),
+    (
+        re.compile(r"OverloadedError|overloaded_error", re.IGNORECASE),
+        "Claude API overloaded — reduce parallelism or retry later",
+    ),
+    (
+        re.compile(r"rate.?limit|too many requests|429", re.IGNORECASE),
+        "API rate limit hit — reduce parallelism or wait",
+    ),
+]
+
+
+def _summarise_stderr(text: str) -> str | None:
+    """Return a one-line summary if *text* matches a known error pattern."""
+    for pattern, summary in _KNOWN_ERRORS:
+        if pattern.search(text):
+            return summary
+    return None
 
 
 def _log_agent_output(logger, step_name: str, result) -> None:
@@ -109,6 +132,11 @@ def _log_agent_output(logger, step_name: str, result) -> None:
             continue
         if not text:
             continue
+        if label == "stderr":
+            summary = _summarise_stderr(text)
+            if summary:
+                logger.error("[%s] agent %s: %s", step_name, label, summary)
+                continue
         lines = text.splitlines()
         tail = lines[-_TAIL_LINES:]
         truncated = f"(last {_TAIL_LINES}/{len(lines)} lines)\n" if len(lines) > _TAIL_LINES else ""

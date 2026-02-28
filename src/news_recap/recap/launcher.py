@@ -1,4 +1,4 @@
-"""Prepare inputs and launch the recap Prefect pipeline."""
+"""Prepare inputs and launch the recap pipeline."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import msgspec
 
-from news_recap.config import Settings, configure_prefect_runtime, resolve_prefect_mode
+from news_recap.config import Settings
 from news_recap.ingestion.repository import IngestionStore
 from news_recap.recap.agents.routing import RoutingDefaults
 from news_recap.recap.flow import recap_flow
@@ -138,7 +138,7 @@ def _patch_agent_override(pipeline_dir: Path, agent: str) -> str | None:
 
 
 class RecapCliController:
-    """Load articles, materialize pipeline inputs, and launch the Prefect flow."""
+    """Load articles, materialize pipeline inputs, and launch the recap flow."""
 
     def run_pipeline(self, command: RecapRunCommand) -> Iterator[str]:
         """Fetch articles from store, write pipeline_input.json, and run recap_flow."""
@@ -147,10 +147,6 @@ class RecapCliController:
         routing_defaults = _build_routing_defaults(settings)
         business_date = command.business_date or datetime.now(tz=UTC).date()
         preferences = UserPreferences()
-
-        mode = resolve_prefect_mode()
-        effective_mode = configure_prefect_runtime(mode)
-        yield f"Prefect runtime: {effective_mode.value}"
 
         store = IngestionStore(
             settings.data_dir,

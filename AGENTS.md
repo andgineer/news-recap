@@ -4,7 +4,7 @@
 - `src/news_recap/`: main package code. CLI entrypoint is `main.py`; package version lives in `__about__.py`.
 - `src/news_recap/storage/`: file-based storage utilities (`io.py` — atomic writes, GC, msgspec helpers).
 - `src/news_recap/ingestion/`: ingestion pipeline and `IngestionStore` (daily-partitioned article storage).
-- `src/news_recap/recap/`: recap pipeline (Prefect flows, LLM agent orchestration).
+- `src/news_recap/recap/`: recap pipeline (ThreadPoolExecutor-based parallel LLM agent orchestration).
   - `tasks/`: pipeline step implementations and prompt templates.
   - `agents/`: LLM agent execution, subprocess runner, routing, mock agents.
   - `storage/`: workdir materialization, pipeline I/O, output schemas.

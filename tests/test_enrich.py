@@ -189,6 +189,7 @@ def _make_fake_ctx(tmp_path):
 
     inp = MagicMock(spec=PipelineInput)
     inp.min_resource_chars = 50
+    inp.effective_max_parallel.return_value = 5
 
     digest = Digest(
         digest_id="test-digest",
@@ -252,15 +253,11 @@ class TestRunEnrichParallel:
             (stdout_dir / "agent_stdout.log").write_text("\n".join(lines), "utf-8")
             return task_id
 
-        mock_agent = MagicMock()
-        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
-            result=MagicMock(side_effect=lambda: fake_agent_side_effect(**kw))
-        )
+        mock_agent = MagicMock(side_effect=fake_agent_side_effect)
 
         with (
             patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
-            patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
         ):
             result = enrich_mod._run_enrich(
                 ctx,
@@ -311,15 +308,11 @@ class TestRunEnrichParallel:
             (stdout_dir / "agent_stdout.log").write_text("\n".join(lines), "utf-8")
             return task_id
 
-        mock_agent = MagicMock()
-        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
-            result=MagicMock(side_effect=lambda: fake_agent_side_effect(**kw))
-        )
+        mock_agent = MagicMock(side_effect=fake_agent_side_effect)
 
         with (
             patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
-            patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
         ):
             result = enrich_mod._run_enrich(
                 ctx,
@@ -357,15 +350,11 @@ class TestRunEnrichParallel:
             (stdout_dir / "agent_stdout.log").write_text("", "utf-8")
             return task_id
 
-        mock_agent = MagicMock()
-        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
-            result=MagicMock(side_effect=lambda: fake_agent_no_output(**kw))
-        )
+        mock_agent = MagicMock(side_effect=fake_agent_no_output)
 
         with (
             patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
-            patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
         ):
             result = enrich_mod._run_enrich(
                 ctx,
@@ -431,15 +420,11 @@ class TestEnrichCrashFlag:
             (stdout_dir / "agent_stdout.log").write_text("\n".join(lines), "utf-8")
             return task_id
 
-        mock_agent = MagicMock()
-        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
-            result=MagicMock(side_effect=lambda: fake_agent(**kw))
-        )
+        mock_agent = MagicMock(side_effect=fake_agent)
 
         with (
             patch.object(enrich_mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
-            patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
         ):
             enriched, had_crash = enrich_mod._run_enrich(
                 ctx,
@@ -453,7 +438,7 @@ class TestEnrichCrashFlag:
 
     def test_execute_raises_on_crash(self, tmp_path):
         """Enrich.execute() persists partial enrichment and raises on crash."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from news_recap.recap.tasks import enrich as enrich_mod
         from news_recap.recap.tasks.enrich import Enrich
@@ -492,7 +477,6 @@ class TestEnrichCrashFlag:
         with (
             patch.object(enrich_mod, "load_cached_resource_texts", return_value=cached),
             patch.object(enrich_mod, "_run_enrich", side_effect=fake_run_enrich),
-            patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
         ):
             with pytest.raises(RecapPipelineError, match="crash"):
                 e = Enrich(ctx)
@@ -537,10 +521,7 @@ class TestEnrichCacheEmpty:
         }
         ctx.state["enrich_ids"] = ["a1"]
 
-        with (
-            patch.object(enrich_mod, "load_cached_resource_texts", return_value={}),
-            patch.object(enrich_mod, "get_run_logger"),
-        ):
+        with patch.object(enrich_mod, "load_cached_resource_texts", return_value={}):
             from news_recap.recap.tasks.enrich import Enrich
 
             e = Enrich(ctx)
@@ -550,7 +531,7 @@ class TestEnrichCacheEmpty:
 
     def test_partial_cache_marks_incomplete(self, tmp_path):
         """Cache returns fewer entries than remaining_ids — must stay incomplete."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from news_recap.recap.tasks import enrich as enrich_mod
 
@@ -588,7 +569,6 @@ class TestEnrichCacheEmpty:
         with (
             patch.object(enrich_mod, "load_cached_resource_texts", return_value=cached),
             patch.object(enrich_mod, "_run_enrich", side_effect=fake_run_enrich),
-            patch.object(enrich_mod, "get_run_logger", return_value=MagicMock()),
         ):
             from news_recap.recap.tasks.enrich import Enrich
 

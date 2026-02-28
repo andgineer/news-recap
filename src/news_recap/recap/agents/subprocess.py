@@ -1,7 +1,7 @@
 """Generic subprocess execution and command-template rendering.
 
 Used by ``task_ai_agent`` to run CLI agents but has no knowledge of
-AI agents, Prefect, routing, or prompt contracts.
+AI agents, routing, or prompt contracts.
 """
 
 from __future__ import annotations

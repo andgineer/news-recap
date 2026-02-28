@@ -12,7 +12,7 @@
 
 - Ingestion из RSS/Atom (включая Inoreader Output RSS).
 - Файловое хранение статей с ежедневным разбиением и автоматической сборкой мусора.
-- Recap-пайплайн, оркестрированный Prefect: classify → enrich → group → deep-enrich → synthesize → compose.
+- Recap-пайплайн: classify → load_resources → enrich → map → reduce → split → group_sections → summarize.
 
 ## С чего Начать
 

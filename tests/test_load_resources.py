@@ -68,18 +68,13 @@ class TestLoadResources:
         return ctx
 
     def test_no_enrich_ids_skips(self, tmp_path):
-        from unittest.mock import patch
-
-        from news_recap.recap.tasks import load_resources as lr_mod
-
         articles = [self._make_digest_article("a1", verdict="ok")]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=[])
 
-        with patch.object(lr_mod, "get_run_logger"):
-            from news_recap.recap.tasks.load_resources import LoadResources
+        from news_recap.recap.tasks.load_resources import LoadResources
 
-            lr = LoadResources(ctx)
-            lr.execute()
+        lr = LoadResources(ctx)
+        lr.execute()
 
         assert ctx.state["enrich_ids"] == []
 
@@ -96,10 +91,7 @@ class TestLoadResources:
 
         loaded = {"a1": ("Title a1", "text " * 50), "a2": ("Title a2", "text " * 50)}
 
-        with (
-            patch.object(lr_mod, "load_resource_texts", return_value=loaded),
-            patch.object(lr_mod, "get_run_logger"),
-        ):
+        with patch.object(lr_mod, "load_resource_texts", return_value=loaded):
             from news_recap.recap.tasks.load_resources import LoadResources
 
             lr = LoadResources(ctx)
@@ -129,10 +121,7 @@ class TestLoadResources:
             "a4": ("Title a4", "text " * 50),
         }
 
-        with (
-            patch.object(lr_mod, "load_resource_texts", return_value=loaded),
-            patch.object(lr_mod, "get_run_logger"),
-        ):
+        with patch.object(lr_mod, "load_resource_texts", return_value=loaded):
             from news_recap.recap.tasks.load_resources import LoadResources
 
             lr = LoadResources(ctx)
@@ -157,10 +146,7 @@ class TestLoadResources:
 
         loaded = {f"a{i}": (f"Title a{i}", "text " * 50) for i in range(5)}
 
-        with (
-            patch.object(lr_mod, "load_resource_texts", return_value=loaded),
-            patch.object(lr_mod, "get_run_logger"),
-        ):
+        with patch.object(lr_mod, "load_resource_texts", return_value=loaded):
             from news_recap.recap.tasks.load_resources import LoadResources
 
             lr = LoadResources(ctx)
@@ -180,10 +166,7 @@ class TestLoadResources:
 
         loaded = {"a2": ("Title a2", "text " * 50)}
 
-        with (
-            patch.object(lr_mod, "load_resource_texts", return_value=loaded),
-            patch.object(lr_mod, "get_run_logger"),
-        ):
+        with patch.object(lr_mod, "load_resource_texts", return_value=loaded):
             from news_recap.recap.tasks.load_resources import LoadResources
 
             lr = LoadResources(ctx)
@@ -219,10 +202,7 @@ class TestLoadResources:
 
         loaded = {f"a{i}": (f"Title a{i}", "text " * 50) for i in range(5)}
 
-        with (
-            patch.object(lr_mod, "load_resource_texts", return_value=loaded),
-            patch.object(lr_mod, "get_run_logger"),
-        ):
+        with patch.object(lr_mod, "load_resource_texts", return_value=loaded):
             from news_recap.recap.tasks.load_resources import LoadResources
 
             lr = LoadResources(ctx)
@@ -252,10 +232,7 @@ class TestLoadResources:
 
         loaded = {"a1": ("Title a1", "text " * 50)}
 
-        with (
-            patch.object(lr_mod, "load_resource_texts", return_value=loaded),
-            patch.object(lr_mod, "get_run_logger"),
-        ):
+        with patch.object(lr_mod, "load_resource_texts", return_value=loaded):
             from news_recap.recap.tasks.load_resources import LoadResources
 
             lr = LoadResources(ctx)
@@ -279,10 +256,7 @@ class TestLoadResources:
 
         loaded = {"a1": ("Title a1", "text " * 50)}
 
-        with (
-            patch.object(lr_mod, "load_resource_texts", return_value=loaded),
-            patch.object(lr_mod, "get_run_logger"),
-        ):
+        with patch.object(lr_mod, "load_resource_texts", return_value=loaded):
             from news_recap.recap.tasks.load_resources import LoadResources
 
             lr = LoadResources(ctx)

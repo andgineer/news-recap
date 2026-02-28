@@ -11,8 +11,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from prefect.logging import get_run_logger
-
 from news_recap.recap.storage.pipeline_io import load_resource_texts, resource_cache_dir
 from news_recap.recap.tasks.base import (
     RecapPipelineError,
@@ -65,18 +63,17 @@ class LoadResources(TaskLauncher):
 
     def execute(self) -> None:
         ctx = self.ctx
-        pf_logger = get_run_logger()
         enrich_ids: list[str] = ctx.state.get("enrich_ids", [])
 
         if not enrich_ids:
-            pf_logger.info("[load_resources] No articles need resources")
+            logger.info("[load_resources] No articles need resources")
             return
 
         already_loaded = {a.article_id for a in ctx.digest.articles if a.resource_loaded}
         remaining_ids = [sid for sid in enrich_ids if sid not in already_loaded]
 
         if already_loaded:
-            pf_logger.info(
+            logger.info(
                 "[load_resources] %d already loaded, %d remaining",
                 len(already_loaded),
                 len(remaining_ids),
@@ -90,7 +87,7 @@ class LoadResources(TaskLauncher):
         eligible = _reset_ineligible_verdicts(remaining_ids, ctx, by_id)
 
         if not eligible:
-            pf_logger.info("[load_resources] No articles with URLs to load")
+            logger.info("[load_resources] No articles with URLs to load")
             ctx.state["enrich_ids"] = [sid for sid in enrich_ids if sid in already_loaded]
             return
 
@@ -104,7 +101,7 @@ class LoadResources(TaskLauncher):
         failed_ids = {e.source_id for e in eligible} - loaded_ids
         failure_rate = len(failed_ids) / len(eligible)
 
-        pf_logger.info(
+        logger.info(
             "[load_resources] %d/%d loaded, %d failed (%.0f%%)",
             len(loaded_ids),
             len(eligible),

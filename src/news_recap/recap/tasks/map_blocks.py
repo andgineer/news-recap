@@ -7,14 +7,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from prefect.logging import get_run_logger
-
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.models import DigestBlock
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
     RecapPipelineError,
     TaskLauncher,
+    read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
 from news_recap.recap.tasks.prompts import RECAP_MAP_PROMPT
@@ -193,13 +192,7 @@ def parse_map_stdout(
     Returns list of ``{"title": str, "article_ids": list[str], "worker": int}``.
     Raises ``RecapPipelineError`` if headline coverage drops below 50%.
     """
-    if not stdout_path.exists():
-        raise RecapPipelineError(
-            "recap_map",
-            f"MAP stdout not found: {stdout_path}",
-        )
-
-    text = stdout_path.read_text("utf-8")
+    text = read_agent_stdout(stdout_path, "recap_map")
     valid_nums = {str(i + 1) for i in range(len(entries))}
     num_to_id = {str(i + 1): entries[i].source_id for i in range(len(entries))}
 
@@ -221,14 +214,12 @@ class MapBlocks(TaskLauncher):
 
     def execute(self) -> None:
         ctx = self.ctx
-        pf_logger = get_run_logger()
-
         kept_entries: list[ArticleIndexEntry] = ctx.state["kept_entries"]
         enriched_articles: dict[str, str] = ctx.state.get("enriched_articles", {})
         entries = merge_enriched_into_index(kept_entries, enriched_articles)
 
         if not entries:
-            pf_logger.info("[map] No headlines to group")
+            logger.info("[map] No headlines to group")
             ctx.state["map_blocks"] = []
             return
 
@@ -240,7 +231,7 @@ class MapBlocks(TaskLauncher):
             ]
             covered_ids = {aid for b in existing_blocks for aid in b["article_ids"]}
             entries = [e for e in entries if e.source_id not in covered_ids]
-            pf_logger.info(
+            logger.info(
                 "[map] Resuming: %d blocks from checkpoint, %d uncovered headlines remain",
                 len(existing_blocks),
                 len(entries),
@@ -250,7 +241,7 @@ class MapBlocks(TaskLauncher):
                 return
 
         chunks = split_into_map_chunks(entries)
-        pf_logger.info(
+        logger.info(
             "[map] %d headlines -> %d chunk(s)",
             len(entries),
             len(chunks),
@@ -267,7 +258,7 @@ class MapBlocks(TaskLauncher):
                 batch=batch_num,
                 prompt=prompt,
             )
-            pf_logger.info("[map] Worker %d — %d headlines", batch_num, len(chunk))
+            logger.info("[map] Worker %d — %d headlines", batch_num, len(chunk))
             return task_id
 
         def parse(task_id: str, chunk: list[ArticleIndexEntry], batch_num: int) -> list:
@@ -283,7 +274,7 @@ class MapBlocks(TaskLauncher):
             max_parallel=ctx.inp.effective_max_parallel(_MAX_PARALLEL),
             prepare_fn=prepare,
             parse_fn=parse,
-            pf_logger=pf_logger,
+            logger=logger,
         )
 
         new_blocks = [block for worker_blocks in batch_results for block in worker_blocks]
@@ -295,7 +286,7 @@ class MapBlocks(TaskLauncher):
                 "All workers produced zero blocks",
             )
 
-        pf_logger.info("[map] %d blocks from %d worker(s)", len(all_blocks), len(chunks))
+        logger.info("[map] %d blocks from %d worker(s)", len(all_blocks), len(chunks))
         ctx.state["map_blocks"] = all_blocks
         ctx.digest.blocks = [
             DigestBlock(title=b["title"], article_ids=b["article_ids"]) for b in all_blocks

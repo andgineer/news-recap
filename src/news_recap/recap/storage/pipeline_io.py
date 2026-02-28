@@ -1,12 +1,6 @@
-"""Pipeline input contract, workdir materialization, and resource loading.
+"""Pipeline input contract and resource loading."""
 
-Shared by the Prefect flow and task modules.  No Prefect imports here —
-this is a plain Python module so it can be used in tests without starting
-a Prefect runtime.
-
-``from __future__ import annotations`` is intentionally NOT used —
-Prefect inspects parameter annotations at runtime for the Inputs tab.
-"""
+from __future__ import annotations
 
 import json
 import logging
@@ -17,12 +11,16 @@ from urllib.parse import urlparse
 
 import msgspec
 
-from news_recap.recap.agents.routing import RoutingDefaults, resolve_routing_for_enqueue
-from news_recap.recap.contracts import ArticleIndexEntry, TaskInputContract
+from news_recap.recap.agents.routing import RoutingDefaults
+from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.loaders.resource_cache import ResourceCache
 from news_recap.recap.loaders.resource_loader import LoadedResource, ResourceLoader
 from news_recap.recap.models import DigestArticle, UserPreferences
-from news_recap.recap.storage.workdir import TaskWorkdirManager
+from news_recap.recap.storage.workdir import (  # noqa: F401 — re-exports
+    make_task_id,
+    materialize_step,
+    next_batch_number,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,64 +69,6 @@ def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
         business_date=raw["business_date"],
         min_resource_chars=int(raw.get("min_resource_chars", _DEFAULT_MIN_RESOURCE_CHARS)),
     )
-
-
-def make_task_id(step_name: str, batch: int | None = None) -> str:
-    """Human-readable workdir name: ``classify``, ``classify-1``, ``classify-2``."""
-    short = step_name.removeprefix("recap_")
-    if batch is not None:
-        return f"{short}-{batch}"
-    return short
-
-
-def next_batch_number(pdir: Path, step_name: str) -> int:
-    """Return the next available batch number for *step_name* in *pdir*.
-
-    Scans existing workdirs like ``enrich-1``, ``enrich-2``, … and returns
-    ``max + 1`` so resumed runs don't collide with earlier batches.
-    """
-    prefix = step_name.removeprefix("recap_") + "-"
-    highest = 0
-    if pdir.is_dir():
-        for d in pdir.iterdir():
-            if d.is_dir() and d.name.startswith(prefix):
-                suffix = d.name[len(prefix) :]
-                if suffix.isdigit():
-                    highest = max(highest, int(suffix))
-    return highest + 1
-
-
-def materialize_step(  # noqa: PLR0913
-    workdir_mgr: TaskWorkdirManager,
-    inp: PipelineInput,
-    *,
-    step_name: str,
-    batch: int | None = None,
-    article_entries: list[ArticleIndexEntry] | None = None,
-    prompt: str,
-) -> str:
-    """Create a task workdir with all input files and return the task_id."""
-    task_id = make_task_id(step_name, batch)
-    entries = article_entries or []
-
-    routing = resolve_routing_for_enqueue(
-        defaults=inp.routing_defaults,
-        task_type=step_name,
-        agent_override=inp.agent_override,
-        model_override=None,
-    )
-
-    workdir_mgr.materialize(
-        task_id=task_id,
-        task_type=step_name,
-        task_input=TaskInputContract(
-            task_type=step_name,
-            prompt=prompt,
-            metadata={"routing": routing.to_metadata()},
-        ),
-        articles_index=entries,
-    )
-    return task_id
 
 
 _MAX_LOGGED_FAILURES = 20

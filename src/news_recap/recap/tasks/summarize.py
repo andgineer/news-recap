@@ -9,12 +9,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from prefect.logging import get_run_logger
-
-from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.models import DigestBlock, DigestSection
-from news_recap.recap.storage.pipeline_io import materialize_step
-from news_recap.recap.tasks.base import RecapPipelineError, TaskLauncher
+from news_recap.recap.tasks.base import (
+    RecapPipelineError,
+    TaskLauncher,
+    read_agent_stdout,
+    run_single_agent,
+)
 from news_recap.recap.tasks.prompts import RECAP_SUMMARIZE_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -44,15 +45,7 @@ def build_summarize_prompt(
 
 def parse_summarize_stdout(stdout_path: Path) -> str:
     """Extract summary text between SUMMARY_START / SUMMARY_END markers."""
-    if not stdout_path.exists():
-        raise RecapPipelineError(
-            "recap_summarize",
-            f"SUMMARIZE stdout not found: {stdout_path}",
-        )
-
-    text = stdout_path.read_text("utf-8")
-    if not text.strip():
-        raise RecapPipelineError("recap_summarize", "SUMMARIZE stdout is empty")
+    text = read_agent_stdout(stdout_path, "recap_summarize")
 
     start_pos = text.find(_START_MARKER)
     end_pos = text.find(_END_MARKER)
@@ -77,10 +70,8 @@ class Summarize(TaskLauncher):
 
     def execute(self) -> None:
         ctx = self.ctx
-        pf_logger = get_run_logger()
-
         if not ctx.digest.recaps:
-            pf_logger.info("[summarize] No sections — skipping summary")
+            logger.info("[summarize] No sections — skipping summary")
             ctx.digest.day_summary = ""
             return
 
@@ -89,23 +80,10 @@ class Summarize(TaskLauncher):
             ctx.digest.blocks,
             ctx.inp.preferences.language,
         )
-        tid = materialize_step(
-            ctx.workdir_mgr,
-            ctx.inp,
-            step_name="recap_summarize",
-            prompt=prompt,
-        )
-
-        tid = run_ai_agent.with_options(task_run_name=tid)(
-            pipeline_dir=str(ctx.pdir),
-            step_name="recap_summarize",
-            task_id=tid,
-        )
-
-        stdout_path = ctx.pdir / tid / "output" / "agent_stdout.log"
+        stdout_path = run_single_agent(ctx, "recap_summarize", prompt)
         ctx.digest.day_summary = parse_summarize_stdout(stdout_path)
 
-        pf_logger.info(
+        logger.info(
             "[summarize] Day summary: %d chars",
             len(ctx.digest.day_summary),
         )

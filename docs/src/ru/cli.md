@@ -126,10 +126,6 @@ news-recap recap run --limit 50
 - `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` / `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY`
 - `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` / `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY`
 
-### Prefect
-- `NEWS_RECAP_PREFECT_MODE` — `ephemeral` (по умолчанию), `server` или `auto`.
-- `PREFECT_API_URL` — URL Prefect-сервера (обязателен в режиме `server`).
-
 ## Help
 
 ```bash

@@ -11,13 +11,12 @@ import logging
 import re
 from pathlib import Path
 
-from prefect.logging import get_run_logger
-
 from news_recap.recap.models import DigestBlock
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
     RecapPipelineError,
     TaskLauncher,
+    read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
 from news_recap.recap.tasks.prompts import RECAP_SPLIT_PROMPT
@@ -88,15 +87,7 @@ def parse_split_stdout(
     Maps sequential numbers back to article IDs using the same ordering
     that built the prompt.
     """
-    if not stdout_path.exists():
-        raise RecapPipelineError(
-            "recap_split",
-            f"SPLIT stdout not found: {stdout_path}",
-        )
-
-    text = stdout_path.read_text("utf-8").strip()
-    if not text:
-        raise RecapPipelineError("recap_split", "SPLIT stdout is empty")
+    text = read_agent_stdout(stdout_path, "recap_split").strip()
 
     valid_nums = {str(i + 1) for i in range(len(article_ids))}
     num_to_id = {str(i + 1): article_ids[i] for i in range(len(article_ids))}
@@ -132,11 +123,9 @@ class SplitBlocks(TaskLauncher):
 
     def execute(self) -> None:
         ctx = self.ctx
-        pf_logger = get_run_logger()
-
         split_tasks: list[SplitTask] = ctx.state.get("split_tasks", [])
         if not split_tasks:
-            pf_logger.info("[split] No blocks to split")
+            logger.info("[split] No blocks to split")
             return
 
         headline_map = _build_article_headline_map(ctx.state, ctx.article_map)
@@ -156,7 +145,7 @@ class SplitBlocks(TaskLauncher):
             stdout_path = ctx.pdir / task_id / "output" / "agent_stdout.log"
             return parse_split_stdout(stdout_path, item.article_ids)
 
-        pf_logger.info("[split] %d blocks to split", len(split_tasks))
+        logger.info("[split] %d blocks to split", len(split_tasks))
 
         results, n_failed, _ = submit_and_collect(
             ctx,
@@ -167,7 +156,7 @@ class SplitBlocks(TaskLauncher):
             max_parallel=ctx.inp.effective_max_parallel(_MAX_PARALLEL),
             prepare_fn=prepare_fn,
             parse_fn=parse_fn,
-            pf_logger=pf_logger,
+            logger=logger,
         )
 
         new_blocks: list[DigestBlock] = []
@@ -178,7 +167,7 @@ class SplitBlocks(TaskLauncher):
 
         if n_failed > 0:
             self.fully_completed = False
-            pf_logger.error(
+            logger.error(
                 "[split] %d/%d split tasks failed — partial results saved",
                 n_failed,
                 len(split_tasks),
@@ -188,7 +177,7 @@ class SplitBlocks(TaskLauncher):
                 f"Worker failure: {n_failed}/{len(split_tasks)} splits failed",
             )
 
-        pf_logger.info(
+        logger.info(
             "[split] %d split tasks -> %d new blocks",
             len(split_tasks),
             len(new_blocks),

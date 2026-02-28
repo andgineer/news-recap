@@ -1,24 +1,19 @@
-"""Prefect @flow for the recap pipeline.
+"""Top-level function for the recap pipeline.
 
 Orchestrates classify -> load_resources -> enrich -> map_blocks ->
 reduce_blocks -> split_blocks -> group_sections -> summarize.
 
-Each step lives in its own ``task_*.py`` module and subclasses ``TaskLauncher``
+Each step lives in its own module and subclasses ``TaskLauncher``
 which handles checkpoint skip/save and early stopping.
-
-``from __future__ import annotations`` is intentionally NOT used —
-Prefect inspects parameter annotations at runtime for the Inputs tab.
 """
 
+from __future__ import annotations
+
+import logging
 import os
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-
-from prefect import flow
-from prefect.logging import get_run_logger
-from prefect.task_runners import ConcurrentTaskRunner
 
 from news_recap.recap.agents.ai_agent import read_agent_usage
 from news_recap.recap.models import Digest, to_article_index
@@ -39,11 +34,13 @@ from news_recap.recap.tasks.split_blocks import SplitBlocks
 from news_recap.recap.tasks.summarize import Summarize
 from news_recap.storage.io import load_msgspec
 
+logger = logging.getLogger(__name__)
+
 _DIGEST_FILENAME = "digest.json"
 _USAGE_FILENAME = "meta/usage.json"
 
 
-def _log_pipeline_token_summary(pf_logger: Any, pdir: Path) -> None:
+def _log_pipeline_token_summary(logger: Any, pdir: Path) -> None:
     """Scan all task workdirs for usage.json and log per-phase and total tokens."""
     phase_tokens: dict[str, int] = {}
     for usage_path in sorted(pdir.glob(f"*/{_USAGE_FILENAME}")):
@@ -59,7 +56,7 @@ def _log_pipeline_token_summary(pf_logger: Any, pdir: Path) -> None:
 
     total = sum(phase_tokens.values())
     parts = [f"{phase}={tokens:,}" for phase, tokens in phase_tokens.items()]
-    pf_logger.info("Token usage: %s | total=%s", ", ".join(parts), f"{total:,}")
+    logger.info("Token usage: %s | total=%s", ", ".join(parts), f"{total:,}")
 
 
 def _load_checkpoint(pdir: Path) -> Digest | None:
@@ -69,26 +66,16 @@ def _load_checkpoint(pdir: Path) -> Digest | None:
     return None
 
 
-def _flow_run_name(
-    business_date: str = "",  # noqa: ARG001
-    **_kwargs: Any,
-) -> str:
-    now = datetime.now(tz=UTC).strftime("%H:%M:%S")
-    return f"recap {business_date} {now}"
-
-
-@flow(name="recap_pipeline", flow_run_name=_flow_run_name, task_runner=ConcurrentTaskRunner())  # type: ignore[no-matching-overload]
 def recap_flow(
     pipeline_dir: str,
     business_date: str,
     stop_after: str | None = None,
 ) -> None:
-    """Top-level Prefect flow for the daily recap pipeline.
+    """Run the daily recap pipeline.
 
     *stop_after* halts the pipeline after the named task completes
     (e.g. ``"classify"``).  ``None`` runs all tasks.
     """
-    pf_logger = get_run_logger()
     pdir = Path(pipeline_dir)
     inp = read_pipeline_input(pipeline_dir)
     workdir_mgr = TaskWorkdirManager(pdir)
@@ -99,7 +86,7 @@ def recap_flow(
     if existing:
         digest = existing
         digest.status = "running"
-        pf_logger.info(
+        logger.info(
             "Resuming from checkpoint: %d completed task(s)",
             len(digest.completed_phases),
         )
@@ -113,7 +100,7 @@ def recap_flow(
         )
 
     article_entries = to_article_index(inp.articles)
-    pf_logger.info("Pipeline starting: %d articles, date=%s", len(inp.articles), business_date)
+    logger.info("Pipeline starting: %d articles, date=%s", len(inp.articles), business_date)
 
     ctx = FlowContext(
         pdir=pdir,
@@ -137,21 +124,21 @@ def recap_flow(
 
         digest.status = "completed"
         ctx.save_checkpoint()
-        pf_logger.info("Pipeline completed")
+        logger.info("Pipeline completed")
 
     except StopPipelineError:
         digest.status = "completed"
         ctx.save_checkpoint()
-        pf_logger.info("Pipeline stopped early (stop_after=%s)", effective_stop)
+        logger.info("Pipeline stopped early (stop_after=%s)", effective_stop)
 
     except RecapPipelineError as exc:
         digest.status = "failed"
         ctx.save_checkpoint()
-        pf_logger.error("Pipeline failed: %s", exc)
+        logger.error("Pipeline failed: %s", exc)
 
     except Exception:  # noqa: BLE001
         digest.status = "failed"
         ctx.save_checkpoint()
-        pf_logger.exception("Pipeline unexpected error")
+        logger.exception("Pipeline unexpected error")
 
-    _log_pipeline_token_summary(pf_logger, pdir)
+    _log_pipeline_token_summary(logger, pdir)

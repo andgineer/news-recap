@@ -143,7 +143,7 @@ class TestParseClassifyBatchStdout:
     def test_missing_file_raises(self, tmp_path):
         entries = [_make_entry("a1"), _make_entry("a2")]
         missing = tmp_path / "nonexistent.log"
-        with pytest.raises(RecapPipelineError, match="Verdicts file not found"):
+        with pytest.raises(RecapPipelineError, match="stdout not found"):
             parse_classify_batch_stdout(missing, entries)
 
     def test_missing_markers_scans_full_text(self, tmp_path):
@@ -251,15 +251,11 @@ class TestClassifyExecutePartialPersist:
             (workdir / "agent_stdout.log").write_text(content, "utf-8")
             return task_id
 
-        mock_agent = MagicMock()
-        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
-            result=MagicMock(side_effect=lambda: fake_agent_side_effect(**kw))
-        )
+        mock_agent = MagicMock(side_effect=fake_agent_side_effect)
 
         with (
             patch.object(classify_mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
-            patch.object(classify_mod, "get_run_logger", return_value=MagicMock()),
             patch.object(
                 classify_mod,
                 "split_into_classify_batches",

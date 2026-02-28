@@ -82,13 +82,9 @@ def test_no_agent_flag_leaves_file_unchanged(tmp_path: Path) -> None:
 
 
 @patch("news_recap.recap.launcher.recap_flow")
-@patch("news_recap.recap.launcher.configure_prefect_runtime")
-@patch("news_recap.recap.launcher.resolve_prefect_mode")
 @patch("news_recap.recap.launcher.Settings.from_env")
 def test_controller_resume_with_agent_override_normalizes(
     mock_from_env: MagicMock,
-    mock_resolve: MagicMock,
-    mock_configure: MagicMock,
     mock_flow: MagicMock,
     tmp_path: Path,
 ) -> None:
@@ -111,11 +107,6 @@ def test_controller_resume_with_agent_override_normalizes(
     settings.ingestion.gc_retention_days = 30
     settings.ingestion.digest_lookback_days = 7
     mock_from_env.return_value = settings
-
-    from news_recap.config import PrefectMode
-
-    mock_resolve.return_value = PrefectMode.EPHEMERAL
-    mock_configure.return_value = PrefectMode.EPHEMERAL
 
     command = RecapRunCommand(
         data_dir=tmp_path,

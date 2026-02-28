@@ -7,13 +7,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-from prefect.logging import get_run_logger
-
 from news_recap.recap.models import DigestArticle, UserPreferences
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
     RecapPipelineError,
     TaskLauncher,
+    read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
 from news_recap.recap.tasks.prompts import RECAP_CLASSIFY_BATCH_PROMPT
@@ -168,14 +167,9 @@ def parse_classify_batch_stdout(
     Returns ``(kept_ids, enrich_ids)`` where *enrich_ids* includes
     both ``vague`` and ``follow`` articles (both need resource loading).
     """
-    if not stdout_path.exists():
-        raise RecapPipelineError(
-            "recap_classify",
-            f"Verdicts file not found: {stdout_path}",
-        )
-
+    text = read_agent_stdout(stdout_path, "recap_classify")
     valid_nums = {str(i + 1) for i in range(len(entries))}
-    parsed = _extract_verdicts(stdout_path.read_text("utf-8"), valid_nums)
+    parsed = _extract_verdicts(text, valid_nums)
 
     recognition_rate = len(parsed) / len(entries) if entries else 1.0
     if recognition_rate < _MIN_RECOGNITION_RATE:
@@ -229,13 +223,11 @@ class Classify(TaskLauncher):
 
     def execute(self) -> None:
         ctx = self.ctx
-        pf_logger = get_run_logger()
-
         already_classified = {a.article_id for a in ctx.digest.articles if a.verdict is not None}
         to_classify = [a for a in ctx.inp.articles if a.article_id not in already_classified]
 
         if already_classified:
-            pf_logger.info(
+            logger.info(
                 "[classify] %d already classified, %d remaining",
                 len(already_classified),
                 len(to_classify),
@@ -249,7 +241,7 @@ class Classify(TaskLauncher):
         debug_max = int(os.getenv("NEWS_RECAP_CLASSIFY_MAX_BATCHES", "0")) or None
         if debug_max:
             batches = batches[:debug_max]
-        pf_logger.info("[classify] %d articles -> %d batch(es)", len(to_classify), len(batches))
+        logger.info("[classify] %d articles -> %d batch(es)", len(to_classify), len(batches))
 
         def prepare(batch: list[DigestArticle], batch_num: int) -> str:
             prompt = build_classify_batch_prompt(batch, ctx.inp.preferences)
@@ -260,7 +252,7 @@ class Classify(TaskLauncher):
                 batch=batch_num,
                 prompt=prompt,
             )
-            pf_logger.info("[classify] Batch %d — %d headlines", batch_num, len(batch))
+            logger.info("[classify] Batch %d — %d headlines", batch_num, len(batch))
             return task_id
 
         def parse(task_id: str, batch: list[DigestArticle], _batch_num: int) -> None:
@@ -276,10 +268,10 @@ class Classify(TaskLauncher):
             max_parallel=ctx.inp.effective_max_parallel(_MAX_PARALLEL),
             prepare_fn=prepare,
             parse_fn=parse,
-            pf_logger=pf_logger,
+            logger=logger,
         )
 
-        self._sync_verdicts(to_classify, pf_logger)
+        self._sync_verdicts(to_classify, logger)
 
         if n_failed > 0:
             self.fully_completed = False
@@ -292,7 +284,7 @@ class Classify(TaskLauncher):
         if unclassified > 0:
             self.fully_completed = False
 
-    def _sync_verdicts(self, to_classify: list[DigestArticle], pf_logger: Any) -> None:
+    def _sync_verdicts(self, to_classify: list[DigestArticle], logger: Any) -> None:
         """Sync new verdicts into digest and update state."""
         ctx = self.ctx
         digest_by_id = {a.article_id: a for a in ctx.digest.articles}
@@ -308,7 +300,7 @@ class Classify(TaskLauncher):
         ]
         ctx.state["enrich_ids"] = all_enrich
 
-        pf_logger.info(
+        logger.info(
             "Classify: %d kept, %d discarded, %d need enrichment",
             len(all_kept),
             len(ctx.inp.articles) - len(all_kept),

@@ -73,7 +73,7 @@ class TestParseSplitStdout:
         assert "a5" in blocks[-1].article_ids
 
     def test_missing_file_raises(self, tmp_path):
-        with pytest.raises(RecapPipelineError, match="SPLIT stdout not found"):
+        with pytest.raises(RecapPipelineError, match="stdout not found"):
             parse_split_stdout(tmp_path / "missing.log", ["a1"])
 
     def test_empty_file_raises(self, tmp_path):
@@ -154,13 +154,8 @@ def _make_split_ctx(tmp_path, split_tasks, articles=None):
 
 class TestSplitBlocksExecute:
     def test_no_split_tasks_is_noop(self, tmp_path):
-        from unittest.mock import patch
-
-        from news_recap.recap.tasks import split_blocks as mod
-
         ctx = _make_split_ctx(tmp_path, [])
-        with patch.object(mod, "get_run_logger", return_value=MagicMock()):
-            SplitBlocks.run(ctx)
+        SplitBlocks.run(ctx)
         assert len(ctx.digest.blocks) == 1
         assert ctx.digest.blocks[0].title == "Existing"
 
@@ -185,15 +180,11 @@ class TestSplitBlocksExecute:
             )
             return task_id
 
-        mock_agent = MagicMock()
-        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
-            result=MagicMock(side_effect=lambda: fake_agent(**kw))
-        )
+        mock_agent = MagicMock(side_effect=fake_agent)
 
         with (
             patch.object(mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
-            patch.object(mod, "get_run_logger", return_value=MagicMock()),
             patch.object(mod, "next_batch_number", return_value=1),
         ):
             inst = SplitBlocks(ctx)
@@ -236,15 +227,11 @@ class TestSplitBlocksExecute:
             )
             return task_id
 
-        mock_agent = MagicMock()
-        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
-            result=MagicMock(side_effect=lambda: fake_agent(**kw))
-        )
+        mock_agent = MagicMock(side_effect=fake_agent)
 
         with (
             patch.object(mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
-            patch.object(mod, "get_run_logger", return_value=MagicMock()),
             patch.object(mod, "next_batch_number", return_value=1),
         ):
             with pytest.raises(RecapPipelineError, match="Worker failure"):

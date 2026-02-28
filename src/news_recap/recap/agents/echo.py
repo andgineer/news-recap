@@ -1,6 +1,6 @@
 """Local mock agent that produces deterministic output without calling any LLM.
 
-Used for integration tests and for debugging Prefect flows without burning
+Used for integration tests and for debugging pipeline flows without burning
 tokens.  Detects task type from the prompt and produces appropriate output:
 
 - **classify**: prints ``N<TAB>ok`` verdict lines to stdout (one per headline)

@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from prefect.logging import get_run_logger
-
 from news_recap.recap.storage.pipeline_io import (
     load_cached_resource_texts,
     materialize_step,
@@ -23,6 +21,7 @@ from news_recap.recap.tasks.base import (
     FlowContext,
     RecapPipelineError,
     TaskLauncher,
+    read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
 from news_recap.recap.tasks.prompts import RECAP_ENRICH_BATCH_PROMPT
@@ -95,41 +94,77 @@ def build_enrich_prompt(entries: list[EnrichEntry]) -> str:
     )
 
 
+def _parse_separated_chunks(chunks: list[str], valid_nums: set[str]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for chunk in chunks:
+        lines = chunk.strip().splitlines()
+        if len(lines) < _MIN_CHUNK_LINES:
+            continue
+        num_idx = None
+        for idx, line in enumerate(lines):
+            if line.strip() in valid_nums:
+                num_idx = idx
+                break
+        if num_idx is None:
+            continue
+        num = lines[num_idx].strip()
+        headline = " ".join(
+            line.strip() for line in lines[num_idx + 1 :] if line.strip()
+        )
+        if headline:
+            parsed[num] = headline
+    return parsed
+
+
+def _parse_consecutive_lines(lines: list[str], valid_nums: set[str]) -> dict[str, str]:
+    """Parse ``NUMBER\\nHEADLINE`` pairs from consecutive lines."""
+    parsed: dict[str, str] = {}
+    i = 0
+    while i < len(lines):
+        num = lines[i].strip()
+        if num in valid_nums and i + 1 < len(lines):
+            headline_parts: list[str] = []
+            i += 1
+            while i < len(lines) and lines[i].strip() not in valid_nums:
+                part = lines[i].strip()
+                if part:
+                    headline_parts.append(part)
+                i += 1
+            headline = " ".join(headline_parts)
+            if headline:
+                parsed[num] = headline
+        else:
+            i += 1
+    return parsed
+
+
+def _parse_enrich_chunks(text: str, valid_nums: set[str]) -> dict[str, str]:
+    """Parse ``NUMBER\\nHEADLINE`` pairs from agent output.
+
+    Supports two formats:
+    - Blank-line separated chunks (``NUMBER\\nHEADLINE\\n\\nNUMBER\\nHEADLINE``)
+    - Consecutive lines (``NUMBER\\nHEADLINE\\nNUMBER\\nHEADLINE``)
+    """
+    chunks = re.split(r"\n\s*\n", text.strip())
+    if len(chunks) > 1:
+        return _parse_separated_chunks(chunks, valid_nums)
+    return _parse_consecutive_lines(text.strip().splitlines(), valid_nums)
+
+
 def parse_enrich_stdout(
     stdout_path: Path,
     entries: list[EnrichEntry],
 ) -> dict[str, str]:
     """Parse new headlines from agent stdout.
 
-    Expected format per article: ``NUMBER\\nHEADLINE\\n\\n``.
     Returns ``{article_id: new_title}``.
     Raises ``RecapPipelineError`` if recognition drops below 50%.
     """
-    if not stdout_path.exists():
-        raise RecapPipelineError(
-            "recap_enrich",
-            f"Enrich stdout not found: {stdout_path}",
-        )
-
-    text = stdout_path.read_text("utf-8")
+    text = read_agent_stdout(stdout_path, "recap_enrich")
     valid_nums = {str(i + 1) for i in range(len(entries))}
     num_to_id = {str(i + 1): entries[i].article_id for i in range(len(entries))}
 
-    parsed: dict[str, str] = {}
-    for chunk in re.split(r"\n\s*\n", text.strip()):
-        lines = chunk.strip().splitlines()
-        if len(lines) < _MIN_CHUNK_LINES:
-            continue
-        num = lines[0].strip()
-        if num not in valid_nums:
-            if num.isdigit():
-                logger.warning("Enrich: out-of-range article number %s — skipping", num)
-            continue
-        headline = " ".join(line.strip() for line in lines[1:] if line.strip())
-        if not headline:
-            logger.warning("Enrich: empty headline for article %s — skipping", num)
-            continue
-        parsed[num] = headline
+    parsed: dict[str, str] = _parse_enrich_chunks(text, valid_nums)
 
     recognition = len(parsed) / len(entries) if entries else 1.0
     if recognition < _MIN_RECOGNITION_RATE:
@@ -157,7 +192,7 @@ def parse_enrich_stdout(
 
 
 def _warn_unprocessed(
-    pf_logger: Any,
+    logger: Any,
     step_name: str,
     entries: list[EnrichEntry],
     all_enriched: dict[str, str],
@@ -165,7 +200,7 @@ def _warn_unprocessed(
 ) -> None:
     remaining = [e for e in entries if e.article_id not in all_enriched]
     if remaining:
-        pf_logger.warning(
+        logger.warning(
             "[%s] %d/%d articles still unprocessed after %d round(s)",
             step_name,
             len(remaining),
@@ -191,15 +226,13 @@ def _run_enrich(
     ``article_id → new_title``.  When *had_crash* is True the caller
     should persist partial results and stop the pipeline.
     """
-    pf_logger = get_run_logger()
-
     if not entries:
-        pf_logger.info("[%s] No articles to enrich", step_name)
+        logger.info("[%s] No articles to enrich", step_name)
         return {}, False
 
     remaining = list(entries)
     total = len(remaining)
-    pf_logger.info("[%s] %d articles to enrich", step_name, total)
+    logger.info("[%s] %d articles to enrich", step_name, total)
 
     all_enriched: dict[str, str] = {}
     batch_counter = next_batch_number(ctx.pdir, step_name) - 1
@@ -214,7 +247,7 @@ def _run_enrich(
             batch=batch_num,
             prompt=prompt,
         )
-        pf_logger.info("[%s] Batch %d — %d articles", step_name, batch_num, len(batch))
+        logger.info("[%s] Batch %d — %d articles", step_name, batch_num, len(batch))
         return task_id
 
     def parse(task_id: str, batch: list[EnrichEntry], _batch_num: int) -> dict[str, str]:
@@ -228,7 +261,7 @@ def _run_enrich(
         enriched_before = len(all_enriched)
         round_entries = list(remaining)
         batches = split_into_enrich_batches(round_entries)
-        pf_logger.info(
+        logger.info(
             "[%s] Round %d: %d articles -> %d batch(es)",
             step_name,
             round_num,
@@ -245,7 +278,7 @@ def _run_enrich(
             max_parallel=ctx.inp.effective_max_parallel(_MAX_PARALLEL),
             prepare_fn=prepare,
             parse_fn=parse,
-            pf_logger=pf_logger,
+            logger=logger,
         )
 
         for batch_result in batch_results:
@@ -258,7 +291,7 @@ def _run_enrich(
         remaining = [e for e in round_entries if e.article_id not in all_enriched]
 
         if remaining and len(all_enriched) == enriched_before:
-            pf_logger.warning(
+            logger.warning(
                 "[%s] No progress in round %d — stopping retries",
                 step_name,
                 round_num,
@@ -266,9 +299,9 @@ def _run_enrich(
             break
 
     if not had_crash:
-        _warn_unprocessed(pf_logger, step_name, entries, all_enriched, total)
+        _warn_unprocessed(logger, step_name, entries, all_enriched, total)
 
-    pf_logger.info("[%s] %d/%d articles enriched", step_name, len(all_enriched), total)
+    logger.info("[%s] %d/%d articles enriched", step_name, len(all_enriched), total)
     return all_enriched, had_crash
 
 
@@ -291,14 +324,13 @@ class Enrich(TaskLauncher):
 
     def execute(self) -> None:
         ctx = self.ctx
-        pf_logger = get_run_logger()
         enrich_ids: list[str] = ctx.state.get("enrich_ids", [])
 
         already_enriched = {a.article_id for a in ctx.digest.articles if a.enriched_title}
         remaining_ids = [sid for sid in enrich_ids if sid not in already_enriched]
 
         if already_enriched:
-            pf_logger.info(
+            logger.info(
                 "[enrich] %d already enriched, %d remaining",
                 len(already_enriched),
                 len(remaining_ids),
@@ -316,7 +348,7 @@ class Enrich(TaskLauncher):
 
         entries = _build_enrich_entries(ctx, remaining_ids)
         if not entries:
-            pf_logger.warning(
+            logger.warning(
                 "[enrich] No cached resources for %d remaining articles — marking incomplete",
                 len(remaining_ids),
             )

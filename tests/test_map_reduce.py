@@ -144,7 +144,7 @@ class TestParseMapStdout:
 
     def test_missing_file_raises(self, tmp_path):
         entries = [_make_index_entry("a0")]
-        with pytest.raises(RecapPipelineError, match="MAP stdout not found"):
+        with pytest.raises(RecapPipelineError, match="stdout not found"):
             parse_map_stdout(tmp_path / "missing.log", entries, worker=1)
 
     def test_ignores_invalid_numbers(self, tmp_path):
@@ -240,16 +240,12 @@ class TestMapBlocksExecute:
             submitted_chunks.extend(orig_split(e))
             return orig_split(e)
 
-        mock_agent = MagicMock()
-        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
-            result=MagicMock(side_effect=lambda: fake_agent(**kw))
-        )
+        mock_agent = MagicMock(side_effect=fake_agent)
 
         with (
             patch.object(map_mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
             patch.object(map_mod, "split_into_map_chunks", side_effect=tracking_split),
-            patch.object(map_mod, "get_run_logger", return_value=MagicMock()),
         ):
             inst = MapBlocks(ctx)
             inst.execute()
@@ -292,15 +288,11 @@ class TestMapBlocksExecute:
             )
             return task_id
 
-        mock_agent = MagicMock()
-        mock_agent.with_options.return_value.submit.side_effect = lambda **kw: MagicMock(
-            result=MagicMock(side_effect=lambda: fake_agent(**kw))
-        )
+        mock_agent = MagicMock(side_effect=fake_agent)
 
         with (
             patch.object(map_mod, "materialize_step", side_effect=fake_materialize),
             patch.object(parallel_mod, "run_ai_agent", mock_agent),
-            patch.object(map_mod, "get_run_logger", return_value=MagicMock()),
             patch.object(
                 map_mod,
                 "split_into_map_chunks",
@@ -378,7 +370,7 @@ class TestParseReduceStdout:
             assert a.title == ""
 
     def test_missing_file_raises(self, tmp_path):
-        with pytest.raises(RecapPipelineError, match="REDUCE stdout not found"):
+        with pytest.raises(RecapPipelineError, match="stdout not found"):
             parse_reduce_stdout(tmp_path / "missing.log", 3)
 
     def test_empty_file_raises(self, tmp_path):
