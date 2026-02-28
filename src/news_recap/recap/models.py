@@ -76,6 +76,16 @@ class DigestBlock(msgspec.Struct):
     article_ids: list[str]
 
 
+class DigestSection(msgspec.Struct):
+    """A reader-facing section (recap) grouping related blocks.
+
+    ``block_indices`` are indices into ``Digest.blocks``.
+    """
+
+    title: str
+    block_indices: list[int]
+
+
 class Digest(msgspec.Struct):
     """Top-level digest state — the single checkpoint object for the recap pipeline."""
 
@@ -86,3 +96,5 @@ class Digest(msgspec.Struct):
     articles: list[DigestArticle]
     blocks: list[DigestBlock] = []
     completed_phases: list[str] = []
+    recaps: list[DigestSection] = []
+    day_summary: str = ""

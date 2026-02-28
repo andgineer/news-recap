@@ -176,3 +176,61 @@ BLOCK: <informative title>
 
 === ARTICLES ===
 {articles_block}"""
+
+RECAP_GROUP_SECTIONS_PROMPT = """\
+You are a senior news editor assembling a daily digest. The blocks below \
+already contain informative titles. Your job: group them into sections so \
+a reader can quickly scan the digest, skipping entire sections if the \
+topic is not interesting.
+
+Each section gets a short topic label (2-5 words). These are NOT informative \
+summaries — the blocks already carry the detail. Section titles name the \
+topic area.
+
+GOOD section title: "Политика в США"
+GOOD section title: "AI и рынки"
+GOOD section title: "Война в Украине"
+GOOD section title: "UK Politics"
+BAD section title: "Trump signs executive order on tariffs while markets react" \
+— too detailed, this is a block title, not a section label.
+BAD section title: "Miscellaneous" — meaningless.
+BAD section title: "Other News" — meaningless catch-all.
+
+Rules:
+- Every section MUST contain at least 2 blocks. Never create a single-block section.
+- Aim for 3-7 blocks per section. Up to 10 is acceptable if the topic is dense.
+- Every block number must appear in exactly one section.
+- Do not skip any block.
+
+Do NOT write any scripts, use any tools, or read any files.
+Print your output directly to stdout.
+
+Output format:
+SECTION: <short topic label>
+<comma-separated block numbers>
+
+=== BLOCKS ({block_count} total, format: NUMBER: TITLE) ===
+{blocks_listing}"""
+
+RECAP_SUMMARIZE_PROMPT = """\
+You are a senior news editor writing a brief summary of the day's news \
+for a busy reader. Below are the sections and block titles from today's \
+digest.
+
+Write a short summary: a heading line that frames the day, followed by \
+a bulleted list of the main storylines (5-8 bullets). Each bullet should \
+name a thread that runs through today's news, not repeat individual \
+block titles.
+
+Write in {language}.
+
+Do NOT write any scripts, use any tools, or read any files.
+Print your output directly to stdout.
+
+Wrap your entire summary between these markers:
+SUMMARY_START
+<your summary here>
+SUMMARY_END
+
+=== TODAY'S DIGEST ===
+{digest_overview}"""
