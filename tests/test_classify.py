@@ -241,7 +241,7 @@ class TestClassifyExecutePartialPersist:
         def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
             return f"classify-{batch}"
 
-        def fake_agent_side_effect(*, pipeline_dir, step_name, task_id):
+        def fake_agent_side_effect(*, pipeline_dir, step_name, task_id, stop_event=None):
             nonlocal batch_num
             batch_num += 1
             if batch_num == 2:

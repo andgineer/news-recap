@@ -172,7 +172,7 @@ class TestSplitBlocksExecute:
         def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
             return f"split-{batch}"
 
-        def fake_agent(*, pipeline_dir, step_name, task_id):
+        def fake_agent(*, pipeline_dir, step_name, task_id, stop_event=None):
             workdir = ctx.pdir / task_id / "output"
             workdir.mkdir(parents=True, exist_ok=True)
             (workdir / "agent_stdout.log").write_text(
@@ -215,7 +215,7 @@ class TestSplitBlocksExecute:
         def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
             return f"split-{batch}"
 
-        def fake_agent(*, pipeline_dir, step_name, task_id):
+        def fake_agent(*, pipeline_dir, step_name, task_id, stop_event=None):
             nonlocal call_count
             call_count += 1
             if call_count == 2:

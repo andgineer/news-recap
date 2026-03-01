@@ -12,6 +12,7 @@ import os
 import re
 import shlex
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -39,6 +40,7 @@ def run_ai_agent(
     pipeline_dir: str,
     step_name: str,
     task_id: str,
+    stop_event: threading.Event | None = None,
 ) -> str:
     """Execute an LLM agent, return *task_id* on success."""
 
@@ -69,6 +71,7 @@ def run_ai_agent(
         command_template=routing.command_template,
         model=routing.model,
         log_label=step_name,
+        stop_event=stop_event,
     )
     elapsed = time.monotonic() - step_start
     tokens = _parse_tokens_used(result.stderr_path)
@@ -84,12 +87,14 @@ def run_ai_agent(
         return task_id
 
     _log_agent_output(logger, step_name, result)
+    summary = _summarise_output(result)
     if result.timed_out:
-        error = f"{routing.agent}: agent timed out"
+        detail = f" ({summary})" if summary else ""
+        error = f"{routing.agent}: agent timed out{detail}"
+    elif summary:
+        error = f"{routing.agent}: {summary}"
     else:
-        stderr_text = _read_stderr_safe(result.stderr_path)
-        summary = _summarise_stderr(stderr_text) if stderr_text else None
-        error = f"{routing.agent}: {summary}" if summary else f"agent exit code {result.exit_code}"
+        error = f"{routing.agent}: agent exit code {result.exit_code}"
     raise RecapPipelineError(step_name, error)
 
 
@@ -101,6 +106,13 @@ def _read_stderr_safe(path: Path) -> str:
 
 
 _KNOWN_ERRORS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(
+            r"credit balance.{0,20}(too low|insufficient)|insufficient.{0,20}(funds|credits)",
+            re.IGNORECASE,
+        ),
+        "Credit balance too low — add credits to continue",
+    ),
     (
         re.compile(r"RetryableQuotaError:.*exhausted your capacity", re.IGNORECASE),
         "Gemini API quota exhausted (rate limit) — reduce parallelism or wait",
@@ -121,6 +133,17 @@ def _summarise_stderr(text: str) -> str | None:
     for pattern, summary in _KNOWN_ERRORS:
         if pattern.search(text):
             return summary
+    return None
+
+
+def _summarise_output(result) -> str | None:
+    """Check both stderr and stdout for known error patterns."""
+    for path in (result.stderr_path, result.stdout_path):
+        text = _read_stderr_safe(path)
+        if text:
+            summary = _summarise_stderr(text)
+            if summary:
+                return summary
     return None
 
 
@@ -185,13 +208,14 @@ def read_agent_usage(task_dir: Path) -> tuple[float, int]:
 # ---------------------------------------------------------------------------
 
 
-def _run_agent_cli(
+def _run_agent_cli(  # noqa: PLR0913
     *,
     manifest: TaskManifest,
     timeout_seconds: int,
     command_template: str,
     model: str,
     log_label: str = "",
+    stop_event: threading.Event | None = None,
 ):
     """Render command and run the agent process in an isolated temp dir."""
     task_input = read_task_input(Path(manifest.task_input_path))
@@ -238,6 +262,7 @@ def _run_agent_cli(
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
                 log_label=log_label,
+                stop_event=stop_event,
             )
     except FileNotFoundError as error:
         raise SubprocessError(

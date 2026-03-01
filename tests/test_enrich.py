@@ -240,7 +240,7 @@ class TestRunEnrichParallel:
             prompts_by_task[tid] = prompt
             return tid
 
-        def fake_agent_side_effect(*, pipeline_dir, step_name, task_id):
+        def fake_agent_side_effect(*, pipeline_dir, step_name, task_id, stop_event=None):
             nonlocal batch_call_count
             batch_call_count += 1
             workdir = ctx.pdir / task_id
@@ -291,7 +291,7 @@ class TestRunEnrichParallel:
             prompts_by_task[tid] = prompt
             return tid
 
-        def fake_agent_side_effect(*, pipeline_dir, step_name, task_id):
+        def fake_agent_side_effect(*, pipeline_dir, step_name, task_id, stop_event=None):
             nonlocal call_count
             call_count += 1
             workdir = ctx.pdir / task_id
@@ -342,7 +342,7 @@ class TestRunEnrichParallel:
         def fake_materialize(workdir_mgr, inp, *, step_name, batch, prompt):
             return f"enrich-{batch}"
 
-        def fake_agent_no_output(*, pipeline_dir, step_name, task_id):
+        def fake_agent_no_output(*, pipeline_dir, step_name, task_id, stop_event=None):
             nonlocal call_count
             call_count += 1
             workdir = ctx.pdir / task_id
@@ -405,7 +405,7 @@ class TestEnrichCrashFlag:
             prompts_by_task[tid] = prompt
             return tid
 
-        def fake_agent(*, pipeline_dir, step_name, task_id):
+        def fake_agent(*, pipeline_dir, step_name, task_id, stop_event=None):
             nonlocal call_count
             call_count += 1
             if call_count == 2:

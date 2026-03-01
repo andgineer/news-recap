@@ -8,7 +8,7 @@ that logic so each step only supplies *prepare* and *parse* callbacks.
 
 from __future__ import annotations
 
-import time
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -70,13 +70,15 @@ def submit_and_collect(  # noqa: PLR0913, C901
     batch_num = start_batch
     completed_task_ids: list[str] = []
     launch_delay = ctx.inp.launch_delay
+    stop_event = threading.Event()
 
     def _run_with_delay(delay: float, **kwargs: Any) -> str:
-        if delay > 0:
-            time.sleep(delay)
-        return run_ai_agent(**kwargs)
+        if delay > 0 and stop_event.wait(delay):
+            raise RecapPipelineError("interrupted", "Pipeline interrupted by user")
+        return run_ai_agent(**kwargs, stop_event=stop_event)
 
-    with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+    executor = ThreadPoolExecutor(max_workers=max_parallel)
+    try:
         for window_start in range(0, len(items), max_parallel):
             window = items[window_start : window_start + max_parallel]
 
@@ -119,6 +121,12 @@ def submit_and_collect(  # noqa: PLR0913, C901
 
             if n_failed > 0:
                 break
+
+        executor.shutdown(wait=True)
+    except KeyboardInterrupt:
+        stop_event.set()
+        executor.shutdown(wait=True, cancel_futures=True)
+        raise
 
     _log_total_tokens(ctx, step_name, completed_task_ids, logger)
     return results, n_failed, batch_num

@@ -136,6 +136,12 @@ def recap_flow(
         ctx.save_checkpoint()
         logger.error("Pipeline failed: %s", exc)
 
+    except KeyboardInterrupt:
+        digest.status = "failed"
+        ctx.save_checkpoint()
+        logger.warning("Pipeline interrupted (Ctrl+C)")
+        raise
+
     except Exception:  # noqa: BLE001
         digest.status = "failed"
         ctx.save_checkpoint()

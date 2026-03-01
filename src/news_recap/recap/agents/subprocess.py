@@ -12,6 +12,7 @@ import re
 import shlex
 import string
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -166,9 +167,10 @@ def _escape_windows_embedded_quote_value(value: str) -> str:
 _STDERR_POLL_INTERVAL = 5.0
 _HEARTBEAT_INTERVAL = 60.0
 
-_STDERR_NOTABLE_RE = re.compile(
+_NOTABLE_RE = re.compile(
     r"quota|rate.?limit|429|too many requests|overloaded|retrying|"
-    r"cancelled|Operation cancelled|exhausted.*capacity",
+    r"cancelled|Operation cancelled|exhausted.*capacity|"
+    r"credit balance|insufficient.{0,20}(funds|credits|balance)",
     re.IGNORECASE,
 )
 
@@ -182,6 +184,7 @@ def run_subprocess(  # noqa: PLR0913
     stdout_path: Path,
     stderr_path: Path,
     log_label: str = "",
+    stop_event: threading.Event | None = None,
 ) -> SubprocessResult:
     """Run a subprocess with timeout, capturing stdout/stderr to files."""
     with (
@@ -197,56 +200,77 @@ def run_subprocess(  # noqa: PLR0913
             text=True,
         )
         start_monotonic = time.monotonic()
-        last_stderr_check = start_monotonic
+        last_output_check = start_monotonic
         last_heartbeat = start_monotonic
         stderr_offset = 0
+        stdout_offset = 0
 
-        while True:
-            returncode = process.poll()
-            if returncode is not None:
-                return SubprocessResult(
-                    exit_code=returncode,
-                    timed_out=False,
-                    stdout_path=stdout_path,
-                    stderr_path=stderr_path,
-                )
+        try:
+            while True:
+                returncode = process.poll()
+                if returncode is not None:
+                    return SubprocessResult(
+                        exit_code=returncode,
+                        timed_out=False,
+                        stdout_path=stdout_path,
+                        stderr_path=stderr_path,
+                    )
 
-            now = time.monotonic()
-            elapsed = now - start_monotonic
+                now = time.monotonic()
+                elapsed = now - start_monotonic
 
-            if elapsed >= timeout_seconds:
-                _terminate_process(process)
-                return SubprocessResult(
-                    exit_code=124,
-                    timed_out=True,
-                    stdout_path=stdout_path,
-                    stderr_path=stderr_path,
-                )
+                if stop_event is not None and stop_event.is_set():
+                    _terminate_process(process)
+                    return SubprocessResult(
+                        exit_code=130,
+                        timed_out=False,
+                        stdout_path=stdout_path,
+                        stderr_path=stderr_path,
+                    )
 
-            if now - last_stderr_check >= _STDERR_POLL_INTERVAL:
-                stderr_offset = _check_stderr(
-                    stderr_path,
-                    stderr_offset,
-                    log_label,
-                )
-                last_stderr_check = now
+                if elapsed >= timeout_seconds:
+                    _terminate_process(process)
+                    return SubprocessResult(
+                        exit_code=124,
+                        timed_out=True,
+                        stdout_path=stdout_path,
+                        stderr_path=stderr_path,
+                    )
 
-            if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
-                remaining = timeout_seconds - int(elapsed)
-                stdout_size = _file_size(stdout_path)
-                stderr_size = _file_size(stderr_path)
-                logger.info(
-                    "[%s] still running (%ds elapsed, %ds until timeout,"
-                    " stdout=%d bytes, stderr=%d bytes)",
-                    log_label,
-                    int(elapsed),
-                    remaining,
-                    stdout_size,
-                    stderr_size,
-                )
-                last_heartbeat = now
+                if now - last_output_check >= _STDERR_POLL_INTERVAL:
+                    stderr_offset = _check_output(
+                        stderr_path,
+                        stderr_offset,
+                        log_label,
+                        "stderr",
+                    )
+                    stdout_offset = _check_output(
+                        stdout_path,
+                        stdout_offset,
+                        log_label,
+                        "stdout",
+                    )
+                    last_output_check = now
 
-            time.sleep(0.1)
+                if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
+                    remaining = timeout_seconds - int(elapsed)
+                    stdout_size = _file_size(stdout_path)
+                    stderr_size = _file_size(stderr_path)
+                    logger.info(
+                        "[%s] still running (%ds elapsed, %ds until timeout,"
+                        " stdout=%d bytes, stderr=%d bytes)",
+                        log_label,
+                        int(elapsed),
+                        remaining,
+                        stdout_size,
+                        stderr_size,
+                    )
+                    last_heartbeat = now
+
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            _terminate_process(process)
+            raise
 
 
 def _file_size(path: Path) -> int:
@@ -256,7 +280,7 @@ def _file_size(path: Path) -> int:
         return 0
 
 
-def _check_stderr(path: Path, offset: int, label: str) -> int:
+def _check_output(path: Path, offset: int, label: str, stream: str) -> int:
     """Read new bytes from *path* since *offset*, log notable lines."""
     try:
         size = path.stat().st_size
@@ -272,8 +296,8 @@ def _check_stderr(path: Path, offset: int, label: str) -> int:
         return offset
     for raw_line in new_text.splitlines():
         stripped = raw_line.strip()
-        if stripped and _STDERR_NOTABLE_RE.search(stripped):
-            logger.warning("[%s] agent: %s", label, stripped)
+        if stripped and _NOTABLE_RE.search(stripped):
+            logger.warning("[%s] agent %s: %s", label, stream, stripped)
     return size
 
 
