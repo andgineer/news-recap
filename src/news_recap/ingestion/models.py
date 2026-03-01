@@ -1,10 +1,11 @@
-"""Domain models for ingestion, storage, and dedup stages."""
+"""Domain models for ingestion and storage stages."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 import msgspec
 
@@ -113,8 +114,6 @@ class IngestionRunCounters:
     ingested_count: int = 0
     updated_count: int = 0
     skipped_count: int = 0
-    dedup_clusters_count: int = 0
-    dedup_duplicates_count: int = 0
     gaps_opened_count: int = 0
 
 
@@ -129,8 +128,6 @@ class IngestionWindowStats(msgspec.Struct):
     ingested_count: int = 0
     updated_count: int = 0
     skipped_count: int = 0
-    dedup_clusters_count: int = 0
-    dedup_duplicates_count: int = 0
     gaps_opened_count: int = 0
 
 
@@ -145,70 +142,7 @@ class IngestionRunView(msgspec.Struct):
     ingested_count: int
     updated_count: int
     skipped_count: int
-    dedup_clusters_count: int
-    dedup_duplicates_count: int
     gaps_opened_count: int
-
-
-class DedupCandidate(msgspec.Struct):
-    """Article view used by deduplication stage."""
-
-    article_id: str
-    title: str
-    url: str
-    source_domain: str
-    published_at: datetime
-    clean_text: str
-    clean_text_chars: int
-
-
-class ClusterMember(msgspec.Struct):
-    """Dedup cluster member metadata."""
-
-    article_id: str
-    similarity_to_representative: float
-    is_representative: bool
-
-
-class DedupCluster(msgspec.Struct):
-    """Dedup cluster with representative and alternative sources."""
-
-    cluster_id: str
-    representative_article_id: str
-    alt_sources: list[dict[str, str]]
-    members: list[ClusterMember]
-
-
-class ClusterMemberPreview(msgspec.Struct):
-    """Readable article entry for cluster inspection."""
-
-    article_id: str
-    title: str
-    url: str
-    source_domain: str
-    similarity_to_representative: float
-    is_representative: bool
-
-
-class ClusterPreview(msgspec.Struct):
-    """Cluster details for observability commands."""
-
-    cluster_id: str
-    run_id: str
-    size: int
-    representative_article_id: str
-    representative_title: str
-    representative_url: str
-    members: list[ClusterMemberPreview] = []
-
-
-class ClusterListResult(msgspec.Struct):
-    """Paginated view of clusters for one ingestion run."""
-
-    run_id: str
-    total_clusters: int
-    total_articles: int
-    clusters: list[ClusterPreview]
 
 
 # ---------------------------------------------------------------------------
@@ -297,4 +231,4 @@ class RunsStore(msgspec.Struct):
 
     runs: list[IngestionRunRecord] = []
     gaps: list[IngestionGap] = []
-    dedup_results: dict[str, list[DedupCluster]] = {}
+    dedup_results: dict[str, Any] = {}

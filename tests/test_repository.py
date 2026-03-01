@@ -8,8 +8,6 @@ import pytest
 
 from news_recap.ingestion.cleaning import canonicalize_url, extract_domain, url_hash
 from news_recap.ingestion.models import (
-    ClusterMember,
-    DedupCluster,
     IngestionRunCounters,
     NormalizedArticle,
     RunStatus,
@@ -304,48 +302,6 @@ def test_processing_snapshot_state_is_persisted_and_can_be_advanced(tmp_path: Pa
         is False
     )
 
-    store.close()
-
-
-def test_dedup_clusters_are_saved_and_listed(tmp_path: Path) -> None:
-    store = IngestionStore(tmp_path)
-    run_id = store.start_run(source="inoreader")
-    published_at = datetime.now(tz=UTC)
-
-    inserted = store.upsert_article(
-        article=_article(
-            external_id="art-1",
-            text="some text",
-            title="Some title",
-            published_at=published_at,
-        ),
-        run_id=run_id,
-    )
-
-    store.save_dedup_clusters(
-        run_id=run_id,
-        model_name="hashing-test",
-        threshold=0.95,
-        clusters=[
-            DedupCluster(
-                cluster_id="cluster:1",
-                representative_article_id=inserted.article_id,
-                alt_sources=[],
-                members=[
-                    ClusterMember(
-                        article_id=inserted.article_id,
-                        similarity_to_representative=1.0,
-                        is_representative=True,
-                    ),
-                ],
-            ),
-        ],
-    )
-
-    result = store.list_clusters_for_run(run_id=run_id)
-    assert result.total_clusters == 1
-    assert result.clusters[0].cluster_id == "cluster:1"
-    assert result.clusters[0].members[0].article_id == inserted.article_id
     store.close()
 
 

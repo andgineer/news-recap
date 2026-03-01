@@ -212,6 +212,51 @@ SECTION: <short topic label>
 === BLOCKS ({block_count} total, format: NUMBER: TITLE) ===
 {blocks_listing}"""
 
+RECAP_DEDUP_PROMPT = """\
+You are a senior news editor. Below is a list of news. \
+Some of them may describe the same thing — just reported by different sources.
+
+If several news describe the same thing and can be merged into one \
+without losing important facts and without the result growing longer \
+than the longest original by more than ~25% — merge them into a single \
+entry with a new, informative description.
+
+Do NOT merge news that are merely related or happen in the same country. \
+Only merge news that a reader would consider the same piece of news.
+
+Requirements for merged entries:
+- Key facts from all merged news must be preserved
+- The merged text must not be significantly longer than the longest original
+- Be specific and factual — no clickbait, no vague teasers
+
+IMPORTANT: Write each entry in the same language as the original. \
+If a group contains news in different languages, use the language \
+of the majority.
+
+News that cannot be meaningfully merged with others remain as they are.
+
+Do NOT write any scripts, use any tools, or read any files.
+Print your output directly to stdout.
+
+Output format:
+
+MERGED: <new text>
+<comma-separated numbers>
+
+SINGLE: <number>
+
+Every number must appear exactly once — either in a MERGED group \
+or as SINGLE.
+
+Example:
+MERGED: EU introduces 38% tariffs on Chinese electric vehicles starting July 2025
+1, 3, 5
+SINGLE: 2
+SINGLE: 4
+
+=== NEWS ({article_count} total) ===
+{articles_block}"""
+
 RECAP_SUMMARIZE_PROMPT = """\
 You are a senior news editor writing a brief summary of the day's news \
 for a busy reader. Below are the sections and block titles from today's \

@@ -107,6 +107,8 @@ def _write_pipeline_input(  # noqa: PLR0913
     agent_override: str | None,
     data_dir: str,
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS,
+    dedup_threshold: float = 0.90,
+    dedup_model_name: str = "intfloat/multilingual-e5-small",
 ) -> None:
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
     pipeline_dir.mkdir(parents=True, exist_ok=True)
@@ -118,6 +120,8 @@ def _write_pipeline_input(  # noqa: PLR0913
         "agent_override": agent_override,
         "data_dir": data_dir,
         "min_resource_chars": min_resource_chars,
+        "dedup_threshold": dedup_threshold,
+        "dedup_model_name": dedup_model_name,
     }
     (pipeline_dir / "pipeline_input.json").write_text(
         json.dumps(payload, ensure_ascii=False, default=str),
@@ -201,6 +205,8 @@ class RecapCliController:
                 agent_override=command.agent_override,
                 data_dir=str(settings.data_dir),
                 min_resource_chars=settings.ingestion.min_resource_chars,
+                dedup_threshold=settings.dedup.threshold,
+                dedup_model_name=settings.dedup.model_name,
             )
             yield f"New pipeline: {pipeline_dir}"
 

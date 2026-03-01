@@ -11,8 +11,6 @@ from news_recap import __version__
 from news_recap.ingestion.controllers import (
     DailyIngestionCommand,
     IngestionCliController,
-    IngestionClustersCommand,
-    IngestionDuplicatesCommand,
     IngestionStatsCommand,
 )
 from news_recap.recap.launcher import (
@@ -108,7 +106,7 @@ def ingest_stats(
     source: str | None,
     recent_runs: int,
 ) -> None:
-    """Show ingestion and dedup statistics for a time window."""
+    """Show ingestion statistics for a time window."""
 
     _emit_lines(
         INGESTION_CONTROLLER.stats(
@@ -117,139 +115,6 @@ def ingest_stats(
                 hours=hours,
                 source=source,
                 recent_runs=recent_runs,
-            ),
-        ),
-    )
-
-
-@ingest.command("clusters")
-@click.option(
-    "--data-dir",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Data directory path.",
-)
-@click.option("--run-id", default=None, help="Specific ingestion run id to inspect.")
-@click.option(
-    "--source",
-    default=None,
-    help="Optional source filter used to resolve latest run when --run-id is not provided.",
-)
-@click.option(
-    "--hours",
-    type=click.IntRange(min=1),
-    default=24,
-    show_default=True,
-    help="Lookback window for latest run selection when --run-id is omitted.",
-)
-@click.option(
-    "--limit",
-    type=click.IntRange(min=1, max=1000),
-    default=20,
-    show_default=True,
-    help="Max number of clusters to print.",
-)
-@click.option(
-    "--min-size",
-    type=click.IntRange(min=1),
-    default=1,
-    show_default=True,
-    help="Only show clusters with at least this many articles.",
-)
-@click.option(
-    "--members-per-cluster",
-    type=click.IntRange(min=1, max=20),
-    default=3,
-    show_default=True,
-    help="How many articles per cluster to print when --show-members is enabled.",
-)
-@click.option(
-    "--show-members/--no-show-members",
-    default=False,
-    show_default=True,
-    help="Print sample member articles for each cluster.",
-)
-def ingest_clusters(  # noqa: PLR0913
-    data_dir: Path | None,
-    run_id: str | None,
-    source: str | None,
-    hours: int,
-    limit: int,
-    min_size: int,
-    members_per_cluster: int,
-    show_members: bool,
-) -> None:
-    """Show dedup cluster sizes for one run."""
-
-    _emit_lines(
-        INGESTION_CONTROLLER.clusters(
-            IngestionClustersCommand(
-                data_dir=data_dir,
-                run_id=run_id,
-                source=source,
-                hours=hours,
-                limit=limit,
-                min_size=min_size,
-                members_per_cluster=members_per_cluster,
-                show_members=show_members,
-            ),
-        ),
-    )
-
-
-@ingest.command("duplicates")
-@click.option(
-    "--data-dir",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Data directory path.",
-)
-@click.option("--run-id", default=None, help="Specific ingestion run id to inspect.")
-@click.option(
-    "--source",
-    default=None,
-    help="Optional source filter used to resolve latest run when --run-id is not provided.",
-)
-@click.option(
-    "--hours",
-    type=click.IntRange(min=1),
-    default=24,
-    show_default=True,
-    help="Lookback window for latest run selection when --run-id is omitted.",
-)
-@click.option(
-    "--limit-clusters",
-    type=click.IntRange(min=1, max=1000),
-    default=10,
-    show_default=True,
-    help="How many duplicate clusters to print.",
-)
-@click.option(
-    "--members-per-cluster",
-    type=click.IntRange(min=2, max=20),
-    default=5,
-    show_default=True,
-    help="How many cluster members to show for each duplicate example.",
-)
-def ingest_duplicates(  # noqa: PLR0913
-    data_dir: Path | None,
-    run_id: str | None,
-    source: str | None,
-    hours: int,
-    limit_clusters: int,
-    members_per_cluster: int,
-) -> None:
-    """Show sample articles recognized as duplicates (cluster size >= 2)."""
-
-    _emit_lines(
-        INGESTION_CONTROLLER.duplicates(
-            IngestionDuplicatesCommand(
-                data_dir=data_dir,
-                run_id=run_id,
-                source=source,
-                hours=hours,
-                limit_clusters=limit_clusters,
-                members_per_cluster=members_per_cluster,
             ),
         ),
     )
@@ -291,7 +156,17 @@ def recap() -> None:
     "--stop-after",
     "stop_after",
     type=click.Choice(
-        ["classify", "enrich", "group", "enrich_full", "synthesize", "compose"],
+        [
+            "classify",
+            "load_resources",
+            "enrich",
+            "deduplicate",
+            "map_blocks",
+            "reduce_blocks",
+            "split_blocks",
+            "group_sections",
+            "summarize",
+        ],
         case_sensitive=False,
     ),
     default=None,

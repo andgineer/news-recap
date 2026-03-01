@@ -10,12 +10,7 @@ from uuid import uuid4
 
 from news_recap.ingestion.models import (
     Article,
-    ClusterListResult,
-    ClusterMemberPreview,
-    ClusterPreview,
     DailyStore,
-    DedupCandidate,
-    DedupCluster,
     FeedsStore,
     FeedState,
     GapStatus,
@@ -203,8 +198,6 @@ class IngestionStore:
                 run.ingested_count = counters.ingested_count
                 run.updated_count = counters.updated_count
                 run.skipped_count = counters.skipped_count
-                run.dedup_clusters_count = counters.dedup_clusters_count
-                run.dedup_duplicates_count = counters.dedup_duplicates_count
                 run.gaps_opened_count = counters.gaps_opened_count
                 run.error_summary = error_summary
                 break
@@ -230,8 +223,6 @@ class IngestionStore:
             stats.ingested_count += run.ingested_count
             stats.updated_count += run.updated_count
             stats.skipped_count += run.skipped_count
-            stats.dedup_clusters_count += run.dedup_clusters_count
-            stats.dedup_duplicates_count += run.dedup_duplicates_count
             stats.gaps_opened_count += run.gaps_opened_count
             if run.status == RunStatus.SUCCEEDED.value:
                 stats.succeeded_runs_count += 1
@@ -264,29 +255,12 @@ class IngestionStore:
                     ingested_count=run.ingested_count,
                     updated_count=run.updated_count,
                     skipped_count=run.skipped_count,
-                    dedup_clusters_count=run.dedup_clusters_count,
-                    dedup_duplicates_count=run.dedup_duplicates_count,
                     gaps_opened_count=run.gaps_opened_count,
                 ),
             )
             if len(result) >= limit:
                 break
         return result
-
-    def get_latest_run_id(
-        self,
-        *,
-        source: str | None = None,
-        since: datetime | None = None,
-    ) -> str | None:
-        runs_store = self._load_runs()
-        for run in runs_store.runs:
-            if source is not None and run.source != source:
-                continue
-            if since is not None and run.started_at < since:
-                continue
-            return run.run_id
-        return None
 
     # ------------------------------------------------------------------
     # Article upsert
@@ -549,147 +523,6 @@ class IngestionStore:
         if key in feeds.processing_snapshots:
             del feeds.processing_snapshots[key]
             self._save_feeds()
-
-    # ------------------------------------------------------------------
-    # Dedup
-    # ------------------------------------------------------------------
-
-    def list_candidates_for_dedup(self, since: datetime) -> list[DedupCandidate]:
-        articles = self._all_articles()
-        candidates: list[DedupCandidate] = []
-        for art in articles.values():
-            if art.published_at >= since:
-                candidates.append(
-                    DedupCandidate(
-                        article_id=art.article_id,
-                        title=art.title,
-                        url=art.url,
-                        source_domain=art.source_domain,
-                        published_at=art.published_at,
-                        clean_text=art.clean_text,
-                        clean_text_chars=art.clean_text_chars,
-                    ),
-                )
-        candidates.sort(key=lambda c: c.published_at, reverse=True)
-        return candidates
-
-    def get_embeddings(
-        self,
-        article_ids: list[str],
-        model_name: str,  # noqa: ARG002
-    ) -> dict[str, list[float]]:
-        if not article_ids:
-            return {}
-        id_set = set(article_ids)
-        days = self._load_recent_days()
-        result: dict[str, list[float]] = {}
-        for store in days.values():
-            for aid, vec in store.embeddings.items():
-                if aid in id_set:
-                    result[aid] = vec
-        return result
-
-    def upsert_embeddings(
-        self,
-        *,
-        model_name: str,  # noqa: ARG002
-        vectors: dict[str, list[float]],
-        ttl_days: int,  # noqa: ARG002
-    ) -> None:
-        if not vectors:
-            return
-        days = self._load_recent_days()
-        all_articles = self._all_articles(days)
-        for aid, vec in vectors.items():
-            art = all_articles.get(aid)
-            if art is None:
-                continue
-            dk = day_key(art.published_at)
-            store = self._load_day(dk)
-            store.embeddings[aid] = vec
-            self._save_day(dk)
-
-    def save_dedup_clusters(
-        self,
-        *,
-        run_id: str,
-        model_name: str,  # noqa: ARG002
-        threshold: float,  # noqa: ARG002
-        clusters: list[DedupCluster],
-    ) -> None:
-        runs_store = self._load_runs()
-        runs_store.dedup_results[run_id] = clusters
-        self._save_runs()
-
-    def list_clusters_for_run(
-        self,
-        *,
-        run_id: str,
-        min_size: int = 1,
-        limit: int = 20,
-        members_per_cluster: int = 5,
-    ) -> ClusterListResult:
-        min_size = max(1, min_size)
-        limit = max(0, limit)
-        members_per_cluster = max(1, members_per_cluster)
-
-        runs_store = self._load_runs()
-        clusters = runs_store.dedup_results.get(run_id, [])
-        articles = self._all_articles()
-
-        previews: list[ClusterPreview] = []
-        total_articles = 0
-        for cluster in clusters:
-            size = len(cluster.members)
-            if size < min_size:
-                continue
-            total_articles += size
-
-            rep = articles.get(cluster.representative_article_id)
-            rep_title = rep.title if rep else f"[missing] {cluster.representative_article_id}"
-            rep_url = rep.url if rep else ""
-
-            sorted_members = sorted(
-                cluster.members,
-                key=lambda m: (
-                    not m.is_representative,
-                    -m.similarity_to_representative,
-                    m.article_id,
-                ),
-            )
-            member_previews: list[ClusterMemberPreview] = []
-            for member in sorted_members[:members_per_cluster]:
-                art = articles.get(member.article_id)
-                member_previews.append(
-                    ClusterMemberPreview(
-                        article_id=member.article_id,
-                        title=art.title if art else f"[missing] {member.article_id}",
-                        url=art.url if art else "",
-                        source_domain=art.source_domain if art else "unknown",
-                        similarity_to_representative=member.similarity_to_representative,
-                        is_representative=member.is_representative,
-                    ),
-                )
-
-            previews.append(
-                ClusterPreview(
-                    cluster_id=cluster.cluster_id,
-                    run_id=run_id,
-                    size=size,
-                    representative_article_id=cluster.representative_article_id,
-                    representative_title=rep_title,
-                    representative_url=rep_url,
-                    members=member_previews,
-                ),
-            )
-
-        visible = previews[:limit] if limit > 0 else []
-        return ClusterListResult(
-            run_id=run_id,
-            total_clusters=len(previews),
-            total_articles=total_articles,
-            clusters=visible,
-        )
 
     # ------------------------------------------------------------------
     # Retrieval for recap pipeline

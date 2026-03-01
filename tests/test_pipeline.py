@@ -108,7 +108,7 @@ def _build_settings(data_dir: Path) -> Settings:
     return Settings(
         data_dir=data_dir,
         ingestion=IngestionSettings(page_size=10, max_pages=5),
-        dedup=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.9),
+        dedup=DedupSettings(model_name="hashing-test", threshold=0.9),
         rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
     )
 
@@ -139,7 +139,6 @@ def test_pipeline_idempotent_run(tmp_path: Path) -> None:
 
     assert first.status == RunStatus.SUCCEEDED
     assert first.counters.ingested_count == 3
-    assert first.counters.dedup_duplicates_count >= 1
 
     assert second.status == RunStatus.SUCCEEDED
     assert second.counters.ingested_count == 0
@@ -254,76 +253,6 @@ def test_pipeline_calls_source_page_checkpoint_after_successful_page(tmp_path: P
     store.close()
 
 
-def test_pipeline_dedup_does_not_merge_empty_clean_text_with_different_titles(
-    tmp_path: Path,
-) -> None:
-    store = IngestionStore(tmp_path)
-
-    source = StaticSource(
-        {
-            None: SourcePage(
-                articles=[
-                    _build_article(
-                        "1",
-                        "https://example.com/1",
-                        "",
-                        title="Earthquake in Japan",
-                    ),
-                    _build_article(
-                        "2",
-                        "https://example.com/2",
-                        "",
-                        title="Bitcoin ETF gains in US",
-                    ),
-                ],
-                next_cursor=None,
-                cursor=None,
-            ),
-        },
-    )
-    settings = _build_settings(tmp_path)
-
-    summary = run_daily_ingestion(settings=settings, store=store, source=source)
-    assert summary.status == RunStatus.SUCCEEDED
-    assert summary.counters.dedup_clusters_count == 2
-    assert summary.counters.dedup_duplicates_count == 0
-    store.close()
-
-
-def test_pipeline_dedup_keeps_merging_same_fact(tmp_path: Path) -> None:
-    store = IngestionStore(tmp_path)
-
-    source = StaticSource(
-        {
-            None: SourcePage(
-                articles=[
-                    _build_article(
-                        "1",
-                        "https://example.com/1",
-                        "Flood alerts issued.",
-                        title="Storm Nils hits France",
-                    ),
-                    _build_article(
-                        "2",
-                        "https://example.com/2",
-                        "Flood alerts issued.",
-                        title="Storm Nils hits France",
-                    ),
-                ],
-                next_cursor=None,
-                cursor=None,
-            ),
-        },
-    )
-    settings = _build_settings(tmp_path)
-
-    summary = run_daily_ingestion(settings=settings, store=store, source=source)
-    assert summary.status == RunStatus.SUCCEEDED
-    assert summary.counters.dedup_clusters_count == 1
-    assert summary.counters.dedup_duplicates_count == 1
-    store.close()
-
-
 def test_pipeline_max_pages_zero_means_unlimited(tmp_path: Path) -> None:
     store = IngestionStore(tmp_path)
 
@@ -349,7 +278,7 @@ def test_pipeline_max_pages_zero_means_unlimited(tmp_path: Path) -> None:
     settings = Settings(
         data_dir=tmp_path,
         ingestion=IngestionSettings(page_size=1, max_pages=0),
-        dedup=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.9),
+        dedup=DedupSettings(model_name="hashing-test", threshold=0.9),
         rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
     )
 
@@ -377,7 +306,7 @@ def test_pipeline_resumes_rss_processing_after_failure_without_refetch(tmp_path:
     settings = Settings(
         data_dir=tmp_path,
         ingestion=IngestionSettings(page_size=2, max_pages=0),
-        dedup=DedupSettings(enabled=True, model_name="hashing-test", threshold=0.9),
+        dedup=DedupSettings(model_name="hashing-test", threshold=0.9),
         rss=RssSettings(feed_urls=(feed_url,)),
     )
 

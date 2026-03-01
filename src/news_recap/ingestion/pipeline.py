@@ -8,7 +8,6 @@ from datetime import timedelta
 from news_recap.config import Settings
 from news_recap.ingestion.models import IngestionRunCounters, RunStatus
 from news_recap.ingestion.repository import IngestionStore
-from news_recap.ingestion.services.dedup_service import DedupStageService
 from news_recap.ingestion.services.fetch_service import FetchStageService
 from news_recap.ingestion.services.normalize_service import ArticleNormalizationService
 from news_recap.ingestion.sources.base import SourceAdapter
@@ -47,10 +46,6 @@ class IngestionOrchestrator:
             ingestion_settings=settings.ingestion,
             normalizer=normalizer,
         )
-        self.dedup_stage = DedupStageService(
-            store=store,
-            dedup_settings=settings.dedup,
-        )
 
     def run_daily(self) -> IngestionSummary:
         counters = IngestionRunCounters()
@@ -62,8 +57,6 @@ class IngestionOrchestrator:
         try:
             self.store.touch_run(run_id)
             self.fetch_stage.run(run_id=run_id, counters=counters)
-            self.store.touch_run(run_id)
-            self.dedup_stage.run(run_id=run_id, counters=counters)
 
             final_status = RunStatus.PARTIAL if counters.gaps_opened_count else RunStatus.SUCCEEDED
             self.store.finish_run(

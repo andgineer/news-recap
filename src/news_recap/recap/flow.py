@@ -1,7 +1,7 @@
 """Top-level function for the recap pipeline.
 
-Orchestrates classify -> load_resources -> enrich -> map_blocks ->
-reduce_blocks -> split_blocks -> group_sections -> summarize.
+Orchestrates classify -> load_resources -> enrich -> deduplicate ->
+map_blocks -> reduce_blocks -> split_blocks -> group_sections -> summarize.
 
 Each step lives in its own module and subclasses ``TaskLauncher``
 which handles checkpoint skip/save and early stopping.
@@ -25,6 +25,7 @@ from news_recap.recap.tasks.base import (
     StopPipelineError,
 )
 from news_recap.recap.tasks.classify import Classify
+from news_recap.recap.tasks.deduplicate import Deduplicate
 from news_recap.recap.tasks.enrich import Enrich
 from news_recap.recap.tasks.group_sections import GroupSections
 from news_recap.recap.tasks.load_resources import LoadResources
@@ -116,6 +117,7 @@ def recap_flow(
         Classify.run(ctx)
         LoadResources.run(ctx)
         Enrich.run(ctx)
+        Deduplicate.run(ctx)
         MapBlocks.run(ctx)
         ReduceBlocks.run(ctx)
         SplitBlocks.run(ctx)

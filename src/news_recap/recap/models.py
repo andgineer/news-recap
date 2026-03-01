@@ -63,6 +63,7 @@ class DigestArticle(msgspec.Struct):
     enriched_title: str | None = None
     enriched_text: str | None = None
     resource_loaded: bool = False
+    alt_urls: list[dict[str, str]] = []
 
 
 class DigestBlock(msgspec.Struct):

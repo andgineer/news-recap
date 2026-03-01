@@ -2,7 +2,7 @@ from pathlib import Path
 
 import allure
 
-from news_recap.ingestion.dedup.calibration import load_golden_pairs
+from news_recap.recap.dedup.calibration import load_golden_pairs
 
 pytestmark = [
     allure.epic("Dedup Quality"),

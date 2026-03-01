@@ -1,9 +1,6 @@
-from datetime import UTC, datetime
-
 import allure
 
-from news_recap.ingestion.dedup.cluster import cluster_candidates, count_duplicates
-from news_recap.ingestion.models import DedupCandidate
+from news_recap.recap.dedup.cluster import group_similar
 
 pytestmark = [
     allure.epic("Dedup Quality"),
@@ -11,48 +8,43 @@ pytestmark = [
 ]
 
 
-def test_cluster_candidates_groups_similar_items() -> None:
-    now = datetime.now(tz=UTC)
-    candidates = [
-        DedupCandidate(
-            article_id="a1",
-            title="Event one",
-            url="https://example.com/a1",
-            source_domain="example.com",
-            published_at=now,
-            clean_text="text",
-            clean_text_chars=400,
-        ),
-        DedupCandidate(
-            article_id="a2",
-            title="Event one mirror",
-            url="https://mirror.example.net/a2",
-            source_domain="mirror.example.net",
-            published_at=now,
-            clean_text="text",
-            clean_text_chars=350,
-        ),
-        DedupCandidate(
-            article_id="a3",
-            title="Another event",
-            url="https://other.org/a3",
-            source_domain="other.org",
-            published_at=now,
-            clean_text="another",
-            clean_text_chars=200,
-        ),
-    ]
+def test_group_similar_groups_similar_items() -> None:
     embeddings = {
         "a1": [1.0, 0.0],
         "a2": [0.99, 0.01],
         "a3": [0.0, 1.0],
     }
+    groups = group_similar(
+        ids=["a1", "a2", "a3"],
+        embeddings=embeddings,
+        threshold=0.95,
+    )
+    assert len(groups) == 1
+    assert set(groups[0]) == {"a1", "a2"}
 
-    clusters = cluster_candidates(candidates=candidates, embeddings=embeddings, threshold=0.95)
 
-    assert len(clusters) == 2
-    assert count_duplicates(clusters) == 1
-    merged = [cluster for cluster in clusters if len(cluster.members) == 2][0]
-    assert merged.representative_article_id == "a1"
-    urls = {item["url"] for item in merged.alt_sources}
-    assert urls == {"https://example.com/a1", "https://mirror.example.net/a2"}
+def test_group_similar_empty() -> None:
+    assert group_similar([], {}, 0.90) == []
+
+
+def test_group_similar_no_pairs_above_threshold() -> None:
+    embeddings = {
+        "a1": [1.0, 0.0],
+        "a2": [0.0, 1.0],
+    }
+    groups = group_similar(ids=["a1", "a2"], embeddings=embeddings, threshold=0.90)
+    assert groups == []
+
+
+def test_group_similar_max_group_size() -> None:
+    embeddings = {f"a{i}": [1.0, 0.0] for i in range(10)}
+    groups = group_similar(
+        ids=[f"a{i}" for i in range(10)],
+        embeddings=embeddings,
+        threshold=0.90,
+        max_group_size=4,
+    )
+    for g in groups:
+        assert len(g) <= 4
+    all_ids = {aid for g in groups for aid in g}
+    assert all_ids == {f"a{i}" for i in range(10)}

@@ -32,32 +32,6 @@ class IngestionStatsCommand:
     recent_runs: int
 
 
-@dataclass(slots=True)
-class IngestionClustersCommand:
-    """CLI inputs for cluster inspection command."""
-
-    data_dir: Path | None
-    run_id: str | None
-    source: str | None
-    hours: int
-    limit: int
-    min_size: int
-    members_per_cluster: int
-    show_members: bool
-
-
-@dataclass(slots=True)
-class IngestionDuplicatesCommand:
-    """CLI inputs for duplicate sample command."""
-
-    data_dir: Path | None
-    run_id: str | None
-    source: str | None
-    hours: int
-    limit_clusters: int
-    members_per_cluster: int
-
-
 class IngestionCliController:
     """Coordinates ingestion command execution."""
 
@@ -89,8 +63,6 @@ class IngestionCliController:
             f"ingested={summary.counters.ingested_count} "
             f"updated={summary.counters.updated_count} "
             f"skipped={summary.counters.skipped_count} "
-            f"clusters={summary.counters.dedup_clusters_count} "
-            f"duplicates={summary.counters.dedup_duplicates_count} "
             f"gaps={summary.counters.gaps_opened_count}",
             "RSS conditional GET: "
             f"feeds={fetch_stats.feeds_total} "
@@ -149,9 +121,6 @@ class IngestionCliController:
                 f"ingested={summary.ingested_count} "
                 f"updated={summary.updated_count} "
                 f"skipped={summary.skipped_count}",
-                "Dedup: "
-                f"clusters={summary.dedup_clusters_count} "
-                f"duplicates={summary.dedup_duplicates_count}",
                 f"Gaps opened: {summary.gaps_opened_count}",
             ],
         )
@@ -166,104 +135,9 @@ class IngestionCliController:
                 f"  {run.run_id} source={run.source} status={run.status} "
                 f"started={run.started_at.isoformat()} finished={finished_at} "
                 f"ingested={run.ingested_count} updated={run.updated_count} "
-                f"skipped={run.skipped_count} clusters={run.dedup_clusters_count} "
-                f"duplicates={run.dedup_duplicates_count} gaps={run.gaps_opened_count}",
+                f"skipped={run.skipped_count} gaps={run.gaps_opened_count}",
             )
         return lines
-
-    def clusters(self, command: IngestionClustersCommand) -> list[str]:
-        settings = Settings.from_env(data_dir=command.data_dir)
-        with _store(settings) as store:
-            run_id = self._resolve_run_id(
-                store=store,
-                run_id=command.run_id,
-                source=command.source,
-                hours=command.hours,
-            )
-            if run_id is None:
-                return ["No ingestion run found for the selected scope."]
-
-            result = store.list_clusters_for_run(
-                run_id=run_id,
-                min_size=command.min_size,
-                limit=command.limit,
-                members_per_cluster=command.members_per_cluster,
-            )
-
-        lines = [
-            f"Run: {result.run_id}",
-            f"Clusters: {result.total_clusters}",
-            f"Articles in listed clusters: {result.total_articles}",
-            f"Showing clusters: {len(result.clusters)}",
-        ]
-
-        for cluster in result.clusters:
-            lines.append(
-                f"  cluster={cluster.cluster_id} size={cluster.size} "
-                f"representative={cluster.representative_title} "
-                f"url={cluster.representative_url}",
-            )
-            if not command.show_members:
-                continue
-            for member in cluster.members:
-                role = "REP" if member.is_representative else "DUP"
-                lines.append(
-                    f"    {role} sim={member.similarity_to_representative:.3f} "
-                    f"title={member.title} url={member.url}",
-                )
-
-        return lines
-
-    def duplicates(self, command: IngestionDuplicatesCommand) -> list[str]:
-        settings = Settings.from_env(data_dir=command.data_dir)
-        with _store(settings) as store:
-            run_id = self._resolve_run_id(
-                store=store,
-                run_id=command.run_id,
-                source=command.source,
-                hours=command.hours,
-            )
-            if run_id is None:
-                return ["No ingestion run found for the selected scope."]
-
-            result = store.list_clusters_for_run(
-                run_id=run_id,
-                min_size=2,
-                limit=command.limit_clusters,
-                members_per_cluster=command.members_per_cluster,
-            )
-
-        lines = [
-            f"Run: {result.run_id}",
-            f"Duplicate clusters: {result.total_clusters}",
-            f"Articles in duplicate clusters: {result.total_articles}",
-            f"Showing clusters: {len(result.clusters)}",
-        ]
-        for cluster in result.clusters:
-            lines.append(
-                f"  cluster={cluster.cluster_id} size={cluster.size} "
-                f"representative={cluster.representative_title}",
-            )
-            for member in cluster.members:
-                role = "REP" if member.is_representative else "DUP"
-                lines.append(
-                    f"    {role} sim={member.similarity_to_representative:.3f} "
-                    f"title={member.title} url={member.url}",
-                )
-        return lines
-
-    @staticmethod
-    def _resolve_run_id(
-        *,
-        store: IngestionStore,
-        run_id: str | None,
-        source: str | None,
-        hours: int,
-    ) -> str | None:
-        if run_id:
-            return run_id
-        since = datetime.now(tz=UTC) - timedelta(hours=hours)
-        return store.get_latest_run_id(source=source, since=since)
 
 
 @contextmanager

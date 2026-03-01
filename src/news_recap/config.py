@@ -1,4 +1,4 @@
-"""Runtime configuration for ingestion and dedup pipeline."""
+"""Runtime configuration for ingestion and recap pipeline."""
 
 from __future__ import annotations
 
@@ -28,14 +28,10 @@ class IngestionSettings:
 
 @dataclass(slots=True)
 class DedupSettings:
-    """Semantic deduplication settings."""
+    """Embedding-based dedup settings for the recap pipeline."""
 
-    enabled: bool = False
-    threshold: float = 0.95
+    threshold: float = 0.90
     model_name: str = "intfloat/multilingual-e5-small"
-    allow_model_fallback: bool = False
-    lookback_days: int = 3
-    embedding_ttl_days: int = 7
 
 
 @dataclass(slots=True)
@@ -81,6 +77,7 @@ class OrchestratorSettings:
         default_factory=lambda: {
             "recap_classify": 900,
             "recap_enrich": 600,
+            "recap_dedup": 600,
             "recap_map": 600,
             "recap_reduce": 1200,
             "recap_split": 120,
@@ -145,18 +142,11 @@ class Settings:
                 min_resource_chars=int(os.getenv("NEWS_RECAP_MIN_RESOURCE_CHARS", "200")),
             ),
             dedup=DedupSettings(
-                enabled=_env_bool("NEWS_RECAP_DEDUP_ENABLED", default=False),
-                threshold=float(os.getenv("NEWS_RECAP_DEDUP_THRESHOLD", "0.95")),
+                threshold=float(os.getenv("NEWS_RECAP_DEDUP_THRESHOLD", "0.90")),
                 model_name=os.getenv(
                     "NEWS_RECAP_DEDUP_MODEL_NAME",
                     "intfloat/multilingual-e5-small",
                 ),
-                allow_model_fallback=_env_bool(
-                    "NEWS_RECAP_DEDUP_ALLOW_MODEL_FALLBACK",
-                    default=False,
-                ),
-                lookback_days=int(os.getenv("NEWS_RECAP_DEDUP_LOOKBACK_DAYS", "3")),
-                embedding_ttl_days=int(os.getenv("NEWS_RECAP_EMBEDDING_TTL_DAYS", "7")),
             ),
             rss=RssSettings(
                 feed_urls=rss_urls,
@@ -367,6 +357,11 @@ def _default_task_model_map() -> dict[str, dict[str, str]]:
             "gemini": "--model gemini-2.5-flash",
         },
         "recap_enrich": {
+            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
+            "claude": "--model sonnet --effort low",
+            "gemini": "--model gemini-2.5-flash",
+        },
+        "recap_dedup": {
             "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
             "claude": "--model sonnet --effort low",
             "gemini": "--model gemini-2.5-flash",

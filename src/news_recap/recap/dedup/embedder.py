@@ -105,8 +105,7 @@ def build_embedder(model_name: str, *, allow_fallback: bool = False) -> Embedder
                 return HashingEmbedder(model_name=model_name)
             raise RuntimeError(
                 f"Failed to initialize embedding model {model_name}. "
-                "Install sentence-transformers or set "
-                "NEWS_RECAP_DEDUP_ALLOW_MODEL_FALLBACK=true.",
+                "Install sentence-transformers or pass allow_fallback=True.",
             ) from error
     return HashingEmbedder(model_name=model_name)
 

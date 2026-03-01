@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from news_recap.ingestion.dedup.embedder import build_embedder, cosine_similarity
+from news_recap.recap.dedup.embedder import build_embedder, cosine_similarity
 
 MANDATORY_MODELS = (
     "intfloat/multilingual-e5-small",

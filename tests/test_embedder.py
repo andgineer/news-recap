@@ -5,8 +5,8 @@ import logging
 import allure
 import pytest
 
-import news_recap.ingestion.dedup.embedder as embedder_module
-from news_recap.ingestion.dedup.embedder import HashingEmbedder, build_embedder
+import news_recap.recap.dedup.embedder as embedder_module
+from news_recap.recap.dedup.embedder import HashingEmbedder, build_embedder
 
 pytestmark = [
     allure.epic("Dedup Quality"),
