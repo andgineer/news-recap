@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">8 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">8<span class="text"> run</span></button>
+            <span class="text">9 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">9<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">0<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_edbc1d63d483c2ca_reduce_blocks_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-01 05:19 +0000
+            created at 2026-03-01 08:46 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -294,28 +294,73 @@
     <p class="run run2"><span class="n"><a id="t212" href="#t212">212</a></span><span class="t"><span class="str">=== BLOCKS ({block_count} total, format: NUMBER: TITLE) ===</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t213" href="#t213">213</a></span><span class="t"><span class="str">{blocks_listing}"""</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t214" href="#t214">214</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t215" href="#t215">215</a></span><span class="t"><span class="nam">RECAP_SUMMARIZE_PROMPT</span> <span class="op">=</span> <span class="str">"""\</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t216" href="#t216">216</a></span><span class="t"><span class="str">You are a senior news editor writing a brief summary of the day's news \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t217" href="#t217">217</a></span><span class="t"><span class="str">for a busy reader. Below are the sections and block titles from today's \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t218" href="#t218">218</a></span><span class="t"><span class="str">digest.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t219" href="#t219">219</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t220" href="#t220">220</a></span><span class="t"><span class="str">Write a short summary: a heading line that frames the day, followed by \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t221" href="#t221">221</a></span><span class="t"><span class="str">a bulleted list of the main storylines (5-8 bullets). Each bullet should \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t222" href="#t222">222</a></span><span class="t"><span class="str">name a thread that runs through today's news, not repeat individual \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t223" href="#t223">223</a></span><span class="t"><span class="str">block titles.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t224" href="#t224">224</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t225" href="#t225">225</a></span><span class="t"><span class="str">Write in {language}.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t215" href="#t215">215</a></span><span class="t"><span class="nam">RECAP_DEDUP_PROMPT</span> <span class="op">=</span> <span class="str">"""\</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t216" href="#t216">216</a></span><span class="t"><span class="str">You are a senior news editor. Below is a list of news. \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t217" href="#t217">217</a></span><span class="t"><span class="str">Some of them may describe the same thing &#8212; just reported by different sources.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t218" href="#t218">218</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t219" href="#t219">219</a></span><span class="t"><span class="str">If several news describe the same thing and can be merged into one \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t220" href="#t220">220</a></span><span class="t"><span class="str">without losing important facts and without the result growing longer \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t221" href="#t221">221</a></span><span class="t"><span class="str">than the longest original by more than ~25% &#8212; merge them into a single \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t222" href="#t222">222</a></span><span class="t"><span class="str">entry with a new, informative description.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t223" href="#t223">223</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t224" href="#t224">224</a></span><span class="t"><span class="str">Do NOT merge news that are merely related or happen in the same country. \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t225" href="#t225">225</a></span><span class="t"><span class="str">Only merge news that a reader would consider the same piece of news.</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t226" href="#t226">226</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t227" href="#t227">227</a></span><span class="t"><span class="str">Do NOT write any scripts, use any tools, or read any files.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t228" href="#t228">228</a></span><span class="t"><span class="str">Print your output directly to stdout.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t229" href="#t229">229</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t230" href="#t230">230</a></span><span class="t"><span class="str">Wrap your entire summary between these markers:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t231" href="#t231">231</a></span><span class="t"><span class="str">SUMMARY_START</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t232" href="#t232">232</a></span><span class="t"><span class="str">&lt;your summary here></span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t233" href="#t233">233</a></span><span class="t"><span class="str">SUMMARY_END</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t234" href="#t234">234</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t235" href="#t235">235</a></span><span class="t"><span class="str">=== TODAY'S DIGEST ===</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t236" href="#t236">236</a></span><span class="t"><span class="str">{digest_overview}"""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t227" href="#t227">227</a></span><span class="t"><span class="str">Requirements for merged entries:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t228" href="#t228">228</a></span><span class="t"><span class="str">- Key facts from all merged news must be preserved</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t229" href="#t229">229</a></span><span class="t"><span class="str">- The merged text must not be significantly longer than the longest original</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t230" href="#t230">230</a></span><span class="t"><span class="str">- Be specific and factual &#8212; no clickbait, no vague teasers</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t231" href="#t231">231</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t232" href="#t232">232</a></span><span class="t"><span class="str">IMPORTANT: Write each entry in the same language as the original. \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t233" href="#t233">233</a></span><span class="t"><span class="str">If a group contains news in different languages, use the language \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t234" href="#t234">234</a></span><span class="t"><span class="str">of the majority.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t235" href="#t235">235</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t236" href="#t236">236</a></span><span class="t"><span class="str">News that cannot be meaningfully merged with others remain as they are.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t237" href="#t237">237</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t238" href="#t238">238</a></span><span class="t"><span class="str">Do NOT write any scripts, use any tools, or read any files.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t239" href="#t239">239</a></span><span class="t"><span class="str">Print your output directly to stdout.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t240" href="#t240">240</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t241" href="#t241">241</a></span><span class="t"><span class="str">Output format:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t242" href="#t242">242</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t243" href="#t243">243</a></span><span class="t"><span class="str">MERGED: &lt;new text></span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t244" href="#t244">244</a></span><span class="t"><span class="str">&lt;comma-separated numbers></span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t245" href="#t245">245</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t246" href="#t246">246</a></span><span class="t"><span class="str">SINGLE: &lt;number></span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t247" href="#t247">247</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t248" href="#t248">248</a></span><span class="t"><span class="str">Every number must appear exactly once &#8212; either in a MERGED group \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t249" href="#t249">249</a></span><span class="t"><span class="str">or as SINGLE.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t250" href="#t250">250</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t251" href="#t251">251</a></span><span class="t"><span class="str">Example:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t252" href="#t252">252</a></span><span class="t"><span class="str">MERGED: EU introduces 38% tariffs on Chinese electric vehicles starting July 2025</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t253" href="#t253">253</a></span><span class="t"><span class="str">1, 3, 5</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t254" href="#t254">254</a></span><span class="t"><span class="str">SINGLE: 2</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t255" href="#t255">255</a></span><span class="t"><span class="str">SINGLE: 4</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t256" href="#t256">256</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t257" href="#t257">257</a></span><span class="t"><span class="str">=== NEWS ({article_count} total) ===</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t258" href="#t258">258</a></span><span class="t"><span class="str">{articles_block}"""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t259" href="#t259">259</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t260" href="#t260">260</a></span><span class="t"><span class="nam">RECAP_SUMMARIZE_PROMPT</span> <span class="op">=</span> <span class="str">"""\</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t261" href="#t261">261</a></span><span class="t"><span class="str">You are a senior news editor writing a brief summary of the day's news \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t262" href="#t262">262</a></span><span class="t"><span class="str">for a busy reader. Below are the sections and block titles from today's \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t263" href="#t263">263</a></span><span class="t"><span class="str">digest.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t264" href="#t264">264</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t265" href="#t265">265</a></span><span class="t"><span class="str">Write a short summary: a heading line that frames the day, followed by \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t266" href="#t266">266</a></span><span class="t"><span class="str">a bulleted list of the main storylines (5-8 bullets). Each bullet should \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t267" href="#t267">267</a></span><span class="t"><span class="str">name a thread that runs through today's news, not repeat individual \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t268" href="#t268">268</a></span><span class="t"><span class="str">block titles.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t269" href="#t269">269</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t270" href="#t270">270</a></span><span class="t"><span class="str">Write in {language}.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t271" href="#t271">271</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t272" href="#t272">272</a></span><span class="t"><span class="str">Do NOT write any scripts, use any tools, or read any files.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t273" href="#t273">273</a></span><span class="t"><span class="str">Print your output directly to stdout.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t274" href="#t274">274</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t275" href="#t275">275</a></span><span class="t"><span class="str">Wrap your entire summary between these markers:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t276" href="#t276">276</a></span><span class="t"><span class="str">SUMMARY_START</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t277" href="#t277">277</a></span><span class="t"><span class="str">&lt;your summary here></span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t278" href="#t278">278</a></span><span class="t"><span class="str">SUMMARY_END</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t279" href="#t279">279</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t280" href="#t280">280</a></span><span class="t"><span class="str">=== TODAY'S DIGEST ===</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t281" href="#t281">281</a></span><span class="t"><span class="str">{digest_overview}"""</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -325,7 +370,7 @@
             <a class="nav" href="z_edbc1d63d483c2ca_reduce_blocks_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-01 05:19 +0000
+            created at 2026-03-01 08:46 +0000
         </p>
     </div>
 </footer>
