@@ -37,11 +37,11 @@
 | src/news\_recap/recap/storage/schemas.py                 |        1 |        1 |      0% |         7 |
 | src/news\_recap/recap/storage/workdir.py                 |       53 |       32 |     40% |35, 45-76, 84-87, 100-103, 117-137 |
 | src/news\_recap/recap/tasks/base.py                      |       65 |       11 |     83% |61-72, 124-126, 135, 139, 142 |
-| src/news\_recap/recap/tasks/classify.py                  |      149 |       19 |     87% |132, 138, 213-222, 230, 237-238, 243, 283-285 |
+| src/news\_recap/recap/tasks/classify.py                  |      146 |       18 |     88% |130, 136, 210-218, 226, 233-234, 239, 279-281 |
 | src/news\_recap/recap/tasks/deduplicate.py               |      184 |       87 |     53% |47-51, 55-59, 152-179, 184-205, 215-252, 263-278, 291-292, 302-314, 324-328 |
 | src/news\_recap/recap/tasks/enrich.py                    |      187 |       15 |     92% |135, 201, 228-229, 292-297, 317-321, 331, 344-345, 386 |
 | src/news\_recap/recap/tasks/group\_sections.py           |      110 |       20 |     82% |68, 140, 192-224 |
-| src/news\_recap/recap/tasks/load\_resources.py           |       55 |        6 |     89% |42, 83-84, 90-92 |
+| src/news\_recap/recap/tasks/load\_resources.py           |       55 |        6 |     89% |42, 81-82, 88-90 |
 | src/news\_recap/recap/tasks/map\_blocks.py               |      140 |        8 |     94% |150, 210, 222-224, 240-241, 284 |
 | src/news\_recap/recap/tasks/parallel.py                  |       66 |       15 |     77% |77, 91-98, 120, 126-129, 147 |
 | src/news\_recap/recap/tasks/prompts.py                   |        9 |        0 |    100% |           |
@@ -49,7 +49,7 @@
 | src/news\_recap/recap/tasks/split\_blocks.py             |       92 |        1 |     99% |       114 |
 | src/news\_recap/recap/tasks/summarize.py                 |       40 |        9 |     78% |     72-86 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
-| **TOTAL**                                                | **4211** |  **953** | **77%** |           |
+| **TOTAL**                                                | **4208** |  **952** | **77%** |           |
 
 
 ## Setup coverage badge
