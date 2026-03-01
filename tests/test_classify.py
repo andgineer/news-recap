@@ -92,11 +92,10 @@ class TestBuildClassifyBatchPrompt:
         prompt = build_classify_batch_prompt(entries, _make_prefs())
         assert "7" in prompt
 
-    def test_contains_policies(self):
-        prefs = _make_prefs(exclude="sports", follow="politics")
+    def test_contains_exclude_policy(self):
+        prefs = _make_prefs(exclude="sports")
         prompt = build_classify_batch_prompt([_make_entry("x")], prefs)
         assert "sports" in prompt
-        assert "politics" in prompt
 
     def test_contains_stdout_instruction(self):
         prompt = build_classify_batch_prompt([_make_entry("x")], _make_prefs())
@@ -113,14 +112,14 @@ class TestParseClassifyBatchStdout:
         entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3"), _make_entry("a4")]
         stdout = self._write_stdout(
             tmp_path,
-            "1: ok\n2: exclude\n3: vague\n4: follow\n",
+            "1: ok\n2: exclude\n3: vague\n4: ok\n",
         )
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "a1" in kept
         assert "a2" not in kept
-        assert "a3" in kept
+        assert "a3" not in kept
         assert "a4" in kept
-        assert sorted(enrich) == ["a3", "a4"]
+        assert sorted(enrich) == ["a1", "a4"]
 
     def test_tab_format_still_works(self, tmp_path):
         entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
@@ -131,13 +130,7 @@ class TestParseClassifyBatchStdout:
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "a1" in kept
         assert "a2" not in kept
-        assert enrich == ["a3"]
-
-    def test_follow_counts_as_enrich(self, tmp_path):
-        entries = [_make_entry("a1"), _make_entry("a2")]
-        stdout = self._write_stdout(tmp_path, "1: follow\n2: ok\n")
-        kept, enrich = parse_classify_batch_stdout(stdout, entries)
-        assert kept == ["a1", "a2"]
+        assert "a3" not in kept
         assert enrich == ["a1"]
 
     def test_missing_file_raises(self, tmp_path):

@@ -56,9 +56,7 @@ class LoadResources(TaskLauncher):
         """Reconstruct ``enrich_ids`` from digest — only loaded articles."""
         ctx = self.ctx
         ctx.state["enrich_ids"] = [
-            a.article_id
-            for a in ctx.digest.articles
-            if a.verdict in ("vague", "follow") and a.resource_loaded
+            a.article_id for a in ctx.digest.articles if a.verdict == "ok" and a.resource_loaded
         ]
 
     def execute(self) -> None:

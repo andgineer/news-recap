@@ -8,30 +8,25 @@ You are a news editor deciding which headlines to keep for a daily digest.
 EDITORIAL POLICY — EXCLUDE:
 {exclude_policy}
 
-EDITORIAL POLICY — FOLLOW:
-{follow_policy}
-
 These are topic descriptions, not keyword lists. A headline may relate to a
 described category even without sharing any exact words with the description.
 
 For each headline below, decide:
 1. Story matches an EXCLUDE category → exclude
-2. Story matches a FOLLOW topic → follow
-3. Headline too vague to identify the specific story → vague
-4. Otherwise → ok
+2. Headline too vague to identify the specific story → vague
+3. Otherwise → ok
 
 Do NOT write any scripts, use any tools, or read any files.
 Read the headlines below and print your verdicts directly to stdout.
 
 Print EXACTLY {expected_count} lines to stdout,
 one per headline, in the same order as the list below.
-Format: NUMBER: VERDICT  (VERDICT is one of: ok, vague, follow, exclude)
+Format: NUMBER: VERDICT  (VERDICT is one of: ok, vague, exclude)
 
-Example output (4 headlines):
+Example output (3 headlines):
 1: ok
 2: exclude
 3: vague
-4: follow
 
 === HEADLINES (format: NUMBER: HEADLINE) ===
 {headlines_block}"""

@@ -11,7 +11,7 @@ from news_recap.recap.models import DigestArticle
 class TestLoadResources:
     """Tests for ``LoadResources`` task launcher."""
 
-    def _make_digest_article(self, aid, verdict="vague", resource_loaded=False):
+    def _make_digest_article(self, aid, verdict="ok", resource_loaded=False):
         return DigestArticle(
             article_id=aid,
             title=f"Title {aid}",
@@ -84,8 +84,8 @@ class TestLoadResources:
         from news_recap.recap.tasks import load_resources as lr_mod
 
         articles = [
-            self._make_digest_article("a1", verdict="vague"),
-            self._make_digest_article("a2", verdict="follow"),
+            self._make_digest_article("a1"),
+            self._make_digest_article("a2"),
         ]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=["a1", "a2"])
 
@@ -102,16 +102,16 @@ class TestLoadResources:
         assert set(ctx.state["enrich_ids"]) == {"a1", "a2"}
         assert lr.fully_completed is True
 
-    def test_failed_resources_reset_verdict(self, tmp_path):
+    def test_failed_resources_not_enriched(self, tmp_path):
         from unittest.mock import patch
 
         from news_recap.recap.tasks import load_resources as lr_mod
 
         articles = [
-            self._make_digest_article("a1", verdict="vague"),
-            self._make_digest_article("a2", verdict="follow"),
-            self._make_digest_article("a3", verdict="vague"),
-            self._make_digest_article("a4", verdict="vague"),
+            self._make_digest_article("a1"),
+            self._make_digest_article("a2"),
+            self._make_digest_article("a3"),
+            self._make_digest_article("a4"),
         ]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=["a1", "a2", "a3", "a4"])
 
@@ -128,9 +128,7 @@ class TestLoadResources:
             lr.execute()
 
         assert ctx.digest.articles[0].resource_loaded is True
-        assert ctx.digest.articles[0].verdict == "vague"
         assert ctx.digest.articles[1].resource_loaded is False
-        assert ctx.digest.articles[1].verdict == "ok"
         assert ctx.digest.articles[2].resource_loaded is True
         assert "a2" not in ctx.state["enrich_ids"]
         assert "a1" in ctx.state["enrich_ids"]
@@ -141,7 +139,7 @@ class TestLoadResources:
         from news_recap.recap.tasks import load_resources as lr_mod
         from news_recap.recap.tasks.base import RecapPipelineError
 
-        articles = [self._make_digest_article(f"a{i}", verdict="vague") for i in range(10)]
+        articles = [self._make_digest_article(f"a{i}") for i in range(10)]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=[f"a{i}" for i in range(10)])
 
         loaded = {f"a{i}": (f"Title a{i}", "text " * 50) for i in range(5)}
@@ -159,8 +157,8 @@ class TestLoadResources:
         from news_recap.recap.tasks import load_resources as lr_mod
 
         articles = [
-            self._make_digest_article("a1", verdict="vague", resource_loaded=True),
-            self._make_digest_article("a2", verdict="vague"),
+            self._make_digest_article("a1", resource_loaded=True),
+            self._make_digest_article("a2"),
         ]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=["a1", "a2"])
 
@@ -177,9 +175,9 @@ class TestLoadResources:
 
     def test_restore_state(self, tmp_path):
         articles = [
-            self._make_digest_article("a1", verdict="vague", resource_loaded=True),
-            self._make_digest_article("a2", verdict="follow", resource_loaded=False),
-            self._make_digest_article("a3", verdict="ok"),
+            self._make_digest_article("a1", verdict="ok", resource_loaded=True),
+            self._make_digest_article("a2", verdict="exclude", resource_loaded=True),
+            self._make_digest_article("a3", verdict="ok", resource_loaded=False),
         ]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=[])
 
@@ -197,7 +195,7 @@ class TestLoadResources:
         from news_recap.recap.tasks import load_resources as lr_mod
         from news_recap.recap.tasks.base import RecapPipelineError
 
-        articles = [self._make_digest_article(f"a{i}", verdict="vague") for i in range(10)]
+        articles = [self._make_digest_article(f"a{i}") for i in range(10)]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=[f"a{i}" for i in range(10)])
 
         loaded = {f"a{i}": (f"Title a{i}", "text " * 50) for i in range(5)}
@@ -214,15 +212,15 @@ class TestLoadResources:
         for i in range(5, 10):
             assert ctx.digest.articles[i].verdict == "ok"
 
-    def test_no_url_resets_verdict(self, tmp_path):
-        """Articles without URL get verdict reset to 'ok'."""
+    def test_no_url_not_enriched(self, tmp_path):
+        """Articles without URL are not enriched."""
         from unittest.mock import patch
 
         from news_recap.recap.tasks import load_resources as lr_mod
 
         articles = [
-            self._make_digest_article("a1", verdict="vague"),
-            self._make_digest_article("a2", verdict="follow"),
+            self._make_digest_article("a1"),
+            self._make_digest_article("a2"),
         ]
         articles[1].url = ""
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=["a1", "a2"])
@@ -249,8 +247,8 @@ class TestLoadResources:
         from news_recap.recap.tasks import load_resources as lr_mod
 
         articles = [
-            self._make_digest_article("a1", verdict="vague"),
-            self._make_digest_article("a2", verdict="ok", resource_loaded=True),
+            self._make_digest_article("a1"),
+            self._make_digest_article("a2", resource_loaded=True),
         ]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=["a1"])
 

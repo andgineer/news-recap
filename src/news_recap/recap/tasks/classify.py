@@ -1,4 +1,4 @@
-"""Task launcher: batch-classify articles into ok / vague / follow / exclude."""
+"""Task launcher: batch-classify articles into ok / vague / exclude."""
 
 from __future__ import annotations
 
@@ -68,7 +68,6 @@ def split_into_classify_batches(
     preamble_len = len(
         RECAP_CLASSIFY_BATCH_PROMPT.format(
             exclude_policy=preferences.exclude or "none",
-            follow_policy=preferences.follow or "none",
             expected_count=0,
             headlines_block="",
         ),
@@ -109,13 +108,12 @@ def build_classify_batch_prompt(
     headlines_block = "\n".join(f"{i + 1}: {e.title}" for i, e in enumerate(entries))
     return RECAP_CLASSIFY_BATCH_PROMPT.format(
         exclude_policy=preferences.exclude or "none",
-        follow_policy=preferences.follow or "none",
         expected_count=len(entries),
         headlines_block=headlines_block,
     )
 
 
-_VALID_VERDICTS = {"ok", "vague", "follow", "exclude"}
+_VALID_VERDICTS = {"ok", "vague", "exclude"}
 
 
 def _parse_verdict_line(line: str) -> tuple[str, str] | None:
@@ -162,10 +160,10 @@ def parse_classify_batch_stdout(
 ) -> tuple[list[str], list[str]]:
     """Parse batch classification verdicts from agent stdout log.
 
-    Each verdict line: ``N: ok|vague|follow|exclude``.
+    Each verdict line: ``N: ok|vague|exclude``.
     Sets ``entry.verdict`` on each ``DigestArticle``.
-    Returns ``(kept_ids, enrich_ids)`` where *enrich_ids* includes
-    both ``vague`` and ``follow`` articles (both need resource loading).
+    Returns ``(kept_ids, enrich_ids)`` — both exclude and vague are dropped;
+    all ``ok`` articles are kept and sent to enrichment.
     """
     text = read_agent_stdout(stdout_path, "recap_classify")
     valid_nums = {str(i + 1) for i in range(len(entries))}
@@ -189,11 +187,10 @@ def parse_classify_batch_stdout(
     for i, e in enumerate(entries):
         verdict = parsed.get(str(i + 1), "ok")
         e.verdict = verdict
-        if verdict == "exclude":
+        if verdict in ("exclude", "vague"):
             continue
         kept.append(e.article_id)
-        if verdict in ("vague", "follow"):
-            enrich.append(e.article_id)
+        enrich.append(e.article_id)
 
     return kept, enrich
 
@@ -204,7 +201,7 @@ def parse_classify_batch_stdout(
 
 
 class Classify(TaskLauncher):
-    """Batch-classify articles as ok / vague / follow / exclude."""
+    """Batch-classify articles as ok / vague / exclude."""
 
     name = "classify"
 
@@ -214,9 +211,8 @@ class Classify(TaskLauncher):
         kept = []
         enrich_ids = []
         for a in ctx.digest.articles:
-            if a.verdict in ("ok", "follow") and a.article_id in ctx.article_map:
+            if a.verdict == "ok" and a.article_id in ctx.article_map:
                 kept.append(ctx.article_map[a.article_id])
-            if a.verdict in ("vague", "follow"):
                 enrich_ids.append(a.article_id)
         ctx.state["kept_entries"] = kept
         ctx.state["enrich_ids"] = enrich_ids
@@ -292,17 +288,15 @@ class Classify(TaskLauncher):
             if a.verdict is not None and a.article_id in digest_by_id:
                 digest_by_id[a.article_id].verdict = a.verdict
 
-        all_kept = [a.article_id for a in ctx.digest.articles if a.verdict in ("ok", "follow")]
-        all_enrich = [a.article_id for a in ctx.digest.articles if a.verdict in ("vague", "follow")]
+        all_kept = [a.article_id for a in ctx.digest.articles if a.verdict == "ok"]
 
         ctx.state["kept_entries"] = [
             ctx.article_map[sid] for sid in all_kept if sid in ctx.article_map
         ]
-        ctx.state["enrich_ids"] = all_enrich
+        ctx.state["enrich_ids"] = list(all_kept)
 
         logger.info(
-            "Classify: %d kept, %d discarded, %d need enrichment",
+            "Classify: %d kept, %d discarded",
             len(all_kept),
             len(ctx.inp.articles) - len(all_kept),
-            len(all_enrich),
         )
