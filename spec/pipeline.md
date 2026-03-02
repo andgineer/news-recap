@@ -15,31 +15,40 @@ flowchart TD
         enrichW["Enrich (up to 3 batches)"]
     end
     subgraph parallel3 [Parallel workers]
+        dedupW["Deduplicate (up to 4 clusters)"]
+    end
+    subgraph parallel4 [Parallel workers]
         mapW["MapBlocks (up to 3 chunks)"]
     end
 
     inp[PipelineInput] --> classifyW
     classifyW --> loadRes[LoadResources]
     loadRes --> enrichW
-    enrichW --> mapW
+    enrichW --> dedupW
+    dedupW --> mapW
     mapW --> reduce[ReduceBlocks]
     reduce --> split{SPLIT needed?}
     split -->|No| digest["Digest (blocks)"]
     split -->|Yes| splitW["SplitBlocks (parallel)"]
     splitW --> digest
+    digest --> groupSec[GroupSections]
+    groupSec --> summarize[Summarize]
 ```
 
-The Prefect flow `recap_flow` runs the six steps in fixed order:
+The flow `recap_flow` runs the nine steps in fixed order:
 
-1. **Classify** — batch-classify articles as `ok / vague / follow / exclude`.
+1. **Classify** — batch-classify articles as `ok / vague / exclude`.
 2. **LoadResources** — download full-text for articles needing enrichment.
 3. **Enrich** — rewrite headlines and extract excerpts via LLM agents.
-4. **MapBlocks** — group headlines into titled blocks (parallel workers).
-5. **ReduceBlocks** — merge overlapping block titles into a unified list.
-6. **SplitBlocks** — break broad blocks into thematic sub-blocks (parallel workers, only if reduce produced SPLIT markers).
+4. **Deduplicate** — merge near-duplicate articles (embedding pre-filter + LLM clustering).
+5. **MapBlocks** — group headlines into titled blocks (parallel workers).
+6. **ReduceBlocks** — merge overlapping block titles into a unified list.
+7. **SplitBlocks** — break broad blocks into thematic sub-blocks (parallel workers, only if reduce produced SPLIT markers).
+8. **GroupSections** — cluster blocks into reader-friendly sections with short topic labels.
+9. **Summarize** — produce a heading + bulleted day summary from the section structure.
 
-Steps 1, 3, 4, and 6 run up to `_MAX_PARALLEL` concurrent Prefect tasks.
-Steps 2 and 5 are single-threaded.
+Steps 1, 3, 4, 5, and 7 run up to `_MAX_PARALLEL` concurrent workers.
+Steps 2, 6, 8, and 9 are single-threaded.
 
 ## Per-step contracts
 
@@ -51,12 +60,15 @@ Steps 2 and 5 are single-threaded.
 | **Task type** | `recap_classify` |
 | **LLM I/O** | Inline prompt with numbered headlines; agent prints verdicts to stdout |
 | **Reads** | `ctx.inp.articles`, `ctx.inp.preferences` |
-| **Writes state** | `kept_entries` — `list[ArticleIndexEntry]` (non-excluded articles) |
-| | `enrich_ids` — `list[str]` (article IDs with verdict `vague` or `follow`) |
+| **Writes state** | `kept_entries` — `list[ArticleIndexEntry]` (articles with verdict `ok`) |
+| | `enrich_ids` — `list[str]` (article IDs with verdict `ok`) |
 | **Writes digest** | `articles[].verdict` |
 
 Headlines are numbered 1..N in the prompt. The agent prints one line per
-headline: `NUMBER: VERDICT`. Verdicts: `ok`, `vague`, `follow`, `exclude`.
+headline: `NUMBER: VERDICT`. Verdicts: `ok`, `vague`, `exclude`.
+
+Articles with verdict `vague` or `exclude` are dropped from further processing.
+Only `ok` articles appear in `kept_entries` / `enrich_ids`.
 
 Batching: articles are split into batches of 50–300, up to 3 parallel
 workers. A char-budget check prevents prompts from exceeding 60 000 chars.
@@ -100,6 +112,39 @@ Recognition rate below 50% raises `RecapPipelineError`. Unprocessed
 articles are retried for up to 3 rounds. If a round makes no progress the
 loop stops early. Partial results are persisted; `fully_completed` is set
 to `False` so the step re-runs on the next pipeline invocation.
+
+### Deduplicate
+
+| | |
+|---|---|
+| **Module** | `recap/tasks/deduplicate.py` |
+| **Task type** | `recap_dedup` |
+| **LLM I/O** | Per-cluster prompt with numbered articles; agent prints `MERGED:` / `SINGLE:` lines |
+| **Reads** | `ctx.digest.articles` (all articles after Enrich) |
+| **Writes digest** | Removes duplicate `DigestArticle` entries; sets `enriched_title` on the keeper |
+
+Two-phase process:
+
+1. **Embedding pre-filter** — sentence-transformer embeddings are computed for
+   all articles and grouped by cosine similarity above `dedup_threshold`
+   (default 0.90). Groups below size 2 are skipped.
+2. **LLM clustering** — each similarity group is sent to an LLM agent that
+   prints one of two line types per article:
+
+```
+MERGED: <merged headline>
+<comma-separated article numbers>
+
+SINGLE: <number>
+```
+
+`MERGED` actions keep the article with the most `clean_text`, set its
+`enriched_title` to the merged headline, and add the other URLs to
+`alt_urls`. Removed article IDs are also pruned from `ctx.state["kept_entries"]`.
+
+Up to 4 clusters run in parallel. Partial failures are tolerated:
+`fully_completed = False` is set and a warning logged, but the pipeline
+continues.
 
 ### MapBlocks
 
@@ -173,6 +218,51 @@ outputs `BLOCK:` lines with article numbers. Coverage below 50% raises
 If the step is skipped (no split tasks), no work is done. On worker
 failure, partial results are saved and `RecapPipelineError` is raised.
 
+### GroupSections
+
+| | |
+|---|---|
+| **Module** | `recap/tasks/group_sections.py` |
+| **Task type** | `recap_group_sections` |
+| **LLM I/O** | Numbered block titles in prompt; agent prints `SECTION:` lines to stdout |
+| **Reads digest** | `blocks` |
+| **Writes digest** | `recaps` — `list[DigestSection]` |
+
+Takes the flat list of `DigestBlock` objects produced by MAP/REDUCE/SPLIT
+and asks an LLM to cluster them into sections with short topic labels.
+
+Output format:
+
+```
+SECTION: <short topic label>
+<comma-separated block numbers>
+```
+
+Post-parse guardrails:
+- Single-block sections are merged into the nearest neighbour.
+- Orphan blocks (not assigned to any section) are appended to the last section.
+- Sections exceeding 10 blocks generate a warning.
+
+When the block count is ≤ 3, the LLM call is skipped and all blocks go
+into a single catch-all section (language-aware title).
+
+### Summarize
+
+| | |
+|---|---|
+| **Module** | `recap/tasks/summarize.py` |
+| **Task type** | `recap_summarize` |
+| **LLM I/O** | Section + block hierarchy in prompt; agent outputs freeform text between markers |
+| **Reads digest** | `recaps`, `blocks` |
+| **Writes digest** | `day_summary` — `str` |
+
+Receives the full section/block structure and writes a heading + bulleted
+storylines summary in the digest language. Output is delimited by
+`SUMMARY_START` / `SUMMARY_END` markers.
+
+If `recaps` is empty (no sections), the step is skipped and `day_summary`
+is set to an empty string.
+
 ## State and checkpointing
 
 Two layers of state flow through the pipeline:
@@ -202,6 +292,10 @@ If a step sets `fully_completed = False` (partial results), its name is
 the pipeline after the named step completes by raising `StopPipelineError`.
 The flow catches this and marks the run as completed.
 
+Valid `stop_after` values: `classify`, `load_resources`, `enrich`,
+`deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`,
+`group_sections`, `summarize`.
+
 ## Output shape
 
 The final digest contains:
@@ -213,6 +307,8 @@ Digest
   status: str
   articles: list[DigestArticle]
   blocks: list[DigestBlock]
+  recaps: list[DigestSection]
+  day_summary: str
   completed_phases: list[str]
 ```
 
@@ -220,5 +316,13 @@ Each `DigestBlock` has:
 
 - `title` — 2-4 sentence summary produced by MAP/REDUCE.
 - `article_ids` — references to `DigestArticle.article_id` entries.
+
+Each `DigestSection` has:
+
+- `title` — short topic label produced by GROUP_SECTIONS.
+- `block_indices` — zero-based indices into `blocks`.
+
+`day_summary` is a freeform markdown string (heading + bullets) produced
+by SUMMARIZE.
 
 There is no event layer; blocks reference articles directly.

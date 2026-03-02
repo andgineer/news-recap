@@ -12,7 +12,7 @@
 
 - Source ingestion from RSS/Atom feeds (including Inoreader Output RSS).
 - File-based article storage with daily partitioning and automatic garbage collection.
-- Recap pipeline: classify → load_resources → enrich → map → reduce → split → group_sections → summarize.
+- Recap pipeline: classify → load_resources → enrich → deduplicate → map → reduce → split → group_sections → summarize.
 
 ## Where To Start
 

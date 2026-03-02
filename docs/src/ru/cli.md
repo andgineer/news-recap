@@ -5,7 +5,7 @@
 ## Карта Команд
 
 - `ingest`: импорт источников, статистика, проверка дедупа.
-- `recap`: пайплайн ежедневного дайджеста (classify, enrich, group, synthesize, compose).
+- `recap`: пайплайн ежедневного дайджеста (classify, enrich, deduplicate, map, reduce, split, group_sections, summarize).
 
 ## Общие Замечания
 
@@ -74,8 +74,9 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 ### `recap run`
 Запуск полного пайплайна дайджеста на бизнес-дату.
 
-Пайплайн проходит шесть этапов: classify → enrich → group →
-deep-enrich → synthesize → compose. Каждый этап чекпоинтится,
+Пайплайн проходит девять этапов: classify → load_resources → enrich →
+deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections →
+summarize. Каждый этап чекпоинтится,
 поэтому повторный запуск пропускает уже выполненные этапы.
 
 ```bash
@@ -90,7 +91,7 @@ news-recap recap run --limit 50
 - `--date` (бизнес-дата, по умолчанию — сегодня UTC)
 - `--agent` (`codex`, `claude` или `gemini`)
 - `--limit` (ограничить число загружаемых статей)
-- `--stop-after` (`classify`, `enrich`, `group`, `enrich_full`, `synthesize`, `compose`)
+- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`)
 
 ## Важные Переменные Окружения
 

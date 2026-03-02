@@ -5,7 +5,7 @@
 ## Command Map
 
 - `ingest`: source import, stats, dedup inspection.
-- `recap`: daily digest pipeline (classify, enrich, group, synthesize, compose).
+- `recap`: daily digest pipeline (classify, enrich, deduplicate, map, reduce, split, group_sections, summarize).
 
 ## Common Notes
 
@@ -74,9 +74,10 @@ Key options:
 ### `recap run`
 Run the full news digest pipeline for a business date.
 
-The pipeline goes through six stages: classify → enrich → group →
-deep-enrich → synthesize → compose. Each stage is checkpointed, so
-a resumed run skips already-completed stages.
+The pipeline goes through nine stages: classify → load_resources → enrich →
+deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections →
+summarize. Each stage is checkpointed, so a resumed run skips
+already-completed stages.
 
 ```bash
 news-recap recap run
@@ -90,7 +91,7 @@ Key options:
 - `--date` (business date, defaults to today UTC)
 - `--agent` (`codex`, `claude`, or `gemini`)
 - `--limit` (cap number of articles loaded)
-- `--stop-after` (`classify`, `enrich`, `group`, `enrich_full`, `synthesize`, `compose`)
+- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`)
 
 ## Important Environment Variables
 
