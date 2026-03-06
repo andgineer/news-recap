@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_edbc1d63d483c2ca_map_blocks_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-02 08:22 +0000
+            created at 2026-03-06 14:45 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -135,10 +135,10 @@
     <p class="run"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t">    <span class="nam">name</span> <span class="op">=</span> <span class="str">"load_resources"</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t">    <span class="key">def</span> <span class="nam">restore_state</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">        <span class="str">"""Reconstruct ``enrich_ids`` from digest &#8212; only loaded articles."""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">        <span class="str">"""Reconstruct ``enrich_ids`` from digest &#8212; only vague articles with loaded resources."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t">        <span class="nam">ctx</span> <span class="op">=</span> <span class="nam">self</span><span class="op">.</span><span class="nam">ctx</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">        <span class="nam">ctx</span><span class="op">.</span><span class="nam">state</span><span class="op">[</span><span class="str">"enrich_ids"</span><span class="op">]</span> <span class="op">=</span> <span class="op">[</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">            <span class="nam">a</span><span class="op">.</span><span class="nam">article_id</span> <span class="key">for</span> <span class="nam">a</span> <span class="key">in</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">digest</span><span class="op">.</span><span class="nam">articles</span> <span class="key">if</span> <span class="nam">a</span><span class="op">.</span><span class="nam">verdict</span> <span class="op">==</span> <span class="str">"ok"</span> <span class="key">and</span> <span class="nam">a</span><span class="op">.</span><span class="nam">resource_loaded</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">            <span class="nam">a</span><span class="op">.</span><span class="nam">article_id</span> <span class="key">for</span> <span class="nam">a</span> <span class="key">in</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">digest</span><span class="op">.</span><span class="nam">articles</span> <span class="key">if</span> <span class="nam">a</span><span class="op">.</span><span class="nam">verdict</span> <span class="op">==</span> <span class="str">"vague"</span> <span class="key">and</span> <span class="nam">a</span><span class="op">.</span><span class="nam">resource_loaded</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t">        <span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t62" href="#t62">62</a></span><span class="t">    <span class="key">def</span> <span class="nam">execute</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -216,7 +216,7 @@
             <a class="nav" href="z_edbc1d63d483c2ca_map_blocks_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-02 08:22 +0000
+            created at 2026-03-06 14:45 +0000
         </p>
     </div>
 </footer>

@@ -37,7 +37,7 @@
 | src/news\_recap/recap/storage/schemas.py                 |        1 |        1 |      0% |         7 |
 | src/news\_recap/recap/storage/workdir.py                 |       53 |       32 |     40% |35, 45-76, 84-87, 100-103, 117-137 |
 | src/news\_recap/recap/tasks/base.py                      |       65 |       11 |     83% |61-72, 124-126, 135, 139, 142 |
-| src/news\_recap/recap/tasks/classify.py                  |      146 |       18 |     88% |130, 136, 210-218, 226, 233-234, 239, 279-281 |
+| src/news\_recap/recap/tasks/classify.py                  |      149 |       19 |     87% |130, 136, 211-220, 228, 235-236, 241, 281-283 |
 | src/news\_recap/recap/tasks/deduplicate.py               |      184 |       87 |     53% |47-51, 55-59, 152-179, 184-205, 215-252, 263-278, 291-292, 302-314, 324-328 |
 | src/news\_recap/recap/tasks/enrich.py                    |      187 |       15 |     92% |135, 201, 228-229, 292-297, 317-321, 331, 344-345, 386 |
 | src/news\_recap/recap/tasks/group\_sections.py           |      110 |       20 |     82% |68, 140, 192-224 |
@@ -49,7 +49,7 @@
 | src/news\_recap/recap/tasks/split\_blocks.py             |       92 |        1 |     99% |       114 |
 | src/news\_recap/recap/tasks/summarize.py                 |       40 |        9 |     78% |     72-86 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
-| **TOTAL**                                                | **4208** |  **952** | **77%** |           |
+| **TOTAL**                                                | **4211** |  **953** | **77%** |           |
 
 
 ## Setup coverage badge
