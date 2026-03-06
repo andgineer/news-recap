@@ -162,8 +162,8 @@ def parse_classify_batch_stdout(
 
     Each verdict line: ``N: ok|vague|exclude``.
     Sets ``entry.verdict`` on each ``DigestArticle``.
-    Returns ``(kept_ids, enrich_ids)`` — both exclude and vague are dropped;
-    all ``ok`` articles are kept and sent to enrichment.
+    Returns ``(kept_ids, enrich_ids)`` — ``exclude`` articles are dropped;
+    ``ok`` articles are kept; ``vague`` articles are kept and sent to enrichment.
     """
     text = read_agent_stdout(stdout_path, "recap_classify")
     valid_nums = {str(i + 1) for i in range(len(entries))}
@@ -187,10 +187,11 @@ def parse_classify_batch_stdout(
     for i, e in enumerate(entries):
         verdict = parsed.get(str(i + 1), "ok")
         e.verdict = verdict
-        if verdict in ("exclude", "vague"):
+        if verdict == "exclude":
             continue
         kept.append(e.article_id)
-        enrich.append(e.article_id)
+        if verdict == "vague":
+            enrich.append(e.article_id)
 
     return kept, enrich
 
@@ -211,9 +212,10 @@ class Classify(TaskLauncher):
         kept = []
         enrich_ids = []
         for a in ctx.digest.articles:
-            if a.verdict == "ok" and a.article_id in ctx.article_map:
+            if a.verdict in ("ok", "vague") and a.article_id in ctx.article_map:
                 kept.append(ctx.article_map[a.article_id])
-                enrich_ids.append(a.article_id)
+                if a.verdict == "vague":
+                    enrich_ids.append(a.article_id)
         ctx.state["kept_entries"] = kept
         ctx.state["enrich_ids"] = enrich_ids
 
@@ -288,15 +290,17 @@ class Classify(TaskLauncher):
             if a.verdict is not None and a.article_id in digest_by_id:
                 digest_by_id[a.article_id].verdict = a.verdict
 
-        all_kept = [a.article_id for a in ctx.digest.articles if a.verdict == "ok"]
+        all_kept = [a.article_id for a in ctx.digest.articles if a.verdict in ("ok", "vague")]
+        vague_ids = [a.article_id for a in ctx.digest.articles if a.verdict == "vague"]
 
         ctx.state["kept_entries"] = [
             ctx.article_map[sid] for sid in all_kept if sid in ctx.article_map
         ]
-        ctx.state["enrich_ids"] = list(all_kept)
+        ctx.state["enrich_ids"] = vague_ids
 
         logger.info(
-            "Classify: %d kept, %d discarded",
+            "Classify: %d kept (%d vague for enrichment), %d discarded",
             len(all_kept),
+            len(vague_ids),
             len(ctx.inp.articles) - len(all_kept),
         )

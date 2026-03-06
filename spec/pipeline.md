@@ -60,15 +60,16 @@ Steps 2, 6, 8, and 9 are single-threaded.
 | **Task type** | `recap_classify` |
 | **LLM I/O** | Inline prompt with numbered headlines; agent prints verdicts to stdout |
 | **Reads** | `ctx.inp.articles`, `ctx.inp.preferences` |
-| **Writes state** | `kept_entries` — `list[ArticleIndexEntry]` (articles with verdict `ok`) |
-| | `enrich_ids` — `list[str]` (article IDs with verdict `ok`) |
+| **Writes state** | `kept_entries` — `list[ArticleIndexEntry]` (articles with verdict `ok` or `vague`) |
+| | `enrich_ids` — `list[str]` (article IDs with verdict `vague`, routed to LoadResources/Enrich) |
 | **Writes digest** | `articles[].verdict` |
 
 Headlines are numbered 1..N in the prompt. The agent prints one line per
 headline: `NUMBER: VERDICT`. Verdicts: `ok`, `vague`, `exclude`.
 
-Articles with verdict `vague` or `exclude` are dropped from further processing.
-Only `ok` articles appear in `kept_entries` / `enrich_ids`.
+- `ok` — article is kept as-is; added to `kept_entries`.
+- `vague` — headline is too vague to understand without reading the article; kept in `kept_entries` and added to `enrich_ids` so LoadResources fetches the full text and Enrich rewrites the headline.
+- `exclude` — article is dropped entirely.
 
 Batching: articles are split into batches of 50–300, up to 3 parallel
 workers. A char-budget check prevents prompts from exceeding 60 000 chars.
@@ -85,10 +86,11 @@ below 80% also raises.
 | **Writes state** | `enrich_ids` — filtered to only successfully loaded articles |
 | **Writes digest** | `articles[].resource_loaded`, `articles[].verdict` (reset to `ok` on failure) |
 
-Downloads article full-text via `load_resource_texts` and caches it under
-the pipeline directory. Articles that fail to load get their verdict reset
-to `ok` (so they still appear in the digest but won't be enriched). Failure
-rate above 30% raises `RecapPipelineError`.
+Downloads full-text for `vague` articles via `load_resource_texts` and caches
+it under the pipeline directory. Articles that fail to load (or have no URL)
+get their verdict reset to `ok` — they remain in the digest with their
+original headline but won't be enriched. Failure rate above 30% raises
+`RecapPipelineError`.
 
 ### Enrich
 

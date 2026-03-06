@@ -13,6 +13,10 @@ subscriptions — making heavy daily summarisation practically free.
 
 - [News Recap](https://andgineer.github.io/news-recap/)
 
+## Architecture
+
+- [Pipeline spec](spec/pipeline.md) — per-step contracts, state flow, and checkpointing for the recap pipeline.
+
 # Developers
 
 For development you need [uv](https://github.com/astral-sh/uv) installed.

@@ -117,9 +117,9 @@ class TestParseClassifyBatchStdout:
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "a1" in kept
         assert "a2" not in kept
-        assert "a3" not in kept
+        assert "a3" in kept  # vague is kept, just flagged for enrichment
         assert "a4" in kept
-        assert sorted(enrich) == ["a1", "a4"]
+        assert enrich == ["a3"]  # only vague articles need enrichment
 
     def test_tab_format_still_works(self, tmp_path):
         entries = [_make_entry("a1"), _make_entry("a2"), _make_entry("a3")]
@@ -130,8 +130,8 @@ class TestParseClassifyBatchStdout:
         kept, enrich = parse_classify_batch_stdout(stdout, entries)
         assert "a1" in kept
         assert "a2" not in kept
-        assert "a3" not in kept
-        assert enrich == ["a1"]
+        assert "a3" in kept  # vague is kept, just flagged for enrichment
+        assert enrich == ["a3"]  # only vague articles need enrichment
 
     def test_missing_file_raises(self, tmp_path):
         entries = [_make_entry("a1"), _make_entry("a2")]

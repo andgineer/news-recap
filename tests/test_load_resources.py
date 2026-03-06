@@ -175,9 +175,10 @@ class TestLoadResources:
 
     def test_restore_state(self, tmp_path):
         articles = [
-            self._make_digest_article("a1", verdict="ok", resource_loaded=True),
+            self._make_digest_article("a1", verdict="vague", resource_loaded=True),
             self._make_digest_article("a2", verdict="exclude", resource_loaded=True),
-            self._make_digest_article("a3", verdict="ok", resource_loaded=False),
+            self._make_digest_article("a3", verdict="vague", resource_loaded=False),
+            self._make_digest_article("a4", verdict="ok", resource_loaded=True),
         ]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=[])
 
@@ -186,6 +187,7 @@ class TestLoadResources:
         lr = LoadResources(ctx)
         lr.restore_state()
 
+        # only vague articles with successfully loaded resources go to enrich
         assert ctx.state["enrich_ids"] == ["a1"]
 
     def test_high_failure_persists_loaded_before_raise(self, tmp_path):
