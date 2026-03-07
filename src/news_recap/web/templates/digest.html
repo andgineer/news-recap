@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>News Recap {{ digest.business_date }}</title>
+</head>
+<body>
+  <h1>{{ digest.business_date }}</h1>
+
+  {% if digest.day_summary %}
+  <blockquote>{{ digest.day_summary | nl2br }}</blockquote>
+  {% endif %}
+
+  {% for section in digest.recaps %}
+  <section>
+    <h2>{{ section.title }}</h2>
+
+    {% for idx in section.block_indices %}
+    {% set block = digest.blocks[idx] %}
+    <details>
+      <summary>{{ block.title | nl2br }}</summary>
+      <ul>
+        {% for art_id in block.article_ids %}
+        {% set art = article_map.get(art_id) %}
+        {% if art %}
+        <li>
+          <a href="{{ art.url }}" target="_blank" rel="noopener">
+            {{ art.enriched_title or art.title }}
+          </a>
+          — {{ art.source }}, {{ art.published_at[:10] }}
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+    </details>
+    {% endfor %}
+
+  </section>
+  {% endfor %}
+</body>
+</html>

@@ -17,6 +17,7 @@ from news_recap.recap.launcher import (
     RecapCliController,
     RecapRunCommand,
 )
+from news_recap.web.server import WebCliController, WebServeCommand
 
 
 def _configure_logging() -> None:
@@ -35,6 +36,7 @@ _configure_logging()
 click.rich_click.USE_MARKDOWN = True
 INGESTION_CONTROLLER = IngestionCliController()
 RECAP_CONTROLLER = RecapCliController()
+WEB_CONTROLLER = WebCliController()
 
 
 @click.group()
@@ -198,6 +200,50 @@ def recap_run(  # noqa: PLR0913
                 stop_after=stop_after,
                 fresh=fresh,
             ),
+        ),
+    )
+
+
+@news_recap.command("serve")
+@click.option(
+    "--data-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Data directory path.",
+)
+@click.option(
+    "--date",
+    "pinned_date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Pin the default landing page to this date (YYYY-MM-DD). Defaults to today UTC.",
+)
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    show_default=True,
+    help="Host to bind the web server to.",
+)
+@click.option(
+    "--port",
+    type=int,
+    default=8080,
+    show_default=True,
+    help="Port to bind the web server to.",
+)
+def serve(
+    data_dir: Path | None,
+    pinned_date: datetime | None,
+    host: str,
+    port: int,
+) -> None:
+    """Start the digest web viewer."""
+    WEB_CONTROLLER.serve(
+        WebServeCommand(
+            data_dir=data_dir,
+            date=pinned_date.date() if pinned_date is not None else None,
+            host=host,
+            port=port,
         ),
     )
 
