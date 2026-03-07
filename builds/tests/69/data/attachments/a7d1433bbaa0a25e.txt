@@ -1,0 +1,2 @@
+2026-02-28 18:30:50,410 | INFO    | news_recap.recap.tasks.base - Running: split_blocks
+2026-02-28 18:30:50,410 | INFO    | news_recap.recap.tasks.split_blocks - [split] No blocks to split

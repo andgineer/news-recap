@@ -1,0 +1,2 @@
+13:40:49.892 | WARNING | news_recap.recap.tasks.reduce_blocks - REDUCE: duplicate source blocks ignored: [1, 2]
+13:40:49.892 | WARNING | news_recap.recap.tasks.reduce_blocks - No source block numbers after BLOCK line: Duplicate

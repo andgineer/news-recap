@@ -1,0 +1,1 @@
+2026-02-28 09:01:21,916 | INFO    | news_recap.recap.loaders.resource_loader - YouTube: stopping after 1/5 (HTML finished, 1 transcripts loaded)

@@ -1,0 +1,3 @@
+16:27:00.772 | WARNING | trafilatura.core - discarding data: https://other.com/3
+16:27:00.773 | WARNING | trafilatura.core - discarding data: https://example.com/1
+16:27:00.774 | WARNING | trafilatura.core - discarding data: https://example.com/2

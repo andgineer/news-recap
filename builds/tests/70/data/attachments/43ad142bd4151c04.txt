@@ -1,0 +1,3 @@
+2026-03-01 05:18:52,428 | INFO    | news_recap.recap.tasks.split_blocks - [split] 1 blocks to split
+2026-03-01 05:18:52,429 | INFO    | news_recap.recap.tasks.split_blocks - [split] block 1 (3 articles) -> 2 sub-blocks
+2026-03-01 05:18:52,429 | INFO    | news_recap.recap.tasks.split_blocks - [split] 1 split tasks -> 2 new blocks

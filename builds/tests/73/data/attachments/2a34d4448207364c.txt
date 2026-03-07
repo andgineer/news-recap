@@ -1,0 +1,1 @@
+2026-03-01 10:43:28,813 | WARNING | news_recap.recap.tasks.group_sections - Merged single-block section 'Politics' into 'Tech'

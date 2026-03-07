@@ -1,0 +1,1 @@
+16:49:15.943 | WARNING | news_recap.recap.tasks.classify - Batch classify: 4/5 verdicts recognised — missing IDs default to ok

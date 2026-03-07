@@ -1,0 +1,5 @@
+INFO     news_recap.recap.tasks.map_blocks:map_blocks.py:244 [map] 6 headlines -> 2 chunk(s)
+INFO     news_recap.recap.tasks.map_blocks:map_blocks.py:261 [map] Worker 1 — 3 headlines
+INFO     news_recap.recap.tasks.map_blocks:map_blocks.py:261 [map] Worker 2 — 3 headlines
+ERROR    news_recap.recap.tasks.map_blocks:parallel.py:105 map worker 2 failed: Step recap_map failed: agent crashed
+INFO     news_recap.recap.tasks.map_blocks:map_blocks.py:289 [map] 1 blocks from 2 worker(s)

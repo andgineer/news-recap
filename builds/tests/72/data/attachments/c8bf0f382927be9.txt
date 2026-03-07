@@ -1,0 +1,1 @@
+2026-03-01 09:02:01,752 | WARNING | news_recap.recap.tasks.map_blocks - MAP worker 1: 1 headline(s) appear in multiple blocks

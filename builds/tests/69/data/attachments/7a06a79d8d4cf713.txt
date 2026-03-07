@@ -1,0 +1,1 @@
+2026-02-28 18:30:49,870 | WARNING | news_recap.ingestion.repository - RSS snapshot cursor update skipped (source=rss, hash=feed-set-hash).

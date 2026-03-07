@@ -1,0 +1,1 @@
+2026-02-28 18:30:49,580 | WARNING | news_recap.recap.tasks.reduce_blocks - REDUCE: 2 block(s) omitted by agent, treating as unchanged: [2, 3]

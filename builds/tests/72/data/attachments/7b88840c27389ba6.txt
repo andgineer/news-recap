@@ -1,0 +1,5 @@
+2026-03-01 09:02:01,767 | INFO    | news_recap.recap.tasks.map_blocks - [map] 6 headlines -> 2 chunk(s)
+2026-03-01 09:02:01,767 | INFO    | news_recap.recap.tasks.map_blocks - [map] Worker 1 — 3 headlines
+2026-03-01 09:02:01,768 | INFO    | news_recap.recap.tasks.map_blocks - [map] Worker 2 — 3 headlines
+2026-03-01 09:02:01,768 | ERROR   | news_recap.recap.tasks.map_blocks - map worker 2 failed: Step recap_map failed: agent crashed
+2026-03-01 09:02:01,769 | INFO    | news_recap.recap.tasks.map_blocks - [map] 1 blocks from 2 worker(s)

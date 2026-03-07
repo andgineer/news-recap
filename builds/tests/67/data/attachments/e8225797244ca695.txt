@@ -1,0 +1,1 @@
+2026-02-28 09:01:20,981 | WARNING | news_recap.http.fetcher - Timeout fetching https://example.com/slow

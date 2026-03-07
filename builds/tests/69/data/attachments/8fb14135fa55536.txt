@@ -1,0 +1,5 @@
+INFO     news_recap.recap.tasks.classify:classify.py:244 [classify] 6 articles -> 2 batch(es)
+INFO     news_recap.recap.tasks.classify:classify.py:255 [classify] Batch 1 — 3 headlines
+INFO     news_recap.recap.tasks.classify:classify.py:255 [classify] Batch 2 — 3 headlines
+ERROR    news_recap.recap.tasks.classify:parallel.py:113 classify batch 2 failed: Step recap_classify failed: agent crashed
+INFO     news_recap.recap.tasks.classify:classify.py:303 Classify: 3 kept, 3 discarded, 0 need enrichment

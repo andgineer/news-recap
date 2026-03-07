@@ -1,0 +1,2 @@
+2026-03-01 09:02:01,702 | INFO    | news_recap.recap.tasks.load_resources - [load_resources] 1 already loaded, 1 remaining
+2026-03-01 09:02:01,703 | INFO    | news_recap.recap.tasks.load_resources - [load_resources] 1/1 loaded, 0 failed (0%)

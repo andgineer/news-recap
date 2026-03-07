@@ -1,0 +1,2 @@
+05:28:12.938 | WARNING | trafilatura.core - discarding data: https://example.com/1
+05:28:12.941 | WARNING | trafilatura.core - discarding data: https://other.com/3

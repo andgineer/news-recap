@@ -1,0 +1,1 @@
+2026-02-28 18:30:49,290 | WARNING | news_recap.http.fetcher - HTTP error fetching https://example.com/broken: connection reset

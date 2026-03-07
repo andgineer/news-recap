@@ -1,0 +1,2 @@
+INFO     news_recap.recap.tasks.split_blocks:split_blocks.py:148 [split] 1 blocks to split
+INFO     news_recap.recap.tasks.split_blocks:split_blocks.py:180 [split] 1 split tasks -> 2 new blocks

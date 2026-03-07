@@ -1,0 +1,4 @@
+2026-03-01 10:43:30,301 | INFO    | news_recap.recap.storage.pipeline_io - Loading resource texts for 1 articles…
+2026-03-01 10:43:30,302 | INFO    | news_recap.recap.storage.pipeline_io - Resource loading summary:
+  YouTube: 1/1 transcripts (0 KB)
+2026-03-01 10:43:30,302 | INFO    | news_recap.recap.storage.pipeline_io - Resource texts: 1 loaded (0 cached), 0 failed, 0 filtered
