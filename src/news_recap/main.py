@@ -180,6 +180,13 @@ def recap() -> None:
     default=False,
     help="Ignore any incomplete pipeline and start a new one.",
 )
+@click.option(
+    "--api",
+    "api_mode",
+    is_flag=True,
+    default=False,
+    help="Use direct Anthropic API instead of CLI agents (sets backend=api, agent=claude).",
+)
 def recap_run(  # noqa: PLR0913
     data_dir: Path | None,
     business_date: datetime | None,
@@ -187,6 +194,7 @@ def recap_run(  # noqa: PLR0913
     article_limit: int | None,
     stop_after: str | None,
     fresh: bool,
+    api_mode: bool,
 ) -> None:
     """Run the full news digest pipeline."""
 
@@ -199,6 +207,7 @@ def recap_run(  # noqa: PLR0913
                 article_limit=article_limit,
                 stop_after=stop_after,
                 fresh=fresh,
+                api_mode=api_mode,
             ),
         ),
     )

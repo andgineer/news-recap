@@ -123,8 +123,17 @@ class Settings:
     orchestrator: OrchestratorSettings = field(default_factory=OrchestratorSettings)
 
     @classmethod
-    def from_env(cls, data_dir: Path | None = None) -> Settings:
-        """Load settings from environment with sane defaults for local development."""
+    def from_env(
+        cls,
+        data_dir: Path | None = None,
+        execution_backend: str | None = None,
+    ) -> Settings:
+        """Load settings from environment with sane defaults for local development.
+
+        *execution_backend* overrides ``NEWS_RECAP_EXECUTION_BACKEND`` when provided.
+        Passing ``"api"`` also forces ``default_agent`` to ``"claude"`` (the only
+        supported provider for the API backend).
+        """
 
         rss_urls = _collect_feed_urls()
         settings = cls(
@@ -231,6 +240,10 @@ class Settings:
                 ),
             ),
         )
+        if execution_backend is not None:
+            settings.orchestrator.execution_backend = execution_backend
+            if execution_backend == "api":
+                settings.orchestrator.default_agent = "claude"
         settings.validate()
         return settings
 
@@ -292,31 +305,39 @@ class Settings:
     def _validate_orchestrator_runtime_limits(self) -> None:
         if not self.orchestrator.worker_id.strip():
             raise ValueError("NEWS_RECAP_LLM_WORKER_ID must not be empty.")
-        if self.orchestrator.poll_interval_seconds < 0:
+        self._validate_retry_limits()
+        self._validate_api_limits()
+
+    def _validate_retry_limits(self) -> None:
+        o = self.orchestrator
+        if o.poll_interval_seconds < 0:
             raise ValueError("NEWS_RECAP_LLM_POLL_INTERVAL_SECONDS must be >= 0.")
-        if self.orchestrator.retry_base_seconds < 0:
+        if o.retry_base_seconds < 0:
             raise ValueError("NEWS_RECAP_LLM_RETRY_BASE_SECONDS must be >= 0.")
-        if self.orchestrator.retry_max_seconds < 0:
+        if o.retry_max_seconds < 0:
             raise ValueError("NEWS_RECAP_LLM_RETRY_MAX_SECONDS must be >= 0.")
-        if self.orchestrator.retry_max_seconds < self.orchestrator.retry_base_seconds:
+        if o.retry_max_seconds < o.retry_base_seconds:
             raise ValueError(
                 "NEWS_RECAP_LLM_RETRY_MAX_SECONDS must be >= NEWS_RECAP_LLM_RETRY_BASE_SECONDS.",
             )
-        if self.orchestrator.worker_stale_attempt_seconds <= 0:
+        if o.worker_stale_attempt_seconds <= 0:
             raise ValueError("NEWS_RECAP_WORKER_STALE_ATTEMPT_SECONDS must be > 0.")
-        if self.orchestrator.worker_graceful_shutdown_seconds <= 0:
+        if o.worker_graceful_shutdown_seconds <= 0:
             raise ValueError("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS must be > 0.")
-        if self.orchestrator.api_max_parallel < 1:
+
+    def _validate_api_limits(self) -> None:
+        o = self.orchestrator
+        if o.api_max_parallel < 1:
             raise ValueError("NEWS_RECAP_API_MAX_PARALLEL must be >= 1.")
-        if self.orchestrator.api_timeout_seconds <= 0:
+        if o.api_timeout_seconds <= 0:
             raise ValueError("NEWS_RECAP_API_TIMEOUT_SECONDS must be > 0.")
-        if self.orchestrator.api_concurrency_recovery_successes < 1:
+        if o.api_concurrency_recovery_successes < 1:
             raise ValueError("NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES must be >= 1.")
-        if self.orchestrator.api_retry_max_backoff_seconds < 0:
+        if o.api_retry_max_backoff_seconds < 0:
             raise ValueError("NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS must be >= 0.")
-        if self.orchestrator.api_retry_jitter_seconds < 0:
+        if o.api_retry_jitter_seconds < 0:
             raise ValueError("NEWS_RECAP_API_RETRY_JITTER_SECONDS must be >= 0.")
-        if self.orchestrator.api_downshift_pause_seconds < 0:
+        if o.api_downshift_pause_seconds < 0:
             raise ValueError("NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS must be >= 0.")
 
     def validate_for_rss(self, override_feed_urls: tuple[str, ...] = ()) -> None:

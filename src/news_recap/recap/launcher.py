@@ -57,6 +57,7 @@ class RecapRunCommand:
     article_limit: int | None = None
     stop_after: str | None = None
     fresh: bool = False
+    api_mode: bool = False
 
 
 def _find_resumable_pipeline(
@@ -155,7 +156,10 @@ class RecapCliController:
     def run_pipeline(self, command: RecapRunCommand) -> Iterator[str]:
         """Fetch articles from store, write pipeline_input.json, and run recap_flow."""
 
-        settings = Settings.from_env(data_dir=command.data_dir)
+        settings = Settings.from_env(
+            data_dir=command.data_dir,
+            execution_backend="api" if command.api_mode else None,
+        )
         routing_defaults = _build_routing_defaults(settings)
         business_date = command.business_date or datetime.now(tz=UTC).date()
         preferences = UserPreferences()

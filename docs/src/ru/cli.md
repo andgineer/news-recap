@@ -81,6 +81,7 @@ summarize. Каждый этап чекпоинтится,
 
 ```bash
 news-recap recap run
+news-recap recap run --api
 news-recap recap run --date 2026-02-18
 news-recap recap run --agent claude --stop-after classify
 news-recap recap run --limit 50
@@ -91,7 +92,49 @@ news-recap recap run --limit 50
 - `--date` (бизнес-дата, по умолчанию — сегодня UTC)
 - `--agent` (`codex`, `claude` или `gemini`)
 - `--limit` (ограничить число загружаемых статей)
+- `--api` (использовать прямой Anthropic API вместо CLI-агентов)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`)
+
+## API-режим
+
+По умолчанию recap-пайплайн выполняет LLM-задачи через запуск CLI-агентов
+(`codex`, `claude`, `gemini`). **API-режим** заменяет вызовы подпроцессов прямыми
+вызовами через Anthropic SDK — CLI-агенты не нужны.
+
+> API-режим v1 поддерживает только Anthropic. Codex и Gemini работают только через CLI.
+
+### Быстрый старт
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+news-recap recap run --api
+```
+
+Флаг `--api` автоматически задаёт `backend=api` и `agent=claude`. Других переменных окружения не требуется.
+
+### Таблица моделей по задачам
+
+По умолчанию быстрые задачи используют `claude-haiku-4-5-20251001`, а задача reduce —
+`claude-sonnet-4-6`. Для переопределения отдельных задач используйте
+`NEWS_RECAP_API_MODEL_MAP` (пары `task_type=model_id` через запятую):
+
+```bash
+export NEWS_RECAP_API_MODEL_MAP="recap_reduce=claude-sonnet-4-6,recap_summarize=claude-sonnet-4-6"
+```
+
+### Переменные окружения API-режима
+
+- `NEWS_RECAP_EXECUTION_BACKEND` — `cli` (по умолчанию) или `api`.
+- `NEWS_RECAP_API_MODEL_MAP` — переопределения модели по задачам (`task_type=model_id,...`).
+- `NEWS_RECAP_API_MAX_PARALLEL` — начальный лимит параллелизма (по умолчанию `5`).
+  Автоматически снижается при ошибках rate-limit и восстанавливается после успешных вызовов.
+- `NEWS_RECAP_API_TIMEOUT_SECONDS` — таймаут одного вызова (по умолчанию `120`).
+- `NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES` — число последовательных успехов
+  для увеличения лимита параллелизма на 1 после снижения (по умолчанию `10`).
+- `NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS` — потолок экспоненциальной задержки (по умолчанию `60`).
+- `NEWS_RECAP_API_RETRY_JITTER_SECONDS` — равномерный джиттер для каждой задержки (по умолчанию `5`).
+- `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — дополнительная пауза после снижения лимита
+  перед следующей попыткой захвата слота (по умолчанию `2`).
 
 ## Важные Переменные Окружения
 

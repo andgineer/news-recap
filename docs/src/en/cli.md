@@ -81,6 +81,7 @@ already-completed stages.
 
 ```bash
 news-recap recap run
+news-recap recap run --api
 news-recap recap run --date 2026-02-18
 news-recap recap run --agent claude --stop-after classify
 news-recap recap run --limit 50
@@ -91,7 +92,49 @@ Key options:
 - `--date` (business date, defaults to today UTC)
 - `--agent` (`codex`, `claude`, or `gemini`)
 - `--limit` (cap number of articles loaded)
+- `--api` (use direct Anthropic API instead of CLI agents)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`)
+
+## API Mode
+
+By default the recap pipeline runs LLM tasks by spawning CLI agent subprocesses
+(`codex`, `claude`, `gemini`). **API mode** replaces subprocess calls with direct
+Anthropic SDK calls — no CLI agents required.
+
+> API mode v1 supports Anthropic only. Codex and Gemini are CLI-only for now.
+
+### Quickstart
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+news-recap recap run --api
+```
+
+`--api` sets `backend=api` and `agent=claude` automatically. No other env vars needed.
+
+### Per-task model map
+
+By default fast tasks use `claude-haiku-4-5-20251001` and the reduce task uses
+`claude-sonnet-4-6`. Override individual tasks with `NEWS_RECAP_API_MODEL_MAP`
+(comma-separated `task_type=model_id` pairs):
+
+```bash
+export NEWS_RECAP_API_MODEL_MAP="recap_reduce=claude-sonnet-4-6,recap_summarize=claude-sonnet-4-6"
+```
+
+### API mode environment variables
+
+- `NEWS_RECAP_EXECUTION_BACKEND` — `cli` (default) or `api`.
+- `NEWS_RECAP_API_MODEL_MAP` — per-task model overrides (`task_type=model_id,...`).
+- `NEWS_RECAP_API_MAX_PARALLEL` — initial concurrency cap (default `5`). Automatically
+  downshifted on rate-limit errors and recovered after consecutive successes.
+- `NEWS_RECAP_API_TIMEOUT_SECONDS` — per-call timeout (default `120`).
+- `NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES` — consecutive successes needed
+  to increment the concurrency cap by 1 after a downshift (default `10`).
+- `NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS` — exponential backoff ceiling (default `60`).
+- `NEWS_RECAP_API_RETRY_JITTER_SECONDS` — uniform jitter added to each backoff (default `5`).
+- `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — extra pause after a rate-limit downshift
+  before the next slot acquire (default `2`).
 
 ## Important Environment Variables
 
