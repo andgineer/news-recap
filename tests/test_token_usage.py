@@ -76,4 +76,7 @@ class TestSaveAndReadUsage:
     def test_file_structure(self, tmp_path: Path) -> None:
         _save_usage(tmp_path, elapsed=5.3, tokens=999)
         data = json.loads((tmp_path / "meta" / "usage.json").read_text())
-        assert data == {"elapsed_seconds": 5.3, "tokens_used": 999}
+        assert data["elapsed_seconds"] == 5.3
+        assert data["tokens_used"] == 999
+        assert data["total_tokens"] == 999
+        assert data["backend"] == "cli"

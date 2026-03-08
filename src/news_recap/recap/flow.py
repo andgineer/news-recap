@@ -67,7 +67,7 @@ def _load_checkpoint(pdir: Path) -> Digest | None:
     return None
 
 
-def recap_flow(
+def recap_flow(  # noqa: PLR0915
     pipeline_dir: str,
     business_date: str,
     stop_after: str | None = None,
@@ -103,6 +103,27 @@ def recap_flow(
     article_entries = to_article_index(inp.articles)
     logger.info("Pipeline starting: %d articles, date=%s", len(inp.articles), business_date)
 
+    transport = None
+    cc = None
+    if inp.routing_defaults.execution_backend == "api":
+        from news_recap.recap.agents.concurrency import ConcurrencyController
+        from news_recap.recap.agents.transport_anthropic import DirectAnthropicTransport
+
+        rd = inp.routing_defaults
+        transport = DirectAnthropicTransport()
+        cc = ConcurrencyController(
+            initial_cap=rd.api_max_parallel,
+            recovery_successes=rd.api_concurrency_recovery_successes,
+            downshift_pause=rd.api_downshift_pause_seconds,
+            max_backoff=rd.api_retry_max_backoff_seconds,
+            jitter=rd.api_retry_jitter_seconds,
+        )
+        logger.info(
+            "API backend: model_map=%s parallel=%d",
+            rd.api_model_map,
+            rd.api_max_parallel,
+        )
+
     ctx = FlowContext(
         pdir=pdir,
         workdir_mgr=workdir_mgr,
@@ -110,6 +131,8 @@ def recap_flow(
         article_map={e.source_id: e for e in article_entries},
         digest=digest,
         stop_after=effective_stop,
+        transport=transport,
+        cc=cc,
     )
     ctx.save_checkpoint()
 

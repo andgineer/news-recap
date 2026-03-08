@@ -70,8 +70,12 @@ class OrchestratorSettings:
 
     workdir_root: Path = Path(".news_recap_workdir")
     default_agent: str = "codex"
+    execution_backend: str = "cli"
     task_model_map: dict[str, dict[str, str]] = field(
         default_factory=lambda: _default_task_model_map(),
+    )
+    api_model_map: dict[str, str] = field(
+        default_factory=lambda: _default_api_model_map(),
     )
     task_type_timeout_map: dict[str, int] = field(
         default_factory=lambda: {
@@ -100,6 +104,12 @@ class OrchestratorSettings:
     retry_max_seconds: int = 900
     worker_stale_attempt_seconds: int = 1_800
     worker_graceful_shutdown_seconds: int = 30
+    api_max_parallel: int = 5
+    api_timeout_seconds: int = 120
+    api_concurrency_recovery_successes: int = 10
+    api_retry_max_backoff_seconds: float = 60.0
+    api_retry_jitter_seconds: float = 5.0
+    api_downshift_pause_seconds: float = 2.0
 
 
 @dataclass(slots=True)
@@ -173,6 +183,7 @@ class Settings:
                     ),
                 ),
                 default_agent=os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex"),
+                execution_backend=os.getenv("NEWS_RECAP_EXECUTION_BACKEND", "cli").strip(),
                 codex_command_template=os.getenv(
                     "NEWS_RECAP_CODEX_COMMAND_TEMPLATE",
                     _DEFAULT_CODEX_CMD,
@@ -186,6 +197,7 @@ class Settings:
                     _DEFAULT_GEMINI_CMD,
                 ),
                 task_model_map=_collect_task_model_map(),
+                api_model_map=_collect_api_model_map(),
                 agent_max_parallel=_default_agent_max_parallel(),
                 worker_id=os.getenv("NEWS_RECAP_LLM_WORKER_ID", "worker-default"),
                 poll_interval_seconds=float(
@@ -202,6 +214,20 @@ class Settings:
                 ),
                 worker_graceful_shutdown_seconds=int(
                     os.getenv("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS", "30"),
+                ),
+                api_max_parallel=int(os.getenv("NEWS_RECAP_API_MAX_PARALLEL", "5")),
+                api_timeout_seconds=int(os.getenv("NEWS_RECAP_API_TIMEOUT_SECONDS", "120")),
+                api_concurrency_recovery_successes=int(
+                    os.getenv("NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES", "10"),
+                ),
+                api_retry_max_backoff_seconds=float(
+                    os.getenv("NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS", "60.0"),
+                ),
+                api_retry_jitter_seconds=float(
+                    os.getenv("NEWS_RECAP_API_RETRY_JITTER_SECONDS", "5.0"),
+                ),
+                api_downshift_pause_seconds=float(
+                    os.getenv("NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS", "2.0"),
                 ),
             ),
         )
@@ -225,12 +251,21 @@ class Settings:
         if not (0.0 < self.dedup.threshold <= 1.0):
             raise ValueError("NEWS_RECAP_DEDUP_THRESHOLD must be in (0, 1].")
 
-    def _validate_orchestrator_routing(self) -> None:
+    def _validate_orchestrator_routing(self) -> None:  # noqa: C901
         supported_agents = {"codex", "claude", "gemini"}
         default_agent = self.orchestrator.default_agent.strip().lower()
         if default_agent not in supported_agents:
             raise ValueError(
                 "NEWS_RECAP_LLM_DEFAULT_AGENT must be one of: codex, claude, gemini.",
+            )
+
+        execution_backend = self.orchestrator.execution_backend
+        if execution_backend not in {"cli", "api"}:
+            raise ValueError("NEWS_RECAP_EXECUTION_BACKEND must be 'cli' or 'api'.")
+        if execution_backend == "api" and default_agent != "claude":
+            raise ValueError(
+                f"execution_backend=api requires default_agent=claude.\n"
+                f"Set NEWS_RECAP_LLM_DEFAULT_AGENT=claude (current value: {default_agent}).",
             )
 
         for task_type, agent_models in self.orchestrator.task_model_map.items():
@@ -246,12 +281,13 @@ class Settings:
                         f"task_model_map[{task_type!r}][{agent!r}] model must not be empty.",
                     )
 
-        for name, template in (
-            ("codex_command_template", self.orchestrator.codex_command_template),
-            ("claude_command_template", self.orchestrator.claude_command_template),
-            ("gemini_command_template", self.orchestrator.gemini_command_template),
-        ):
-            _validate_command_template(name=name, template=template)
+        if execution_backend == "cli":
+            for name, template in (
+                ("codex_command_template", self.orchestrator.codex_command_template),
+                ("claude_command_template", self.orchestrator.claude_command_template),
+                ("gemini_command_template", self.orchestrator.gemini_command_template),
+            ):
+                _validate_command_template(name=name, template=template)
 
     def _validate_orchestrator_runtime_limits(self) -> None:
         if not self.orchestrator.worker_id.strip():
@@ -270,6 +306,18 @@ class Settings:
             raise ValueError("NEWS_RECAP_WORKER_STALE_ATTEMPT_SECONDS must be > 0.")
         if self.orchestrator.worker_graceful_shutdown_seconds <= 0:
             raise ValueError("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS must be > 0.")
+        if self.orchestrator.api_max_parallel < 1:
+            raise ValueError("NEWS_RECAP_API_MAX_PARALLEL must be >= 1.")
+        if self.orchestrator.api_timeout_seconds <= 0:
+            raise ValueError("NEWS_RECAP_API_TIMEOUT_SECONDS must be > 0.")
+        if self.orchestrator.api_concurrency_recovery_successes < 1:
+            raise ValueError("NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES must be >= 1.")
+        if self.orchestrator.api_retry_max_backoff_seconds < 0:
+            raise ValueError("NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS must be >= 0.")
+        if self.orchestrator.api_retry_jitter_seconds < 0:
+            raise ValueError("NEWS_RECAP_API_RETRY_JITTER_SECONDS must be >= 0.")
+        if self.orchestrator.api_downshift_pause_seconds < 0:
+            raise ValueError("NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS must be >= 0.")
 
     def validate_for_rss(self, override_feed_urls: tuple[str, ...] = ()) -> None:
         """Raise configuration error if RSS feed URLs are missing or invalid."""
@@ -392,6 +440,48 @@ def _default_task_model_map() -> dict[str, dict[str, str]]:
             "gemini": "--model gemini-2.5-flash",
         },
     }
+
+
+def _default_api_model_map() -> dict[str, str]:
+    return {
+        "recap_classify": "claude-haiku-4-5-20251001",
+        "recap_enrich": "claude-haiku-4-5-20251001",
+        "recap_dedup": "claude-haiku-4-5-20251001",
+        "recap_map": "claude-haiku-4-5-20251001",
+        "recap_reduce": "claude-sonnet-4-6",
+        "recap_split": "claude-haiku-4-5-20251001",
+        "recap_group_sections": "claude-haiku-4-5-20251001",
+        "recap_summarize": "claude-haiku-4-5-20251001",
+    }
+
+
+def _collect_api_model_map() -> dict[str, str]:
+    """Build task → API model ID map from env or defaults.
+
+    Env format (CSV of ``task_type=model_id``):
+        ``NEWS_RECAP_API_MODEL_MAP=recap_reduce=claude-sonnet-4-6,recap_classify=claude-haiku-4-5-20251001``
+    """
+    raw = os.getenv("NEWS_RECAP_API_MODEL_MAP", "").strip()
+    if not raw:
+        return _default_api_model_map()
+
+    base = _default_api_model_map()
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        if "=" not in token:
+            raise ValueError(
+                "Invalid NEWS_RECAP_API_MODEL_MAP entry: "
+                f"{token!r}. Expected format '<task_type>=<model_id>'.",
+            )
+        task_type, model_id = token.split("=", 1)
+        task_type = task_type.strip().lower()
+        model_id = model_id.strip()
+        if not task_type or not model_id:
+            raise ValueError(f"Invalid NEWS_RECAP_API_MODEL_MAP entry: {token!r}")
+        base[task_type] = model_id
+    return base
 
 
 def _collect_task_model_map() -> dict[str, dict[str, str]]:

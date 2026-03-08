@@ -15,7 +15,11 @@ from news_recap.recap.tasks.base import (
     read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
-from news_recap.recap.tasks.prompts import RECAP_CLASSIFY_BATCH_PROMPT
+from news_recap.recap.tasks.prompts import (
+    RECAP_CLASSIFY_BATCH_PROMPT,
+    PromptBackend,
+    render_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +70,11 @@ def split_into_classify_batches(
     effective_max = -(-n // n_batches)
 
     preamble_len = len(
-        RECAP_CLASSIFY_BATCH_PROMPT.format(
+        render_prompt(
+            RECAP_CLASSIFY_BATCH_PROMPT,
+            PromptBackend.CLI,
             exclude_policy=preferences.exclude or "none",
-            expected_count=0,
+            expected_count="0",
             headlines_block="",
         ),
     )
@@ -99,6 +105,7 @@ def split_into_classify_batches(
 def build_classify_batch_prompt(
     entries: list[DigestArticle],
     preferences: UserPreferences,
+    backend: PromptBackend = PromptBackend.CLI,
 ) -> str:
     """Build the inline batch classify prompt for a slice of articles.
 
@@ -106,9 +113,11 @@ def build_classify_batch_prompt(
     unambiguous and agents reproduce them reliably.
     """
     headlines_block = "\n".join(f"{i + 1}: {e.title}" for i, e in enumerate(entries))
-    return RECAP_CLASSIFY_BATCH_PROMPT.format(
+    return render_prompt(
+        RECAP_CLASSIFY_BATCH_PROMPT,
+        backend,
         exclude_policy=preferences.exclude or "none",
-        expected_count=len(entries),
+        expected_count=str(len(entries)),
         headlines_block=headlines_block,
     )
 
@@ -242,7 +251,7 @@ class Classify(TaskLauncher):
         logger.info("[classify] %d articles -> %d batch(es)", len(to_classify), len(batches))
 
         def prepare(batch: list[DigestArticle], batch_num: int) -> str:
-            prompt = build_classify_batch_prompt(batch, ctx.inp.preferences)
+            prompt = build_classify_batch_prompt(batch, ctx.inp.preferences, ctx.inp.prompt_backend)
             task_id = materialize_step(
                 ctx.workdir_mgr,
                 ctx.inp,

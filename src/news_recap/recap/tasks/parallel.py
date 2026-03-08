@@ -75,7 +75,12 @@ def submit_and_collect(  # noqa: PLR0913, C901
     def _run_with_delay(delay: float, **kwargs: Any) -> str:
         if delay > 0 and stop_event.wait(delay):
             raise RecapPipelineError("interrupted", "Pipeline interrupted by user")
-        return run_ai_agent(**kwargs, stop_event=stop_event)
+        return run_ai_agent(
+            **kwargs,
+            stop_event=stop_event,
+            transport=ctx.transport,
+            concurrency_controller=ctx.cc,
+        )
 
     executor = ThreadPoolExecutor(max_workers=max_parallel)
     try:

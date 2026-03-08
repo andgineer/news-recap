@@ -24,7 +24,11 @@ from news_recap.recap.tasks.base import (
     read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
-from news_recap.recap.tasks.prompts import RECAP_ENRICH_BATCH_PROMPT
+from news_recap.recap.tasks.prompts import (
+    RECAP_ENRICH_BATCH_PROMPT,
+    PromptBackend,
+    render_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,15 +85,20 @@ def split_into_enrich_batches(entries: list[EnrichEntry]) -> list[list[EnrichEnt
     return batches
 
 
-def build_enrich_prompt(entries: list[EnrichEntry]) -> str:
+def build_enrich_prompt(
+    entries: list[EnrichEntry],
+    backend: PromptBackend = PromptBackend.CLI,
+) -> str:
     """Build the enrich prompt with articles embedded inline."""
     parts: list[str] = []
     for i, entry in enumerate(entries):
         text = entry.text[:_MAX_ARTICLE_CHARS]
         parts.append(f"{_ARTICLE_SEPARATOR}\n{i + 1}\n{entry.title}\n\n{text}")
     articles_block = "\n".join(parts)
-    return RECAP_ENRICH_BATCH_PROMPT.format(
-        expected_count=len(entries),
+    return render_prompt(
+        RECAP_ENRICH_BATCH_PROMPT,
+        backend,
+        expected_count=str(len(entries)),
         articles_block=articles_block,
     )
 
@@ -237,7 +246,7 @@ def _run_enrich(
     had_crash = False
 
     def prepare(batch: list[EnrichEntry], batch_num: int) -> str:
-        prompt = build_enrich_prompt(batch)
+        prompt = build_enrich_prompt(batch, ctx.inp.prompt_backend)
         task_id = materialize_step(
             ctx.workdir_mgr,
             ctx.inp,

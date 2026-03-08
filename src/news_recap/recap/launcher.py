@@ -37,6 +37,13 @@ def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
         task_type_timeout_map=settings.orchestrator.task_type_timeout_map,
         agent_max_parallel=settings.orchestrator.agent_max_parallel,
         agent_launch_delay=settings.orchestrator.agent_launch_delay,
+        execution_backend=settings.orchestrator.execution_backend,
+        api_model_map=settings.orchestrator.api_model_map,
+        api_max_parallel=settings.orchestrator.api_max_parallel,
+        api_concurrency_recovery_successes=settings.orchestrator.api_concurrency_recovery_successes,
+        api_downshift_pause_seconds=settings.orchestrator.api_downshift_pause_seconds,
+        api_retry_max_backoff_seconds=settings.orchestrator.api_retry_max_backoff_seconds,
+        api_retry_jitter_seconds=settings.orchestrator.api_retry_jitter_seconds,
     )
 
 

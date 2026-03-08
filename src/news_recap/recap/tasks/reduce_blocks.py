@@ -27,7 +27,7 @@ from news_recap.recap.tasks.base import (
     run_single_agent,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
-from news_recap.recap.tasks.prompts import RECAP_REDUCE_PROMPT
+from news_recap.recap.tasks.prompts import RECAP_REDUCE_PROMPT, PromptBackend, render_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -68,14 +68,17 @@ def _build_article_headline_map(
     return headline_map
 
 
-def build_reduce_prompt(map_blocks: list[dict[str, Any]]) -> str:
+def build_reduce_prompt(
+    map_blocks: list[dict[str, Any]],
+    backend: PromptBackend = PromptBackend.CLI,
+) -> str:
     """Build the REDUCE prompt with numbered block titles and article counts."""
     lines = []
     for i, block in enumerate(map_blocks, 1):
         title = block["title"]
         n = len(block["article_ids"])
         lines.append(f"{i}: {title} ({n} articles)")
-    return RECAP_REDUCE_PROMPT.format(block_titles="\n".join(lines))
+    return render_prompt(RECAP_REDUCE_PROMPT, backend, block_titles="\n".join(lines))
 
 
 def parse_reduce_stdout(
@@ -207,7 +210,7 @@ def _run_single_reduce(
 
     On parse failure, raises ``RecapPipelineError``.
     """
-    prompt = build_reduce_prompt(blocks)
+    prompt = build_reduce_prompt(blocks, ctx.inp.prompt_backend)
     stdout_path = run_single_agent(ctx, "recap_reduce", prompt, batch=batch)
     actions = parse_reduce_stdout(stdout_path, len(blocks))
     return apply_reduce_plan(blocks, actions)
@@ -342,7 +345,7 @@ class ReduceBlocks(TaskLauncher):
         Only parse failures trigger a fallback to the original MAP blocks.
         """
         ctx = self.ctx
-        prompt = build_reduce_prompt(map_blocks)
+        prompt = build_reduce_prompt(map_blocks, ctx.inp.prompt_backend)
 
         try:
             stdout_path = run_single_agent(ctx, "recap_reduce", prompt)
@@ -372,7 +375,7 @@ class ReduceBlocks(TaskLauncher):
         )
 
         def prepare(chunk: list[dict[str, Any]], batch_num: int) -> str:
-            prompt = build_reduce_prompt(chunk)
+            prompt = build_reduce_prompt(chunk, ctx.inp.prompt_backend)
             task_id = materialize_step(
                 ctx.workdir_mgr,
                 ctx.inp,

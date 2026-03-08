@@ -148,3 +148,129 @@ def test_from_env_rejects_empty_worker_id(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("NEWS_RECAP_LLM_WORKER_ID", "   ")
     with pytest.raises(ValueError, match="WORKER_ID"):
         Settings.from_env()
+
+
+# ---------------------------------------------------------------------------
+# API backend settings
+# ---------------------------------------------------------------------------
+
+
+def test_from_env_defaults_execution_backend_to_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NEWS_RECAP_EXECUTION_BACKEND", raising=False)
+    settings = Settings.from_env()
+    assert settings.orchestrator.execution_backend == "cli"
+
+
+def test_from_env_api_backend_requires_claude_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NEWS_RECAP_EXECUTION_BACKEND", "api")
+    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex")
+    with pytest.raises(ValueError) as exc_info:
+        Settings.from_env()
+    msg = str(exc_info.value)
+    assert "execution_backend=api requires default_agent=claude" in msg
+    assert "NEWS_RECAP_LLM_DEFAULT_AGENT=claude" in msg
+    assert "codex" in msg
+
+
+def test_from_env_api_backend_with_claude_agent_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NEWS_RECAP_EXECUTION_BACKEND", "api")
+    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "claude")
+    settings = Settings.from_env()
+    assert settings.orchestrator.execution_backend == "api"
+    assert settings.orchestrator.default_agent == "claude"
+
+
+def test_validate_rejects_invalid_execution_backend() -> None:
+    from news_recap.config import OrchestratorSettings
+
+    settings = Settings(orchestrator=OrchestratorSettings(execution_backend="grpc"))
+    with pytest.raises(ValueError, match="EXECUTION_BACKEND"):
+        settings.validate()
+
+
+def test_from_env_api_backend_skips_command_template_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In api mode, empty command templates should not fail validation."""
+    monkeypatch.setenv("NEWS_RECAP_EXECUTION_BACKEND", "api")
+    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "claude")
+    monkeypatch.setenv("NEWS_RECAP_CODEX_COMMAND_TEMPLATE", "  ")  # empty — would fail in cli mode
+    # Should not raise
+    settings = Settings.from_env()
+    assert settings.orchestrator.execution_backend == "api"
+
+
+def test_api_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NEWS_RECAP_API_MAX_PARALLEL", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_API_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_API_RETRY_JITTER_SECONDS", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS", raising=False)
+    settings = Settings.from_env()
+    orch = settings.orchestrator
+    assert orch.api_max_parallel == 5
+    assert orch.api_timeout_seconds == 120
+    assert orch.api_concurrency_recovery_successes == 10
+    assert orch.api_retry_max_backoff_seconds == 60.0
+    assert orch.api_retry_jitter_seconds == 5.0
+    assert orch.api_downshift_pause_seconds == 2.0
+
+
+@pytest.mark.parametrize(
+    ("env_var", "bad_value", "match"),
+    [
+        ("NEWS_RECAP_API_MAX_PARALLEL", "0", "API_MAX_PARALLEL"),
+        ("NEWS_RECAP_API_TIMEOUT_SECONDS", "0", "API_TIMEOUT_SECONDS"),
+        ("NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES", "0", "API_CONCURRENCY_RECOVERY_SUCCESSES"),
+        ("NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS", "-1", "API_RETRY_MAX_BACKOFF_SECONDS"),
+        ("NEWS_RECAP_API_RETRY_JITTER_SECONDS", "-1", "API_RETRY_JITTER_SECONDS"),
+        ("NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS", "-1", "API_DOWNSHIFT_PAUSE_SECONDS"),
+    ],
+)
+def test_validate_rejects_invalid_api_runtime_limits(
+    monkeypatch: pytest.MonkeyPatch, env_var: str, bad_value: str, match: str
+) -> None:
+    monkeypatch.setenv(env_var, bad_value)
+    with pytest.raises(ValueError, match=match):
+        Settings.from_env()
+
+
+def test_validate_execution_backend_whitespace_normalized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """execution_backend with surrounding whitespace must be normalized before use."""
+    monkeypatch.setenv("NEWS_RECAP_EXECUTION_BACKEND", "api ")
+    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "claude")
+    settings = Settings.from_env()
+    from news_recap.recap.agents.routing import RoutingDefaults
+
+    rd = RoutingDefaults.from_settings(settings.orchestrator)
+    assert rd.execution_backend == "api"
+
+
+def test_api_model_map_default_has_all_task_types(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NEWS_RECAP_API_MODEL_MAP", raising=False)
+    settings = Settings.from_env()
+    model_map = settings.orchestrator.api_model_map
+    expected_tasks = {
+        "recap_classify",
+        "recap_enrich",
+        "recap_dedup",
+        "recap_map",
+        "recap_reduce",
+        "recap_split",
+        "recap_group_sections",
+        "recap_summarize",
+    }
+    assert expected_tasks == set(model_map.keys())
+
+
+def test_api_model_map_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "NEWS_RECAP_API_MODEL_MAP",
+        "recap_reduce=claude-opus-4-6,recap_classify=claude-haiku-4-5-20251001",
+    )
+    settings = Settings.from_env()
+    assert settings.orchestrator.api_model_map["recap_reduce"] == "claude-opus-4-6"
+    assert settings.orchestrator.api_model_map["recap_classify"] == "claude-haiku-4-5-20251001"

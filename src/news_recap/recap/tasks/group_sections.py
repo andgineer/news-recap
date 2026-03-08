@@ -19,7 +19,11 @@ from news_recap.recap.tasks.base import (
     read_agent_stdout,
     run_single_agent,
 )
-from news_recap.recap.tasks.prompts import RECAP_GROUP_SECTIONS_PROMPT
+from news_recap.recap.tasks.prompts import (
+    RECAP_GROUP_SECTIONS_PROMPT,
+    PromptBackend,
+    render_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +33,18 @@ _MAX_SECTION_BLOCKS = 10
 _FALLBACK_TITLES = {"ru": "Все новости", "en": "All news"}
 
 
-def build_group_sections_prompt(blocks: list[DigestBlock]) -> str:
+def build_group_sections_prompt(
+    blocks: list[DigestBlock],
+    backend: PromptBackend = PromptBackend.CLI,
+) -> str:
     """Build the GROUP_SECTIONS prompt with numbered block titles."""
     lines = []
     for i, block in enumerate(blocks, 1):
         lines.append(f"{i}: {block.title}")
-    return RECAP_GROUP_SECTIONS_PROMPT.format(
-        block_count=len(blocks),
+    return render_prompt(
+        RECAP_GROUP_SECTIONS_PROMPT,
+        backend,
+        block_count=str(len(blocks)),
         blocks_listing="\n".join(lines),
     )
 
@@ -208,7 +217,7 @@ class GroupSections(TaskLauncher):
             )
             return
 
-        prompt = build_group_sections_prompt(blocks)
+        prompt = build_group_sections_prompt(blocks, ctx.inp.prompt_backend)
         stdout_path = run_single_agent(ctx, "recap_group_sections", prompt)
         try:
             ctx.digest.recaps = parse_group_sections_stdout(stdout_path, len(blocks))

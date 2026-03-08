@@ -1,7 +1,8 @@
-"""Execute an LLM agent as a CLI subprocess.
+"""Execute an LLM agent as a CLI subprocess or via direct API transport.
 
 The function receives a pre-materialized workdir path, resolves agent routing,
-and delegates execution to ``task_subprocess``.
+and delegates execution to ``_run_agent_cli`` (CLI backend) or
+``run_api_agent`` (API backend).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from news_recap.recap.agents.routing import resolve_routing_for_enqueue
 from news_recap.recap.agents.subprocess import (
@@ -30,19 +32,30 @@ from news_recap.recap.contracts import (
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 from news_recap.recap.tasks.base import RecapPipelineError
 
+if TYPE_CHECKING:
+    from news_recap.recap.agents.concurrency import ConcurrencyController
+    from news_recap.recap.agents.transport import LLMTransport
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 600
 _TAIL_LINES = 30
 
 
-def run_ai_agent(
+def run_ai_agent(  # noqa: PLR0913
     pipeline_dir: str,
     step_name: str,
     task_id: str,
     stop_event: threading.Event | None = None,
+    *,
+    transport: LLMTransport | None = None,
+    concurrency_controller: ConcurrencyController | None = None,
 ) -> str:
-    """Execute an LLM agent, return *task_id* on success."""
+    """Execute an LLM agent, return *task_id* on success.
+
+    Dispatches to the API backend (``run_api_agent``) when routing resolves
+    ``execution_backend == "api"``, otherwise runs a CLI subprocess.
+    """
 
     manifest_path = Path(pipeline_dir) / task_id / "meta" / "task_manifest.json"
     manifest = read_manifest(manifest_path)
@@ -57,12 +70,35 @@ def run_ai_agent(
     timeout = inp.routing_defaults.task_type_timeout_map.get(step_name, _DEFAULT_TIMEOUT)
 
     logger.info(
-        "[%s] agent=%s model=%s timeout=%ds",
+        "[%s] backend=%s agent=%s model=%s timeout=%ds",
         step_name,
+        routing.execution_backend,
         routing.agent,
         routing.model,
         timeout,
     )
+
+    if routing.execution_backend == "api":
+        if transport is None or concurrency_controller is None:
+            raise RecapPipelineError(
+                step_name,
+                "transport and concurrency_controller are required for execution_backend=api "
+                "(programming error: they were not passed to run_ai_agent)",
+            )
+        from news_recap.recap.agents.api_agent import run_api_agent
+
+        return run_api_agent(
+            pipeline_dir=pipeline_dir,
+            step_name=step_name,
+            task_id=task_id,
+            model=routing.model,
+            transport=transport,
+            concurrency_controller=concurrency_controller,
+            timeout=timeout,
+            max_backoff=concurrency_controller.max_backoff,
+            jitter=concurrency_controller.jitter,
+            stop_event=stop_event,
+        )
 
     step_start = time.monotonic()
     result = _run_agent_cli(
@@ -186,19 +222,30 @@ _USAGE_FILENAME = "meta/usage.json"
 
 
 def _save_usage(task_dir: Path, *, elapsed: float, tokens: int | None) -> None:
-    """Persist agent usage metrics for later aggregation."""
-    usage = {"elapsed_seconds": round(elapsed, 1), "tokens_used": tokens}
+    """Persist CLI agent usage metrics for later aggregation."""
+    usage = {
+        "elapsed_seconds": round(elapsed, 1),
+        "tokens_used": tokens,
+        "total_tokens": tokens,
+        "backend": "cli",
+    }
     path = task_dir / _USAGE_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(usage), "utf-8")
 
 
 def read_agent_usage(task_dir: Path) -> tuple[float, int]:
-    """Read usage from a task workdir. Returns ``(elapsed, tokens)``."""
+    """Read usage from a task workdir. Returns ``(elapsed, total_tokens)``.
+
+    Compatible with both CLI usage.json (``tokens_used``) and API usage.json
+    (``total_tokens``).
+    """
     path = task_dir / _USAGE_FILENAME
     try:
         data = json.loads(path.read_text("utf-8"))
-        return float(data.get("elapsed_seconds", 0)), int(data.get("tokens_used") or 0)
+        elapsed = float(data.get("elapsed_seconds", 0))
+        tokens = int(data.get("total_tokens") or data.get("tokens_used") or 0)
+        return elapsed, tokens
     except (OSError, json.JSONDecodeError, ValueError):
         return 0.0, 0
 

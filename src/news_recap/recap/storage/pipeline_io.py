@@ -21,6 +21,7 @@ from news_recap.recap.storage.workdir import (  # noqa: F401 — re-exports
     materialize_step,
     next_batch_number,
 )
+from news_recap.recap.tasks.prompts import PromptBackend
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,14 @@ class PipelineInput:
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS
     dedup_threshold: float = 0.90
     dedup_model_name: str = "intfloat/multilingual-e5-small"
+
+    @property
+    def execution_backend(self) -> str:
+        return self.routing_defaults.execution_backend
+
+    @property
+    def prompt_backend(self) -> PromptBackend:
+        return PromptBackend(self.routing_defaults.execution_backend)
 
     @property
     def active_agent(self) -> str:

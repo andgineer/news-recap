@@ -11,13 +11,17 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.models import Digest
 from news_recap.recap.storage.pipeline_io import PipelineInput
 from news_recap.recap.storage.workdir import TaskWorkdirManager
 from news_recap.storage.io import save_msgspec
+
+if TYPE_CHECKING:
+    from news_recap.recap.agents.concurrency import ConcurrencyController
+    from news_recap.recap.agents.transport import LLMTransport
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +72,13 @@ def run_single_agent(
         prompt=prompt,
         batch=batch,
     )
-    tid = run_ai_agent(pipeline_dir=str(ctx.pdir), step_name=step_name, task_id=tid)
+    tid = run_ai_agent(
+        pipeline_dir=str(ctx.pdir),
+        step_name=step_name,
+        task_id=tid,
+        transport=ctx.transport,
+        concurrency_controller=ctx.cc,
+    )
     return ctx.pdir / tid / "output" / "agent_stdout.log"
 
 
@@ -95,6 +105,8 @@ class FlowContext:
     digest: Digest
     stop_after: str | None = None
     state: dict[str, Any] = field(default_factory=dict)
+    transport: LLMTransport | None = None
+    cc: ConcurrencyController | None = None
 
     def save_checkpoint(self) -> None:
         save_msgspec(self.pdir / _DIGEST_FILENAME, self.digest)

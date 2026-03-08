@@ -2,7 +2,40 @@
 
 from __future__ import annotations
 
-RECAP_CLASSIFY_BATCH_PROMPT = """\
+import enum
+from dataclasses import dataclass
+
+_CLI_SUFFIX = (
+    "\nDo NOT write any scripts, use any tools, or read any files."
+    "\nPrint your output directly to stdout."
+)
+
+
+@dataclass(frozen=True)
+class PromptTemplate:
+    """Backend-aware prompt template.
+
+    ``body`` is shared across both backends.
+    ``cli_suffix`` is appended only in CLI mode (tool/script constraints).
+    """
+
+    body: str
+    cli_suffix: str = _CLI_SUFFIX
+
+
+class PromptBackend(enum.Enum):
+    CLI = "cli"
+    API = "api"
+
+
+def render_prompt(template: PromptTemplate, backend: PromptBackend, **kwargs: str) -> str:
+    """Render *template* for the given *backend*, substituting *kwargs* placeholders."""
+    suffix = template.cli_suffix if backend == PromptBackend.CLI else ""
+    return (template.body + suffix).format(**kwargs)
+
+
+RECAP_CLASSIFY_BATCH_PROMPT = PromptTemplate(
+    body="""\
 You are a news editor deciding which headlines to keep for a daily digest.
 
 EDITORIAL POLICY — EXCLUDE:
@@ -16,8 +49,7 @@ For each headline below, decide:
 2. Headline too vague to identify the specific story → vague
 3. Otherwise → ok
 
-Do NOT write any scripts, use any tools, or read any files.
-Read the headlines below and print your verdicts directly to stdout.
+Read the headlines below and provide your verdicts.
 
 Print EXACTLY {expected_count} lines to stdout,
 one per headline, in the same order as the list below.
@@ -29,9 +61,11 @@ Example output (3 headlines):
 3: vague
 
 === HEADLINES (format: NUMBER: HEADLINE) ===
-{headlines_block}"""
+{headlines_block}""",
+)
 
-RECAP_ENRICH_BATCH_PROMPT = """\
+RECAP_ENRICH_BATCH_PROMPT = PromptTemplate(
+    body="""\
 You are a senior news editor. Your job is to rewrite article headlines so \
 the reader gets maximum information without opening the article.
 
@@ -39,9 +73,6 @@ For each article below, write a headline that captures the essence of \
 the story — what happened, who is involved, where, when, and why it \
 matters. Be specific and factual — no clickbait, no vague teasers. \
 Write in the same language as the original article.
-
-Do NOT write any scripts, use any tools, or read any files.
-Print your output directly to stdout.
 
 Print EXACTLY {expected_count} entries. For each article, print:
 - The article number on its own line
@@ -56,9 +87,11 @@ Specific factual headline for first article
 Specific factual headline for second article
 
 === ARTICLES ===
-{articles_block}"""
+{articles_block}""",
+)
 
-RECAP_MAP_PROMPT = """\
+RECAP_MAP_PROMPT = PromptTemplate(
+    body="""\
 You are a senior news editor. Group ALL headlines below into blocks.
 
 Group headlines so that the essential information from all articles in a block \
@@ -92,17 +125,16 @@ Do not skip any headline.
 
 FOLLOW (give extra attention): {follow_policy}
 
-Do NOT write any scripts, use any tools, or read any files.
-Print your output directly to stdout.
-
 Output format:
 BLOCK: <informative title>
 <comma-separated headline numbers>
 
 === HEADLINES ({headline_count} total, format: NUMBER: HEADLINE) ===
-{headlines_block}"""
+{headlines_block}""",
+)
 
-RECAP_REDUCE_PROMPT = """\
+RECAP_REDUCE_PROMPT = PromptTemplate(
+    body="""\
 You are a senior news editor. Several desks independently produced block lists. \
 Your job: merge blocks that overlap, then write a unified list.
 
@@ -129,9 +161,6 @@ More than 30 articles in one block — almost certainly too broad, mark as SPLIT
 
 Too broad for 5 informative sentences — mark as SPLIT.
 
-Do NOT write any scripts, use any tools, or read any files.
-Print your output directly to stdout.
-
 CRITICAL: each source block number must appear in exactly one output line. \
 Never repeat a block number across multiple lines.
 
@@ -144,9 +173,11 @@ SPLIT: <best-effort combined title>
 <comma-separated source block numbers>
 
 === BLOCK TITLES ===
-{block_titles}"""
+{block_titles}""",
+)
 
-RECAP_SPLIT_PROMPT = """\
+RECAP_SPLIT_PROMPT = PromptTemplate(
+    body="""\
 You are a senior news editor. The block below is too broad. Split it into \
 smaller blocks.
 
@@ -162,17 +193,16 @@ with the rest.
 
 Every article number must appear in exactly one block.
 
-Do NOT write any scripts, use any tools, or read any files.
-Print your output directly to stdout.
-
 Output format:
 BLOCK: <informative title>
 <comma-separated article numbers>
 
 === ARTICLES ===
-{articles_block}"""
+{articles_block}""",
+)
 
-RECAP_GROUP_SECTIONS_PROMPT = """\
+RECAP_GROUP_SECTIONS_PROMPT = PromptTemplate(
+    body="""\
 You are a senior news editor assembling a daily digest. The blocks below \
 already contain informative titles. Your job: group them into sections so \
 a reader can quickly scan the digest, skipping entire sections if the \
@@ -197,17 +227,16 @@ Rules:
 - Every block number must appear in exactly one section.
 - Do not skip any block.
 
-Do NOT write any scripts, use any tools, or read any files.
-Print your output directly to stdout.
-
 Output format:
 SECTION: <short topic label>
 <comma-separated block numbers>
 
 === BLOCKS ({block_count} total, format: NUMBER: TITLE) ===
-{blocks_listing}"""
+{blocks_listing}""",
+)
 
-RECAP_DEDUP_PROMPT = """\
+RECAP_DEDUP_PROMPT = PromptTemplate(
+    body="""\
 You are a senior news editor. Below is a list of news. \
 Some of them may describe the same thing — just reported by different sources.
 
@@ -230,9 +259,6 @@ of the majority.
 
 News that cannot be meaningfully merged with others remain as they are.
 
-Do NOT write any scripts, use any tools, or read any files.
-Print your output directly to stdout.
-
 Output format:
 
 MERGED: <new text>
@@ -250,9 +276,11 @@ SINGLE: 2
 SINGLE: 4
 
 === NEWS ({article_count} total) ===
-{articles_block}"""
+{articles_block}""",
+)
 
-RECAP_SUMMARIZE_PROMPT = """\
+RECAP_SUMMARIZE_PROMPT = PromptTemplate(
+    body="""\
 You are a senior news editor writing a brief summary of the day's news \
 for a busy reader. Below are the sections and block titles from today's \
 digest.
@@ -264,13 +292,11 @@ block titles.
 
 Write in {language}.
 
-Do NOT write any scripts, use any tools, or read any files.
-Print your output directly to stdout.
-
 Wrap your entire summary between these markers:
 SUMMARY_START
 <your summary here>
 SUMMARY_END
 
 === TODAY'S DIGEST ===
-{digest_overview}"""
+{digest_overview}""",
+)

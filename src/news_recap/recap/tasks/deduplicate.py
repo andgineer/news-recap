@@ -17,7 +17,7 @@ from news_recap.recap.tasks.base import (
     read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
-from news_recap.recap.tasks.prompts import RECAP_DEDUP_PROMPT
+from news_recap.recap.tasks.prompts import RECAP_DEDUP_PROMPT, render_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -214,8 +214,10 @@ def _run_llm_dedup(
 
     def prepare(group: list[str], batch_num: int) -> str:
         group_articles = [id_to_article[aid] for aid in group]
-        prompt = RECAP_DEDUP_PROMPT.format(
-            article_count=len(group_articles),
+        prompt = render_prompt(
+            RECAP_DEDUP_PROMPT,
+            ctx.inp.prompt_backend,
+            article_count=str(len(group_articles)),
             articles_block=_build_articles_block(group_articles),
         )
         task_id = materialize_step(

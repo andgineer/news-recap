@@ -19,7 +19,7 @@ from news_recap.recap.tasks.base import (
     read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
-from news_recap.recap.tasks.prompts import RECAP_SPLIT_PROMPT
+from news_recap.recap.tasks.prompts import RECAP_SPLIT_PROMPT, PromptBackend, render_prompt
 from news_recap.recap.tasks.reduce_blocks import SplitTask, _build_article_headline_map
 
 logger = logging.getLogger(__name__)
@@ -32,13 +32,14 @@ _BLOCK_RE = re.compile(r"^BLOCK:\s*(.+)$", re.IGNORECASE)
 def build_split_prompt(
     split_task: SplitTask,
     headline_map: dict[str, str],
+    backend: PromptBackend = PromptBackend.CLI,
 ) -> str:
     """Build the SPLIT prompt with numbered article headlines."""
     lines = []
     for i, aid in enumerate(split_task.article_ids, 1):
         headline = headline_map.get(aid, aid)
         lines.append(f"{i}: {headline}")
-    return RECAP_SPLIT_PROMPT.format(articles_block="\n".join(lines))
+    return render_prompt(RECAP_SPLIT_PROMPT, backend, articles_block="\n".join(lines))
 
 
 def _parse_block_lines(
@@ -132,7 +133,7 @@ class SplitBlocks(TaskLauncher):
         start_batch = next_batch_number(ctx.pdir, "recap_split") - 1
 
         def prepare_fn(item: SplitTask, batch_num: int) -> str:
-            prompt = build_split_prompt(item, headline_map)
+            prompt = build_split_prompt(item, headline_map, ctx.inp.prompt_backend)
             return materialize_step(
                 ctx.workdir_mgr,
                 ctx.inp,

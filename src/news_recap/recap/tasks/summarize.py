@@ -16,7 +16,7 @@ from news_recap.recap.tasks.base import (
     read_agent_stdout,
     run_single_agent,
 )
-from news_recap.recap.tasks.prompts import RECAP_SUMMARIZE_PROMPT
+from news_recap.recap.tasks.prompts import RECAP_SUMMARIZE_PROMPT, PromptBackend, render_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ def build_summarize_prompt(
     sections: list[DigestSection],
     blocks: list[DigestBlock],
     language: str,
+    backend: PromptBackend = PromptBackend.CLI,
 ) -> str:
     """Build the SUMMARIZE prompt from sections and their blocks."""
     parts: list[str] = []
@@ -37,7 +38,9 @@ def build_summarize_prompt(
             if 0 <= idx < len(blocks):
                 parts.append(f"  - {blocks[idx].title}")
         parts.append("")
-    return RECAP_SUMMARIZE_PROMPT.format(
+    return render_prompt(
+        RECAP_SUMMARIZE_PROMPT,
+        backend,
         language=language,
         digest_overview="\n".join(parts),
     )
@@ -79,6 +82,7 @@ class Summarize(TaskLauncher):
             ctx.digest.recaps,
             ctx.digest.blocks,
             ctx.inp.preferences.language,
+            ctx.inp.prompt_backend,
         )
         stdout_path = run_single_agent(ctx, "recap_summarize", prompt)
         ctx.digest.day_summary = parse_summarize_stdout(stdout_path)
