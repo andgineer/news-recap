@@ -9,6 +9,29 @@ The key idea: instead of paying per-token via expensive LLM APIs, the pipeline d
 CLI agents (Codex, Claude Code, Gemini CLI) that run under flat-rate ~$20/month
 subscriptions — making heavy daily summarisation practically free.
 
+## CLI agents vs direct API — benchmark
+
+Same 423 articles, Claude, two modes:
+
+| | CLI agent (`claude`) | API (`--api`)          |
+|---|---|------------------------|
+| Cost | ~$0 (subscription) | \$0.43 ($13 per month) |
+| Time | 21 min | 8 min                  |
+| Output blocks | 100 | 105                    |
+| Sections | 20 | 23                     |
+| Summary length | ~1.5 K | ~2 K                   |
+
+CLI agent used Sonnet for all tasks (Haiku unavailable in the subscription CLI) — that
+partially explains the longer runtime and visibly better compression quality.
+API mode uses cheap Haiku for most tasks and Sonnet only for the reduce phase, which
+is why it's faster and cheaper but produces slightly looser output.
+
+Another CLI overhead: agents are external processes, so each task pays a cold-start
+penalty that adds up across hundreds of parallel calls.
+
+> **Note:** subscription usage limits showed no measurable change after the CLI run —
+> experiment needs to be repeated to confirm whether session/weekly caps actually apply.
+
 ### Documentation
 
 - [News Recap](https://andgineer.github.io/news-recap/)
