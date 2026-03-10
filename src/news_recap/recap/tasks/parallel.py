@@ -8,9 +8,10 @@ that logic so each step only supplies *prepare* and *parse* callbacks.
 
 from __future__ import annotations
 
+import signal
 import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from news_recap.recap.agents.ai_agent import read_agent_usage, run_ai_agent
@@ -20,7 +21,24 @@ from news_recap.recap.tasks.base import (
 )
 
 
-def submit_and_collect(  # noqa: PLR0913, C901
+def _await_future(future: Future, stop_event: threading.Event) -> Any:
+    """Wait for *future*, waking every 0.5 s so Ctrl+C can fire.
+
+    ``future.result()`` with no timeout blocks in C-level lock acquisition and
+    suppresses ``KeyboardInterrupt`` for the entire wait.  Polling with a short
+    timeout lets Python process pending signals between retries, and the
+    explicit ``stop_event`` check handles cases where the signal is delivered
+    while we are still in C code.
+    """
+    while True:
+        try:
+            return future.result(timeout=0.5)
+        except TimeoutError:
+            if stop_event.is_set():
+                raise KeyboardInterrupt from None
+
+
+def submit_and_collect(  # noqa: PLR0913, PLR0915, C901
     ctx: FlowContext,
     items: list,
     *,
@@ -72,6 +90,13 @@ def submit_and_collect(  # noqa: PLR0913, C901
     launch_delay = ctx.inp.launch_delay
     stop_event = threading.Event()
 
+    def _sigint_handler(signum: int, frame: object) -> None:  # noqa: ARG001
+        """Set stop_event immediately so _await_future can raise KeyboardInterrupt."""
+        stop_event.set()
+        raise KeyboardInterrupt
+
+    old_sigint = signal.signal(signal.SIGINT, _sigint_handler)
+
     def _run_with_delay(delay: float, **kwargs: Any) -> str:
         if delay > 0 and stop_event.wait(delay):
             raise RecapPipelineError("interrupted", "Pipeline interrupted by user")
@@ -113,7 +138,7 @@ def submit_and_collect(  # noqa: PLR0913, C901
             for bnum, item, future, orig_tid in futures:
                 resolved_tid = orig_tid
                 try:
-                    resolved_tid = future.result()
+                    resolved_tid = _await_future(future, stop_event)
                     result = parse_fn(resolved_tid, item, bnum)
                     results.append(result)
                 except RecapPipelineError as exc:
@@ -127,11 +152,14 @@ def submit_and_collect(  # noqa: PLR0913, C901
             if n_failed > 0:
                 break
 
+        stop_event.set()
         executor.shutdown(wait=True)
     except KeyboardInterrupt:
         stop_event.set()
-        executor.shutdown(wait=True, cancel_futures=True)
+        executor.shutdown(wait=False, cancel_futures=True)
         raise
+    finally:
+        signal.signal(signal.SIGINT, old_sigint)
 
     _log_total_tokens(ctx, step_name, completed_task_ids, logger)
     return results, n_failed, batch_num

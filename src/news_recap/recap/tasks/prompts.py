@@ -279,6 +279,49 @@ SINGLE: 4
 {articles_block}""",
 )
 
+RECAP_DEDUP_MULTI_PROMPT = PromptTemplate(
+    body="""\
+You are a senior news editor. Below are groups of news articles, one group per CLUSTER.
+Within each cluster, some articles may describe the same event reported by different sources.
+
+If several articles in a cluster describe the same thing and can be merged without losing \
+important facts and without the result growing longer than the longest original by more \
+than ~25% — merge them into a single entry with a new, informative description.
+
+Do NOT merge articles that are merely related. \
+Only merge articles that a reader would consider the same piece of news.
+
+Requirements for merged entries:
+- Key facts from all merged articles must be preserved
+- Be specific and factual — no clickbait, no vague teasers
+- Write each entry in the language of the majority within that cluster
+
+Articles that cannot be meaningfully merged remain as SINGLE.
+
+Output format — repeat for every cluster, numbers are LOCAL to each cluster:
+
+CLUSTER N:
+MERGED: <new text>
+<comma-separated local numbers>
+
+SINGLE: <local number>
+
+Every local number must appear exactly once per cluster.
+
+Example with 2 clusters:
+
+CLUSTER 1:
+MERGED: EU introduces 38% tariffs on Chinese electric vehicles starting July 2025
+1, 3
+SINGLE: 2
+
+CLUSTER 2:
+SINGLE: 1
+SINGLE: 2
+
+{clusters_block}""",
+)
+
 RECAP_SUMMARIZE_PROMPT = PromptTemplate(
     body="""\
 You are a senior news editor writing a brief summary of the day's news \

@@ -11,7 +11,7 @@ from news_recap.recap.contracts import TaskInputContract
 from news_recap.storage.io import utc_now
 
 SUPPORTED_AGENTS = ("claude", "codex", "gemini")
-ROUTING_SCHEMA_VERSION = 3
+ROUTING_SCHEMA_VERSION = 4
 
 
 class FrozenRouting(msgspec.Struct):
@@ -24,6 +24,7 @@ class FrozenRouting(msgspec.Struct):
     resolved_at: str
     resolved_by: str
     execution_backend: str = "cli"
+    extra_env: dict[str, str] = msgspec.field(default_factory=dict)
 
     def to_metadata(self) -> dict[str, object]:
         return msgspec.structs.asdict(self)
@@ -33,7 +34,7 @@ class RoutingDefaults(msgspec.Struct):
     """Settings snapshot used for enqueue-time routing."""
 
     default_agent: str
-    task_model_map: dict[str, dict[str, str]]
+    task_model_map: dict[str, dict[str, Any]]
     task_type_timeout_map: dict[str, int]
     command_templates: dict[str, str]
     agent_max_parallel: dict[str, int] = msgspec.field(default_factory=dict)
@@ -95,21 +96,23 @@ def _resolve_model(
     defaults: RoutingDefaults,
     task_type: str,
     agent: str,
-) -> str:
-    """Look up model from task_model_map[task_type][agent]."""
+) -> tuple[str, dict[str, str]]:
+    """Look up (model, extra_env) from task_model_map[task_type][agent]."""
     task_type_key = task_type.strip().lower()
     agent_models = defaults.task_model_map.get(task_type_key)
     if agent_models is None:
         raise ValueError(
             f"No model configured for task_type={task_type_key!r}. Add it to task_model_map.",
         )
-    model = agent_models.get(agent)
-    if model is None:
+    entry = agent_models.get(agent)
+    if entry is None:
         raise ValueError(
             f"No model configured for task_type={task_type_key!r}, agent={agent!r}. "
             f"Add it to task_model_map.",
         )
-    return model
+    if isinstance(entry, dict):
+        return entry["model"], dict(entry.get("env") or {})
+    return entry, {}
 
 
 def resolve_routing_for_enqueue(
@@ -128,6 +131,7 @@ def resolve_routing_for_enqueue(
 
     execution_backend = defaults.execution_backend
 
+    extra_env: dict[str, str] = {}
     if execution_backend == "api":
         if agent != "claude":
             raise ValueError(
@@ -146,11 +150,11 @@ def resolve_routing_for_enqueue(
             )
         command_template = ""
     else:
-        model = (
-            model_override.strip()
-            if model_override is not None
-            else _resolve_model(defaults, task_type, agent)
-        )
+        if model_override is not None:
+            model = model_override.strip()
+            extra_env: dict[str, str] = {}
+        else:
+            model, extra_env = _resolve_model(defaults, task_type, agent)
         if not model:
             raise ValueError(
                 f"Resolved model is empty for agent={agent!r}, task_type={task_type!r}",
@@ -165,6 +169,7 @@ def resolve_routing_for_enqueue(
         model=model,
         command_template=command_template,
         execution_backend=execution_backend,
+        extra_env=extra_env,
         resolved_at=utc_now().isoformat(),
         resolved_by="enqueue",
     )
@@ -207,17 +212,16 @@ def resolve_routing_for_execution(
     )
 
 
-def _parse_frozen_routing(raw: dict[str, Any]) -> FrozenRouting | None:  # noqa: C901, PLR0911, PLR0912
-    schema_version = raw.get("schema_version")
+def _parse_frozen_routing(raw: dict[str, Any]) -> FrozenRouting | None:  # noqa: C901, PLR0911
+    if raw.get("schema_version") != ROUTING_SCHEMA_VERSION:
+        return None
+
     agent = raw.get("agent")
     model = raw.get("model")
     command_template = raw.get("command_template")
     resolved_at = raw.get("resolved_at")
     resolved_by = raw.get("resolved_by")
 
-    # Accept versions 1, 2 (pre-execution_backend), 3 (current). Reject others.
-    if schema_version not in (1, 2, ROUTING_SCHEMA_VERSION):
-        return None
     if not isinstance(agent, str) or not agent.strip():
         return None
     agent = _normalize_agent(agent)
@@ -230,13 +234,12 @@ def _parse_frozen_routing(raw: dict[str, Any]) -> FrozenRouting | None:  # noqa:
     if not isinstance(resolved_by, str) or not resolved_by.strip():
         return None
 
-    # Determine execution_backend: defaults to "cli" for v1/v2; read from dict for v3.
-    if schema_version == ROUTING_SCHEMA_VERSION:
-        execution_backend = raw.get("execution_backend", "cli")
-        if execution_backend not in ("cli", "api"):
-            return None
-    else:
-        execution_backend = "cli"
+    execution_backend = raw.get("execution_backend", "cli")
+    if execution_backend not in ("cli", "api"):
+        return None
+
+    extra_env_raw = raw.get("extra_env", {})
+    extra_env = extra_env_raw if isinstance(extra_env_raw, dict) else {}
 
     # command_template must be non-empty for cli, must be "" for api.
     if not isinstance(command_template, str):
@@ -255,6 +258,7 @@ def _parse_frozen_routing(raw: dict[str, Any]) -> FrozenRouting | None:  # noqa:
         if execution_backend == "api"
         else command_template.strip(),
         execution_backend=execution_backend,
+        extra_env=extra_env,
         resolved_at=resolved_at.strip(),
         resolved_by=resolved_by.strip(),
     )

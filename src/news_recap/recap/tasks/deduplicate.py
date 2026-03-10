@@ -13,16 +13,28 @@ from news_recap.recap.models import DigestArticle
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
     FlowContext,
+    RecapPipelineError,
     TaskLauncher,
     read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
-from news_recap.recap.tasks.prompts import RECAP_DEDUP_PROMPT, render_prompt
+from news_recap.recap.tasks.prompts import (
+    RECAP_DEDUP_MULTI_PROMPT,
+    RECAP_DEDUP_PROMPT,
+    render_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
 _MAX_PARALLEL = 4
 _MIN_MERGE_SIZE = 2
+_BATCH_THRESHOLD = 8  # clusters above this size get their own task
+_MAX_BATCH_ARTICLES = 40  # soft cap on articles per batched task
+
+# A batch is a list of clusters; each cluster is a list of article IDs.
+type ClusterBatch = list[list[str]]
+
+_CLUSTER_HEADER_RE = re.compile(r"^CLUSTER\s+\d+:", re.MULTILINE)
 _MERGED_RE = re.compile(r"^MERGED:\s*(.+)$", re.IGNORECASE)
 _SINGLE_RE = re.compile(r"^SINGLE:\s*(\d+)\s*$", re.IGNORECASE)
 
@@ -57,6 +69,70 @@ def _build_articles_block(articles: list[DigestArticle]) -> str:
         title = a.enriched_title or a.title
         lines.append(f"{i}: [{a.source}] {title}")
     return "\n".join(lines)
+
+
+def _batch_clusters(groups: list[list[str]]) -> list[ClusterBatch]:
+    """Pack small clusters into batches; large clusters get their own task.
+
+    Clusters with more than *_BATCH_THRESHOLD* articles each become a
+    single-cluster batch. Smaller clusters are accumulated greedily
+    (in insertion order) until *_MAX_BATCH_ARTICLES* would be exceeded.
+
+    >>> _batch_clusters([])
+    []
+    >>> result = _batch_clusters([[str(i) for i in range(10)]])
+    >>> len(result) == 1 and len(result[0]) == 1  # solo large cluster
+    True
+    """
+    batches: list[ClusterBatch] = []
+    current: ClusterBatch = []
+    current_size = 0
+    for g in groups:
+        if len(g) > _BATCH_THRESHOLD:
+            batches.append([g])
+            continue
+        if current and current_size + len(g) > _MAX_BATCH_ARTICLES:
+            batches.append(current)
+            current, current_size = [], 0
+        current.append(g)
+        current_size += len(g)
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _build_multi_clusters_block(
+    batch: ClusterBatch,
+    id_to_article: dict[str, DigestArticle],
+) -> str:
+    parts: list[str] = []
+    for i, cluster in enumerate(batch, 1):
+        articles = [id_to_article[aid] for aid in cluster]
+        header = f"=== CLUSTER {i} ({len(cluster)} articles) ==="
+        parts.append(f"{header}\n{_build_articles_block(articles)}")
+    return "\n\n".join(parts)
+
+
+def parse_multi_dedup_output(text: str, batch: ClusterBatch) -> list[_DedupResult]:
+    """Parse multi-cluster MERGED/SINGLE output into one ``_DedupResult`` per cluster.
+
+    Raises ``RecapPipelineError`` when the number of ``CLUSTER N:`` headers in
+    *text* does not match the number of clusters in *batch*.
+    """
+    sections = _CLUSTER_HEADER_RE.split(text)
+    cluster_sections = sections[1:]  # sections[0] is text before the first header
+
+    if len(cluster_sections) != len(batch):
+        raise RecapPipelineError(
+            "recap_dedup",
+            f"Expected {len(batch)} CLUSTER header(s) in output, "
+            f"found {len(cluster_sections)} — malformed or missing cluster headers",
+        )
+
+    return [
+        parse_dedup_output(section, len(cluster))
+        for section, cluster in zip(cluster_sections, batch, strict=False)
+    ]
 
 
 def parse_dedup_output(text: str, expected_count: int) -> _DedupResult:
@@ -155,7 +231,7 @@ class Deduplicate(TaskLauncher):
             logger.info("[dedup] Fewer than 2 articles, skipping")
             return
 
-        groups = _compute_groups(ctx)
+        groups = _compute_groups(ctx, articles)
         if not groups:
             return
 
@@ -179,9 +255,8 @@ class Deduplicate(TaskLauncher):
             logger.warning("[dedup] %d cluster(s) failed — partial results saved", n_failed)
 
 
-def _compute_groups(ctx: FlowContext) -> list[list[str]]:
+def _compute_groups(ctx: FlowContext, articles: list[DigestArticle]) -> list[list[str]]:
     """Compute embeddings and group articles by similarity."""
-    articles = ctx.digest.articles
     embedder = build_embedder(ctx.inp.dedup_model_name, allow_fallback=True)
     texts = [_build_embedding_text(a) for a in articles]
     ids = [a.article_id for a in articles]
@@ -205,21 +280,60 @@ def _compute_groups(ctx: FlowContext) -> list[list[str]]:
     return groups
 
 
+def _log_batch_result(
+    batch_num: int,
+    batch: ClusterBatch,
+    results: list[_DedupResult],
+) -> None:
+    """Log a one-line per-batch dedup summary after the agent finishes."""
+    total_merges = sum(len(r.merges) for r in results)
+    merged_articles = sum(len(m.indices) for r in results for m in r.merges)
+    removed = sum(len(m.indices) - 1 for r in results for m in r.merges)
+    n_clusters = len(batch)
+    if total_merges:
+        logger.info(
+            "[dedup] Batch %d result: %d/%d cluster(s) have duplicates"
+            " — %d group(s), %d articles merged, %d removed",
+            batch_num,
+            sum(1 for r in results if r.merges),
+            n_clusters,
+            total_merges,
+            merged_articles,
+            removed,
+        )
+    else:
+        logger.info(
+            "[dedup] Batch %d result: no duplicates in %d cluster(s)",
+            batch_num,
+            n_clusters,
+        )
+
+
 def _run_llm_dedup(
     ctx: FlowContext,
     groups: list[list[str]],
     id_to_article: dict[str, DigestArticle],
 ) -> tuple[list[tuple[list[str], _DedupResult]], int]:
-    """Submit per-cluster LLM calls and collect results."""
+    """Submit batched LLM calls and return flattened (cluster, result) pairs."""
+    batches = _batch_clusters(groups)
+    logger.info("[dedup] %d cluster(s) → %d batch task(s)", len(groups), len(batches))
 
-    def prepare(group: list[str], batch_num: int) -> str:
-        group_articles = [id_to_article[aid] for aid in group]
-        prompt = render_prompt(
-            RECAP_DEDUP_PROMPT,
-            ctx.inp.prompt_backend,
-            article_count=str(len(group_articles)),
-            articles_block=_build_articles_block(group_articles),
-        )
+    def prepare(batch: ClusterBatch, batch_num: int) -> str:
+        if len(batch) == 1:
+            cluster = batch[0]
+            articles = [id_to_article[aid] for aid in cluster]
+            prompt = render_prompt(
+                RECAP_DEDUP_PROMPT,
+                ctx.inp.prompt_backend,
+                article_count=str(len(cluster)),
+                articles_block=_build_articles_block(articles),
+            )
+        else:
+            prompt = render_prompt(
+                RECAP_DEDUP_MULTI_PROMPT,
+                ctx.inp.prompt_backend,
+                clusters_block=_build_multi_clusters_block(batch, id_to_article),
+            )
         task_id = materialize_step(
             ctx.workdir_mgr,
             ctx.inp,
@@ -227,31 +341,43 @@ def _run_llm_dedup(
             batch=batch_num,
             prompt=prompt,
         )
-        logger.info("[dedup] Cluster %d — %d articles", batch_num, len(group))
+        total = sum(len(c) for c in batch)
+        logger.info("[dedup] Batch %d — %d cluster(s), %d articles", batch_num, len(batch), total)
         return task_id
 
     def parse(
         task_id: str,
-        group: list[str],
-        batch_num: int,  # noqa: ARG001
-    ) -> tuple[list[str], _DedupResult]:
+        batch: ClusterBatch,
+        batch_num: int,
+    ) -> tuple[ClusterBatch, list[_DedupResult]]:
         stdout_path = ctx.pdir / task_id / "output" / "agent_stdout.log"
         text = read_agent_stdout(stdout_path, "recap_dedup")
-        result = parse_dedup_output(text, len(group))
-        return group, result
+        if len(batch) == 1:
+            result = parse_dedup_output(text, len(batch[0]))
+            results = [result]
+        else:
+            results = parse_multi_dedup_output(text, batch)
+        _log_batch_result(batch_num, batch, results)
+        return batch, results
 
-    batch_results, n_failed, _ = submit_and_collect(
+    raw_results, n_failed, _ = submit_and_collect(
         ctx,
-        groups,
+        batches,
         step_name="recap_dedup",
-        step_label="dedup cluster",
+        step_label="dedup batch",
         start_batch=next_batch_number(ctx.pdir, "recap_dedup") - 1,
         max_parallel=ctx.inp.effective_max_parallel(_MAX_PARALLEL),
         prepare_fn=prepare,
         parse_fn=parse,
         logger=logger,
     )
-    return batch_results, n_failed
+
+    flat: list[tuple[list[str], _DedupResult]] = [
+        (cluster, result)
+        for batch_clusters, results_list in raw_results
+        for cluster, result in zip(batch_clusters, results_list, strict=False)
+    ]
+    return flat, n_failed
 
 
 def _update_pipeline_state(

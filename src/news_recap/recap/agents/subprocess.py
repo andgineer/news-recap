@@ -169,7 +169,7 @@ _HEARTBEAT_INTERVAL = 60.0
 
 _NOTABLE_RE = re.compile(
     r"quota|rate.?limit|429|too many requests|overloaded|retrying|"
-    r"cancelled|Operation cancelled|exhausted.*capacity|"
+    r"Operation cancelled|exhausted.*capacity|"
     r"credit balance|insufficient.{0,20}(funds|credits|balance)",
     re.IGNORECASE,
 )
@@ -195,6 +195,7 @@ def run_subprocess(  # noqa: PLR0913
             run_args,
             env=env,
             cwd=cwd,
+            stdin=subprocess.DEVNULL,
             stdout=stdout_handle,
             stderr=stderr_handle,
             text=True,

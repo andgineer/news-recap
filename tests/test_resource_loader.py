@@ -206,7 +206,7 @@ class TestResourceLoaderBatch:
             return TranscriptResult(text="ok", language="en", is_success=True)
 
         mock_fetch.side_effect = _fake_transcript
-        loader = ResourceLoader(yt_delay=0)
+        loader = ResourceLoader(yt_delay=0, min_yt_seconds=0)
         entries = [
             ("yt1", "https://www.youtube.com/watch?v=aaaaaaaaa01"),
             ("yt2", "https://www.youtube.com/watch?v=aaaaaaaaa02"),
@@ -240,7 +240,7 @@ class TestResourceLoaderBatch:
             content="<html><body><p>text</p></body></html>",
             content_type="text/html",
         )
-        loader = ResourceLoader(fetcher=fetcher, yt_delay=0.5)
+        loader = ResourceLoader(fetcher=fetcher, yt_delay=0.5, min_yt_seconds=0)
         entries = [
             ("h1", "https://example.com/1"),
             ("yt1", "https://www.youtube.com/watch?v=aaaaaaaaa01"),

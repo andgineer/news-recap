@@ -106,6 +106,7 @@ def run_ai_agent(  # noqa: PLR0913
         timeout_seconds=timeout,
         command_template=routing.command_template,
         model=routing.model,
+        extra_env=routing.extra_env,
         log_label=step_name,
         stop_event=stop_event,
     )
@@ -261,6 +262,7 @@ def _run_agent_cli(  # noqa: PLR0913
     timeout_seconds: int,
     command_template: str,
     model: str,
+    extra_env: dict[str, str] | None = None,
     log_label: str = "",
     stop_event: threading.Event | None = None,
 ):
@@ -293,6 +295,8 @@ def _run_agent_cli(  # noqa: PLR0913
     env["NEWS_RECAP_REPAIR_MODE"] = "0"
     env["NEWS_RECAP_LLM_AGENT"] = ""
     env["NEWS_RECAP_LLM_MODEL"] = model
+    if extra_env:
+        env.update(extra_env)
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:

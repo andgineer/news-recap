@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -15,6 +16,7 @@ from news_recap.http.youtube_extractor import IP_BLOCKED_ERROR, fetch_transcript
 logger = logging.getLogger(__name__)
 
 _YT_DELAY_SECONDS = 3.0
+_MIN_YT_SECONDS = 45.0
 
 
 @dataclass(slots=True)
@@ -29,8 +31,8 @@ class LoadedResource:
 
     @property
     def is_blocked(self) -> bool:
-        """True when the failure was caused by an IP/bot block (temporary)."""
-        return self.error == IP_BLOCKED_ERROR
+        """True when the failure was caused by an IP/bot block or early-stop (temporary)."""
+        return self.error in (IP_BLOCKED_ERROR, "not_attempted")
 
 
 class ResourceLoader:
@@ -41,12 +43,13 @@ class ResourceLoader:
     * **HTML** — concurrent via ``ThreadPoolExecutor`` with per-domain
       semaphores (``max_per_domain`` concurrent requests per host).
     * **YouTube** — sequential in a dedicated thread with a configurable
-      delay between requests.  The YouTube thread is **stopped early**
-      when all HTML resources finish loading — whatever transcripts were
-      fetched by that point is good enough.
+      delay between requests.  The YouTube thread runs for at least
+      ``min_yt_seconds`` before being stopped; if HTML finishes faster
+      the loader waits for the remainder so short batches don't cut
+      YouTube loading short.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         fetcher: HttpFetcher | None = None,
@@ -54,6 +57,7 @@ class ResourceLoader:
         max_workers: int = 10,
         max_per_domain: int = 3,
         yt_delay: float = _YT_DELAY_SECONDS,
+        min_yt_seconds: float = _MIN_YT_SECONDS,
     ) -> None:
         self._fetcher = fetcher or HttpFetcher()
         self._owns_fetcher = fetcher is None
@@ -61,6 +65,7 @@ class ResourceLoader:
         self._max_workers = max_workers
         self._max_per_domain = max_per_domain
         self._yt_delay = yt_delay
+        self._min_yt_seconds = min_yt_seconds
         self._domain_semaphores: dict[str, threading.Semaphore] = {}
         self._sem_lock = threading.Lock()
 
@@ -105,10 +110,21 @@ class ResourceLoader:
             )
             yt_thread.start()
 
+        html_start = time.monotonic()
         if html_entries:
             self._load_html_batch(html_entries, results)
+        html_elapsed = time.monotonic() - html_start
 
         if yt_thread is not None:
+            remaining = self._min_yt_seconds - html_elapsed
+            if remaining > 0:
+                logger.info(
+                    "HTML finished in %.1fs (< %.0fs min); waiting %.1fs more for YouTube",
+                    html_elapsed,
+                    self._min_yt_seconds,
+                    remaining,
+                )
+                stop.wait(timeout=remaining)
             stop.set()
             yt_thread.join(timeout=5.0)
             results.update(yt_results)
@@ -171,12 +187,23 @@ class ResourceLoader:
         ok = 0
         for i, (sid, url) in enumerate(entries):
             if stop.is_set():
+                skipped = entries[i:]
                 logger.info(
-                    "YouTube: stopping after %d/%d (HTML finished, %d transcripts loaded)",
+                    "YouTube: stopping after %d/%d (HTML finished, %d transcripts loaded,"
+                    " %d not attempted)",
                     i,
                     total,
                     ok,
+                    len(skipped),
                 )
+                for skip_sid, skip_url in skipped:
+                    results[skip_sid] = LoadedResource(
+                        url=skip_url,
+                        text="",
+                        content_type="youtube/transcript",
+                        is_success=False,
+                        error="not_attempted",
+                    )
                 return
 
             try:
@@ -208,12 +235,23 @@ class ResourceLoader:
                 logger.info("YouTube: %d/%d processed (%d transcripts)", i + 1, total, ok)
 
             if i < total - 1 and stop.wait(timeout=self._yt_delay):
+                skipped = entries[i + 1 :]
                 logger.info(
-                    "YouTube: stopping after %d/%d (HTML finished, %d transcripts loaded)",
+                    "YouTube: stopping after %d/%d (HTML finished, %d transcripts loaded,"
+                    " %d not attempted)",
                     i + 1,
                     total,
                     ok,
+                    len(skipped),
                 )
+                for skip_sid, skip_url in skipped:
+                    results[skip_sid] = LoadedResource(
+                        url=skip_url,
+                        text="",
+                        content_type="youtube/transcript",
+                        is_success=False,
+                        error="not_attempted",
+                    )
                 return
 
         logger.info("YouTube done: %d/%d transcripts loaded", ok, total)

@@ -12,7 +12,7 @@ from news_recap.recap.agents.routing import (
 )
 
 
-assert ROUTING_SCHEMA_VERSION == 3, "bump this test if schema version changes"
+assert ROUTING_SCHEMA_VERSION == 4, "bump this test if schema version changes"
 
 
 def _api_defaults(api_model_map: dict[str, str] | None = None) -> RoutingDefaults:
@@ -39,9 +39,9 @@ def _cli_defaults() -> RoutingDefaults:
         default_agent="codex",
         task_model_map={
             "recap_classify": {
-                "codex": "--model gpt-5.2",
-                "claude": "--model sonnet",
-                "gemini": "--model gemini-2.5-flash",
+                "codex": {"model": "--model gpt-5.2"},
+                "claude": {"model": "--model sonnet", "env": {"MAX_THINKING_TOKENS": "0"}},
+                "gemini": {"model": "--model gemini-2.5-flash"},
             },
         },
         task_type_timeout_map={"recap_classify": 120},
@@ -115,79 +115,69 @@ def test_resolve_routing_api_raises_on_missing_api_model():
 
 
 # ---------------------------------------------------------------------------
-# _parse_frozen_routing — version migration
+# _parse_frozen_routing
 # ---------------------------------------------------------------------------
 
 
-def _base_raw(schema_version: int, **extra) -> dict:
+def _base_raw(**extra) -> dict:
     return {
-        "schema_version": schema_version,
+        "schema_version": ROUTING_SCHEMA_VERSION,
         "agent": "codex",
         "model": "--model gpt-5.2",
         "command_template": 'codex {model} "Read {prompt_file}"',
+        "execution_backend": "cli",
         "resolved_at": "2026-01-01T00:00:00+00:00",
         "resolved_by": "enqueue",
         **extra,
     }
 
 
-def test_parse_frozen_routing_v1_defaults_cli():
-    parsed = _parse_frozen_routing(_base_raw(1))
+def test_parse_frozen_routing_accepts_current_version():
+    parsed = _parse_frozen_routing(_base_raw())
     assert parsed is not None
     assert parsed.execution_backend == "cli"
     assert parsed.schema_version == ROUTING_SCHEMA_VERSION
 
 
-def test_parse_frozen_routing_v2_defaults_cli():
-    parsed = _parse_frozen_routing(_base_raw(2))
-    assert parsed is not None
-    assert parsed.execution_backend == "cli"
+def test_parse_frozen_routing_rejects_old_versions():
+    for old_version in (1, 2, 3):
+        assert _parse_frozen_routing(_base_raw(schema_version=old_version)) is None
 
 
-def test_parse_frozen_routing_v3_reads_execution_backend():
-    raw = _base_raw(3, execution_backend="cli")
-    parsed = _parse_frozen_routing(raw)
-    assert parsed is not None
-    assert parsed.execution_backend == "cli"
+def test_parse_frozen_routing_rejects_unknown_version():
+    assert _parse_frozen_routing(_base_raw(schema_version=99)) is None
 
 
-def test_parse_frozen_routing_v3_api_allows_empty_command_template():
-    raw = {
-        "schema_version": 3,
-        "agent": "claude",
-        "model": "claude-haiku-4-5-20251001",
-        "command_template": "",
-        "resolved_at": "2026-01-01T00:00:00+00:00",
-        "resolved_by": "enqueue",
-        "execution_backend": "api",
-    }
+def test_parse_frozen_routing_api_allows_empty_command_template():
+    raw = _base_raw(
+        agent="claude",
+        model="claude-haiku-4-5-20251001",
+        command_template="",
+        execution_backend="api",
+    )
     parsed = _parse_frozen_routing(raw)
     assert parsed is not None
     assert parsed.execution_backend == "api"
     assert parsed.command_template == ""
 
 
-def test_parse_frozen_routing_rejects_unknown_version():
-    raw = _base_raw(99)
-    parsed = _parse_frozen_routing(raw)
-    assert parsed is None
-
-
 def test_parse_frozen_routing_rejects_cli_with_empty_command_template():
-    raw = _base_raw(3, execution_backend="cli", command_template="")
-    parsed = _parse_frozen_routing(raw)
+    parsed = _parse_frozen_routing(_base_raw(command_template=""))
     assert parsed is None
 
 
 def test_parse_frozen_routing_rejects_api_with_non_empty_command_template():
-    raw = {
-        "schema_version": 3,
-        "agent": "claude",
-        "model": "claude-haiku",
-        "command_template": "claude --model {model} -- {prompt_file}",
-        "resolved_at": "2026-01-01T00:00:00+00:00",
-        "resolved_by": "enqueue",
-        "execution_backend": "api",
-    }
+    raw = _base_raw(
+        agent="claude",
+        model="claude-haiku",
+        command_template="claude --model {model} -- {prompt_file}",
+        execution_backend="api",
+    )
+    assert _parse_frozen_routing(raw) is None
+
+
+def test_parse_frozen_routing_reads_extra_env():
+    raw = _base_raw(extra_env={"MAX_THINKING_TOKENS": "0"})
     parsed = _parse_frozen_routing(raw)
-    assert parsed is None
+    assert parsed is not None
+    assert parsed.extra_env == {"MAX_THINKING_TOKENS": "0"}

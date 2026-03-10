@@ -24,14 +24,14 @@ def _defaults() -> RoutingDefaults:
         default_agent="codex",
         task_model_map={
             "highlights": {
-                "codex": "codex-highlights",
-                "claude": "claude-highlights",
-                "gemini": "gemini-highlights",
+                "codex": {"model": "codex-highlights"},
+                "claude": {"model": "claude-highlights"},
+                "gemini": {"model": "gemini-highlights"},
             },
             "story": {
-                "codex": "codex-story",
-                "claude": "claude-story",
-                "gemini": "gemini-story",
+                "codex": {"model": "codex-story"},
+                "claude": {"model": "claude-story"},
+                "gemini": {"model": "gemini-story"},
             },
         },
         task_type_timeout_map={

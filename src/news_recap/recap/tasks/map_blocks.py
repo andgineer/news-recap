@@ -95,25 +95,16 @@ def build_map_prompt(
     )
 
 
-def _parse_blocks_from_text(
+def _collect_raw_blocks(
     text: str,
     valid_nums: set[str],
     num_to_id: dict[str, str],
     worker: int,
 ) -> list[dict[str, Any]]:
-    """Parse ``BLOCK:``/numbers sections from raw MAP worker stdout."""
+    """Parse all BLOCK: sections from stdout into a raw (possibly duplicate) list."""
     blocks: list[dict[str, Any]] = []
-    current_title: str | None = None
-    current_nums: list[str] = []
-
-    def _flush() -> None:
-        nonlocal current_title, current_nums
-        if current_title and current_nums:
-            aids = [num_to_id[n] for n in current_nums if n in num_to_id]
-            if aids:
-                blocks.append({"title": current_title, "article_ids": aids, "worker": worker})
-        current_title = None
-        current_nums = []
+    current_title = ""
+    current_aids: list[str] = []
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -121,16 +112,53 @@ def _parse_blocks_from_text(
             continue
         m = _BLOCK_RE.match(line)
         if m:
-            _flush()
+            if current_aids:
+                blocks.append(
+                    {"title": current_title, "article_ids": current_aids, "worker": worker},
+                )
             current_title = m.group(1).strip()
+            current_aids = []
             continue
-        if current_title is not None:
-            nums = [t.strip() for t in re.split(r"[,\s]+", line) if t.strip()]
-            for n in nums:
-                if n in valid_nums and n not in current_nums:
-                    current_nums.append(n)
-    _flush()
+        if not current_title:
+            continue
+        for token in re.split(r"[,\s]+", line):
+            n = token.strip()
+            if n not in valid_nums:
+                continue
+            aid = num_to_id[n]
+            if aid not in current_aids:
+                current_aids.append(aid)
+
+    if current_aids:
+        blocks.append({"title": current_title, "article_ids": current_aids, "worker": worker})
     return blocks
+
+
+def _last_assignment_wins(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """When the model backtracks and re-assigns articles, keep the last assignment.
+
+    Iterates in reverse so the final (rightmost) BLOCK claim for each article
+    survives; earlier draft assignments are discarded.
+    """
+    claimed: set[str] = set()
+    result = []
+    for block in reversed(blocks):
+        aids = [aid for aid in block["article_ids"] if aid not in claimed]
+        claimed.update(aids)
+        if aids:
+            result.append({**block, "article_ids": aids})
+    result.reverse()
+    return result
+
+
+def _parse_blocks_from_text(
+    text: str,
+    valid_nums: set[str],
+    num_to_id: dict[str, str],
+    worker: int,
+) -> list[dict[str, Any]]:
+    """Parse ``BLOCK:``/numbers sections from raw MAP worker stdout."""
+    return _last_assignment_wins(_collect_raw_blocks(text, valid_nums, num_to_id, worker))
 
 
 def _validate_map_blocks(

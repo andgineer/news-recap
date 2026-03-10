@@ -14,6 +14,7 @@ from news_recap.recap.tasks.prompts import (
     RECAP_SPLIT_PROMPT,
     RECAP_GROUP_SECTIONS_PROMPT,
     RECAP_DEDUP_PROMPT,
+    RECAP_DEDUP_MULTI_PROMPT,
     RECAP_SUMMARIZE_PROMPT,
 )
 
@@ -52,6 +53,7 @@ def test_cli_prompts_include_do_not_write_constraint():
         RECAP_SPLIT_PROMPT,
         RECAP_GROUP_SECTIONS_PROMPT,
         RECAP_DEDUP_PROMPT,
+        RECAP_DEDUP_MULTI_PROMPT,
         RECAP_SUMMARIZE_PROMPT,
     ):
         rendered = render_prompt(
@@ -74,6 +76,7 @@ def test_api_prompts_omit_do_not_write_constraint():
         RECAP_SPLIT_PROMPT,
         RECAP_GROUP_SECTIONS_PROMPT,
         RECAP_DEDUP_PROMPT,
+        RECAP_DEDUP_MULTI_PROMPT,
         RECAP_SUMMARIZE_PROMPT,
     ):
         rendered = render_prompt(

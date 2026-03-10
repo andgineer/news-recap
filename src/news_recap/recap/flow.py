@@ -165,7 +165,7 @@ def recap_flow(  # noqa: PLR0915
         digest.status = "failed"
         ctx.save_checkpoint()
         logger.warning("Pipeline interrupted (Ctrl+C)")
-        raise
+        os._exit(130)  # force-exit: avoids blocking on in-flight HTTP thread joins
 
     except Exception:  # noqa: BLE001
         digest.status = "failed"

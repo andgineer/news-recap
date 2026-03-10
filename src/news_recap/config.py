@@ -7,6 +7,7 @@ import os
 import string
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class OrchestratorSettings:
     workdir_root: Path = Path(".news_recap_workdir")
     default_agent: str = "codex"
     execution_backend: str = "cli"
-    task_model_map: dict[str, dict[str, str]] = field(
+    task_model_map: dict[str, dict[str, Any]] = field(
         default_factory=lambda: _default_task_model_map(),
     )
     api_model_map: dict[str, str] = field(
@@ -82,10 +83,10 @@ class OrchestratorSettings:
             "recap_classify": 900,
             "recap_enrich": 600,
             "recap_dedup": 600,
-            "recap_map": 600,
+            "recap_map": 1200,
             "recap_reduce": 1200,
             "recap_split": 120,
-            "recap_group_sections": 600,
+            "recap_group_sections": 1200,
             "recap_summarize": 600,
         },
     )
@@ -284,12 +285,13 @@ class Settings:
         for task_type, agent_models in self.orchestrator.task_model_map.items():
             if not task_type.strip():
                 raise ValueError("task_model_map contains empty task_type key.")
-            for agent, model in agent_models.items():
+            for agent, entry in agent_models.items():
                 if agent not in supported_agents:
                     raise ValueError(
                         f"task_model_map[{task_type!r}] has unsupported agent: {agent!r}",
                     )
-                if not model.strip():
+                model = entry.get("model", "") if isinstance(entry, dict) else entry
+                if not model or not model.strip():
                     raise ValueError(
                         f"task_model_map[{task_type!r}][{agent!r}] model must not be empty.",
                     )
@@ -418,47 +420,55 @@ def _default_agent_max_parallel() -> dict[str, int]:
     return {"codex": 3, "claude": 2, "gemini": 3}
 
 
-def _default_task_model_map() -> dict[str, dict[str, str]]:
+_NO_THINKING = {"MAX_THINKING_TOKENS": "0"}
+# Caps the hidden thinking scratchpad to a fixed token budget.
+# Do NOT add CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING here — that flag disables the
+# hidden scratchpad and forces the model to write its reasoning into stdout,
+# which contaminates the structured output the parser expects.
+_CAPPED_THINKING = {"CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1", "MAX_THINKING_TOKENS": "4000"}
+
+
+def _default_task_model_map() -> dict[str, dict[str, Any]]:
     return {
         "recap_classify": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
-            "claude": "--model sonnet --effort low",
-            "gemini": "--model gemini-2.5-flash",
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
+            "gemini": {"model": "--model gemini-2.5-flash"},
         },
         "recap_enrich": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
-            "claude": "--model sonnet --effort low",
-            "gemini": "--model gemini-2.5-flash",
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
+            "gemini": {"model": "--model gemini-2.5-flash"},
         },
         "recap_dedup": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
-            "claude": "--model sonnet --effort low",
-            "gemini": "--model gemini-2.5-flash",
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
+            "gemini": {"model": "--model gemini-2.5-flash"},
         },
         "recap_map": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
-            "claude": "--model sonnet --effort low",
-            "gemini": "--model gemini-2.5-flash",
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _CAPPED_THINKING},
+            "gemini": {"model": "--model gemini-2.5-flash"},
         },
         "recap_reduce": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
-            "claude": "--model opus --effort low",
-            "gemini": "--model gemini-2.5-pro",
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model opus --effort low"},  # reasoning helps merging
+            "gemini": {"model": "--model gemini-2.5-pro"},
         },
         "recap_split": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
-            "claude": "--model sonnet --effort low",
-            "gemini": "--model gemini-2.5-flash",
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
+            "gemini": {"model": "--model gemini-2.5-flash"},
         },
         "recap_group_sections": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
-            "claude": "--model sonnet --effort low",
-            "gemini": "--model gemini-2.5-flash",
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _CAPPED_THINKING},
+            "gemini": {"model": "--model gemini-2.5-flash"},
         },
         "recap_summarize": {
-            "codex": "--model gpt-5.2 -c model_reasoning_effort=low",
-            "claude": "--model sonnet --effort low",
-            "gemini": "--model gemini-2.5-flash",
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low"},  # reasoning improves quality
+            "gemini": {"model": "--model gemini-2.5-flash"},
         },
     }
 
@@ -505,7 +515,7 @@ def _collect_api_model_map() -> dict[str, str]:
     return base
 
 
-def _collect_task_model_map() -> dict[str, dict[str, str]]:
+def _collect_task_model_map() -> dict[str, dict[str, Any]]:
     """Build task → agent → model overrides from env or defaults.
 
     Env format (CSV of ``task_type:agent=model_flags``):
@@ -515,7 +525,7 @@ def _collect_task_model_map() -> dict[str, dict[str, str]]:
     if not raw:
         return _default_task_model_map()
 
-    mapping: dict[str, dict[str, str]] = {}
+    mapping: dict[str, dict[str, Any]] = {}
     for part in raw.split(","):
         token = part.strip()
         if not token:
@@ -531,7 +541,7 @@ def _collect_task_model_map() -> dict[str, dict[str, str]]:
         agent = agent.strip().lower()
         if not task_type or not agent:
             raise ValueError(f"Invalid NEWS_RECAP_LLM_TASK_MODEL_MAP key: {key!r}")
-        mapping.setdefault(task_type, {})[agent] = model.strip()
+        mapping.setdefault(task_type, {})[agent] = {"model": model.strip()}
     return mapping
 
 

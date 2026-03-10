@@ -218,10 +218,11 @@ class Classify(TaskLauncher):
     def restore_state(self) -> None:
         """Reconstruct kept_entries and enrich_ids from digest verdicts."""
         ctx = self.ctx
+        ctx.digest.articles = [a for a in ctx.digest.articles if a.verdict != "exclude"]
         kept = []
         enrich_ids = []
         for a in ctx.digest.articles:
-            if a.verdict in ("ok", "vague") and a.article_id in ctx.article_map:
+            if a.article_id in ctx.article_map:
                 kept.append(ctx.article_map[a.article_id])
                 if a.verdict == "vague":
                     enrich_ids.append(a.article_id)
@@ -299,17 +300,20 @@ class Classify(TaskLauncher):
             if a.verdict is not None and a.article_id in digest_by_id:
                 digest_by_id[a.article_id].verdict = a.verdict
 
-        all_kept = [a.article_id for a in ctx.digest.articles if a.verdict in ("ok", "vague")]
-        vague_ids = [a.article_id for a in ctx.digest.articles if a.verdict == "vague"]
+        n_excluded = sum(1 for a in ctx.digest.articles if a.verdict == "exclude")
+        ctx.digest.articles = [a for a in ctx.digest.articles if a.verdict != "exclude"]
 
+        vague_ids = [a.article_id for a in ctx.digest.articles if a.verdict == "vague"]
         ctx.state["kept_entries"] = [
-            ctx.article_map[sid] for sid in all_kept if sid in ctx.article_map
+            ctx.article_map[a.article_id]
+            for a in ctx.digest.articles
+            if a.article_id in ctx.article_map
         ]
         ctx.state["enrich_ids"] = vague_ids
 
         logger.info(
-            "Classify: %d kept (%d vague for enrichment), %d discarded",
-            len(all_kept),
+            "Classify: %d kept (%d vague for enrichment), %d excluded",
+            len(ctx.digest.articles),
             len(vague_ids),
-            len(ctx.inp.articles) - len(all_kept),
+            n_excluded,
         )
