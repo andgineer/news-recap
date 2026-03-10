@@ -13,13 +13,13 @@ subscriptions — making heavy daily summarisation practically free.
 
 Same 423 articles, Claude, two modes:
 
-| | CLI agent (`claude`)   | API (`--api`)          |
-|---|------------------------|------------------------|
-| Cost | ~$0.25 (~$7 per month) | \$0.43 ($13 per month) |
-| Time | 21 min                 | 8 min                  |
-| Output blocks | 100                    | 105                    |
-| Sections | 20                     | 23                     |
-| Summary length | ~1.5 K                 | ~2 K                   |
+| | CLI agent (`claude`)       | API (`--api`)          |
+|---|----------------------------|------------------------|
+| Cost | \~\$0.25 (\~\$7 per month) | \$0.43 ($13 per month) |
+| Time | 21 min                     | 8 min                  |
+| Output blocks | 100                        | 105                    |
+| Sections | 20                         | 23                     |
+| Summary length | ~1.5 K                     | ~2 K                   |
 
 CLI agent used Sonnet for all tasks (Haiku unavailable in the subscription CLI) — that
 partially explains the longer runtime and visibly better compression quality.
@@ -29,7 +29,7 @@ is why it's faster and cheaper but produces slightly looser output.
 Another CLI overhead: agents are external processes, so each task pays a cold-start
 penalty that adds up across hundreds of parallel calls.
 
-Using subscription twice as cheeper but still too expensive for dayly usage - from $20 subscription 
+Using subscription twice as cheeper but still too expensive for dayly usage - from $20 subscription
 one run takes 5% from week limit, and 46% from 5h limit.
 
 ### Documentation
