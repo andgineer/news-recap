@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_8034ccf3fff5054b_launcher_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-09 07:42 +0000
+            created at 2026-03-10 07:57 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -247,7 +247,7 @@
     <p class="mis show_mis"><span class="n"><a id="t165" href="#t165">165</a></span><span class="t">        <span class="nam">digest</span><span class="op">.</span><span class="nam">status</span> <span class="op">=</span> <span class="str">"failed"</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t166" href="#t166">166</a></span><span class="t">        <span class="nam">ctx</span><span class="op">.</span><span class="nam">save_checkpoint</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t167" href="#t167">167</a></span><span class="t">        <span class="nam">logger</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span><span class="str">"Pipeline interrupted (Ctrl+C)"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t168" href="#t168">168</a></span><span class="t">        <span class="key">raise</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t168" href="#t168">168</a></span><span class="t">        <span class="nam">os</span><span class="op">.</span><span class="nam">_exit</span><span class="op">(</span><span class="num">130</span><span class="op">)</span>  <span class="com"># force-exit: avoids blocking on in-flight HTTP thread joins</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t169" href="#t169">169</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t170" href="#t170">170</a></span><span class="t">    <span class="key">except</span> <span class="nam">Exception</span><span class="op">:</span>  <span class="com"># noqa: BLE001</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t171" href="#t171">171</a></span><span class="t">        <span class="nam">digest</span><span class="op">.</span><span class="nam">status</span> <span class="op">=</span> <span class="str">"failed"</span>&nbsp;</span><span class="r"></span></p>
@@ -264,7 +264,7 @@
             <a class="nav" href="z_8034ccf3fff5054b_launcher_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-09 07:42 +0000
+            created at 2026-03-10 07:57 +0000
         </p>
     </div>
 </footer>
