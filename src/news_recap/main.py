@@ -13,6 +13,7 @@ from news_recap.ingestion.controllers import (
     IngestionCliController,
     IngestionStatsCommand,
 )
+from news_recap.recap.export_prompt import ExportPromptCliController, ExportPromptCommand
 from news_recap.recap.launcher import (
     RecapCliController,
     RecapRunCommand,
@@ -36,6 +37,7 @@ _configure_logging()
 click.rich_click.USE_MARKDOWN = True
 INGESTION_CONTROLLER = IngestionCliController()
 RECAP_CONTROLLER = RecapCliController()
+EXPORT_PROMPT_CONTROLLER = ExportPromptCliController()
 WEB_CONTROLLER = WebCliController()
 
 
@@ -208,6 +210,62 @@ def recap_run(  # noqa: PLR0913
                 stop_after=stop_after,
                 fresh=fresh,
                 api_mode=api_mode,
+            ),
+        ),
+    )
+
+
+@recap.command("export-prompt")
+@click.option(
+    "--data-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Data directory path.",
+)
+@click.option(
+    "--lookback-days",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="Days of articles to load.",
+)
+@click.option(
+    "--group-threshold",
+    type=click.FloatRange(min=0.0, max=1.0),
+    default=0.65,
+    show_default=True,
+    help="Cosine similarity for clustering.",
+)
+@click.option(
+    "--language",
+    default="ru",
+    show_default=True,
+    help="Language for task instruction.",
+)
+@click.option(
+    "--out",
+    type=click.Choice(["console", "clipboard"], case_sensitive=False),
+    default="clipboard",
+    show_default=True,
+    help="Output destination.",
+)
+def recap_export_prompt(
+    data_dir: Path | None,
+    lookback_days: int,
+    group_threshold: float,
+    language: str,
+    out: str,
+) -> None:
+    """Export a ready-to-paste LLM prompt from recent articles (no LLM calls)."""
+
+    _emit_lines(
+        EXPORT_PROMPT_CONTROLLER.export_prompt(
+            ExportPromptCommand(
+                data_dir=data_dir,
+                lookback_days=lookback_days,
+                group_threshold=group_threshold,
+                language=language,
+                out=out,
             ),
         ),
     )
