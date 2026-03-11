@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from news_recap.recap.models import DigestBlock, DigestSection
+from news_recap.recap.models import DigestBlock, DigestSection, language_display_name
 from news_recap.recap.tasks.base import (
     RecapPipelineError,
     TaskLauncher,
@@ -41,7 +41,7 @@ def build_summarize_prompt(
     return render_prompt(
         RECAP_SUMMARIZE_PROMPT,
         backend,
-        language=language,
+        language=language_display_name(language),
         digest_overview="\n".join(parts),
     )
 

@@ -133,7 +133,7 @@ def test_render_prompt_structure() -> None:
     assert "pre-sorted by topic similarity" in result
     assert "1. Some Title" in result
     assert "=== TASK ===" in result
-    assert "digest in en" in result
+    assert "digest in English" in result
 
 
 # ---------------------------------------------------------------------------

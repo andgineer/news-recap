@@ -4,9 +4,27 @@ from __future__ import annotations
 
 from typing import Any
 
+import langcodes
 import msgspec
 
 from news_recap.recap.contracts import ArticleIndexEntry
+
+
+def language_display_name(code: str) -> str:
+    """Return the English display name for a BCP-47 language code.
+
+    Falls back to the code itself for unknown codes.
+
+    >>> language_display_name("ru")
+    'Russian'
+    >>> language_display_name("en")
+    'English'
+    >>> language_display_name("xx")
+    'xx'
+    """
+    tag = langcodes.get(code)
+    return tag.display_name() if tag.is_valid() else code
+
 
 _DEFAULT_EXCLUDE = "horoscopes, medical advice, sports (except Russia), Epstein files"
 _DEFAULT_FOLLOW = "Russia, Serbia, war in Ukraine"

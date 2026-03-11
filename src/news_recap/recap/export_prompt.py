@@ -16,7 +16,7 @@ from news_recap.recap.dedup.embedder import (
     Vector,
     cosine_similarity,
 )
-from news_recap.recap.models import DigestArticle
+from news_recap.recap.models import DigestArticle, language_display_name
 
 _DEFAULT_LOOKBACK_DAYS = 1
 _DEFAULT_GROUP_THRESHOLD = 0.65
@@ -120,7 +120,7 @@ def _render_prompt(
     article_lines = build_article_lines(ordered)
     header = f"=== {len(ordered)} ARTICLES (last {lookback_days} day(s)) ==="
     note = "Note: articles are pre-sorted by topic similarity."
-    task = _TASK_TEMPLATE.format(language=language)
+    task = _TASK_TEMPLATE.format(language=language_display_name(language))
     return f"{header}\n{note}\n\n{article_lines}\n\n{task}"
 
 
