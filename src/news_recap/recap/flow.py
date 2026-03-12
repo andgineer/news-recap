@@ -34,10 +34,9 @@ from news_recap.recap.tasks.reduce_blocks import ReduceBlocks
 from news_recap.recap.tasks.split_blocks import SplitBlocks
 from news_recap.recap.tasks.summarize import Summarize
 from news_recap.storage.io import load_msgspec
+from news_recap.recap.pipeline_setup import _DIGEST_FILENAME
 
 logger = logging.getLogger(__name__)
-
-_DIGEST_FILENAME = "digest.json"
 _USAGE_FILENAME = "meta/usage.json"
 
 

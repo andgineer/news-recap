@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 
 from news_recap.recap.dedup.embedder import HashingEmbedder
 from news_recap.recap.export_prompt import (
+    PromptCommand,
+    PromptCliController,
     _copy_to_clipboard,
     _order_cluster,
     _render_prompt,
@@ -134,6 +136,8 @@ def test_render_prompt_structure() -> None:
     assert "1. Some Title" in result
     assert "=== TASK ===" in result
     assert "digest in English" in result
+    # task section appears before articles
+    assert result.index("=== TASK ===") < result.index("=== 1 ARTICLES")
 
 
 # ---------------------------------------------------------------------------
@@ -155,3 +159,184 @@ def test_copy_to_clipboard_succeeds_on_first_working_command() -> None:
         result = _copy_to_clipboard("test text")
     assert result is True
     assert mock_run.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# PromptCliController --ai path
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None:  # type: ignore[name-defined]
+    """--ai path: recap_flow is called with stop_after=deduplicate and digest.articles used."""
+    from pathlib import Path
+
+    from news_recap.recap.models import Digest
+
+    article = _make_article("x1", "AI article", "https://ai.com/1", "ai.com")
+    digest_obj = Digest(
+        digest_id="test-id",
+        business_date="2026-03-11",
+        status="completed",
+        pipeline_dir=str(tmp_path),
+        articles=[article],
+    )
+
+    mock_settings = MagicMock()
+    mock_settings.data_dir = tmp_path
+    mock_settings.ingestion.gc_retention_days = 7
+    mock_settings.ingestion.digest_lookback_days = 3
+    mock_settings.ingestion.min_resource_chars = 200
+    mock_settings.dedup.threshold = 0.90
+    mock_settings.dedup.model_name = "intfloat/multilingual-e5-small"
+    mock_settings.orchestrator.workdir_root = tmp_path
+    mock_settings.orchestrator.default_agent = "claude"
+    mock_settings.orchestrator.task_model_map = {}
+    mock_settings.orchestrator.claude_command_template = "claude"
+    mock_settings.orchestrator.codex_command_template = "codex"
+    mock_settings.orchestrator.gemini_command_template = "gemini"
+    mock_settings.orchestrator.task_type_timeout_map = {}
+    mock_settings.orchestrator.agent_max_parallel = 1
+    mock_settings.orchestrator.agent_launch_delay = 0
+    mock_settings.orchestrator.execution_backend = "cli"
+    mock_settings.orchestrator.api_model_map = {}
+    mock_settings.orchestrator.api_max_parallel = 1
+    mock_settings.orchestrator.api_concurrency_recovery_successes = 3
+    mock_settings.orchestrator.api_downshift_pause_seconds = 1.0
+    mock_settings.orchestrator.api_retry_max_backoff_seconds = 60.0
+    mock_settings.orchestrator.api_retry_jitter_seconds = 1.0
+
+    mock_store = MagicMock()
+    mock_store.list_retrieval_articles.return_value = [article]
+
+    def fake_recap_flow(pipeline_dir: str, business_date: str, stop_after: str | None = None) -> None:
+        import msgspec
+        pdir = Path(pipeline_dir)
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "digest.json").write_bytes(msgspec.json.encode(digest_obj))
+
+    mock_embedder = MagicMock()
+    mock_embedder.embed.return_value = [[0.1] * 10]
+
+    with (
+        patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
+        patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
+        patch("news_recap.recap.export_prompt.recap_flow", side_effect=fake_recap_flow) as mock_flow,
+        patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder),
+        patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
+    ):
+        controller = PromptCliController()
+        output = list(controller.prompt(PromptCommand(ai=True, out="clipboard")))
+
+    mock_flow.assert_called_once()
+    _, kwargs = mock_flow.call_args
+    assert kwargs.get("stop_after") == "deduplicate"
+    assert any("article" in line.lower() or "copied" in line.lower() for line in output)
+
+
+def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ignore[name-defined]
+    """--no-ai path: store is queried directly, recap_flow is never called."""
+    from pathlib import Path  # noqa: F401
+
+    article = _make_article("y1", "No-AI article", "https://noai.com/1", "noai.com")
+
+    mock_settings = MagicMock()
+    mock_settings.data_dir = tmp_path
+    mock_settings.ingestion.gc_retention_days = 7
+    mock_settings.ingestion.digest_lookback_days = 3
+    mock_settings.dedup.model_name = "intfloat/multilingual-e5-small"
+
+    mock_store = MagicMock()
+    mock_store.list_retrieval_articles.return_value = [article]
+
+    mock_embedder = MagicMock()
+    mock_embedder.embed.return_value = [[0.1] * 10]
+
+    with (
+        patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
+        patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
+        patch("news_recap.recap.export_prompt.recap_flow") as mock_flow,
+        patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder),
+        patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
+    ):
+        controller = PromptCliController()
+        output = list(controller.prompt(PromptCommand(ai=False, out="clipboard")))
+
+    mock_flow.assert_not_called()
+    mock_store.list_retrieval_articles.assert_called_once_with(
+        lookback_days=3, limit=2000
+    )
+    assert any("copied" in line.lower() for line in output)
+
+
+def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: ignore[name-defined]
+    """--fresh: _find_resumable_pipeline is not consulted, new pipeline dir is created."""
+    from pathlib import Path
+
+    from news_recap.recap.models import Digest
+
+    article = _make_article("z1", "Fresh article", "https://fresh.com/1", "fresh.com")
+    digest_obj = Digest(
+        digest_id="fresh-id",
+        business_date="2026-03-11",
+        status="completed",
+        pipeline_dir=str(tmp_path),
+        articles=[article],
+    )
+
+    # Pre-create a pipeline dir that would be picked up by _find_resumable_pipeline
+    existing_pdir = tmp_path / "pipeline-2026-03-11-000000"
+    existing_pdir.mkdir()
+    import msgspec
+    (existing_pdir / "digest.json").write_bytes(msgspec.json.encode(digest_obj))
+
+    mock_settings = MagicMock()
+    mock_settings.data_dir = tmp_path
+    mock_settings.ingestion.gc_retention_days = 7
+    mock_settings.ingestion.digest_lookback_days = 3
+    mock_settings.ingestion.min_resource_chars = 200
+    mock_settings.dedup.threshold = 0.90
+    mock_settings.dedup.model_name = "intfloat/multilingual-e5-small"
+    mock_settings.orchestrator.workdir_root = tmp_path
+    mock_settings.orchestrator.default_agent = "claude"
+    mock_settings.orchestrator.task_model_map = {}
+    mock_settings.orchestrator.claude_command_template = "claude"
+    mock_settings.orchestrator.codex_command_template = "codex"
+    mock_settings.orchestrator.gemini_command_template = "gemini"
+    mock_settings.orchestrator.task_type_timeout_map = {}
+    mock_settings.orchestrator.agent_max_parallel = 1
+    mock_settings.orchestrator.agent_launch_delay = 0
+    mock_settings.orchestrator.execution_backend = "cli"
+    mock_settings.orchestrator.api_model_map = {}
+    mock_settings.orchestrator.api_max_parallel = 1
+    mock_settings.orchestrator.api_concurrency_recovery_successes = 3
+    mock_settings.orchestrator.api_downshift_pause_seconds = 1.0
+    mock_settings.orchestrator.api_retry_max_backoff_seconds = 60.0
+    mock_settings.orchestrator.api_retry_jitter_seconds = 1.0
+
+    mock_store = MagicMock()
+    mock_store.list_retrieval_articles.return_value = [article]
+
+    created_dirs: list[str] = []
+
+    def fake_recap_flow(pipeline_dir: str, business_date: str, stop_after: str | None = None) -> None:
+        pdir = Path(pipeline_dir)
+        created_dirs.append(pdir.name)
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "digest.json").write_bytes(msgspec.json.encode(digest_obj))
+
+    mock_embedder = MagicMock()
+    mock_embedder.embed.return_value = [[0.1] * 10]
+
+    with (
+        patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
+        patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
+        patch("news_recap.recap.export_prompt.recap_flow", side_effect=fake_recap_flow),
+        patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder),
+        patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
+    ):
+        controller = PromptCliController()
+        list(controller.prompt(PromptCommand(ai=True, fresh=True, out="clipboard")))
+
+    # A new pipeline dir must have been created — not the pre-existing one
+    assert created_dirs, "recap_flow was never called"
+    assert created_dirs[0] != "pipeline-2026-03-11-000000"

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.models import Digest
+from news_recap.recap.pipeline_setup import _DIGEST_FILENAME
 from news_recap.recap.storage.pipeline_io import PipelineInput
 from news_recap.recap.storage.workdir import TaskWorkdirManager
 from news_recap.storage.io import save_msgspec
@@ -24,9 +25,6 @@ if TYPE_CHECKING:
     from news_recap.recap.agents.transport import LLMTransport
 
 logger = logging.getLogger(__name__)
-
-_DIGEST_FILENAME = "digest.json"
-
 
 # ---------------------------------------------------------------------------
 # Shared pipeline types
@@ -135,6 +133,8 @@ class TaskLauncher:
         if cls.name in ctx.digest.completed_phases:
             logger.info("Skipping %s (already completed)", cls.name)
             cls(ctx).restore_state()
+            if ctx.stop_after and ctx.stop_after == cls.name:
+                raise StopPipelineError(cls.name)
             return
 
         logger.info("Running: %s", cls.name)

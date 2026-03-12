@@ -13,7 +13,7 @@ from news_recap.ingestion.controllers import (
     IngestionCliController,
     IngestionStatsCommand,
 )
-from news_recap.recap.export_prompt import ExportPromptCliController, ExportPromptCommand
+from news_recap.recap.export_prompt import PromptCliController, PromptCommand
 from news_recap.recap.launcher import (
     RecapCliController,
     RecapRunCommand,
@@ -37,7 +37,7 @@ _configure_logging()
 click.rich_click.USE_MARKDOWN = True
 INGESTION_CONTROLLER = IngestionCliController()
 RECAP_CONTROLLER = RecapCliController()
-EXPORT_PROMPT_CONTROLLER = ExportPromptCliController()
+PROMPT_CONTROLLER = PromptCliController()
 WEB_CONTROLLER = WebCliController()
 
 
@@ -215,7 +215,7 @@ def recap_run(  # noqa: PLR0913
     )
 
 
-@recap.command("export-prompt")
+@recap.command("prompt")
 @click.option(
     "--data-dir",
     type=click.Path(path_type=Path),
@@ -223,11 +223,16 @@ def recap_run(  # noqa: PLR0913
     help="Data directory path.",
 )
 @click.option(
-    "--lookback-days",
-    type=click.IntRange(min=1),
-    default=1,
+    "--ai/--no-ai",
+    default=True,
     show_default=True,
-    help="Days of articles to load.",
+    help="Run full classify→load_resources→enrich→deduplicate pipeline before building the prompt (same article scope as recap run).",
+)
+@click.option(
+    "--fresh",
+    is_flag=True,
+    default=False,
+    help="Discard any existing pipeline for today and start fresh. Ignored when --no-ai is set.",
 )
 @click.option(
     "--group-threshold",
@@ -249,23 +254,25 @@ def recap_run(  # noqa: PLR0913
     show_default=True,
     help="Output destination.",
 )
-def recap_export_prompt(
+def recap_prompt(
     data_dir: Path | None,
-    lookback_days: int,
+    ai: bool,
+    fresh: bool,
     group_threshold: float,
     language: str,
     out: str,
 ) -> None:
-    """Export a ready-to-paste LLM prompt from recent articles (no LLM calls)."""
+    """Export a ready-to-paste LLM prompt from recent articles."""
 
     _emit_lines(
-        EXPORT_PROMPT_CONTROLLER.export_prompt(
-            ExportPromptCommand(
+        PROMPT_CONTROLLER.prompt(
+            PromptCommand(
                 data_dir=data_dir,
-                lookback_days=lookback_days,
                 group_threshold=group_threshold,
                 language=language,
                 out=out,
+                ai=ai,
+                fresh=fresh,
             ),
         ),
     )
