@@ -1,0 +1,2 @@
+INFO     news_recap.recap.tasks.base:base.py:128 Running: split_blocks
+INFO     news_recap.recap.tasks.split_blocks:split_blocks.py:128 [split] No blocks to split

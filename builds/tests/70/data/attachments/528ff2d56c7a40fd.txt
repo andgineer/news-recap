@@ -1,0 +1,5 @@
+INFO     news_recap.recap.tasks.enrich:enrich.py:233 [recap_enrich] 5 articles to enrich
+INFO     news_recap.recap.tasks.enrich:enrich.py:262 [recap_enrich] Round 1: 5 articles -> 1 batch(es)
+INFO     news_recap.recap.tasks.enrich:enrich.py:248 [recap_enrich] Batch 1 — 5 articles
+ERROR    news_recap.recap.tasks.enrich:parallel.py:115 recap_enrich batch 1 failed: Step recap_enrich failed: stdout is empty
+INFO     news_recap.recap.tasks.enrich:enrich.py:302 [recap_enrich] 0/5 articles enriched

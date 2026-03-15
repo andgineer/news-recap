@@ -1,0 +1,4 @@
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:184 Loading resource texts for 1 articles…
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:163 Resource loading summary:
+  YouTube: 1/1 transcripts (0 KB)
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:212 Resource texts: 1 loaded (0 cached), 0 failed, 0 filtered

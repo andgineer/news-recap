@@ -1,0 +1,2 @@
+INFO     news_recap.recap.tasks.load_resources:load_resources.py:76 [load_resources] 1 already loaded, 1 remaining
+INFO     news_recap.recap.tasks.load_resources:load_resources.py:104 [load_resources] 1/1 loaded, 0 failed (0%)

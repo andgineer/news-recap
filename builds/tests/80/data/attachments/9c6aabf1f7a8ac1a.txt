@@ -1,0 +1,7 @@
+2026-03-10 07:57:26,988 | WARNING | news_recap.recap.agents.api_agent - [recap_classify] rate limit / overload (attempt 0): r
+2026-03-10 07:57:26,988 | INFO    | news_recap.recap.agents.api_agent - [recap_classify] retrying in 1.0s
+2026-03-10 07:57:26,988 | WARNING | news_recap.recap.agents.api_agent - [recap_classify] rate limit / overload (attempt 1): r
+2026-03-10 07:57:26,988 | INFO    | news_recap.recap.agents.api_agent - [recap_classify] retrying in 2.0s
+2026-03-10 07:57:26,989 | WARNING | news_recap.recap.agents.api_agent - [recap_classify] rate limit / overload (attempt 2): r
+2026-03-10 07:57:26,989 | INFO    | news_recap.recap.agents.api_agent - [recap_classify] retrying in 2.0s
+2026-03-10 07:57:26,989 | INFO    | news_recap.recap.agents.api_agent - [recap_classify] Finished in 0.0s (tokens=15, retries=3)

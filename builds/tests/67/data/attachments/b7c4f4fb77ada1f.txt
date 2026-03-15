@@ -1,0 +1,2 @@
+2026-02-28 09:01:21,303 | WARNING | news_recap.recap.tasks.reduce_blocks - REDUCE: duplicate source blocks ignored: [1, 2]
+2026-02-28 09:01:21,303 | WARNING | news_recap.recap.tasks.reduce_blocks - No source block numbers after BLOCK line: Duplicate

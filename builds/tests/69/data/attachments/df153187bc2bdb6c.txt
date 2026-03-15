@@ -1,0 +1,1 @@
+2026-02-28 18:30:48,775 | WARNING | news_recap.recap.tasks.group_sections - GROUP_SECTIONS: 2 orphan block(s) appended to last section

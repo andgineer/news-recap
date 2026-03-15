@@ -1,0 +1,1 @@
+INFO     news_recap.recap.tasks.load_resources:load_resources.py:104 [load_resources] 2/2 loaded, 0 failed (0%)

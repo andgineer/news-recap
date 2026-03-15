@@ -1,0 +1,4 @@
+2026-03-01 05:18:51,567 | INFO    | news_recap.recap.tasks.map_blocks - [map] Resuming: 1 blocks from checkpoint, 3 uncovered headlines remain
+2026-03-01 05:18:51,567 | INFO    | news_recap.recap.tasks.map_blocks - [map] 3 headlines -> 1 chunk(s)
+2026-03-01 05:18:51,567 | INFO    | news_recap.recap.tasks.map_blocks - [map] Worker 1 — 3 headlines
+2026-03-01 05:18:51,568 | INFO    | news_recap.recap.tasks.map_blocks - [map] 2 blocks from 1 worker(s)

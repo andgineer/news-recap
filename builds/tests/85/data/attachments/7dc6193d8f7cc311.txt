@@ -1,0 +1,3 @@
+WARNING  news_recap.recap.tasks.single_pass:single_pass.py:108 [single_pass] BLOCK before SECTION — discarding
+WARNING  news_recap.recap.tasks.single_pass:single_pass.py:117 [single_pass] SUMMARY before BLOCK — discarding
+WARNING  news_recap.recap.tasks.single_pass:single_pass.py:126 [single_pass] ARTICLES before BLOCK — discarding

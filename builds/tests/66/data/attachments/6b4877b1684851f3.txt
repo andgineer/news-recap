@@ -1,0 +1,1 @@
+WARNING  news_recap.recap.tasks.reduce_blocks:reduce_blocks.py:114 REDUCE: duplicate source blocks ignored: [2]

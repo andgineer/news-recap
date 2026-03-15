@@ -1,0 +1,7 @@
+WARNING  news_recap.recap.agents.api_agent:api_agent.py:68 [recap_classify] rate limit / overload (attempt 0): r
+INFO     news_recap.recap.agents.api_agent:api_agent.py:72 [recap_classify] retrying in 1.0s
+WARNING  news_recap.recap.agents.api_agent:api_agent.py:68 [recap_classify] rate limit / overload (attempt 1): r
+INFO     news_recap.recap.agents.api_agent:api_agent.py:72 [recap_classify] retrying in 2.0s
+WARNING  news_recap.recap.agents.api_agent:api_agent.py:68 [recap_classify] rate limit / overload (attempt 2): r
+INFO     news_recap.recap.agents.api_agent:api_agent.py:72 [recap_classify] retrying in 2.0s
+INFO     news_recap.recap.agents.api_agent:api_agent.py:92 [recap_classify] Finished in 0.0s (tokens=15, retries=3)

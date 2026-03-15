@@ -1,0 +1,1 @@
+2026-03-09 07:42:20,690 | WARNING | news_recap.recap.tasks.group_sections - Merged single-block section 'Lonely' into 'Another Big'

@@ -1,0 +1,3 @@
+INFO     news_recap.recap.tasks.split_blocks:split_blocks.py:148 [split] 2 blocks to split
+ERROR    news_recap.recap.tasks.split_blocks:parallel.py:105 SPLIT worker 2 failed: Step recap_split failed: agent crashed
+ERROR    news_recap.recap.tasks.split_blocks:split_blocks.py:170 [split] 1/2 split tasks failed — partial results saved

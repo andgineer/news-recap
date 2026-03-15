@@ -1,0 +1,3 @@
+2026-02-28 09:01:22,098 | INFO    | news_recap.recap.tasks.split_blocks - [split] 2 blocks to split
+2026-02-28 09:01:22,099 | ERROR   | news_recap.recap.tasks.split_blocks - SPLIT worker 2 failed: Step recap_split failed: agent crashed
+2026-02-28 09:01:22,099 | ERROR   | news_recap.recap.tasks.split_blocks - [split] 1/2 split tasks failed — partial results saved

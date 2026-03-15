@@ -1,0 +1,1 @@
+2026-02-28 18:30:49,343 | DEBUG   | news_recap.http.youtube_extractor - No transcript for dQw4w9WgXcQ: subtitles_disabled

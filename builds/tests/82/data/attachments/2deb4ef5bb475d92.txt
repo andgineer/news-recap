@@ -1,0 +1,1 @@
+2026-03-11 06:43:38,779 | WARNING | news_recap.http.youtube_extractor - YouTube blocked request for dQw4w9WgXcQ (IP ban / bot detection)

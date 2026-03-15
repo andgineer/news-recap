@@ -1,0 +1,2 @@
+2026-02-28 09:01:22,090 | INFO    | news_recap.recap.tasks.split_blocks - [split] 1 blocks to split
+2026-02-28 09:01:22,092 | INFO    | news_recap.recap.tasks.split_blocks - [split] 1 split tasks -> 2 new blocks

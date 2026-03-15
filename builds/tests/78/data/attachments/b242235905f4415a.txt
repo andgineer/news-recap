@@ -1,0 +1,5 @@
+2026-03-08 08:59:16,498 | INFO    | news_recap.recap.tasks.classify - [classify] 6 articles -> 2 batch(es)
+2026-03-08 08:59:16,498 | INFO    | news_recap.recap.tasks.classify - [classify] Batch 1 — 3 headlines
+2026-03-08 08:59:16,499 | INFO    | news_recap.recap.tasks.classify - [classify] Batch 2 — 3 headlines
+2026-03-08 08:59:16,500 | ERROR   | news_recap.recap.tasks.classify - classify batch 2 failed: Step recap_classify failed: agent crashed
+2026-03-08 08:59:16,500 | INFO    | news_recap.recap.tasks.classify - Classify: 3 kept (0 vague for enrichment), 3 discarded

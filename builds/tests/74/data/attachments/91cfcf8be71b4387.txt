@@ -1,0 +1,4 @@
+INFO     news_recap.recap.tasks.map_blocks:map_blocks.py:234 [map] Resuming: 1 blocks from checkpoint, 3 uncovered headlines remain
+INFO     news_recap.recap.tasks.map_blocks:map_blocks.py:244 [map] 3 headlines -> 1 chunk(s)
+INFO     news_recap.recap.tasks.map_blocks:map_blocks.py:261 [map] Worker 1 — 3 headlines
+INFO     news_recap.recap.tasks.map_blocks:map_blocks.py:289 [map] 2 blocks from 1 worker(s)

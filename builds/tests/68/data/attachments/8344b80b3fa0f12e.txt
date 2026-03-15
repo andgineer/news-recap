@@ -1,0 +1,1 @@
+2026-02-28 10:05:27,420 | INFO    | news_recap.recap.tasks.load_resources - [load_resources] No articles need resources

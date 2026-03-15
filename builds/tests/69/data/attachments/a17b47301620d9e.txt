@@ -1,0 +1,1 @@
+INFO     news_recap.recap.tasks.load_resources:load_resources.py:69 [load_resources] No articles need resources

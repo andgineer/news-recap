@@ -1,0 +1,1 @@
+2026-03-01 08:46:08,938 | INFO    | news_recap.ingestion.repository - Auto-GC: deleted 1 old daily partition(s).
