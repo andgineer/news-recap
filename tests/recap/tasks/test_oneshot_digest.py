@@ -1,9 +1,9 @@
-"""Tests for the single_pass task: parser, index building, and coverage check."""
+"""Tests for the oneshot_digest task: parser, index building, and coverage check."""
 
 from __future__ import annotations
 
 
-from news_recap.recap.tasks.single_pass import _parse_output, _parse_nums
+from news_recap.recap.tasks.oneshot_digest import _parse_output, _parse_nums
 
 
 # ---------------------------------------------------------------------------

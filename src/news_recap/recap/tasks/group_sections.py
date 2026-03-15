@@ -38,7 +38,7 @@ def build_group_sections_prompt(
     backend: PromptBackend = PromptBackend.CLI,
 ) -> str:
     """Build the GROUP_SECTIONS prompt with numbered block titles."""
-    lines = []
+    lines: list[str] = []
     for i, block in enumerate(blocks, 1):
         lines.append(f"{i}: {block.title}")
     return render_prompt(

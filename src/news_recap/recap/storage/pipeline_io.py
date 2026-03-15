@@ -42,7 +42,7 @@ class PipelineInput:
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS
     dedup_threshold: float = 0.90
     dedup_model_name: str = "intfloat/multilingual-e5-small"
-    single_pass: bool = False
+    oneshot: bool = False
 
     @property
     def execution_backend(self) -> str:
@@ -90,7 +90,7 @@ def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
         min_resource_chars=int(raw.get("min_resource_chars", _DEFAULT_MIN_RESOURCE_CHARS)),
         dedup_threshold=float(raw.get("dedup_threshold", 0.90)),
         dedup_model_name=raw.get("dedup_model_name", "intfloat/multilingual-e5-small"),
-        single_pass=bool(raw.get("single_pass", False)),
+        oneshot=bool(raw.get("oneshot", False)),
     )
 
 

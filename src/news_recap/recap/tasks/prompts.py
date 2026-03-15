@@ -364,8 +364,7 @@ EXCLUDED: <comma-separated numbers>  (omit if none)
 
 {output_instruction}Articles:
 {articles_block}"""
-# "PASS" in the name below triggers ruff S105 (false positive — not a password)
-RECAP_SINGLE_PASS_PROMPT = PromptTemplate(body=_SINGLE_SHOT_BODY)
+RECAP_ONESHOT_DIGEST_PROMPT = PromptTemplate(body=_SINGLE_SHOT_BODY)
 
 RECAP_SUMMARIZE_PROMPT = PromptTemplate(
     body="""\

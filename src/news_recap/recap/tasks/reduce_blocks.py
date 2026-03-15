@@ -73,7 +73,7 @@ def build_reduce_prompt(
     backend: PromptBackend = PromptBackend.CLI,
 ) -> str:
     """Build the REDUCE prompt with numbered block titles and article counts."""
-    lines = []
+    lines: list[str] = []
     for i, block in enumerate(map_blocks, 1):
         title = block["title"]
         n = len(block["article_ids"])

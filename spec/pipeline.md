@@ -265,6 +265,36 @@ storylines summary in the digest language. Output is delimited by
 If `recaps` is empty (no sections), the step is skipped and `day_summary`
 is set to an empty string.
 
+### OneshotDigest
+
+| | |
+|---|---|
+| **Module** | `recap/tasks/oneshot_digest.py` |
+| **Task type** | `recap_oneshot_digest` |
+| **LLM I/O** | All article headlines in one prompt; agent prints `SECTION:` / `BLOCK:` / `ARTICLES:` / `EXCLUDED:` lines |
+| **Reads** | `ctx.digest.articles` |
+| **Writes digest** | `blocks` — `list[DigestBlock]`, `recaps` — `list[DigestSection]` |
+
+Alternative to the five-step MAP→REDUCE→SPLIT→GROUP→SUMMARIZE pipeline.
+Activated via `--oneshot` CLI flag or `oneshot=True` in `pipeline_input.json`.
+
+Articles are pre-sorted by embedding similarity before the prompt is built so
+the model can focus on editorial grouping rather than topical discovery.
+
+Coverage below 50% of non-excluded articles raises `RecapPipelineError`.
+
+Output format:
+
+```
+SECTION: <section title>
+SECTION_SUMMARY: <1-2 sentences>
+BLOCK: <block title>
+SUMMARY: <2-4 sentences>
+ARTICLES: <comma-separated numbers>
+
+EXCLUDED: <comma-separated numbers>
+```
+
 ## State and checkpointing
 
 Two layers of state flow through the pipeline:
@@ -296,7 +326,7 @@ The flow catches this and marks the run as completed.
 
 Valid `stop_after` values: `classify`, `load_resources`, `enrich`,
 `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`,
-`group_sections`, `summarize`.
+`group_sections`, `summarize`, `oneshot_digest`.
 
 ## Output shape
 

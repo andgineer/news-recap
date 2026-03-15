@@ -35,7 +35,7 @@ def build_split_prompt(
     backend: PromptBackend = PromptBackend.CLI,
 ) -> str:
     """Build the SPLIT prompt with numbered article headlines."""
-    lines = []
+    lines: list[str] = []
     for i, aid in enumerate(split_task.article_ids, 1):
         headline = headline_map.get(aid, aid)
         lines.append(f"{i}: {headline}")

@@ -190,8 +190,8 @@ def recap() -> None:
     help="Use direct Anthropic API instead of CLI agents (sets backend=api, agent=claude).",
 )
 @click.option(
-    "--single-pass",
-    "single_pass",
+    "--oneshot",
+    "oneshot",
     is_flag=True,
     default=False,
     help=(
@@ -207,21 +207,21 @@ def recap_run(  # noqa: PLR0913
     stop_after: str | None,
     fresh: bool,
     api_mode: bool,
-    single_pass: bool,
+    oneshot: bool,
 ) -> None:
     """Run the full news digest pipeline."""
 
-    _single_pass_incompatible = {
+    _oneshot_incompatible = {
         "map_blocks",
         "reduce_blocks",
         "split_blocks",
         "group_sections",
         "summarize",
     }
-    if single_pass and stop_after in _single_pass_incompatible:
+    if oneshot and stop_after in _oneshot_incompatible:
         raise click.UsageError(
-            f"--single-pass is incompatible with --stop-after {stop_after}: "
-            "that stage does not exist in single-pass mode.",
+            f"--oneshot is incompatible with --stop-after {stop_after}: "
+            "that stage does not exist in oneshot mode.",
         )
 
     _emit_lines(
@@ -234,7 +234,7 @@ def recap_run(  # noqa: PLR0913
                 stop_after=stop_after,
                 fresh=fresh,
                 api_mode=api_mode,
-                single_pass=single_pass,
+                oneshot=oneshot,
             ),
         ),
     )

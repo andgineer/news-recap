@@ -115,6 +115,7 @@ def create_app(
         digest = index.load(digest_id)
         if digest is None:
             abort(404, "Digest not found.")
+        assert digest is not None
 
         if block_idx < 0 or block_idx >= len(digest.blocks):
             abort(404, f"Block index {block_idx} out of range.")

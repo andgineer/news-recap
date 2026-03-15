@@ -73,16 +73,16 @@ def test_patch_pipeline_input_when_previously_none(tmp_path: Path) -> None:
     assert inp.agent_override == "gemini"
 
 
-def test_patch_pipeline_input_single_pass(tmp_path: Path) -> None:
-    """Patching single_pass updates pipeline_input.json."""
+def test_patch_pipeline_input_oneshot(tmp_path: Path) -> None:
+    """Patching oneshot updates pipeline_input.json."""
     _write_pipeline_input(tmp_path, agent_override=None)
 
-    previous = _patch_pipeline_input(tmp_path, single_pass=True)
+    previous = _patch_pipeline_input(tmp_path, oneshot=True)
 
-    assert previous["single_pass"] is None  # was absent
+    assert previous["oneshot"] is None  # was absent
 
     inp = read_pipeline_input(str(tmp_path))
-    assert inp.single_pass is True
+    assert inp.oneshot is True
 
 
 def test_no_agent_flag_leaves_file_unchanged(tmp_path: Path) -> None:
