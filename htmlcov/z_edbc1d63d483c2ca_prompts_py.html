@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_edbc1d63d483c2ca_reduce_blocks_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-15 08:29 +0000
+            created at 2026-03-15 10:30 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -446,30 +446,29 @@
     <p class="run run2"><span class="n"><a id="t364" href="#t364">364</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t365" href="#t365">365</a></span><span class="t"><span class="str">{output_instruction}Articles:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t366" href="#t366">366</a></span><span class="t"><span class="str">{articles_block}"""</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t367" href="#t367">367</a></span><span class="t"><span class="com"># "PASS" in the name below triggers ruff S105 (false positive &#8212; not a password)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t368" href="#t368">368</a></span><span class="t"><span class="nam">RECAP_SINGLE_PASS_PROMPT</span> <span class="op">=</span> <span class="nam">PromptTemplate</span><span class="op">(</span><span class="nam">body</span><span class="op">=</span><span class="nam">_SINGLE_SHOT_BODY</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t369" href="#t369">369</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t370" href="#t370">370</a></span><span class="t"><span class="nam">RECAP_SUMMARIZE_PROMPT</span> <span class="op">=</span> <span class="nam">PromptTemplate</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t371" href="#t371">371</a></span><span class="t">    <span class="nam">body</span><span class="op">=</span><span class="str">"""\</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t372" href="#t372">372</a></span><span class="t"><span class="str">You are a senior news editor writing a brief summary of the day's news \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t373" href="#t373">373</a></span><span class="t"><span class="str">for a busy reader. Below are the sections and block titles from today's \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t374" href="#t374">374</a></span><span class="t"><span class="str">digest.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t375" href="#t375">375</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t376" href="#t376">376</a></span><span class="t"><span class="str">Write a short summary: a heading line that frames the day, followed by \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t377" href="#t377">377</a></span><span class="t"><span class="str">a bulleted list of the main storylines (5-8 bullets). Each bullet should \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t378" href="#t378">378</a></span><span class="t"><span class="str">name a thread that runs through today's news, not repeat individual \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t379" href="#t379">379</a></span><span class="t"><span class="str">block titles.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t380" href="#t380">380</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t381" href="#t381">381</a></span><span class="t"><span class="str">Write in {language}.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t382" href="#t382">382</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t383" href="#t383">383</a></span><span class="t"><span class="str">Wrap your entire summary between these markers:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t384" href="#t384">384</a></span><span class="t"><span class="str">SUMMARY_START</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t385" href="#t385">385</a></span><span class="t"><span class="str">&lt;your summary here></span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t386" href="#t386">386</a></span><span class="t"><span class="str">SUMMARY_END</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t387" href="#t387">387</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t388" href="#t388">388</a></span><span class="t"><span class="str">=== TODAY'S DIGEST ===</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t389" href="#t389">389</a></span><span class="t"><span class="str">{output_instruction}{digest_overview}"""</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t390" href="#t390">390</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t367" href="#t367">367</a></span><span class="t"><span class="nam">RECAP_ONESHOT_DIGEST_PROMPT</span> <span class="op">=</span> <span class="nam">PromptTemplate</span><span class="op">(</span><span class="nam">body</span><span class="op">=</span><span class="nam">_SINGLE_SHOT_BODY</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t368" href="#t368">368</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t369" href="#t369">369</a></span><span class="t"><span class="nam">RECAP_SUMMARIZE_PROMPT</span> <span class="op">=</span> <span class="nam">PromptTemplate</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t370" href="#t370">370</a></span><span class="t">    <span class="nam">body</span><span class="op">=</span><span class="str">"""\</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t371" href="#t371">371</a></span><span class="t"><span class="str">You are a senior news editor writing a brief summary of the day's news \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t372" href="#t372">372</a></span><span class="t"><span class="str">for a busy reader. Below are the sections and block titles from today's \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t373" href="#t373">373</a></span><span class="t"><span class="str">digest.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t374" href="#t374">374</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t375" href="#t375">375</a></span><span class="t"><span class="str">Write a short summary: a heading line that frames the day, followed by \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t376" href="#t376">376</a></span><span class="t"><span class="str">a bulleted list of the main storylines (5-8 bullets). Each bullet should \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t377" href="#t377">377</a></span><span class="t"><span class="str">name a thread that runs through today's news, not repeat individual \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t378" href="#t378">378</a></span><span class="t"><span class="str">block titles.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t379" href="#t379">379</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t380" href="#t380">380</a></span><span class="t"><span class="str">Write in {language}.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t381" href="#t381">381</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t382" href="#t382">382</a></span><span class="t"><span class="str">Wrap your entire summary between these markers:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t383" href="#t383">383</a></span><span class="t"><span class="str">SUMMARY_START</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t384" href="#t384">384</a></span><span class="t"><span class="str">&lt;your summary here></span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t385" href="#t385">385</a></span><span class="t"><span class="str">SUMMARY_END</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t386" href="#t386">386</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t387" href="#t387">387</a></span><span class="t"><span class="str">=== TODAY'S DIGEST ===</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t388" href="#t388">388</a></span><span class="t"><span class="str">{output_instruction}{digest_overview}"""</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t389" href="#t389">389</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -479,7 +478,7 @@
             <a class="nav" href="z_edbc1d63d483c2ca_reduce_blocks_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-15 08:29 +0000
+            created at 2026-03-15 10:30 +0000
         </p>
     </div>
 </footer>

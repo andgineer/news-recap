@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_f17cf01cf5f4c2d3_fetcher_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-15 08:29 +0000
+            created at 2026-03-15 10:30 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -170,7 +170,7 @@
     <p class="run run2"><span class="n"><a id="t88" href="#t88">88</a></span><span class="t">            <span class="str">"recap_split"</span><span class="op">:</span> <span class="num">120</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t89" href="#t89">89</a></span><span class="t">            <span class="str">"recap_group_sections"</span><span class="op">:</span> <span class="num">1200</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t90" href="#t90">90</a></span><span class="t">            <span class="str">"recap_summarize"</span><span class="op">:</span> <span class="num">600</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t">            <span class="str">"recap_single_pass"</span><span class="op">:</span> <span class="num">600</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t">            <span class="str">"recap_oneshot_digest"</span><span class="op">:</span> <span class="num">600</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t">        <span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">    <span class="nam">agent_max_parallel</span><span class="op">:</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">int</span><span class="op">]</span> <span class="op">=</span> <span class="nam">field</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -554,7 +554,7 @@
     <p class="run run2"><span class="n"><a id="t472" href="#t472">472</a></span><span class="t">            <span class="str">"claude"</span><span class="op">:</span> <span class="op">{</span><span class="str">"model"</span><span class="op">:</span> <span class="str">"--model sonnet --effort low"</span><span class="op">}</span><span class="op">,</span>  <span class="com"># reasoning improves quality</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t473" href="#t473">473</a></span><span class="t">            <span class="str">"gemini"</span><span class="op">:</span> <span class="op">{</span><span class="str">"model"</span><span class="op">:</span> <span class="str">"--model gemini-2.5-flash"</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t474" href="#t474">474</a></span><span class="t">        <span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t475" href="#t475">475</a></span><span class="t">        <span class="str">"recap_single_pass"</span><span class="op">:</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t475" href="#t475">475</a></span><span class="t">        <span class="str">"recap_oneshot_digest"</span><span class="op">:</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t476" href="#t476">476</a></span><span class="t">            <span class="str">"codex"</span><span class="op">:</span> <span class="op">{</span><span class="str">"model"</span><span class="op">:</span> <span class="str">"--model gpt-5.2 -c model_reasoning_effort=low"</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t477" href="#t477">477</a></span><span class="t">            <span class="str">"claude"</span><span class="op">:</span> <span class="op">{</span><span class="str">"model"</span><span class="op">:</span> <span class="str">"--model sonnet --effort low"</span><span class="op">,</span> <span class="str">"env"</span><span class="op">:</span> <span class="nam">_MAX_OUTPUT</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t478" href="#t478">478</a></span><span class="t">            <span class="str">"gemini"</span><span class="op">:</span> <span class="op">{</span><span class="str">"model"</span><span class="op">:</span> <span class="str">"--model gemini-2.5-flash"</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -572,7 +572,7 @@
     <p class="run run2"><span class="n"><a id="t490" href="#t490">490</a></span><span class="t">        <span class="str">"recap_split"</span><span class="op">:</span> <span class="str">"claude-haiku-4-5-20251001"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t491" href="#t491">491</a></span><span class="t">        <span class="str">"recap_group_sections"</span><span class="op">:</span> <span class="str">"claude-haiku-4-5-20251001"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t492" href="#t492">492</a></span><span class="t">        <span class="str">"recap_summarize"</span><span class="op">:</span> <span class="str">"claude-haiku-4-5-20251001"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t493" href="#t493">493</a></span><span class="t">        <span class="str">"recap_single_pass"</span><span class="op">:</span> <span class="str">"claude-haiku-4-5-20251001"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t493" href="#t493">493</a></span><span class="t">        <span class="str">"recap_oneshot_digest"</span><span class="op">:</span> <span class="str">"claude-haiku-4-5-20251001"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t494" href="#t494">494</a></span><span class="t">    <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t495" href="#t495">495</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t496" href="#t496">496</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -707,7 +707,7 @@
             <a class="nav" href="z_f17cf01cf5f4c2d3_fetcher_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-15 08:29 +0000
+            created at 2026-03-15 10:30 +0000
         </p>
     </div>
 </footer>
