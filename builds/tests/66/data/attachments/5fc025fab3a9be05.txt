@@ -1,2 +1,0 @@
-WARNING  news_recap.recap.tasks.reduce_blocks:reduce_blocks.py:114 REDUCE: duplicate source blocks ignored: [1, 2]
-WARNING  news_recap.recap.tasks.reduce_blocks:reduce_blocks.py:121 No source block numbers after BLOCK line: Duplicate

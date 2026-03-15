@@ -1,1 +1,0 @@
-05:28:12.028 | WARNING | news_recap.http.fetcher - Timeout fetching https://example.com/slow

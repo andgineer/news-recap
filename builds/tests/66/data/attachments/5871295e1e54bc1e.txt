@@ -1,1 +1,0 @@
-05:28:12.058 | WARNING | news_recap.http.fetcher - HTTP error fetching https://example.com/broken: connection reset

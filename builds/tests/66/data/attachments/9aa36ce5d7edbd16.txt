@@ -1,1 +1,0 @@
-05:28:11.584 | WARNING | news_recap.recap.tasks.group_sections - Merged single-block section 'Politics' into 'Tech'

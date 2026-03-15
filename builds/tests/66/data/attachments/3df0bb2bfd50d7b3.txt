@@ -1,1 +1,0 @@
-WARNING  news_recap.recap.loaders.resource_loader:resource_loader.py:151 Unexpected error loading bad1 (https://example.com/crash): extractor bug

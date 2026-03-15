@@ -1,1 +1,0 @@
-WARNING  news_recap.recap.tasks.group_sections:group_sections.py:159 Merged single-block section 'Lonely' into 'Another Big'

@@ -1,1 +1,0 @@
-05:28:13.224 | WARNING | news_recap.recap.loaders.resource_loader - Unexpected error loading bad1 (https://example.com/crash): extractor bug

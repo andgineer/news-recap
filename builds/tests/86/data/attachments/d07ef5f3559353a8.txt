@@ -1,0 +1,1 @@
+2026-03-15 10:30:34,485 | INFO    | news_recap.recap.tasks.load_resources - [load_resources] No articles need resources

@@ -1,1 +1,0 @@
-WARNING  news_recap.recap.tasks.map_blocks:map_blocks.py:167 MAP worker 1: 1 headline(s) appear in multiple blocks
