@@ -1,0 +1,756 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+        <meta name="author" content="Andrey Sorokin">
+      
+      
+        <link rel="canonical" href="https://andgineer.github.io/news-recap/cli/">
+      
+      
+        <link rel="prev" href="../installation/">
+      
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.13">
+    
+    
+      
+        <title>CLI - news_recap</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.342714a4.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cli" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="news_recap" class="md-header__button md-logo" aria-label="news_recap" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            news_recap
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CLI
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+      <div class="md-header__option">
+  <div class="md-select">
+    
+    <button class="md-header__button md-icon" aria-label="Select language">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"/></svg>
+    </button>
+    <div class="md-select__inner">
+      <ul class="md-select__list">
+        
+          <li class="md-select__item">
+            <a href="/news-recap/" hreflang="en" class="md-select__link">
+              English
+            </a>
+          </li>
+        
+          <li class="md-select__item">
+            <a href="/news-recap/ru/" hreflang="ru" class="md-select__link">
+              Русский
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/andgineer/news-recap" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    news_recap
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="news_recap" class="md-nav__button md-logo" aria-label="news_recap" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    news_recap
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/andgineer/news-recap" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    news_recap
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    news-recap
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    CLI
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    CLI
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Карта Команд
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      Общие Замечания
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ingestion" class="md-nav__link">
+    <span class="md-ellipsis">
+      Команды Ingestion
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Команды Ingestion">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ingest-daily" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest daily
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingest-stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest stats
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingest-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest clusters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingest-duplicates" class="md-nav__link">
+    <span class="md-ellipsis">
+      ingest duplicates
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recap-" class="md-nav__link">
+    <span class="md-ellipsis">
+      Команды Recap-пайплайна
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Команды Recap-пайплайна">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recap-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      recap run
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-" class="md-nav__link">
+    <span class="md-ellipsis">
+      API-режим
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API-режим">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      Быстрый старт
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      Таблица моделей по задачам
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Переменные окружения API-режима
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      Важные Переменные Окружения
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Важные Переменные Окружения">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      Данные и хранение
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rss-" class="md-nav__link">
+    <span class="md-ellipsis">
+      RSS-фиды
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-" class="md-nav__link">
+    <span class="md-ellipsis">
+      LLM-агенты
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#help" class="md-nav__link">
+    <span class="md-ellipsis">
+      Help
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="cli">CLI</h1>
+<p><code>news-recap</code> управляется через CLI-команды, сгруппированные по этапам работы.</p>
+<h2 id="_1">Карта Команд</h2>
+<ul>
+<li><code>ingest</code>: импорт источников, статистика, проверка дедупа.</li>
+<li><code>recap</code>: пайплайн ежедневного дайджеста (classify, enrich, deduplicate, map, reduce, split, group_sections, summarize).</li>
+</ul>
+<h2 id="_2">Общие Замечания</h2>
+<ul>
+<li>Большинство команд поддерживают <code>--data-dir</code> для выбора каталога данных.</li>
+<li>Данные хранятся в JSON-файлах с ежедневным разбиением; старые партиции
+  удаляются автоматически по значению <code>NEWS_RECAP_GC_RETENTION_DAYS</code>.</li>
+</ul>
+<h2 id="ingestion">Команды Ingestion</h2>
+<h3 id="ingest-daily"><code>ingest daily</code></h3>
+<p>Один цикл ingestion из RSS/Atom источников.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>daily
+news-recap<span class="w"> </span>ingest<span class="w"> </span>daily<span class="w"> </span>--feed-url<span class="w"> </span>https://example.com/feed.xml
+</code></pre></div>
+<p>Ключевые опции:
+- <code>--feed-url</code> (повторяемая)
+- <code>--data-dir</code></p>
+<p>Если <code>--feed-url</code> не указан, фиды берутся из:
+- <code>NEWS_RECAP_RSS_FEED_URLS</code>
+- <code>NEWS_RECAP_RSS_FEED_URL</code></p>
+<h3 id="ingest-stats"><code>ingest stats</code></h3>
+<p>Статистика ingestion и дедупа в заданном окне времени.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>stats<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span><span class="w"> </span>--recent-runs<span class="w"> </span><span class="m">5</span>
+</code></pre></div>
+<p>Ключевые опции:
+- <code>--hours</code>
+- <code>--source</code>
+- <code>--recent-runs</code></p>
+<h3 id="ingest-clusters"><code>ingest clusters</code></h3>
+<p>Распределение dedup-кластеров по запуску.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>clusters<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span><span class="w"> </span>--limit<span class="w"> </span><span class="m">20</span>
+news-recap<span class="w"> </span>ingest<span class="w"> </span>clusters<span class="w"> </span>--run-id<span class="w"> </span>&lt;run_id&gt;<span class="w"> </span>--show-members
+</code></pre></div>
+<p>Ключевые опции:
+- <code>--run-id</code> или <code>--hours</code>/<code>--source</code> для выбора запуска
+- <code>--min-size</code>
+- <code>--members-per-cluster</code>
+- <code>--show-members</code></p>
+<h3 id="ingest-duplicates"><code>ingest duplicates</code></h3>
+<p>Примеры дублей (кластеры размером &gt;= 2).</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>ingest<span class="w"> </span>duplicates<span class="w"> </span>--hours<span class="w"> </span><span class="m">24</span><span class="w"> </span>--limit-clusters<span class="w"> </span><span class="m">10</span>
+</code></pre></div>
+<p>Ключевые опции:
+- <code>--run-id</code> или <code>--hours</code>/<code>--source</code>
+- <code>--limit-clusters</code>
+- <code>--members-per-cluster</code></p>
+<h2 id="recap-">Команды Recap-пайплайна</h2>
+<h3 id="recap-run"><code>recap run</code></h3>
+<p>Запуск полного пайплайна дайджеста на бизнес-дату.</p>
+<p>Пайплайн проходит девять этапов: classify → load_resources → enrich →
+deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections →
+summarize. Каждый этап чекпоинтится,
+поэтому повторный запуск пропускает уже выполненные этапы.</p>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>recap<span class="w"> </span>run
+news-recap<span class="w"> </span>recap<span class="w"> </span>run<span class="w"> </span>--api
+news-recap<span class="w"> </span>recap<span class="w"> </span>run<span class="w"> </span>--date<span class="w"> </span><span class="m">2026</span>-02-18
+news-recap<span class="w"> </span>recap<span class="w"> </span>run<span class="w"> </span>--agent<span class="w"> </span>claude<span class="w"> </span>--stop-after<span class="w"> </span>classify
+news-recap<span class="w"> </span>recap<span class="w"> </span>run<span class="w"> </span>--limit<span class="w"> </span><span class="m">50</span>
+</code></pre></div>
+<p>Ключевые опции:
+- <code>--data-dir</code>
+- <code>--date</code> (бизнес-дата, по умолчанию — сегодня UTC)
+- <code>--agent</code> (<code>codex</code>, <code>claude</code> или <code>gemini</code>)
+- <code>--limit</code> (ограничить число загружаемых статей)
+- <code>--api</code> (использовать прямой Anthropic API вместо CLI-агентов)
+- <code>--stop-after</code> (<code>classify</code>, <code>load_resources</code>, <code>enrich</code>, <code>deduplicate</code>, <code>map_blocks</code>, <code>reduce_blocks</code>, <code>split_blocks</code>, <code>group_sections</code>, <code>summarize</code>)</p>
+<h2 id="api-">API-режим</h2>
+<p>По умолчанию recap-пайплайн выполняет LLM-задачи через запуск CLI-агентов
+(<code>codex</code>, <code>claude</code>, <code>gemini</code>). <strong>API-режим</strong> заменяет вызовы подпроцессов прямыми
+вызовами через Anthropic SDK — CLI-агенты не нужны.</p>
+<blockquote>
+<p>API-режим v1 поддерживает только Anthropic. Codex и Gemini работают только через CLI.</p>
+</blockquote>
+<h3 id="_3">Быстрый старт</h3>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>sk-ant-...
+news-recap<span class="w"> </span>recap<span class="w"> </span>run<span class="w"> </span>--api
+</code></pre></div>
+<p>Флаг <code>--api</code> автоматически задаёт <code>backend=api</code> и <code>agent=claude</code>. Других переменных окружения не требуется.</p>
+<h3 id="_4">Таблица моделей по задачам</h3>
+<p>По умолчанию быстрые задачи используют <code>claude-haiku-4-5-20251001</code>, а задача reduce —
+<code>claude-sonnet-4-6</code>. Для переопределения отдельных задач используйте
+<code>NEWS_RECAP_API_MODEL_MAP</code> (пары <code>task_type=model_id</code> через запятую):</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">NEWS_RECAP_API_MODEL_MAP</span><span class="o">=</span><span class="s2">&quot;recap_reduce=claude-sonnet-4-6,recap_summarize=claude-sonnet-4-6&quot;</span>
+</code></pre></div>
+<h3 id="api-_1">Переменные окружения API-режима</h3>
+<ul>
+<li><code>NEWS_RECAP_EXECUTION_BACKEND</code> — <code>cli</code> (по умолчанию) или <code>api</code>.</li>
+<li><code>NEWS_RECAP_API_MODEL_MAP</code> — переопределения модели по задачам (<code>task_type=model_id,...</code>).</li>
+<li><code>NEWS_RECAP_API_MAX_PARALLEL</code> — начальный лимит параллелизма (по умолчанию <code>5</code>).
+  Автоматически снижается при ошибках rate-limit и восстанавливается после успешных вызовов.</li>
+<li><code>NEWS_RECAP_API_TIMEOUT_SECONDS</code> — таймаут одного вызова (по умолчанию <code>120</code>).</li>
+<li><code>NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES</code> — число последовательных успехов
+  для увеличения лимита параллелизма на 1 после снижения (по умолчанию <code>10</code>).</li>
+<li><code>NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS</code> — потолок экспоненциальной задержки (по умолчанию <code>60</code>).</li>
+<li><code>NEWS_RECAP_API_RETRY_JITTER_SECONDS</code> — равномерный джиттер для каждой задержки (по умолчанию <code>5</code>).</li>
+<li><code>NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS</code> — дополнительная пауза после снижения лимита
+  перед следующей попыткой захвата слота (по умолчанию <code>2</code>).</li>
+</ul>
+<h2 id="_5">Важные Переменные Окружения</h2>
+<h3 id="_6">Данные и хранение</h3>
+<ul>
+<li><code>NEWS_RECAP_DATA_DIR</code> — корневой каталог для всех файлов данных.</li>
+<li><code>NEWS_RECAP_GC_RETENTION_DAYS</code> — сколько дней хранить партиции статей (по умолчанию 7).</li>
+<li><code>NEWS_RECAP_DIGEST_LOOKBACK_DAYS</code> — за сколько дней брать статьи для дайджеста (по умолчанию 3).</li>
+</ul>
+<h3 id="rss-">RSS-фиды</h3>
+<ul>
+<li><code>NEWS_RECAP_RSS_FEED_URLS</code> — список URL фидов через запятую.</li>
+<li><code>NEWS_RECAP_RSS_FEED_URL</code> — один URL фида (для удобства).</li>
+<li><code>NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED</code> — максимум элементов на фид.</li>
+<li><code>NEWS_RECAP_RSS_FEED_ITEMS</code> — переопределения числа элементов по фидам (<code>&lt;feed_url&gt;|&lt;items&gt;,...</code>).</li>
+</ul>
+<h3 id="llm-">LLM-агенты</h3>
+<blockquote>
+<p><strong>Подписка vs API-биллинг.</strong> CLI-агенты (<code>claude</code>, <code>codex</code>, <code>gemini</code>) сначала
+проверяют наличие API-ключа вендора. Если ключ задан, использование тарифицируется
+через API-аккаунт (оплата за токены). Чтобы использовать лимиты подписки, сбросьте ключ:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">unset</span><span class="w"> </span>ANTHROPIC_API_KEY<span class="w">   </span><span class="c1"># Claude — использовать подписку Claude Pro/Max</span>
+<span class="nb">unset</span><span class="w"> </span>OPENAI_API_KEY<span class="w">      </span><span class="c1"># Codex — использовать подписку ChatGPT/Codex</span>
+<span class="nb">unset</span><span class="w"> </span>GEMINI_API_KEY<span class="w">      </span><span class="c1"># Gemini — использовать подписку Google AI</span>
+</code></pre></div>
+</blockquote>
+<ul>
+<li><code>NEWS_RECAP_LLM_DEFAULT_AGENT</code> — агент по умолчанию (<code>codex</code>, <code>claude</code> или <code>gemini</code>).</li>
+<li><code>NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP</code> — профиль модели по типу задачи (<code>fast</code>/<code>quality</code>).</li>
+<li><code>NEWS_RECAP_CODEX_COMMAND_TEMPLATE</code> — шаблон команды для Codex.</li>
+<li><code>NEWS_RECAP_CLAUDE_COMMAND_TEMPLATE</code> — шаблон команды для Claude.</li>
+<li><code>NEWS_RECAP_GEMINI_COMMAND_TEMPLATE</code> — шаблон команды для Gemini.</li>
+<li><code>NEWS_RECAP_LLM_CODEX_MODEL_FAST</code> / <code>NEWS_RECAP_LLM_CODEX_MODEL_QUALITY</code></li>
+<li><code>NEWS_RECAP_LLM_CLAUDE_MODEL_FAST</code> / <code>NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY</code></li>
+<li><code>NEWS_RECAP_LLM_GEMINI_MODEL_FAST</code> / <code>NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY</code></li>
+</ul>
+<h2 id="help">Help</h2>
+<div class="highlight"><pre><span></span><code>news-recap<span class="w"> </span>--help
+news-recap<span class="w"> </span>ingest<span class="w"> </span>--help
+news-recap<span class="w"> </span>recap<span class="w"> </span>--help
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": ["toc.integrate", "navigation.tracking", "content.code.copy"], "search": "../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.13a4f30d.min.js"></script>
+      
+    
+  </body>
+</html>
