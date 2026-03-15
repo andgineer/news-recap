@@ -35,19 +35,20 @@ class RecapRunCommand:
     stop_after: str | None = None
     fresh: bool = False
     api_mode: bool = False
+    single_pass: bool = False
 
 
-def _patch_agent_override(pipeline_dir: Path, agent: str) -> str | None:
-    """Patch ``agent_override`` in an existing ``pipeline_input.json``.
+def _patch_pipeline_input(pipeline_dir: Path, **fields: object) -> dict:
+    """Patch fields in an existing ``pipeline_input.json``.
 
-    Returns the previous value (or ``None`` if unset).
+    Returns the previous values for the patched fields.
     """
     path = pipeline_dir / "pipeline_input.json"
     raw = json.loads(path.read_text("utf-8"))
-    old = raw.get("agent_override")
-    raw["agent_override"] = agent.strip().lower()
+    previous = {k: raw.get(k) for k in fields}
+    raw.update(fields)
     path.write_text(json.dumps(raw, ensure_ascii=False, default=str), "utf-8")
-    return old
+    return previous
 
 
 class RecapCliController:
@@ -86,10 +87,18 @@ class RecapCliController:
                 f"({len(digest.completed_phases)} phase(s) done: "
                 f"{', '.join(digest.completed_phases) or 'none'})"
             )
+            patches: dict[str, object] = {}
             if command.agent_override:
-                new_agent = command.agent_override.strip().lower()
-                old_agent = _patch_agent_override(pipeline_dir, new_agent)
-                yield f"Agent override changed: {old_agent or 'default'} -> {new_agent}"
+                patches["agent_override"] = command.agent_override.strip().lower()
+            if command.single_pass:
+                patches["single_pass"] = True
+            if patches:
+                previous = _patch_pipeline_input(pipeline_dir, **patches)
+                if "agent_override" in patches:
+                    prev = previous.get("agent_override") or "default"
+                    yield f"Agent override changed: {prev} -> {patches['agent_override']}"
+                if "single_pass" in patches and not previous.get("single_pass"):
+                    yield "single_pass enabled for resumed pipeline"
         else:
             fetch_limit = command.article_limit or 2000
             articles = store.list_retrieval_articles(
@@ -118,6 +127,7 @@ class RecapCliController:
                 min_resource_chars=settings.ingestion.min_resource_chars,
                 dedup_threshold=settings.dedup.threshold,
                 dedup_model_name=settings.dedup.model_name,
+                single_pass=command.single_pass,
             )
             yield f"New pipeline: {pipeline_dir}"
 

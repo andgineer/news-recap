@@ -272,6 +272,7 @@ def test_api_model_map_default_has_all_task_types(monkeypatch: pytest.MonkeyPatc
         "recap_split",
         "recap_group_sections",
         "recap_summarize",
+        "recap_single_pass",
     }
     assert expected_tasks == set(model_map.keys())
 

@@ -4,15 +4,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from news_recap.recap.article_ordering import _order_cluster, build_article_lines, reorder_articles
 from news_recap.recap.dedup.embedder import HashingEmbedder
 from news_recap.recap.export_prompt import (
     PromptCommand,
     PromptCliController,
     _copy_to_clipboard,
-    _order_cluster,
     _render_prompt,
-    build_article_lines,
-    reorder_articles,
 )
 from news_recap.recap.models import DigestArticle
 
@@ -113,8 +111,16 @@ def test_build_article_lines_format() -> None:
     result = build_article_lines(articles)
     lines = result.splitlines()
     assert len(lines) == 2
-    assert lines[0].startswith("1. Title One (example.com) \u2014 https://example.com/path")
-    assert lines[1].startswith("2. Title Two (other.org) \u2014 https://other.org/news")
+    assert lines[0] == "1. Title One (example.com)"
+    assert lines[1] == "2. Title Two (other.org)"
+
+
+def test_build_article_lines_with_url() -> None:
+    articles = [
+        _make_article("a", "Title One", "https://example.com/path", "example.com"),
+    ]
+    result = build_article_lines(articles, include_url=True)
+    assert result == "1. Title One (example.com) \u2014 https://example.com/path"
 
 
 def test_build_article_lines_empty() -> None:
@@ -208,8 +214,11 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     mock_store = MagicMock()
     mock_store.list_retrieval_articles.return_value = [article]
 
-    def fake_recap_flow(pipeline_dir: str, business_date: str, stop_after: str | None = None) -> None:
+    def fake_recap_flow(
+        pipeline_dir: str, business_date: str, stop_after: str | None = None
+    ) -> None:
         import msgspec
+
         pdir = Path(pipeline_dir)
         pdir.mkdir(parents=True, exist_ok=True)
         (pdir / "digest.json").write_bytes(msgspec.json.encode(digest_obj))
@@ -220,8 +229,12 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     with (
         patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
-        patch("news_recap.recap.export_prompt.recap_flow", side_effect=fake_recap_flow) as mock_flow,
-        patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder),
+        patch(
+            "news_recap.recap.export_prompt.recap_flow", side_effect=fake_recap_flow
+        ) as mock_flow,
+        patch(
+            "news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder
+        ),
         patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
     ):
         controller = PromptCliController()
@@ -255,16 +268,16 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
         patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
         patch("news_recap.recap.export_prompt.recap_flow") as mock_flow,
-        patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder),
+        patch(
+            "news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder
+        ),
         patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
     ):
         controller = PromptCliController()
         output = list(controller.prompt(PromptCommand(ai=False, out="clipboard")))
 
     mock_flow.assert_not_called()
-    mock_store.list_retrieval_articles.assert_called_once_with(
-        lookback_days=3, limit=2000
-    )
+    mock_store.list_retrieval_articles.assert_called_once_with(lookback_days=3, limit=2000)
     assert any("copied" in line.lower() for line in output)
 
 
@@ -287,6 +300,7 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
     existing_pdir = tmp_path / "pipeline-2026-03-11-000000"
     existing_pdir.mkdir()
     import msgspec
+
     (existing_pdir / "digest.json").write_bytes(msgspec.json.encode(digest_obj))
 
     mock_settings = MagicMock()
@@ -318,7 +332,9 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
 
     created_dirs: list[str] = []
 
-    def fake_recap_flow(pipeline_dir: str, business_date: str, stop_after: str | None = None) -> None:
+    def fake_recap_flow(
+        pipeline_dir: str, business_date: str, stop_after: str | None = None
+    ) -> None:
         pdir = Path(pipeline_dir)
         created_dirs.append(pdir.name)
         pdir.mkdir(parents=True, exist_ok=True)
@@ -331,7 +347,9 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
         patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
         patch("news_recap.recap.export_prompt.recap_flow", side_effect=fake_recap_flow),
-        patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder),
+        patch(
+            "news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder
+        ),
         patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
     ):
         controller = PromptCliController()

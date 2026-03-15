@@ -14,11 +14,13 @@
   {% for section in digest.recaps %}
   <section>
     <h2>{{ section.title }}</h2>
+    {% if section.summary %}<p class="section-summary">{{ section.summary }}</p>{% endif %}
 
     {% for idx in section.block_indices %}
     {% set block = digest.blocks[idx] %}
     <details>
       <summary>{{ block.title | nl2br }}</summary>
+      {% if block.summary %}<p>{{ block.summary | nl2br }}</p>{% endif %}
       <ul>
         {% for art_id in block.article_ids %}
         {% set art = article_map.get(art_id) %}

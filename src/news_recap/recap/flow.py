@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from news_recap.recap.agents.ai_agent import read_agent_usage
 from news_recap.recap.models import Digest, to_article_index
+from news_recap.recap.pipeline_setup import _DIGEST_FILENAME
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 from news_recap.recap.storage.workdir import TaskWorkdirManager
 from news_recap.recap.tasks.base import (
@@ -31,10 +32,10 @@ from news_recap.recap.tasks.group_sections import GroupSections
 from news_recap.recap.tasks.load_resources import LoadResources
 from news_recap.recap.tasks.map_blocks import MapBlocks
 from news_recap.recap.tasks.reduce_blocks import ReduceBlocks
+from news_recap.recap.tasks.single_pass import SinglePassDigest
 from news_recap.recap.tasks.split_blocks import SplitBlocks
 from news_recap.recap.tasks.summarize import Summarize
 from news_recap.storage.io import load_msgspec
-from news_recap.recap.pipeline_setup import _DIGEST_FILENAME
 
 logger = logging.getLogger(__name__)
 _USAGE_FILENAME = "meta/usage.json"
@@ -140,11 +141,14 @@ def recap_flow(  # noqa: PLR0915
         LoadResources.run(ctx)
         Enrich.run(ctx)
         Deduplicate.run(ctx)
-        MapBlocks.run(ctx)
-        ReduceBlocks.run(ctx)
-        SplitBlocks.run(ctx)
-        GroupSections.run(ctx)
-        Summarize.run(ctx)
+        if inp.single_pass:
+            SinglePassDigest.run(ctx)
+        else:
+            MapBlocks.run(ctx)
+            ReduceBlocks.run(ctx)
+            SplitBlocks.run(ctx)
+            GroupSections.run(ctx)
+            Summarize.run(ctx)
 
         digest.status = "completed"
         ctx.save_checkpoint()

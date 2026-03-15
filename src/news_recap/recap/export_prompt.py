@@ -14,13 +14,11 @@ from pathlib import Path
 
 from news_recap.config import Settings
 from news_recap.ingestion.repository import IngestionStore
-from news_recap.recap.dedup.cluster import group_similar
-from news_recap.recap.dedup.embedder import (
-    Embedder,
-    SentenceTransformerEmbedder,
-    Vector,
-    cosine_similarity,
+from news_recap.recap.article_ordering import (  # noqa: F401 — re-exported
+    build_article_lines,
+    reorder_articles,
 )
+from news_recap.recap.dedup.embedder import SentenceTransformerEmbedder
 from news_recap.recap.flow import recap_flow
 from news_recap.recap.models import Digest, DigestArticle, UserPreferences, language_display_name
 from news_recap.recap.pipeline_setup import (
@@ -48,87 +46,12 @@ and a 2-4 sentence summary. List source URLs at the end of each section.
 Do not invent information beyond what the titles tell you."""
 
 
-def _order_cluster(ids: list[str], embeddings: dict[str, Vector]) -> list[str]:
-    """Order a cluster using greedy nearest-neighbour from the most central article."""
-    remaining = list(ids)
-    if len(remaining) == 1:
-        return remaining
-
-    start = max(
-        remaining,
-        key=lambda i: sum(
-            cosine_similarity(embeddings[i], embeddings[j]) for j in remaining if j != i
-        ),
-    )
-    ordered = [start]
-    remaining.remove(start)
-    while remaining:
-        last = ordered[-1]
-        nxt = max(remaining, key=lambda i: cosine_similarity(embeddings[last], embeddings[i]))
-        ordered.append(nxt)
-        remaining.remove(nxt)
-    return ordered
-
-
-def reorder_articles(
-    articles: list[DigestArticle],
-    embedder: Embedder,
-    threshold: float,
-) -> list[DigestArticle]:
-    """Cluster by similarity and apply greedy nearest-neighbour ordering.
-
-    Returns the full article list reordered so similar articles are adjacent.
-    """
-    if not articles:
-        return []
-
-    titles = [a.title for a in articles]
-    vectors = embedder.embed(titles)
-    ids: list[str] = []
-    embeddings: dict[str, Vector] = {}
-    articles_by_id: dict[str, DigestArticle] = {}
-    for a, v in zip(articles, vectors, strict=True):
-        ids.append(a.article_id)
-        embeddings[a.article_id] = v
-        articles_by_id[a.article_id] = a
-
-    clusters = group_similar(ids, embeddings, threshold, max_group_size=len(articles))
-
-    ordered_clusters = []
-    clustered_ids: set[str] = set()
-    for cluster in clusters:
-        ordered_cluster = _order_cluster(cluster, embeddings)
-        ordered_clusters.append(ordered_cluster)
-        clustered_ids.update(ordered_cluster)
-
-    singletons = [a for a in articles if a.article_id not in clustered_ids]
-
-    ordered = [articles_by_id[aid] for cluster in ordered_clusters for aid in cluster]
-    ordered += singletons
-    return ordered
-
-
-def build_article_lines(ordered: list[DigestArticle]) -> str:
-    """Return numbered article lines for use in an LLM prompt.
-
-    Format per line: "1. Title (source.com) — https://url"
-
-    No headers, no task section — plain numbered list only.
-    Used by recap prompt (which adds its own wrapper) and by single_pass
-    (which embeds the lines in a different prompt template).
-    """
-    return "\n".join(
-        f"{i}. {article.title} ({article.source}) \u2014 {article.url}"
-        for i, article in enumerate(ordered, start=1)
-    )
-
-
 def _render_prompt(
     ordered: list[DigestArticle],
     lookback_days: int,
     language: str,
 ) -> str:
-    article_lines = build_article_lines(ordered)
+    article_lines = build_article_lines(ordered, include_url=True)
     header = f"=== {len(ordered)} ARTICLES (last {lookback_days} day(s)) ==="
     note = "Note: articles are pre-sorted by topic similarity."
     task = _TASK_TEMPLATE.format(language=language_display_name(language))
@@ -164,6 +87,7 @@ class PromptCommand:
     out: str = "clipboard"
     ai: bool = True
     fresh: bool = False
+    agent: str | None = None
 
 
 def _run_ai_pipeline(
@@ -176,7 +100,11 @@ def _run_ai_pipeline(
     business_date = datetime.now(tz=UTC).date()
     workdir_root = settings.orchestrator.workdir_root.resolve()
 
-    pdir = None if command.fresh else _find_resumable_pipeline(workdir_root, business_date, article_limit=None)
+    pdir = (
+        None
+        if command.fresh
+        else _find_resumable_pipeline(workdir_root, business_date, article_limit=None)
+    )
     if pdir is None:
         articles = store.list_retrieval_articles(
             lookback_days=settings.ingestion.digest_lookback_days,
@@ -190,7 +118,7 @@ def _run_ai_pipeline(
             articles=articles,
             preferences=UserPreferences(),
             routing_defaults=routing_defaults,
-            agent_override=None,
+            agent_override=command.agent,
             data_dir=str(settings.data_dir),
             min_resource_chars=settings.ingestion.min_resource_chars,
             dedup_threshold=settings.dedup.threshold,

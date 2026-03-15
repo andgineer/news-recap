@@ -88,6 +88,7 @@ class OrchestratorSettings:
             "recap_split": 120,
             "recap_group_sections": 1200,
             "recap_summarize": 600,
+            "recap_single_pass": 600,
         },
     )
     agent_max_parallel: dict[str, int] = field(
@@ -421,6 +422,7 @@ def _default_agent_max_parallel() -> dict[str, int]:
 
 
 _NO_THINKING = {"MAX_THINKING_TOKENS": "0"}
+_MAX_OUTPUT = {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"}
 # Caps the hidden thinking scratchpad to a fixed token budget.
 # Do NOT add CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING here — that flag disables the
 # hidden scratchpad and forces the model to write its reasoning into stdout,
@@ -470,6 +472,11 @@ def _default_task_model_map() -> dict[str, dict[str, Any]]:
             "claude": {"model": "--model sonnet --effort low"},  # reasoning improves quality
             "gemini": {"model": "--model gemini-2.5-flash"},
         },
+        "recap_single_pass": {
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _MAX_OUTPUT},
+            "gemini": {"model": "--model gemini-2.5-flash"},
+        },
     }
 
 
@@ -483,6 +490,7 @@ def _default_api_model_map() -> dict[str, str]:
         "recap_split": "claude-haiku-4-5-20251001",
         "recap_group_sections": "claude-haiku-4-5-20251001",
         "recap_summarize": "claude-haiku-4-5-20251001",
+        "recap_single_pass": "claude-haiku-4-5-20251001",
     }
 
 

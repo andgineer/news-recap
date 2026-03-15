@@ -12,7 +12,7 @@ import msgspec
 from news_recap.recap.launcher import (
     RecapCliController,
     RecapRunCommand,
-    _patch_agent_override,
+    _patch_pipeline_input,
 )
 from news_recap.recap.models import Digest
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
@@ -49,28 +49,40 @@ def _write_digest(pipeline_dir: Path, completed_phases: list[str] | None = None)
     (pipeline_dir / "digest.json").write_bytes(msgspec.json.encode(digest))
 
 
-def test_patch_agent_override_applies_and_round_trips(tmp_path: Path) -> None:
+def test_patch_pipeline_input_agent_override(tmp_path: Path) -> None:
     """Patched agent_override is normalized and read back correctly."""
     _write_pipeline_input(tmp_path, agent_override="codex")
 
-    old = _patch_agent_override(tmp_path, "Claude")
+    previous = _patch_pipeline_input(tmp_path, agent_override="claude")
 
-    assert old == "codex"
+    assert previous["agent_override"] == "codex"
 
     inp = read_pipeline_input(str(tmp_path))
     assert inp.agent_override == "claude"
 
 
-def test_patch_agent_override_when_previously_none(tmp_path: Path) -> None:
+def test_patch_pipeline_input_when_previously_none(tmp_path: Path) -> None:
     """Patching works when the original value is None (default agent)."""
     _write_pipeline_input(tmp_path, agent_override=None)
 
-    old = _patch_agent_override(tmp_path, "gemini")
+    previous = _patch_pipeline_input(tmp_path, agent_override="gemini")
 
-    assert old is None
+    assert previous["agent_override"] is None
 
     inp = read_pipeline_input(str(tmp_path))
     assert inp.agent_override == "gemini"
+
+
+def test_patch_pipeline_input_single_pass(tmp_path: Path) -> None:
+    """Patching single_pass updates pipeline_input.json."""
+    _write_pipeline_input(tmp_path, agent_override=None)
+
+    previous = _patch_pipeline_input(tmp_path, single_pass=True)
+
+    assert previous["single_pass"] is None  # was absent
+
+    inp = read_pipeline_input(str(tmp_path))
+    assert inp.single_pass is True
 
 
 def test_no_agent_flag_leaves_file_unchanged(tmp_path: Path) -> None:

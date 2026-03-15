@@ -189,6 +189,16 @@ def recap() -> None:
     default=False,
     help="Use direct Anthropic API instead of CLI agents (sets backend=api, agent=claude).",
 )
+@click.option(
+    "--single-pass",
+    "single_pass",
+    is_flag=True,
+    default=False,
+    help=(
+        "Replace map→reduce→split→group→summarize with a single LLM call. "
+        "Incompatible with --stop-after values for the five replaced stages."
+    ),
+)
 def recap_run(  # noqa: PLR0913
     data_dir: Path | None,
     business_date: datetime | None,
@@ -197,8 +207,22 @@ def recap_run(  # noqa: PLR0913
     stop_after: str | None,
     fresh: bool,
     api_mode: bool,
+    single_pass: bool,
 ) -> None:
     """Run the full news digest pipeline."""
+
+    _single_pass_incompatible = {
+        "map_blocks",
+        "reduce_blocks",
+        "split_blocks",
+        "group_sections",
+        "summarize",
+    }
+    if single_pass and stop_after in _single_pass_incompatible:
+        raise click.UsageError(
+            f"--single-pass is incompatible with --stop-after {stop_after}: "
+            "that stage does not exist in single-pass mode.",
+        )
 
     _emit_lines(
         RECAP_CONTROLLER.run_pipeline(
@@ -210,6 +234,7 @@ def recap_run(  # noqa: PLR0913
                 stop_after=stop_after,
                 fresh=fresh,
                 api_mode=api_mode,
+                single_pass=single_pass,
             ),
         ),
     )
@@ -226,7 +251,7 @@ def recap_run(  # noqa: PLR0913
     "--ai/--no-ai",
     default=True,
     show_default=True,
-    help="Run full classify→load_resources→enrich→deduplicate pipeline before building the prompt (same article scope as recap run).",
+    help="Run full classify→dedup pipeline before building the prompt (same scope as recap run).",
 )
 @click.option(
     "--fresh",
@@ -248,18 +273,27 @@ def recap_run(  # noqa: PLR0913
     help="Language for task instruction.",
 )
 @click.option(
+    "--agent",
+    type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
+    default=None,
+    help=(
+        "LLM agent to use for classify/enrich pipeline steps. Overrides default_agent from config."
+    ),
+)
+@click.option(
     "--out",
     type=click.Choice(["console", "clipboard"], case_sensitive=False),
     default="clipboard",
     show_default=True,
     help="Output destination.",
 )
-def recap_prompt(
+def recap_prompt(  # noqa: PLR0913
     data_dir: Path | None,
     ai: bool,
     fresh: bool,
     group_threshold: float,
     language: str,
+    agent: str | None,
     out: str,
 ) -> None:
     """Export a ready-to-paste LLM prompt from recent articles."""
@@ -273,6 +307,7 @@ def recap_prompt(
                 out=out,
                 ai=ai,
                 fresh=fresh,
+                agent=agent,
             ),
         ),
     )

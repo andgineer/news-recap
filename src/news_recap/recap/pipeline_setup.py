@@ -103,6 +103,7 @@ def _write_pipeline_input(  # noqa: PLR0913
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS,
     dedup_threshold: float = 0.90,
     dedup_model_name: str = "intfloat/multilingual-e5-small",
+    single_pass: bool = False,
 ) -> None:
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
     pipeline_dir.mkdir(parents=True, exist_ok=True)
@@ -116,6 +117,7 @@ def _write_pipeline_input(  # noqa: PLR0913
         "min_resource_chars": min_resource_chars,
         "dedup_threshold": dedup_threshold,
         "dedup_model_name": dedup_model_name,
+        "single_pass": single_pass,
     }
     (pipeline_dir / "pipeline_input.json").write_text(
         json.dumps(payload, ensure_ascii=False, default=str),

@@ -5,9 +5,9 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-_CLI_SUFFIX = (
-    "\nDo NOT write any scripts, use any tools, or read any files."
-    "\nPrint your output directly to stdout."
+_CLI_OUTPUT_INSTRUCTION = (
+    "Do NOT write any scripts, use any tools, or read any files.\n"
+    "Print your output directly to stdout.\n"
 )
 
 
@@ -15,12 +15,13 @@ _CLI_SUFFIX = (
 class PromptTemplate:
     """Backend-aware prompt template.
 
-    ``body`` is shared across both backends.
-    ``cli_suffix`` is appended only in CLI mode (tool/script constraints).
+    The body must contain an ``{output_instruction}`` placeholder at the
+    location where backend-specific output instructions should appear
+    (typically just before the data section).  ``render_prompt`` fills it
+    with the appropriate text for the active backend.
     """
 
     body: str
-    cli_suffix: str = _CLI_SUFFIX
 
 
 class PromptBackend(enum.Enum):
@@ -29,9 +30,13 @@ class PromptBackend(enum.Enum):
 
 
 def render_prompt(template: PromptTemplate, backend: PromptBackend, **kwargs: str) -> str:
-    """Render *template* for the given *backend*, substituting *kwargs* placeholders."""
-    suffix = template.cli_suffix if backend == PromptBackend.CLI else ""
-    return (template.body + suffix).format(**kwargs)
+    """Render *template* for the given *backend*, substituting *kwargs* placeholders.
+
+    ``output_instruction`` is injected automatically based on *backend*;
+    callers must not pass it explicitly.
+    """
+    kwargs["output_instruction"] = _CLI_OUTPUT_INSTRUCTION if backend == PromptBackend.CLI else ""
+    return template.body.format(**kwargs)
 
 
 RECAP_CLASSIFY_BATCH_PROMPT = PromptTemplate(
@@ -61,7 +66,7 @@ Example output (3 headlines):
 3: vague
 
 === HEADLINES (format: NUMBER: HEADLINE) ===
-{headlines_block}""",
+{output_instruction}{headlines_block}""",
 )
 
 RECAP_ENRICH_BATCH_PROMPT = PromptTemplate(
@@ -87,7 +92,7 @@ Specific factual headline for first article
 Specific factual headline for second article
 
 === ARTICLES ===
-{articles_block}""",
+{output_instruction}{articles_block}""",
 )
 
 RECAP_MAP_PROMPT = PromptTemplate(
@@ -130,7 +135,7 @@ BLOCK: <informative title>
 <comma-separated headline numbers>
 
 === HEADLINES ({headline_count} total, format: NUMBER: HEADLINE) ===
-{headlines_block}""",
+{output_instruction}{headlines_block}""",
 )
 
 RECAP_REDUCE_PROMPT = PromptTemplate(
@@ -173,7 +178,7 @@ SPLIT: <best-effort combined title>
 <comma-separated source block numbers>
 
 === BLOCK TITLES ===
-{block_titles}""",
+{output_instruction}{block_titles}""",
 )
 
 RECAP_SPLIT_PROMPT = PromptTemplate(
@@ -198,7 +203,7 @@ BLOCK: <informative title>
 <comma-separated article numbers>
 
 === ARTICLES ===
-{articles_block}""",
+{output_instruction}{articles_block}""",
 )
 
 RECAP_GROUP_SECTIONS_PROMPT = PromptTemplate(
@@ -232,7 +237,7 @@ SECTION: <short topic label>
 <comma-separated block numbers>
 
 === BLOCKS ({block_count} total, format: NUMBER: TITLE) ===
-{blocks_listing}""",
+{output_instruction}{blocks_listing}""",
 )
 
 RECAP_DEDUP_PROMPT = PromptTemplate(
@@ -276,7 +281,7 @@ SINGLE: 2
 SINGLE: 4
 
 === NEWS ({article_count} total) ===
-{articles_block}""",
+{output_instruction}{articles_block}""",
 )
 
 RECAP_DEDUP_MULTI_PROMPT = PromptTemplate(
@@ -319,8 +324,48 @@ CLUSTER 2:
 SINGLE: 1
 SINGLE: 2
 
-{clusters_block}""",
+{output_instruction}{clusters_block}""",
 )
+
+_SINGLE_SHOT_BODY = """\
+You are a news editor. Below is a list of articles.
+
+Your task:
+1. Group related articles into named thematic blocks.
+2. Organize the blocks into broader sections.
+3. Write a 2-4 sentence summary for each block.
+4. Write a 1-2 sentence summary for each section.
+5. Articles that do not fit any coherent narrative: list as EXCLUDED.
+
+Every article number must appear exactly once — either in a BLOCK's ARTICLES list
+or in EXCLUDED. Do not skip any article.
+
+Write all summaries in {language}.
+Use the exact keyword prefixes shown (SECTION:, SECTION_SUMMARY:, BLOCK:, SUMMARY:,
+ARTICLES:, EXCLUDED:) in English regardless of the summary language.
+Work only from the articles provided. Do not search the web or invent information.
+Read all articles first, then organize: start with small topic blocks, then group
+blocks into sections.
+
+Output format — repeat for each section, then its blocks:
+
+SECTION: <section title>
+SECTION_SUMMARY: <1-2 sentences>
+BLOCK: <block title>
+SUMMARY: <2-4 sentences>
+ARTICLES: <comma-separated numbers>
+BLOCK: <block title>
+SUMMARY: <2-4 sentences>
+ARTICLES: <comma-separated numbers>
+
+(next SECTION starts a new section)
+
+EXCLUDED: <comma-separated numbers>  (omit if none)
+
+{output_instruction}Articles:
+{articles_block}"""
+# "PASS" in the name below triggers ruff S105 (false positive — not a password)
+RECAP_SINGLE_PASS_PROMPT = PromptTemplate(body=_SINGLE_SHOT_BODY)
 
 RECAP_SUMMARIZE_PROMPT = PromptTemplate(
     body="""\
@@ -341,5 +386,5 @@ SUMMARY_START
 SUMMARY_END
 
 === TODAY'S DIGEST ===
-{digest_overview}""",
+{output_instruction}{digest_overview}""",
 )
