@@ -93,6 +93,11 @@ Key options:
 - `--agent` (`codex`, `claude`, or `gemini`)
 - `--limit` (cap number of articles loaded)
 - `--api` (use direct Anthropic API instead of CLI agents)
+- `--fresh` (discard any incomplete pipeline and start a new one)
+- `--oneshot` (replace the map→reduce→split→group→summarize stages with parallel
+  batches of ~200 articles, then merge sections via a single follow-up LLM call)
+- `--use-api-key` (keep vendor API keys in the agent subprocess environment;
+  by default they are removed so the agent uses its subscription quota)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`)
 
 ## API Mode
@@ -151,24 +156,27 @@ export NEWS_RECAP_API_MODEL_MAP="recap_reduce=claude-sonnet-4-6,recap_summarize=
 
 ### LLM Agents
 
-> **Subscription vs API billing.** CLI agents (`claude`, `codex`, `gemini`) check
-> for vendor API keys first. If a key is set, usage is billed to your API account
-> (pay-per-token). To use your subscription's included quota instead, unset the key:
+> **Subscription vs API billing.** When spawning CLI agents (`claude`, `codex`, `gemini`)
+> as subprocesses, `recap run` removes vendor API keys
+> (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
+> from the subprocess environment by default — so the agent uses its subscription
+> quota rather than billing your API account per token.
+>
+> In `--api` mode the Anthropic SDK needs the key and it is **never removed**.
+> The `--use-api-key` flag has no effect in `--api` mode.
+>
+> To explicitly pass the API key to a CLI agent (pay-per-token billing), use `--use-api-key`:
 >
 > ```bash
-> unset ANTHROPIC_API_KEY   # Claude — use Claude Pro/Max subscription
-> unset OPENAI_API_KEY      # Codex — use ChatGPT/Codex subscription
-> unset GEMINI_API_KEY      # Gemini — use Google AI subscription
+> news-recap recap run --use-api-key
 > ```
 
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — default agent (`codex`, `claude`, or `gemini`).
-- `NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP` — per-task-type model profile (`fast`/`quality`).
+- `NEWS_RECAP_LLM_TASK_MODEL_MAP` — per-task-type model overrides by agent
+  (`task_type:agent=model_flags,...`).
 - `NEWS_RECAP_CODEX_COMMAND_TEMPLATE` — command template for Codex agent.
 - `NEWS_RECAP_CLAUDE_COMMAND_TEMPLATE` — command template for Claude agent.
 - `NEWS_RECAP_GEMINI_COMMAND_TEMPLATE` — command template for Gemini agent.
-- `NEWS_RECAP_LLM_CODEX_MODEL_FAST` / `NEWS_RECAP_LLM_CODEX_MODEL_QUALITY`
-- `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` / `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY`
-- `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` / `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY`
 
 ## Help
 

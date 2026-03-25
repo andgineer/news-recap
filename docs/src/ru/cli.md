@@ -93,6 +93,11 @@ news-recap recap run --limit 50
 - `--agent` (`codex`, `claude` или `gemini`)
 - `--limit` (ограничить число загружаемых статей)
 - `--api` (использовать прямой Anthropic API вместо CLI-агентов)
+- `--fresh` (игнорировать незавершённый пайплайн и начать новый)
+- `--oneshot` (заменить этапы map→reduce→split→group→summarize параллельными батчами
+  по ~200 статей с последующим объединением секций через отдельный вызов LLM)
+- `--use-api-key` (не удалять ключи API вендоров из окружения агента-подпроцесса;
+  по умолчанию ключи удаляются, чтобы агент использовал лимиты подписки)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`)
 
 ## API-режим
@@ -151,24 +156,27 @@ export NEWS_RECAP_API_MODEL_MAP="recap_reduce=claude-sonnet-4-6,recap_summarize=
 
 ### LLM-агенты
 
-> **Подписка vs API-биллинг.** CLI-агенты (`claude`, `codex`, `gemini`) сначала
-> проверяют наличие API-ключа вендора. Если ключ задан, использование тарифицируется
-> через API-аккаунт (оплата за токены). Чтобы использовать лимиты подписки, сбросьте ключ:
+> **Подписка vs API-биллинг.** При запуске CLI-агентов (`claude`, `codex`, `gemini`)
+> как подпроцессов `recap run` по умолчанию удаляет ключи API вендоров
+> (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
+> из окружения подпроцесса — чтобы агент использовал лимиты подписки, а не
+> тарифицировал вызовы через API-аккаунт.
+>
+> В режиме `--api` ключ API нужен SDK и **не удаляется**. Флаг `--use-api-key` в этом
+> режиме не влияет на работу.
+>
+> Чтобы явно передать ключ CLI-агенту (оплата за токены), используйте `--use-api-key`:
 >
 > ```bash
-> unset ANTHROPIC_API_KEY   # Claude — использовать подписку Claude Pro/Max
-> unset OPENAI_API_KEY      # Codex — использовать подписку ChatGPT/Codex
-> unset GEMINI_API_KEY      # Gemini — использовать подписку Google AI
+> news-recap recap run --use-api-key
 > ```
 
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — агент по умолчанию (`codex`, `claude` или `gemini`).
-- `NEWS_RECAP_LLM_TASK_TYPE_PROFILE_MAP` — профиль модели по типу задачи (`fast`/`quality`).
+- `NEWS_RECAP_LLM_TASK_MODEL_MAP` — переопределения модели по типу задачи и агенту
+  (`task_type:agent=model_flags,...`).
 - `NEWS_RECAP_CODEX_COMMAND_TEMPLATE` — шаблон команды для Codex.
 - `NEWS_RECAP_CLAUDE_COMMAND_TEMPLATE` — шаблон команды для Claude.
 - `NEWS_RECAP_GEMINI_COMMAND_TEMPLATE` — шаблон команды для Gemini.
-- `NEWS_RECAP_LLM_CODEX_MODEL_FAST` / `NEWS_RECAP_LLM_CODEX_MODEL_QUALITY`
-- `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` / `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY`
-- `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` / `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY`
 
 ## Help
 

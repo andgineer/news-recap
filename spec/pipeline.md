@@ -20,12 +20,20 @@ flowchart TD
     subgraph parallel4 [Parallel workers]
         mapW["MapBlocks (up to 3 chunks)"]
     end
+    subgraph oneshotBatches [Parallel batches --oneshot]
+        oneshotW["OneshotDigest batches (~200 articles each)"]
+    end
 
     inp[PipelineInput] --> classifyW
     classifyW --> loadRes[LoadResources]
     loadRes --> enrichW
     enrichW --> dedupW
-    dedupW --> mapW
+    dedupW -->|default| mapW
+    dedupW -->|--oneshot| oneshotW
+    oneshotW --> merge{"> 1 batch?"}
+    merge -->|Yes| mergeSec[MergeSections]
+    merge -->|No| done["Digest (blocks + sections)"]
+    mergeSec --> done
     mapW --> reduce[ReduceBlocks]
     reduce --> split{SPLIT needed?}
     split -->|No| digest["Digest (blocks)"]
@@ -35,7 +43,10 @@ flowchart TD
     groupSec --> summarize[Summarize]
 ```
 
-The flow `recap_flow` runs the nine steps in fixed order:
+The flow `recap_flow` runs steps in fixed order. After Deduplicate the path
+forks depending on `--oneshot`:
+
+**Default path (9 steps):**
 
 1. **Classify** — batch-classify articles as `ok / vague / exclude`.
 2. **LoadResources** — download full-text for articles needing enrichment.
@@ -47,8 +58,13 @@ The flow `recap_flow` runs the nine steps in fixed order:
 8. **GroupSections** — cluster blocks into reader-friendly sections with short topic labels.
 9. **Summarize** — produce a heading + bulleted day summary from the section structure.
 
-Steps 1, 3, 4, 5, and 7 run up to `_MAX_PARALLEL` concurrent workers.
-Steps 2, 6, 8, and 9 are single-threaded.
+**`--oneshot` path** (steps 1–4 identical, then):
+
+5. **OneshotDigest** — articles split into batches of ~200, processed in parallel; each batch agent groups and titles blocks and sections in one pass.
+6. **MergeSections** *(only when > 1 batch)* — reconciles section names from all batches into a unified section list.
+
+Steps 1, 3, 4, 5, and 7 (default) or 5 (oneshot) run up to `_MAX_PARALLEL` concurrent workers.
+Steps 2, 6, 8, and 9 (default) or 6 (oneshot, when needed) are single-threaded.
 
 ## Per-step contracts
 
@@ -271,19 +287,22 @@ is set to an empty string.
 |---|---|
 | **Module** | `recap/tasks/oneshot_digest.py` |
 | **Task type** | `recap_oneshot_digest` |
-| **LLM I/O** | All article headlines in one prompt; agent prints `SECTION:` / `BLOCK:` / `ARTICLES:` / `EXCLUDED:` lines |
+| **LLM I/O** | Articles split into batches; each batch agent prints `SECTION:` / `BLOCK:` / `ARTICLES:` / `EXCLUDED:` lines; a merge agent reconciles section names |
 | **Reads** | `ctx.digest.articles` |
 | **Writes digest** | `blocks` — `list[DigestBlock]`, `recaps` — `list[DigestSection]` |
 
 Alternative to the five-step MAP→REDUCE→SPLIT→GROUP→SUMMARIZE pipeline.
 Activated via `--oneshot` CLI flag or `oneshot=True` in `pipeline_input.json`.
 
-Articles are pre-sorted by embedding similarity before the prompt is built so
-the model can focus on editorial grouping rather than topical discovery.
+Articles are pre-sorted by embedding similarity, then split into batches of
+`_BATCH_SIZE` (default 200). Each batch is processed by a parallel `recap_oneshot_digest`
+agent. When more than one batch is used, a follow-up `recap_merge_sections` call
+receives only the section names from all batches and produces the final
+consolidated section list (see MergeSections below).
 
 Coverage below 50% of non-excluded articles raises `RecapPipelineError`.
 
-Output format:
+Per-batch output format:
 
 ```
 SECTION: <section title>
@@ -294,6 +313,29 @@ ARTICLES: <comma-separated numbers>
 
 EXCLUDED: <comma-separated numbers>
 ```
+
+### MergeSections
+
+| | |
+|---|---|
+| **Module** | `recap/tasks/oneshot_digest.py` (internal to `OneshotDigest`) |
+| **Task type** | `recap_merge_sections` |
+| **LLM I/O** | Numbered section names from all batches; agent prints `SECTION:` / `SECTION_SUMMARY:` / `INCLUDES:` lines |
+| **Invoked by** | `OneshotDigest` when article count exceeds one batch |
+
+Receives only the section titles from all batches (not article content).
+Groups related sections under a canonical name and writes a combined summary.
+
+Output format:
+
+```
+SECTION: <canonical section name>
+SECTION_SUMMARY: <one sentence combining coverage of the group>
+INCLUDES: <comma-separated input section numbers>
+```
+
+Every input section number must appear in exactly one `INCLUDES` line.
+A section that stands alone has only its own number in `INCLUDES`.
 
 ## State and checkpointing
 
