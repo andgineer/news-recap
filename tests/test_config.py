@@ -296,6 +296,22 @@ def test_task_model_map_and_api_model_map_cover_same_task_types(
     )
 
 
+def test_agent_api_key_vars_defaults() -> None:
+    settings = Settings.from_env()
+    key_vars = settings.orchestrator.agent_api_key_vars
+    assert key_vars["claude"] == ["ANTHROPIC_API_KEY"]
+    assert key_vars["codex"] == ["OPENAI_API_KEY"]
+    assert set(key_vars["gemini"]) == {"GEMINI_API_KEY", "GOOGLE_API_KEY"}
+
+
+def test_routing_defaults_carries_agent_api_key_vars() -> None:
+    from news_recap.recap.agents.routing import RoutingDefaults
+
+    settings = Settings.from_env()
+    rd = RoutingDefaults.from_settings(settings.orchestrator)
+    assert rd.agent_api_key_vars == settings.orchestrator.agent_api_key_vars
+
+
 def test_api_model_map_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "NEWS_RECAP_API_MODEL_MAP",

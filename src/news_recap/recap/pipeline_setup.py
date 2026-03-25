@@ -43,6 +43,7 @@ def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
         api_downshift_pause_seconds=settings.orchestrator.api_downshift_pause_seconds,
         api_retry_max_backoff_seconds=settings.orchestrator.api_retry_max_backoff_seconds,
         api_retry_jitter_seconds=settings.orchestrator.api_retry_jitter_seconds,
+        agent_api_key_vars=dict(settings.orchestrator.agent_api_key_vars),
     )
 
 
@@ -104,6 +105,7 @@ def _write_pipeline_input(  # noqa: PLR0913
     dedup_threshold: float = 0.90,
     dedup_model_name: str = "intfloat/multilingual-e5-small",
     oneshot: bool = False,
+    use_api_key: bool = False,
 ) -> None:
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
     pipeline_dir.mkdir(parents=True, exist_ok=True)
@@ -118,6 +120,7 @@ def _write_pipeline_input(  # noqa: PLR0913
         "dedup_threshold": dedup_threshold,
         "dedup_model_name": dedup_model_name,
         "oneshot": oneshot,
+        "use_api_key": use_api_key,
     }
     (pipeline_dir / "pipeline_input.json").write_text(
         json.dumps(payload, ensure_ascii=False, default=str),

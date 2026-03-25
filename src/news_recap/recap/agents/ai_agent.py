@@ -107,6 +107,8 @@ def run_ai_agent(  # noqa: PLR0913
         command_template=routing.command_template,
         model=routing.model,
         extra_env=routing.extra_env,
+        api_key_vars=inp.routing_defaults.agent_api_key_vars.get(routing.agent, []),
+        use_api_key=inp.use_api_key,
         log_label=step_name,
         stop_event=stop_event,
     )
@@ -263,6 +265,8 @@ def _run_agent_cli(  # noqa: PLR0913
     command_template: str,
     model: str,
     extra_env: dict[str, str] | None = None,
+    api_key_vars: list[str] | None = None,
+    use_api_key: bool = False,
     log_label: str = "",
     stop_event: threading.Event | None = None,
 ):
@@ -295,6 +299,9 @@ def _run_agent_cli(  # noqa: PLR0913
     env["NEWS_RECAP_REPAIR_MODE"] = "0"
     env["NEWS_RECAP_LLM_AGENT"] = ""
     env["NEWS_RECAP_LLM_MODEL"] = model
+    if not use_api_key and api_key_vars:
+        for _key in api_key_vars:
+            env.pop(_key, None)
     if extra_env:
         env.update(extra_env)
 

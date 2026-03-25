@@ -48,6 +48,12 @@ class RssSettings:
     request_timeout_seconds: float = 30.0
 
 
+_DEFAULT_AGENT_API_KEY_VARS: dict[str, list[str]] = {
+    "claude": ["ANTHROPIC_API_KEY"],
+    "codex": ["OPENAI_API_KEY"],
+    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+}
+
 _DEFAULT_CODEX_CMD = (
     "codex exec --sandbox workspace-write "
     "-c sandbox_workspace_write.network_access=true "
@@ -100,6 +106,9 @@ class OrchestratorSettings:
     codex_command_template: str = _DEFAULT_CODEX_CMD
     claude_command_template: str = _DEFAULT_CLAUDE_CMD
     gemini_command_template: str = _DEFAULT_GEMINI_CMD
+    agent_api_key_vars: dict[str, list[str]] = field(
+        default_factory=lambda: dict(_DEFAULT_AGENT_API_KEY_VARS),
+    )
     worker_id: str = "worker-default"
     poll_interval_seconds: float = 2.0
     retry_base_seconds: int = 30

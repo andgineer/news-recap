@@ -46,6 +46,7 @@ class RoutingDefaults(msgspec.Struct):
     api_downshift_pause_seconds: float = 2.0
     api_retry_max_backoff_seconds: float = 60.0
     api_retry_jitter_seconds: float = 5.0
+    agent_api_key_vars: dict[str, list[str]] = msgspec.field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return msgspec.structs.asdict(self)
@@ -89,6 +90,7 @@ class RoutingDefaults(msgspec.Struct):
             api_downshift_pause_seconds=settings.api_downshift_pause_seconds,
             api_retry_max_backoff_seconds=settings.api_retry_max_backoff_seconds,
             api_retry_jitter_seconds=settings.api_retry_jitter_seconds,
+            agent_api_key_vars=dict(settings.agent_api_key_vars),
         )
 
 

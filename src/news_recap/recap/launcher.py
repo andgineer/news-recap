@@ -36,6 +36,7 @@ class RecapRunCommand:
     fresh: bool = False
     api_mode: bool = False
     oneshot: bool = False
+    use_api_key: bool = False
 
 
 def _patch_pipeline_input(pipeline_dir: Path, **fields: object) -> dict:
@@ -92,6 +93,8 @@ class RecapCliController:
                 patches["agent_override"] = command.agent_override.strip().lower()
             if command.oneshot:
                 patches["oneshot"] = True
+            if command.use_api_key:
+                patches["use_api_key"] = True
             if patches:
                 previous = _patch_pipeline_input(pipeline_dir, **patches)
                 if "agent_override" in patches:
@@ -128,6 +131,7 @@ class RecapCliController:
                 dedup_threshold=settings.dedup.threshold,
                 dedup_model_name=settings.dedup.model_name,
                 oneshot=command.oneshot,
+                use_api_key=command.use_api_key,
             )
             yield f"New pipeline: {pipeline_dir}"
 

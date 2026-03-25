@@ -199,6 +199,16 @@ def recap() -> None:
         "Incompatible with --stop-after values for the five replaced stages."
     ),
 )
+@click.option(
+    "--use-api-key",
+    "use_api_key",
+    is_flag=True,
+    default=False,
+    help=(
+        "Keep vendor API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) in the agent "
+        "subprocess environment. By default they are unset so agents use their subscription."
+    ),
+)
 def recap_run(  # noqa: PLR0913
     data_dir: Path | None,
     business_date: datetime | None,
@@ -208,6 +218,7 @@ def recap_run(  # noqa: PLR0913
     fresh: bool,
     api_mode: bool,
     oneshot: bool,
+    use_api_key: bool,
 ) -> None:
     """Run the full news digest pipeline."""
 
@@ -235,6 +246,7 @@ def recap_run(  # noqa: PLR0913
                 fresh=fresh,
                 api_mode=api_mode,
                 oneshot=oneshot,
+                use_api_key=use_api_key,
             ),
         ),
     )
