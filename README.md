@@ -5,7 +5,7 @@
 | Name                                                     |    Stmts |     Miss |   Cover |   Missing |
 |--------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
-| src/news\_recap/config.py                                |      283 |       56 |     80% |246-248, 261, 265, 267, 273, 288, 291, 296, 317, 319, 321, 323, 327, 329, 372, 379, 395, 397, 407-408, 412, 511, 513, 521, 536-553, 562, 564, 580-588, 594, 604, 611, 618 |
+| src/news\_recap/config.py                                |      283 |       56 |     80% |246-248, 261, 265, 267, 273, 288, 291, 296, 317, 319, 321, 323, 327, 329, 372, 379, 395, 397, 407-408, 412, 517, 519, 527, 542-559, 568, 570, 586-594, 600, 610, 617, 624 |
 | src/news\_recap/http/fetcher.py                          |       42 |        4 |     90% |47, 92, 95, 98 |
 | src/news\_recap/http/html\_extractor.py                  |       29 |        7 |     76% |47-49, 60-62, 69 |
 | src/news\_recap/http/youtube\_extractor.py               |       94 |       15 |     84% |116-120, 140, 144, 158, 160-165, 190, 198 |
@@ -50,15 +50,15 @@
 | src/news\_recap/recap/tasks/group\_sections.py           |      110 |       20 |     82% |77, 149, 201-233 |
 | src/news\_recap/recap/tasks/load\_resources.py           |       55 |        6 |     89% |42, 81-82, 88-90 |
 | src/news\_recap/recap/tasks/map\_blocks.py               |      152 |       11 |     93% |123, 181, 194, 197, 241, 253-255, 271-272, 315 |
-| src/news\_recap/recap/tasks/oneshot\_digest.py           |      170 |       47 |     72% |84, 127-130, 156, 202-279, 288 |
+| src/news\_recap/recap/tasks/oneshot\_digest.py           |      265 |      127 |     52% |159, 166-169, 195, 249-285, 303-322, 331-349, 357-383, 391-423, 441-510, 519 |
 | src/news\_recap/recap/tasks/parallel.py                  |       80 |       19 |     76% |37-38, 95-96, 102, 121-128, 150, 157-160, 180 |
-| src/news\_recap/recap/tasks/prompts.py                   |       24 |        0 |    100% |           |
+| src/news\_recap/recap/tasks/prompts.py                   |       25 |        0 |    100% |           |
 | src/news\_recap/recap/tasks/reduce\_blocks.py            |      226 |       69 |     69% |65, 171, 213-216, 313-331, 347-359, 367-443, 452-465 |
 | src/news\_recap/recap/tasks/split\_blocks.py             |       92 |        1 |     99% |       115 |
 | src/news\_recap/recap/tasks/summarize.py                 |       40 |        9 |     78% |     75-90 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
 | src/news\_recap/web/server.py                            |       97 |       14 |     86% |31-33, 59-61, 70-71, 121, 143-147 |
-| **TOTAL**                                                | **5017** | **1062** | **79%** |           |
+| **TOTAL**                                                | **5113** | **1142** | **78%** |           |
 
 
 ## Setup coverage badge
