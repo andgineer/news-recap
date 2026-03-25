@@ -11,6 +11,8 @@ from news_recap.recap.tasks.prompts import (
     RECAP_CLASSIFY_BATCH_PROMPT,
     RECAP_ENRICH_BATCH_PROMPT,
     RECAP_MAP_PROMPT,
+    RECAP_MERGE_SECTIONS_PROMPT,
+    RECAP_ONESHOT_DIGEST_PROMPT,
     RECAP_REDUCE_PROMPT,
     RECAP_SPLIT_PROMPT,
     RECAP_GROUP_SECTIONS_PROMPT,
@@ -23,6 +25,8 @@ _ALL_PROMPTS = (
     RECAP_CLASSIFY_BATCH_PROMPT,
     RECAP_ENRICH_BATCH_PROMPT,
     RECAP_MAP_PROMPT,
+    RECAP_MERGE_SECTIONS_PROMPT,
+    RECAP_ONESHOT_DIGEST_PROMPT,
     RECAP_REDUCE_PROMPT,
     RECAP_SPLIT_PROMPT,
     RECAP_GROUP_SECTIONS_PROMPT,
@@ -45,8 +49,8 @@ def _dummy_kwargs(template: PromptTemplate) -> dict[str, str]:
 def test_render_prompt_cli_injects_instruction():
     template = PromptTemplate(body="Intro\n{output_instruction}Data: {x}")
     result = render_prompt(template, PromptBackend.CLI, x="hello")
-    assert "Do NOT write any scripts" in result
-    assert "Print your output directly to stdout" in result
+    assert "Do NOT call any tools" in result
+    assert "plain text" in result
     assert "Data: hello" in result
 
 
@@ -61,7 +65,7 @@ def test_render_prompt_instruction_position():
     """Instruction appears between static text and the data placeholder."""
     template = PromptTemplate(body="Format:\nfoo\n\n{output_instruction}=== DATA ===\n{data}")
     result = render_prompt(template, PromptBackend.CLI, data="item1\nitem2")
-    instr_pos = result.index("Do NOT write")
+    instr_pos = result.index("Do NOT call")
     data_pos = result.index("=== DATA ===")
     format_pos = result.index("Format:")
     assert format_pos < instr_pos < data_pos
@@ -76,12 +80,10 @@ def test_all_prompts_have_output_instruction_placeholder():
 
 
 def test_cli_prompts_include_do_not_write_constraint():
-    """All CLI prompts must contain the do-not-write-scripts constraint."""
+    """All CLI prompts must contain the do-not-use-tools constraint."""
     for template in _ALL_PROMPTS:
         rendered = render_prompt(template, PromptBackend.CLI, **_dummy_kwargs(template))
-        assert "Do NOT write any scripts" in rendered, (
-            f"CLI prompt missing constraint: {template!r}"
-        )
+        assert "Do NOT call any tools" in rendered, f"CLI prompt missing constraint: {template!r}"
 
 
 def test_api_prompts_omit_do_not_write_constraint():

@@ -259,22 +259,41 @@ def test_validate_execution_backend_whitespace_normalized(
     assert rd.execution_backend == "api"
 
 
+_ALL_TASK_TYPES = {
+    "recap_classify",
+    "recap_enrich",
+    "recap_dedup",
+    "recap_map",
+    "recap_reduce",
+    "recap_split",
+    "recap_group_sections",
+    "recap_summarize",
+    "recap_oneshot_digest",
+    "recap_merge_sections",
+}
+
+
+def test_task_model_map_default_has_all_task_types(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NEWS_RECAP_LLM_TASK_MODEL_MAP", raising=False)
+    settings = Settings.from_env()
+    assert _ALL_TASK_TYPES == set(settings.orchestrator.task_model_map.keys())
+
+
 def test_api_model_map_default_has_all_task_types(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NEWS_RECAP_API_MODEL_MAP", raising=False)
     settings = Settings.from_env()
-    model_map = settings.orchestrator.api_model_map
-    expected_tasks = {
-        "recap_classify",
-        "recap_enrich",
-        "recap_dedup",
-        "recap_map",
-        "recap_reduce",
-        "recap_split",
-        "recap_group_sections",
-        "recap_summarize",
-        "recap_oneshot_digest",
-    }
-    assert expected_tasks == set(model_map.keys())
+    assert _ALL_TASK_TYPES == set(settings.orchestrator.api_model_map.keys())
+
+
+def test_task_model_map_and_api_model_map_cover_same_task_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("NEWS_RECAP_LLM_TASK_MODEL_MAP", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_API_MODEL_MAP", raising=False)
+    settings = Settings.from_env()
+    assert set(settings.orchestrator.task_model_map.keys()) == set(
+        settings.orchestrator.api_model_map.keys()
+    )
 
 
 def test_api_model_map_env_override(monkeypatch: pytest.MonkeyPatch) -> None:

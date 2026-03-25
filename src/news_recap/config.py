@@ -88,7 +88,7 @@ class OrchestratorSettings:
             "recap_split": 120,
             "recap_group_sections": 1200,
             "recap_summarize": 600,
-            "recap_oneshot_digest": 600,
+            "recap_oneshot_digest": 1200,
         },
     )
     agent_max_parallel: dict[str, int] = field(
@@ -477,6 +477,11 @@ def _default_task_model_map() -> dict[str, dict[str, Any]]:
             "claude": {"model": "--model sonnet --effort low", "env": _MAX_OUTPUT},
             "gemini": {"model": "--model gemini-2.5-flash"},
         },
+        "recap_merge_sections": {
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low"},
+            "gemini": {"model": "--model gemini-2.5-flash"},
+        },
     }
 
 
@@ -491,6 +496,7 @@ def _default_api_model_map() -> dict[str, str]:
         "recap_group_sections": "claude-haiku-4-5-20251001",
         "recap_summarize": "claude-haiku-4-5-20251001",
         "recap_oneshot_digest": "claude-haiku-4-5-20251001",
+        "recap_merge_sections": "claude-sonnet-4-6",
     }
 
 

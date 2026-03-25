@@ -97,10 +97,10 @@ class TestBuildMapPrompt:
         prompt = build_map_prompt(entries, "none")
         assert "42 total" in prompt
 
-    def test_contains_stdout_instruction(self):
+    def test_contains_output_instruction(self):
         entries = [_make_index_entry("a1")]
         prompt = build_map_prompt(entries, "none")
-        assert "stdout" in prompt
+        assert "Do NOT call any tools" in prompt
         assert "BLOCK:" in prompt
 
 

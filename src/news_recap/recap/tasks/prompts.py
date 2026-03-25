@@ -6,8 +6,8 @@ import enum
 from dataclasses import dataclass
 
 _CLI_OUTPUT_INSTRUCTION = (
-    "Do NOT write any scripts, use any tools, or read any files.\n"
-    "Print your output directly to stdout.\n"
+    "Do NOT call any tools. Do NOT use Write, Edit, Bash, or any file operations.\n"
+    "Type your answer as plain text directly in this response — your reply text IS the output.\n"
 )
 
 
@@ -333,8 +333,10 @@ You are a news editor. Below is a list of articles.
 Your task:
 1. Group related articles into named thematic blocks.
 2. Organize the blocks into broader sections.
-3. Write a 2-4 sentence summary for each block.
-4. Write a 1-2 sentence summary for each section.
+3. For each block write a 1-2 sentence description that tells the reader what happened —
+   specific facts, who, where, outcome. This IS the block title the reader sees;
+   make it informative enough that opening the block is optional.
+4. Write a single sentence label for each section (topic area, not a summary).
 5. Articles that do not fit any coherent narrative: list as EXCLUDED.
 
 Every article number must appear exactly once — either in a BLOCK's ARTICLES list
@@ -349,13 +351,11 @@ blocks into sections.
 
 Output format — repeat for each section, then its blocks:
 
-SECTION: <section title>
-SECTION_SUMMARY: <1-2 sentences>
-BLOCK: <block title>
-SUMMARY: <2-4 sentences>
+SECTION: <section label>
+SECTION_SUMMARY: <one sentence describing this section>
+BLOCK: <1-2 sentence informative description of what happened in this group>
 ARTICLES: <comma-separated numbers>
-BLOCK: <block title>
-SUMMARY: <2-4 sentences>
+BLOCK: <1-2 sentence informative description of what happened in this group>
 ARTICLES: <comma-separated numbers>
 
 (next SECTION starts a new section)
@@ -365,6 +365,33 @@ EXCLUDED: <comma-separated numbers>  (omit if none)
 {output_instruction}Articles:
 {articles_block}"""
 RECAP_ONESHOT_DIGEST_PROMPT = PromptTemplate(body=_SINGLE_SHOT_BODY)
+
+RECAP_MERGE_SECTIONS_PROMPT = PromptTemplate(
+    body="""\
+You are a news editor. Articles were processed in batches, producing the sections below.
+Some sections from different batches may cover the same or closely related topic.
+
+Your task:
+1. Identify sections that cover the same topic.
+2. Group them under one canonical name.
+3. Write a combined one-sentence summary for each group.
+
+Sections (numbered 1 to {total}):
+{sections_block}
+
+{output_instruction}Output format — one entry per final section:
+
+SECTION: <canonical section name>
+SECTION_SUMMARY: <one sentence combining coverage of the group>
+INCLUDES: <comma-separated input section numbers>
+
+Rules:
+- Every input section number must appear exactly once across all INCLUDES lines.
+- A section that stands alone has only its own number in INCLUDES.
+- Write SECTION_SUMMARY in {language}.
+- Write the SECTION: keyword in English; the section name itself in {language}.\
+""",
+)
 
 RECAP_SUMMARIZE_PROMPT = PromptTemplate(
     body="""\
