@@ -19,7 +19,7 @@
 | src/news\_recap/ingestion/services/normalize\_service.py |       14 |        0 |    100% |           |
 | src/news\_recap/ingestion/sources/base.py                |       31 |        3 |     90% |46, 55, 64 |
 | src/news\_recap/ingestion/sources/rss.py                 |      424 |      116 |     73% |45, 56, 70, 81, 91, 100, 199, 324, 338, 351, 375-380, 401, 403, 414-454, 464-471, 480-503, 514-515, 521-522, 530-543, 594-632, 636-650, 660-662, 673-678, 682-685, 725, 730, 734, 753-754, 764, 772 |
-| src/news\_recap/main.py                                  |       80 |        8 |     90% |233-251, 327, 376 |
+| src/news\_recap/main.py                                  |       80 |        4 |     95% |241, 251, 327, 376 |
 | src/news\_recap/recap/agents/ai\_agent.py                |      161 |      109 |     32% |60-137, 141-144, 172-175, 180-186, 191-206, 274-331, 339-350 |
 | src/news\_recap/recap/agents/api\_agent.py               |       58 |        1 |     98% |        74 |
 | src/news\_recap/recap/agents/concurrency.py              |       41 |        0 |    100% |           |
@@ -35,7 +35,7 @@
 | src/news\_recap/recap/dedup/embedder.py                  |       71 |       15 |     79% |27-30, 40, 58, 61, 83-86, 89-91, 110, 117 |
 | src/news\_recap/recap/export\_prompt.py                  |       77 |        5 |     94% |158-159, 168, 172-173 |
 | src/news\_recap/recap/flow.py                            |      101 |       73 |     28% |46-60, 64-67, 80-178 |
-| src/news\_recap/recap/launcher.py                        |       92 |       25 |     73% |60-66, 78, 80, 87, 105, 138-174 |
+| src/news\_recap/recap/launcher.py                        |       92 |       10 |     89% |78, 80, 87, 145-154 |
 | src/news\_recap/recap/loaders/resource\_cache.py         |       51 |        0 |    100% |           |
 | src/news\_recap/recap/loaders/resource\_loader.py        |      138 |       18 |     87% |90, 121-127, 190-207, 211-213, 235, 257, 303, 312-313, 316, 319 |
 | src/news\_recap/recap/models.py                          |       59 |        8 |     86% |42-47, 50, 59 |
@@ -58,7 +58,7 @@
 | src/news\_recap/recap/tasks/summarize.py                 |       40 |        9 |     78% |     75-90 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
 | src/news\_recap/web/server.py                            |       97 |       14 |     86% |31-33, 59-61, 70-71, 121, 143-147 |
-| **TOTAL**                                                | **5145** | **1157** | **78%** |           |
+| **TOTAL**                                                | **5145** | **1138** | **78%** |           |
 
 
 ## Setup coverage badge
