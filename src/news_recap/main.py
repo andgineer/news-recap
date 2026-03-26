@@ -200,6 +200,13 @@ def recap() -> None:
     ),
 )
 @click.option(
+    "--from-pipeline",
+    "from_pipeline",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Reuse articles from an existing pipeline directory (for A/B comparisons).",
+)
+@click.option(
     "--use-api-key",
     "use_api_key",
     is_flag=True,
@@ -218,6 +225,7 @@ def recap_run(  # noqa: PLR0913
     fresh: bool,
     api_mode: bool,
     oneshot: bool,
+    from_pipeline: Path | None,
     use_api_key: bool,
 ) -> None:
     """Run the full news digest pipeline."""
@@ -234,6 +242,11 @@ def recap_run(  # noqa: PLR0913
             f"--oneshot is incompatible with --stop-after {stop_after}: "
             "that stage does not exist in oneshot mode.",
         )
+    if from_pipeline and business_date:
+        raise click.UsageError(
+            "--from-pipeline already determines the business date; "
+            "do not pass --date together with it.",
+        )
 
     _emit_lines(
         RECAP_CONTROLLER.run_pipeline(
@@ -247,6 +260,7 @@ def recap_run(  # noqa: PLR0913
                 api_mode=api_mode,
                 oneshot=oneshot,
                 use_api_key=use_api_key,
+                from_pipeline=from_pipeline,
             ),
         ),
     )
