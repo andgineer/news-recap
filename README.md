@@ -9,28 +9,35 @@ The key idea: instead of paying per-token via expensive LLM APIs, the pipeline d
 CLI agents (Codex, Claude Code, Gemini CLI) that run under flat-rate ~$20/month
 subscriptions — making heavy daily summarisation practically free.
 
-## CLI agents vs direct API — benchmark
+## Pipeline modes — benchmark
 
-Same 423 articles, Claude, two modes:
+All runs use Claude. Cost estimated from the \$20/month subscription limits.
 
-| | CLI agent (`claude`)       | API (`--api`)          |
-|---|----------------------------|------------------------|
-| Cost | \~\$0.25 (\~\$7 per month) | \$0.43 ($13 per month) |
-| Time | 21 min                     | 8 min                  |
-| Output blocks | 100                        | 105                    |
-| Sections | 20                         | 23                     |
-| Summary length | ~1.5 K                     | ~2 K                   |
+| | Map-reduce CLI | Map-reduce API | Oneshot CLI |
+|---|---|---|---|
+| Articles | 703 | 423 | 703 |
+| Time | 26 min | 8 min | 7 min |
+| Blocks | 158 | 105 | 249 (211 unique) |
+| Sections | 24 | 23 | 31 |
+| Duplicate blocks | 0 | 0 | 38 pairs |
+| Day summary | yes | yes | no (per-section only) |
+| Block language | original | original | all Russian |
+| Sub. cost / run | ~\$0.23 (5% weekly) | — | ~\$0.14 (3% weekly) |
+| API cost / run | — | \$0.43 | — |
+| Est. monthly (daily use) | ~\$7 | ~\$13 | ~\$4 |
 
-CLI agent used Sonnet for all tasks (Haiku unavailable in the subscription CLI) — that
-partially explains the longer runtime and visibly better compression quality.
-API mode uses cheap Haiku for most tasks and Sonnet only for the reduce phase, which
-is why it's faster and cheaper but produces slightly looser output.
+**Map-reduce** produces the cleanest output: the `reduce` step merges overlapping
+blocks across map shards, so there are zero duplicates. Sections are well-separated
+(e.g. global energy crisis vs. Croatian fuel response). Downside: 4× slower and
+2× more expensive than oneshot due to the long `map` and `reduce` LLM calls.
 
-Another CLI overhead: agents are external processes, so each task pays a cold-start
-penalty that adds up across hundreds of parallel calls.
+**Oneshot** splits articles into shards processed in parallel, then merges sections —
+but not blocks. This leaves ~15% of blocks duplicated (identical article sets,
+slightly different wording). Faster and cheaper, with per-section summaries.
 
-Using subscription twice as cheeper but still too expensive for dayly usage - from $20 subscription
-one run takes 5% from week limit, and 46% from 5h limit.
+**API mode** uses Haiku for most tasks and Sonnet only for reduce — faster and
+cheaper per-token but adds up to ~\$13/month at daily use. CLI agents run under
+the flat-rate subscription, where each run consumes 3–5% of the weekly quota.
 
 ### Documentation
 
