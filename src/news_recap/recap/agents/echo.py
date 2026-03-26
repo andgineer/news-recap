@@ -10,9 +10,9 @@ Usage (standalone)::
 
     python -m news_recap.recap.agents.echo --prompt-file input/task_prompt.txt
 
-Or via command template (set in env or Settings)::
+Or via command template (set in Settings)::
 
-    NEWS_RECAP_GEMINI_COMMAND_TEMPLATE="python -m news_recap.recap.agents.echo \
+    gemini_command_template="python -m news_recap.recap.agents.echo \
         --prompt-file {prompt_file}"
 """
 

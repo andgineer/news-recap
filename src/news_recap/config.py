@@ -204,18 +204,9 @@ class Settings:
                 ),
                 default_agent=os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex"),
                 execution_backend=os.getenv("NEWS_RECAP_EXECUTION_BACKEND", "cli").strip(),
-                codex_command_template=os.getenv(
-                    "NEWS_RECAP_CODEX_COMMAND_TEMPLATE",
-                    _DEFAULT_CODEX_CMD,
-                ),
-                claude_command_template=os.getenv(
-                    "NEWS_RECAP_CLAUDE_COMMAND_TEMPLATE",
-                    _DEFAULT_CLAUDE_CMD,
-                ),
-                gemini_command_template=os.getenv(
-                    "NEWS_RECAP_GEMINI_COMMAND_TEMPLATE",
-                    _DEFAULT_GEMINI_CMD,
-                ),
+                codex_command_template=_DEFAULT_CODEX_CMD,
+                claude_command_template=_DEFAULT_CLAUDE_CMD,
+                gemini_command_template=_DEFAULT_GEMINI_CMD,
                 task_model_map=_collect_task_model_map(),
                 api_model_map=_collect_api_model_map(),
                 agent_max_parallel=_default_agent_max_parallel(),

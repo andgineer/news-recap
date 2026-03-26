@@ -174,9 +174,6 @@ export NEWS_RECAP_API_MODEL_MAP="recap_reduce=claude-sonnet-4-6,recap_summarize=
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — агент по умолчанию (`codex`, `claude` или `gemini`).
 - `NEWS_RECAP_LLM_TASK_MODEL_MAP` — переопределения модели по типу задачи и агенту
   (`task_type:agent=model_flags,...`).
-- `NEWS_RECAP_CODEX_COMMAND_TEMPLATE` — шаблон команды для Codex.
-- `NEWS_RECAP_CLAUDE_COMMAND_TEMPLATE` — шаблон команды для Claude.
-- `NEWS_RECAP_GEMINI_COMMAND_TEMPLATE` — шаблон команды для Gemini.
 
 ## Help
 

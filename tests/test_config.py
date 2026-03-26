@@ -194,13 +194,12 @@ def test_validate_rejects_invalid_execution_backend() -> None:
         settings.validate()
 
 
-def test_from_env_api_backend_skips_command_template_validation(
+def test_from_env_api_backend_succeeds_without_cli_agents(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """In api mode, empty command templates should not fail validation."""
+    """In api mode, command templates are present but validation is skipped."""
     monkeypatch.setenv("NEWS_RECAP_EXECUTION_BACKEND", "api")
     monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "claude")
-    monkeypatch.setenv("NEWS_RECAP_CODEX_COMMAND_TEMPLATE", "  ")  # empty — would fail in cli mode
     # Should not raise
     settings = Settings.from_env()
     assert settings.orchestrator.execution_backend == "api"
