@@ -30,7 +30,8 @@ flowchart TD
     enrichW --> dedupW
     dedupW -->|default| mapW
     dedupW -->|--oneshot| oneshotW
-    oneshotW --> merge{"> 1 batch?"}
+    oneshotW --> blockDedup["BlockDedup (deterministic)"]
+    blockDedup --> merge{"> 1 batch?"}
     merge -->|Yes| mergeSec[MergeSections]
     merge -->|No| done["Digest (blocks + sections)"]
     mergeSec --> done
@@ -61,10 +62,11 @@ forks depending on `--oneshot`:
 **`--oneshot` path** (steps 1–4 identical, then):
 
 5. **OneshotDigest** — articles split into batches of ~200, processed in parallel; each batch agent groups and titles blocks and sections in one pass.
-6. **MergeSections** *(only when > 1 batch)* — reconciles section names from all batches into a unified section list.
+6. **BlockDedup** *(deterministic, no LLM)* — removes exact-duplicate and subset blocks by comparing `article_ids` sets.
+7. **MergeSections** *(only when > 1 batch)* — reconciles section names from all batches into a unified section list.
 
 Steps 1, 3, 4, 5, and 7 (default) or 5 (oneshot) run up to `_MAX_PARALLEL` concurrent workers.
-Steps 2, 6, 8, and 9 (default) or 6 (oneshot, when needed) are single-threaded.
+Steps 2, 6, 8, and 9 (default) or 6–7 (oneshot, when needed) are single-threaded.
 
 ## Per-step contracts
 
@@ -296,9 +298,10 @@ Activated via `--oneshot` CLI flag or `oneshot=True` in `pipeline_input.json`.
 
 Articles are pre-sorted by embedding similarity, then split into batches of
 `_BATCH_SIZE` (default 200). Each batch is processed by a parallel `recap_oneshot_digest`
-agent. When more than one batch is used, a follow-up `recap_merge_sections` call
-receives only the section names from all batches and produces the final
-consolidated section list (see MergeSections below).
+agent. After all batches complete, a deterministic block dedup pass runs
+(see Block Dedup below). When more than one batch is used, a follow-up
+`recap_merge_sections` call receives only the section names from all batches
+and produces the final consolidated section list (see MergeSections below).
 
 Coverage below 50% of non-excluded articles raises `RecapPipelineError`.
 
@@ -313,6 +316,33 @@ ARTICLES: <comma-separated numbers>
 
 EXCLUDED: <comma-separated numbers>
 ```
+
+### Block Dedup
+
+| | |
+|---|---|
+| **Module** | `recap/tasks/oneshot_digest.py` (`_dedup_blocks`) |
+| **Task type** | *(no LLM — deterministic set operations)* |
+| **Invoked by** | `OneshotDigest` after all batch agents complete |
+
+Removes redundant blocks in two phases:
+
+1. **Exact-duplicate removal** — blocks whose `article_ids` form the same
+   set (order-insensitive) are grouped. The block with the longest title is
+   kept; ties broken by earlier position.
+2. **Subset absorption** — if block A's article-ID set is a strict subset
+   of block B's, A is absorbed into B. When A is a subset of multiple
+   supersets, the smallest superset wins (closest match). Chained subsets
+   (A⊂B⊂C) are resolved transitively.
+
+After removal, all `DigestSection.block_indices` are remapped to the
+compacted block list. Duplicate indices within a section are deduplicated
+while preserving order. Sections that lose all blocks are dropped.
+
+This step compensates for LLM non-determinism: the oneshot prompt instructs
+that each article number must appear in exactly one block, but in practice
+~10% of articles end up in multiple blocks — producing duplicate and subset
+blocks that this pass cleans up without additional LLM calls.
 
 ### MergeSections
 

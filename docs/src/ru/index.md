@@ -12,7 +12,9 @@
 
 - Ingestion из RSS/Atom (включая Inoreader Output RSS).
 - Файловое хранение статей с ежедневным разбиением и автоматической сборкой мусора.
-- Recap-пайплайн: classify → load_resources → enrich → deduplicate → map → reduce → split → group_sections → summarize.
+- Recap-пайплайн в двух режимах:
+    - **Map-reduce** (по умолчанию): classify → load_resources → enrich → deduplicate → map → reduce → split → group_sections → summarize.
+    - **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций).
 
 ## С чего Начать
 

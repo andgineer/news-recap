@@ -5,7 +5,7 @@
 ## Command Map
 
 - `ingest`: source import, stats, dedup inspection.
-- `recap`: daily digest pipeline (classify, enrich, deduplicate, map, reduce, split, group_sections, summarize).
+- `recap`: daily digest pipeline in map-reduce or oneshot mode.
 
 ## Common Notes
 
@@ -74,10 +74,12 @@ Key options:
 ### `recap run`
 Run the full news digest pipeline for a business date.
 
-The pipeline goes through nine stages: classify → load_resources → enrich →
-deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections →
-summarize. Each stage is checkpointed, so a resumed run skips
-already-completed stages.
+The pipeline goes through multiple stages, depending on the mode:
+
+- **Map-reduce** (default): classify → load_resources → enrich → deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections → summarize.
+- **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (parallel batches + deterministic block dedup + section merge).
+
+Each stage is checkpointed, so a resumed run skips already-completed stages.
 
 ```bash
 news-recap recap run
@@ -85,6 +87,8 @@ news-recap recap run --api
 news-recap recap run --date 2026-02-18
 news-recap recap run --agent claude --stop-after classify
 news-recap recap run --limit 50
+news-recap recap run --oneshot
+news-recap recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
 ```
 
 Key options:
@@ -95,10 +99,13 @@ Key options:
 - `--api` (use direct Anthropic API instead of CLI agents)
 - `--fresh` (discard any incomplete pipeline and start a new one)
 - `--oneshot` (replace the map→reduce→split→group→summarize stages with parallel
-  batches of ~200 articles, then merge sections via a single follow-up LLM call)
+  batches of ~200 articles, deterministic block dedup, then section merge via
+  a single follow-up LLM call)
+- `--from-pipeline` (reuse articles from a previous pipeline directory; the business
+  date is taken from the source pipeline; mutually exclusive with `--date`)
 - `--use-api-key` (keep vendor API keys in the agent subprocess environment;
   by default they are removed so the agent uses its subscription quota)
-- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`)
+- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`, `oneshot_digest`)
 
 ## API Mode
 

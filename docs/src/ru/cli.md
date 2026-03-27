@@ -5,7 +5,7 @@
 ## Карта Команд
 
 - `ingest`: импорт источников, статистика, проверка дедупа.
-- `recap`: пайплайн ежедневного дайджеста (classify, enrich, deduplicate, map, reduce, split, group_sections, summarize).
+- `recap`: пайплайн ежедневного дайджеста в режиме map-reduce или oneshot.
 
 ## Общие Замечания
 
@@ -74,10 +74,12 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 ### `recap run`
 Запуск полного пайплайна дайджеста на бизнес-дату.
 
-Пайплайн проходит девять этапов: classify → load_resources → enrich →
-deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections →
-summarize. Каждый этап чекпоинтится,
-поэтому повторный запуск пропускает уже выполненные этапы.
+Пайплайн проходит несколько этапов в зависимости от режима:
+
+- **Map-reduce** (по умолчанию): classify → load_resources → enrich → deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections → summarize.
+- **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций).
+
+Каждый этап чекпоинтится, поэтому повторный запуск пропускает уже выполненные этапы.
 
 ```bash
 news-recap recap run
@@ -85,6 +87,8 @@ news-recap recap run --api
 news-recap recap run --date 2026-02-18
 news-recap recap run --agent claude --stop-after classify
 news-recap recap run --limit 50
+news-recap recap run --oneshot
+news-recap recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
 ```
 
 Ключевые опции:
@@ -95,10 +99,13 @@ news-recap recap run --limit 50
 - `--api` (использовать прямой Anthropic API вместо CLI-агентов)
 - `--fresh` (игнорировать незавершённый пайплайн и начать новый)
 - `--oneshot` (заменить этапы map→reduce→split→group→summarize параллельными батчами
-  по ~200 статей с последующим объединением секций через отдельный вызов LLM)
+  по ~200 статей, детерминистическим дедупом блоков и объединением секций через
+  отдельный вызов LLM)
+- `--from-pipeline` (использовать статьи из предыдущего пайплайна; бизнес-дата
+  берётся из исходного пайплайна; несовместим с `--date`)
 - `--use-api-key` (не удалять ключи API вендоров из окружения агента-подпроцесса;
   по умолчанию ключи удаляются, чтобы агент использовал лимиты подписки)
-- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`)
+- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`, `oneshot_digest`)
 
 ## API-режим
 

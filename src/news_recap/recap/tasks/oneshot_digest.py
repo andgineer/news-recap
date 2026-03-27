@@ -424,6 +424,102 @@ def _build_merged_digest_entries(
 
 
 # ---------------------------------------------------------------------------
+# block dedup
+# ---------------------------------------------------------------------------
+
+
+def _collapse_exact_dupes(
+    blocks: list[DigestBlock],
+    keys: list[frozenset[str]],
+) -> tuple[dict[int, int], int]:
+    """Return ``survivors`` map (old_idx → winner old_idx) and count of removed."""
+    exact_groups: dict[frozenset[str], list[int]] = {}
+    for idx, key in enumerate(keys):
+        exact_groups.setdefault(key, []).append(idx)
+
+    survivors: dict[int, int] = {}
+    for indices in exact_groups.values():
+        winner = max(indices, key=lambda i: (len(blocks[i].title), -i))
+        for i in indices:
+            survivors[i] = winner
+
+    return survivors, len(blocks) - len(exact_groups)
+
+
+def _find_subset_absorptions(
+    unique_indices: list[int],
+    keys: list[frozenset[str]],
+) -> dict[int, int]:
+    """Return ``absorbed`` map (subset_idx → superset_idx), smallest superset wins."""
+    unique_keys = {i: keys[i] for i in unique_indices}
+    absorbed: dict[int, int] = {}
+    for i in unique_indices:
+        for j in unique_indices:
+            if i == j:
+                continue
+            if unique_keys[i] < unique_keys[j]:  # strict subset
+                prev = absorbed.get(i)
+                if prev is None or len(unique_keys[j]) < len(unique_keys[prev]):
+                    absorbed[i] = j
+    return absorbed
+
+
+def _resolve_chain(idx: int, absorbed: dict[int, int]) -> int:
+    while idx in absorbed:
+        idx = absorbed[idx]
+    return idx
+
+
+def _dedup_blocks(
+    blocks: list[DigestBlock],
+    sections: list[DigestSection],
+) -> tuple[list[DigestBlock], list[DigestSection]]:
+    """Remove duplicate and subset blocks, rewrite section block_indices.
+
+    Phase 1 — exact duplicates: blocks whose ``article_ids`` sets are
+    identical.  Longest title wins; ties broken by earlier position.
+
+    Phase 2 — subset absorption: if block A's article set is a strict
+    subset of block B's, A is absorbed into B (redundant).
+    """
+    n = len(blocks)
+    keys = [frozenset(block.article_ids) for block in blocks]
+
+    survivors, exact_removed = _collapse_exact_dupes(blocks, keys)
+
+    unique_indices = sorted({survivors[i] for i in range(n)})
+    absorbed = _find_subset_absorptions(unique_indices, keys)
+
+    final_winners = sorted({_resolve_chain(v, absorbed) for v in survivors.values()})
+    winner_to_new = {w: new_i for new_i, w in enumerate(final_winners)}
+
+    old_to_new: dict[int, int] = {}
+    for old_idx in range(n):
+        old_to_new[old_idx] = winner_to_new[_resolve_chain(survivors[old_idx], absorbed)]
+
+    deduped = [blocks[i] for i in final_winners]
+
+    subset_removed = len(absorbed)
+    if exact_removed or subset_removed:
+        logger.info(
+            "[oneshot_digest] dedup removed %d exact + %d subset block(s)",
+            exact_removed,
+            subset_removed,
+        )
+
+    new_sections: list[DigestSection] = []
+    for sec in sections:
+        remapped: list[int] = list(dict.fromkeys(old_to_new[i] for i in sec.block_indices))
+        if not remapped:
+            continue
+        new_sections.append(
+            DigestSection(title=sec.title, block_indices=remapped, summary=sec.summary),
+        )
+
+    return deduped, new_sections
+
+
+# ---------------------------------------------------------------------------
 # Task launcher
 # ---------------------------------------------------------------------------
 
@@ -492,6 +588,10 @@ class OneshotDigest(TaskLauncher):
         else:
             merged = _run_merge(ctx, all_sections, language)
             blocks, sections_out = _build_merged_digest_entries(merged, all_sections)
+
+        # Dedup exact-duplicate blocks that appear in multiple shards
+        if len(batches) > 1:
+            blocks, sections_out = _dedup_blocks(blocks, sections_out)
 
         # Coverage check
         unique_excluded = list(set(all_excluded_ids))

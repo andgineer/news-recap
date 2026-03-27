@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 
-from news_recap.recap.tasks.oneshot_digest import _parse_output, _parse_nums
+from news_recap.recap.models import DigestBlock, DigestSection
+from news_recap.recap.tasks.oneshot_digest import _dedup_blocks, _parse_nums, _parse_output
 
 
 # ---------------------------------------------------------------------------
@@ -238,3 +239,294 @@ def test_excluded_nums_resolved_correctly() -> None:
     num_to_id = {"1": "art-001", "2": "art-002", "3": "art-003"}
     excluded_ids = {num_to_id[n] for n in excluded if n in num_to_id}
     assert excluded_ids == {"art-001", "art-003"}
+
+
+# ---------------------------------------------------------------------------
+# _dedup_blocks
+# ---------------------------------------------------------------------------
+
+
+def _b(title: str, ids: list[str]) -> DigestBlock:
+    return DigestBlock(title=title, article_ids=ids)
+
+
+def _s(title: str, indices: list[int], summary: str = "") -> DigestSection:
+    return DigestSection(title=title, block_indices=indices, summary=summary)
+
+
+def test_dedup_removes_exact_duplicates() -> None:
+    blocks = [
+        _b("Block A", ["a1", "a2"]),
+        _b("Block B", ["b1"]),
+        _b("Block A copy", ["a1", "a2"]),
+    ]
+    sections = [_s("S", [0, 1, 2])]
+
+    new_blocks, new_sections = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 2
+    article_sets = [frozenset(b.article_ids) for b in new_blocks]
+    assert frozenset(["a1", "a2"]) in article_sets
+    assert frozenset(["b1"]) in article_sets
+
+
+def test_dedup_keeps_longer_title() -> None:
+    blocks = [
+        _b("Short", ["x1", "x2"]),
+        _b("Much longer and more informative title", ["x1", "x2"]),
+    ]
+    sections = [_s("S", [0, 1])]
+
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 1
+    assert new_blocks[0].title == "Much longer and more informative title"
+
+
+def test_dedup_prefers_earlier_on_tie() -> None:
+    blocks = [
+        _b("Same len A", ["x1"]),
+        _b("Same len B", ["x1"]),
+    ]
+    sections = [_s("S", [0, 1])]
+
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 1
+    assert new_blocks[0].title == "Same len A"
+
+
+def test_dedup_preserves_article_id_union() -> None:
+    blocks = [
+        _b("A", ["a1", "a2"]),
+        _b("B", ["b1"]),
+        _b("A dup", ["a2", "a1"]),
+        _b("C", ["c1", "c2"]),
+    ]
+    sections = [_s("S", [0, 1, 2, 3])]
+
+    union_before = {aid for b in blocks for aid in b.article_ids}
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+    union_after = {aid for b in new_blocks for aid in b.article_ids}
+
+    assert union_before == union_after
+
+
+def test_dedup_rewrites_block_indices() -> None:
+    blocks = [
+        _b("A", ["a1"]),
+        _b("B", ["b1"]),
+        _b("A dup", ["a1"]),
+        _b("C", ["c1"]),
+    ]
+    sections = [
+        _s("S1", [0, 1], summary="summary 1"),
+        _s("S2", [2, 3], summary="summary 2"),
+    ]
+
+    new_blocks, new_sections = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 3
+
+    for sec in new_sections:
+        for idx in sec.block_indices:
+            assert 0 <= idx < len(new_blocks), f"index {idx} out of range"
+
+
+def test_dedup_preserves_section_order_and_summaries() -> None:
+    blocks = [
+        _b("A", ["a1"]),
+        _b("B", ["b1"]),
+        _b("A dup", ["a1"]),
+    ]
+    sections = [
+        _s("First", [0, 1], summary="first summary"),
+        _s("Second", [2], summary="second summary"),
+    ]
+
+    _, new_sections = _dedup_blocks(blocks, sections)
+
+    assert [s.title for s in new_sections] == ["First", "Second"]
+    assert new_sections[0].summary == "first summary"
+    assert new_sections[1].summary == "second summary"
+
+
+def test_dedup_deduplicates_section_indices() -> None:
+    """When two old blocks in the same section collapse to one, the index appears once."""
+    blocks = [
+        _b("A", ["a1"]),
+        _b("A dup", ["a1"]),
+        _b("B", ["b1"]),
+    ]
+    sections = [_s("S", [0, 1, 2])]
+
+    _, new_sections = _dedup_blocks(blocks, sections)
+
+    assert len(set(new_sections[0].block_indices)) == len(new_sections[0].block_indices)
+
+
+def test_dedup_no_duplicates_is_noop() -> None:
+    blocks = [
+        _b("A", ["a1"]),
+        _b("B", ["b1"]),
+        _b("C", ["c1"]),
+    ]
+    sections = [_s("S", [0, 1, 2])]
+
+    new_blocks, new_sections = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 3
+    assert new_sections[0].block_indices == [0, 1, 2]
+
+
+def test_dedup_order_insensitive_article_ids() -> None:
+    """article_ids in different order are still exact duplicates."""
+    blocks = [
+        _b("A", ["x2", "x1", "x3"]),
+        _b("A alt", ["x1", "x3", "x2"]),
+    ]
+    sections = [_s("S", [0, 1])]
+
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 1
+
+
+def test_dedup_no_duplicate_article_ids_within_block() -> None:
+    """Repeated article_ids within a single block are treated correctly."""
+    blocks = [
+        _b("A", ["x1", "x1", "x2"]),
+        _b("A dup", ["x1", "x2"]),
+    ]
+    sections = [_s("S", [0, 1])]
+
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 1
+
+
+def test_dedup_empty_blocks() -> None:
+    new_blocks, new_sections = _dedup_blocks([], [])
+
+    assert new_blocks == []
+    assert new_sections == []
+
+
+# ---------------------------------------------------------------------------
+# _dedup_blocks — subset absorption
+# ---------------------------------------------------------------------------
+
+
+def test_dedup_absorbs_strict_subset() -> None:
+    """Block whose articles are a strict subset of another is removed."""
+    blocks = [
+        _b("Small block", ["a1", "a2"]),
+        _b("Big block covering more", ["a1", "a2", "a3"]),
+        _b("Unrelated", ["b1"]),
+    ]
+    sections = [_s("S", [0, 1, 2])]
+
+    new_blocks, new_sections = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 2
+    titles = {b.title for b in new_blocks}
+    assert "Big block covering more" in titles
+    assert "Unrelated" in titles
+    assert "Small block" not in titles
+
+
+def test_dedup_subset_preserves_article_coverage() -> None:
+    """No article IDs are lost when a subset block is absorbed."""
+    blocks = [
+        _b("Subset", ["a1", "a2"]),
+        _b("Superset", ["a1", "a2", "a3"]),
+        _b("Other", ["b1"]),
+    ]
+    sections = [_s("S", [0, 1, 2])]
+
+    union_before = {aid for b in blocks for aid in b.article_ids}
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+    union_after = {aid for b in new_blocks for aid in b.article_ids}
+
+    assert union_before == union_after
+
+
+def test_dedup_subset_picks_smallest_superset() -> None:
+    """When a block is a subset of a non-chain superset, the smallest superset wins."""
+    blocks = [
+        _b("Tiny", ["a1"]),
+        _b("Medium", ["a1", "a2"]),
+        _b("Large", ["a1", "a2", "a3", "a4"]),
+        _b("Unrelated", ["b1", "a1"]),
+    ]
+    sections = [_s("S", [0, 1, 2, 3])]
+
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+
+    # Tiny ⊂ Medium ⊂ Large (chain → only Large survives from that chain)
+    # Unrelated shares a1 with Tiny but is not a superset (has b1, lacks a2)
+    assert len(new_blocks) == 2
+    titles = {b.title for b in new_blocks}
+    assert "Large" in titles
+    assert "Unrelated" in titles
+
+
+def test_dedup_subset_rewrites_indices() -> None:
+    """Section indices point to the superset block after absorption."""
+    blocks = [
+        _b("Sub", ["a1"]),
+        _b("Super", ["a1", "a2"]),
+        _b("Other", ["b1"]),
+    ]
+    sections = [
+        _s("S1", [0, 2], summary="s1"),
+        _s("S2", [1], summary="s2"),
+    ]
+
+    new_blocks, new_sections = _dedup_blocks(blocks, sections)
+
+    for sec in new_sections:
+        for idx in sec.block_indices:
+            assert 0 <= idx < len(new_blocks)
+
+
+def test_dedup_subset_does_not_absorb_equal_sets() -> None:
+    """Equal sets are handled by exact-dedup, not subset absorption."""
+    blocks = [
+        _b("Version A", ["a1", "a2"]),
+        _b("Version B — longer title wins", ["a1", "a2"]),
+    ]
+    sections = [_s("S", [0, 1])]
+
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 1
+    assert new_blocks[0].title == "Version B — longer title wins"
+
+
+def test_dedup_chained_subsets() -> None:
+    """A ⊂ B ⊂ C — both A and B are removed, only C remains."""
+    blocks = [
+        _b("Smallest", ["a1"]),
+        _b("Middle", ["a1", "a2"]),
+        _b("Largest", ["a1", "a2", "a3"]),
+    ]
+    sections = [_s("S", [0, 1, 2])]
+
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 1
+    assert new_blocks[0].title == "Largest"
+
+
+def test_dedup_no_absorption_for_partial_overlap() -> None:
+    """Overlapping but non-subset blocks are both kept."""
+    blocks = [
+        _b("Block A", ["a1", "a2", "a3"]),
+        _b("Block B", ["a2", "a3", "a4"]),
+    ]
+    sections = [_s("S", [0, 1])]
+
+    new_blocks, _ = _dedup_blocks(blocks, sections)
+
+    assert len(new_blocks) == 2
