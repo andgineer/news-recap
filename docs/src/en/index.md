@@ -14,7 +14,7 @@
 - File-based article storage with daily partitioning and automatic garbage collection.
 - Recap pipeline with two modes:
     - **Map-reduce** (default): classify → load_resources → enrich → deduplicate → map → reduce → split → group_sections → summarize.
-    - **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (parallel batches + deterministic block dedup + section merge).
+    - **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (parallel batches + deterministic block dedup + section merge) → refine_layout (optional LLM pass to consolidate fragmented sections).
 
 ## Where To Start
 

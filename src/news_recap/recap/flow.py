@@ -33,6 +33,7 @@ from news_recap.recap.tasks.load_resources import LoadResources
 from news_recap.recap.tasks.map_blocks import MapBlocks
 from news_recap.recap.tasks.oneshot_digest import OneshotDigest
 from news_recap.recap.tasks.reduce_blocks import ReduceBlocks
+from news_recap.recap.tasks.refine_layout import RefineLayout
 from news_recap.recap.tasks.split_blocks import SplitBlocks
 from news_recap.recap.tasks.summarize import Summarize
 from news_recap.storage.io import load_msgspec
@@ -143,6 +144,7 @@ def recap_flow(  # noqa: PLR0915
         Deduplicate.run(ctx)
         if inp.oneshot:
             OneshotDigest.run(ctx)
+            RefineLayout.run(ctx)
         else:
             MapBlocks.run(ctx)
             ReduceBlocks.run(ctx)

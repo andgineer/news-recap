@@ -393,6 +393,40 @@ Rules:
 """,
 )
 
+RECAP_REFINE_LAYOUT_PROMPT = PromptTemplate(
+    body="""\
+You are a news editor reviewing small sections in today's digest.
+
+Sections marked [SMALL] have only 1-2 blocks. For each [SMALL] section, \
+decide whether its blocks can be absorbed into an existing larger section \
+where they are a clear thematic fit. If no larger section fits, keep the \
+small section as-is.
+
+Rules:
+- Only move blocks FROM a [SMALL] section INTO a larger section (3+ blocks).
+- Do NOT move blocks out of sections that already have 3+ blocks.
+- Do NOT merge two large sections together.
+- Do NOT rename any section. Titles stay exactly as they were.
+- A [SMALL] section should remain unchanged if no larger section is a \
+clear thematic match — do not force it into a catch-all.
+- [SMALL] is an input-only annotation — never include it in your output.
+- Every block number (1 to {total_blocks}) must appear exactly once \
+in one BLOCKS line.
+- Do not skip, invent, or renumber blocks.
+- Write the SECTION: keyword in English; the section name itself in {language}.
+- Write summaries in {language}.
+
+Current layout:
+{layout_block}
+
+{output_instruction}Output every section (including unchanged ones) in this format:
+
+SECTION: <section title>
+SECTION_SUMMARY: <one sentence>
+BLOCKS: <comma-separated block numbers>\
+""",
+)
+
 RECAP_SUMMARIZE_PROMPT = PromptTemplate(
     body="""\
 You are a senior news editor writing a brief summary of the day's news \

@@ -269,6 +269,7 @@ _ALL_TASK_TYPES = {
     "recap_summarize",
     "recap_oneshot_digest",
     "recap_merge_sections",
+    "recap_refine_layout",
 }
 
 

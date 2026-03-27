@@ -33,8 +33,11 @@ flowchart TD
     oneshotW --> blockDedup["BlockDedup (deterministic)"]
     blockDedup --> merge{"> 1 batch?"}
     merge -->|Yes| mergeSec[MergeSections]
-    merge -->|No| done["Digest (blocks + sections)"]
-    mergeSec --> done
+    merge -->|No| needRefine{"NeedRefine?"}
+    mergeSec --> needRefine
+    needRefine -->|Yes| refineLayout["RefineLayout"]
+    needRefine -->|No| done["Digest (blocks + sections)"]
+    refineLayout --> done
     mapW --> reduce[ReduceBlocks]
     reduce --> split{SPLIT needed?}
     split -->|No| digest["Digest (blocks)"]
@@ -64,9 +67,10 @@ forks depending on `--oneshot`:
 5. **OneshotDigest** — articles split into batches of ~200, processed in parallel; each batch agent groups and titles blocks and sections in one pass.
 6. **BlockDedup** *(deterministic, no LLM)* — removes exact-duplicate and subset blocks by comparing `article_ids` sets.
 7. **MergeSections** *(only when > 1 batch)* — reconciles section names from all batches into a unified section list.
+8. **RefineLayout** *(optional, gated)* — a single LLM call that absorbs small (1–2 block) sections into semantically fitting larger sections; sections with 3+ blocks are left untouched. Skipped when all sections already have ≥ 3 blocks.
 
 Steps 1, 3, 4, 5, and 7 (default) or 5 (oneshot) run up to `_MAX_PARALLEL` concurrent workers.
-Steps 2, 6, 8, and 9 (default) or 6–7 (oneshot, when needed) are single-threaded.
+Steps 2, 6, 8, and 9 (default) or 6–8 (oneshot, when needed) are single-threaded.
 
 ## Per-step contracts
 
@@ -367,6 +371,43 @@ INCLUDES: <comma-separated input section numbers>
 Every input section number must appear in exactly one `INCLUDES` line.
 A section that stands alone has only its own number in `INCLUDES`.
 
+### RefineLayout
+
+| | |
+|---|---|
+| **Module** | `recap/tasks/refine_layout.py` |
+| **Task type** | `recap_refine_layout` |
+| **LLM I/O** | Section titles + numbered block titles in prompt; agent prints `SECTION:` / `SECTION_SUMMARY:` / `BLOCKS:` lines |
+| **Reads digest** | `blocks`, `recaps` |
+| **Writes digest** | `recaps` — `list[DigestSection]` (rewritten; blocks untouched) |
+
+Optional post-processing step that runs after OneshotDigest (including
+BlockDedup and MergeSections).  Gated by `needs_refinement`: skipped when
+all sections have ≥ 3 blocks.
+
+Conservative refinement: relocates blocks from sections with 1–2 blocks
+into semantically fitting larger sections.  Sections with 3+ blocks are
+left untouched — no renaming, no block removal.  The prompt sends section
+titles and numbered block titles (no article IDs or block summaries);
+small sections are tagged `[SMALL]` in the input so the LLM knows which
+sections are candidates for absorption.
+
+Output format:
+
+```
+SECTION: <section title>
+SECTION_SUMMARY: <one sentence>
+BLOCKS: <comma-separated block numbers>
+```
+
+Validation: every block number (1..N) must appear exactly once across all
+`BLOCKS` lines.  Up to 5% omitted blocks are tolerated (auto-appended to
+the last section with a warning).  On invalid output (duplicates, >5%
+missing, unparseable), the step falls back to the pre-refinement sections.
+
+This is a separate checkpoint from OneshotDigest.  `restore_state()` is a
+no-op (blocks and recaps are already in the checkpoint).
+
 ## State and checkpointing
 
 Two layers of state flow through the pipeline:
@@ -398,7 +439,7 @@ The flow catches this and marks the run as completed.
 
 Valid `stop_after` values: `classify`, `load_resources`, `enrich`,
 `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`,
-`group_sections`, `summarize`, `oneshot_digest`.
+`group_sections`, `summarize`, `oneshot_digest`, `refine_layout`.
 
 ## Output shape
 
@@ -430,3 +471,70 @@ Each `DigestSection` has:
 by SUMMARIZE.
 
 There is no event layer; blocks reference articles directly.
+
+## Experiments
+
+All experiments below were run on the same 703-article corpus (25 Mar 2026)
+using Claude CLI agents under a \$20/month subscription.
+
+### Map-reduce vs Oneshot
+
+| | Map-reduce | Oneshot (no refine) | Oneshot + RefineLayout |
+|---|---|---|---|
+| Time | 26 min | 5–7 min | 6–8 min |
+| Blocks | 158 | 239 | 182 |
+| Sections | 24 | 33 | 27 |
+| Sections ≤ 2 blocks | 0 | 8 | 3 |
+| Max section size | 14 | 25 | 18 |
+| Avg section size | 6.6 | 7.4 | 7.1 |
+| Article coverage | 100% | 98% | 97% |
+| Day summary | yes (global) | per-section only | per-section only |
+| Sub. cost / run | ~\$0.23 (5% weekly) | ~\$0.16 (3.5%) | ~\$0.19 (4%) |
+
+**Map-reduce** produces the most compact output — the `reduce` step merges
+overlapping blocks across map shards, resulting in fewer, denser blocks.
+Sections are well-separated (e.g. "global energy crisis" vs "Croatian fuel
+response" vs "Iran-Israel war" as three distinct sections).  Downsides:
+4× slower, ~20% more expensive, mixed-language section titles in some runs
+(e.g. "Hrvatska energetska kriza"), and no per-section summaries.
+
+**Oneshot without refine** is the fastest option.  Articles are pre-sorted
+by embedding similarity and split into batches of ~200, processed in
+parallel.  Deterministic block dedup (exact + subset absorption) removes
+redundant blocks.  Main weakness: 8–12 orphan sections with 1–2 blocks
+("Армения и религия", "Безопасность дорог и транспорт") that fragment the
+reading experience.
+
+**Oneshot + RefineLayout** adds one lightweight LLM call after block dedup
+and section merge.  Two rounds of experiments shaped the prompt:
+
+1. *Aggressive refine* — the LLM was told to "reorganize blocks into
+   well-formed thematic sections".  It reduced sections from 33 to 17 and
+   eliminated all tiny sections, but created catch-all mega-sections
+   (29-block "Balkans" mixing crime, Easter prices, comedy films, and
+   disability policy; 27-block "Middle East" covering war, diplomacy,
+   energy, and humanitarian aid in one section).  This was worse than the
+   original fragmentation — large unfocused sections take longer to read.
+2. *Conservative refine* (current) — the LLM is constrained to only
+   absorb `[SMALL]` (1–2 block) sections into existing larger sections
+   where the thematic fit is clear.  Sections with 3+ blocks are
+   untouched.  Result: 33 → 27 sections, 3 remaining small sections
+   (none has a clear larger home), max section size 18 (focused on one
+   topic), average 7.1 — close to map-reduce's 6.6 without the 4× cost.
+
+The conservative approach was chosen because readers prefer a few small
+focused sections over large unfocused ones.
+
+### API mode
+
+An API-key mode (`--api`) is available using Haiku for most tasks and
+Sonnet for reduce.  It is faster per-token but adds up to ~\$13/month at
+daily use.  With the oneshot path now dominant, API mode is mainly useful
+for environments where CLI agents are not available.
+
+### Decision
+
+Oneshot + conservative RefineLayout is the default pipeline mode.  It
+offers the best balance of speed (5–8 min), cost (~4% weekly quota per
+run), and section quality (focused sections, no catch-all mega-groups,
+few orphan sections).

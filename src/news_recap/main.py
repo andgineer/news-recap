@@ -170,6 +170,8 @@ def recap() -> None:
             "split_blocks",
             "group_sections",
             "summarize",
+            "oneshot_digest",
+            "refine_layout",
         ],
         case_sensitive=False,
     ),

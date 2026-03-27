@@ -77,7 +77,7 @@ Run the full news digest pipeline for a business date.
 The pipeline goes through multiple stages, depending on the mode:
 
 - **Map-reduce** (default): classify → load_resources → enrich → deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections → summarize.
-- **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (parallel batches + deterministic block dedup + section merge).
+- **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (parallel batches + deterministic block dedup + section merge) → refine_layout (optional section consolidation).
 
 Each stage is checkpointed, so a resumed run skips already-completed stages.
 
@@ -105,7 +105,7 @@ Key options:
   date is taken from the source pipeline; mutually exclusive with `--date`)
 - `--use-api-key` (keep vendor API keys in the agent subprocess environment;
   by default they are removed so the agent uses its subscription quota)
-- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`, `oneshot_digest`)
+- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`, `oneshot_digest`, `refine_layout`)
 
 ## API Mode
 

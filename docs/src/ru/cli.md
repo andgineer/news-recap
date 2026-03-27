@@ -77,7 +77,7 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 Пайплайн проходит несколько этапов в зависимости от режима:
 
 - **Map-reduce** (по умолчанию): classify → load_resources → enrich → deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections → summarize.
-- **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций).
+- **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций) → refine_layout (опциональная консолидация секций).
 
 Каждый этап чекпоинтится, поэтому повторный запуск пропускает уже выполненные этапы.
 
@@ -105,7 +105,7 @@ news-recap recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105
   берётся из исходного пайплайна; несовместим с `--date`)
 - `--use-api-key` (не удалять ключи API вендоров из окружения агента-подпроцесса;
   по умолчанию ключи удаляются, чтобы агент использовал лимиты подписки)
-- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`, `oneshot_digest`)
+- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`, `oneshot_digest`, `refine_layout`)
 
 ## API-режим
 

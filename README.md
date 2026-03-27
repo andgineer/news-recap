@@ -9,38 +9,15 @@ The key idea: instead of paying per-token via expensive LLM APIs, the pipeline d
 CLI agents (Codex, Claude Code, Gemini CLI) that run under flat-rate ~$20/month
 subscriptions — making heavy daily summarisation practically free.
 
-## Pipeline modes — benchmark
+## Cost
 
-All runs use Claude. Cost estimated from the \$20/month subscription limits.
+Each oneshot run consumes roughly 4% of the weekly CLI agent subscription
+quota (~\$0.19 per run, ~\$6/month at daily use). The dollar figures are
+approximate — the pipeline runs under flat-rate subscriptions (Codex, Claude
+Code, Gemini CLI at ~\$20/month), so the quota would mostly go unused anyway.
 
-| | Map-reduce CLI | Map-reduce API | Oneshot CLI |
-|---|---|---|---|
-| Articles | 703 | 423 | 703 |
-| Time | 26 min | 8 min | 5–7 min |
-| Blocks | 158 | 105 | 220–300 |
-| Sections | 24 | 23 | 33–37 |
-| Duplicate blocks | 0 | 0 | 0 |
-| Day summary | yes | yes | no (per-section only) |
-| Sub. cost / run | ~\$0.23 (5% weekly) | — | ~\$0.19 (4% weekly) |
-| API cost / run | — | \$0.43 | — |
-| Est. monthly (daily use) | ~\$7 | ~\$13 | ~\$6 |
-
-**Map-reduce** produces the most compact output: the `reduce` step merges
-overlapping blocks across map shards and the `split` step refines oversized
-groups, resulting in fewer, denser blocks. Sections are well-separated
-(e.g. global energy crisis vs. Croatian fuel response). Downside: 4× slower
-and more expensive than oneshot due to the long `map` and `reduce` LLM calls.
-
-**Oneshot** splits articles into shards processed in parallel, then merges
-sections and removes duplicate blocks deterministically (exact duplicates by
-article-ID set + subset absorption). Faster and cheaper, with per-section
-summaries. Produces more blocks than map-reduce because cross-shard
-consolidation is structural, not semantic — blocks that cover different
-article sets but describe the same event are not merged.
-
-**API mode** uses Haiku for most tasks and Sonnet only for reduce — faster and
-cheaper per-token but adds up to ~\$13/month at daily use. CLI agents run under
-the flat-rate subscription, where each run consumes 4–5% of the weekly quota.
+See [Pipeline spec — Experiments](spec/pipeline.md#experiments) for
+detailed mode comparisons and benchmarks.
 
 ### Documentation
 

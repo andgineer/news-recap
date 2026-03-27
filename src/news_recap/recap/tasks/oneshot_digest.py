@@ -589,9 +589,7 @@ class OneshotDigest(TaskLauncher):
             merged = _run_merge(ctx, all_sections, language)
             blocks, sections_out = _build_merged_digest_entries(merged, all_sections)
 
-        # Dedup exact-duplicate blocks that appear in multiple shards
-        if len(batches) > 1:
-            blocks, sections_out = _dedup_blocks(blocks, sections_out)
+        blocks, sections_out = _dedup_blocks(blocks, sections_out)
 
         # Coverage check
         unique_excluded = list(set(all_excluded_ids))
