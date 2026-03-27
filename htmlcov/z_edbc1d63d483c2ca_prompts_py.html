@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/news_recap/recap/tasks/prompts.py: 100%</title>
+    <title>Coverage for src/news_recap/recap/tasks/prompts.py: 92%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src&#8201;/&#8201;news_recap&#8201;/&#8201;recap&#8201;/&#8201;tasks&#8201;/&#8201;prompts.py</b>:
-            <span class="pc_cov">100%</span>
+            <span class="pc_cov">92%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -54,9 +54,9 @@
             </div>
         </aside>
         <h2>
-            <span class="text">25 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">25<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">0<span class="text"> missing</span></button>
+            <span class="text">26 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">24<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">2<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_edbc1d63d483c2ca_reduce_blocks_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-27 08:00 +0000
+            created at 2026-03-27 13:13 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -117,8 +117,8 @@
     <p class="pln"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t"><span class="str">    ``output_instruction`` is injected automatically based on *backend*;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t"><span class="str">    callers must not pass it explicitly.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t37" href="#t37">37</a></span><span class="t"><span class="str">    """</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t38" href="#t38">38</a></span><span class="t">    <span class="nam">kwargs</span><span class="op">[</span><span class="str">"output_instruction"</span><span class="op">]</span> <span class="op">=</span> <span class="nam">_CLI_OUTPUT_INSTRUCTION</span> <span class="key">if</span> <span class="nam">backend</span> <span class="op">==</span> <span class="nam">PromptBackend</span><span class="op">.</span><span class="nam">CLI</span> <span class="key">else</span> <span class="str">""</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t39" href="#t39">39</a></span><span class="t">    <span class="key">return</span> <span class="nam">template</span><span class="op">.</span><span class="nam">body</span><span class="op">.</span><span class="nam">format</span><span class="op">(</span><span class="op">**</span><span class="nam">kwargs</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t38" href="#t38">38</a></span><span class="t">    <span class="nam">kwargs</span><span class="op">[</span><span class="str">"output_instruction"</span><span class="op">]</span> <span class="op">=</span> <span class="nam">_CLI_OUTPUT_INSTRUCTION</span> <span class="key">if</span> <span class="nam">backend</span> <span class="op">==</span> <span class="nam">PromptBackend</span><span class="op">.</span><span class="nam">CLI</span> <span class="key">else</span> <span class="str">""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t39" href="#t39">39</a></span><span class="t">    <span class="key">return</span> <span class="nam">template</span><span class="op">.</span><span class="nam">body</span><span class="op">.</span><span class="nam">format</span><span class="op">(</span><span class="op">**</span><span class="nam">kwargs</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t40" href="#t40">40</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t41" href="#t41">41</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t42" href="#t42">42</a></span><span class="t"><span class="nam">RECAP_CLASSIFY_BATCH_PROMPT</span> <span class="op">=</span> <span class="nam">PromptTemplate</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -475,27 +475,61 @@
     <p class="run run2"><span class="n"><a id="t393" href="#t393">393</a></span><span class="t"><span class="str">"""</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t394" href="#t394">394</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t395" href="#t395">395</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t396" href="#t396">396</a></span><span class="t"><span class="nam">RECAP_SUMMARIZE_PROMPT</span> <span class="op">=</span> <span class="nam">PromptTemplate</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t396" href="#t396">396</a></span><span class="t"><span class="nam">RECAP_REFINE_LAYOUT_PROMPT</span> <span class="op">=</span> <span class="nam">PromptTemplate</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t397" href="#t397">397</a></span><span class="t">    <span class="nam">body</span><span class="op">=</span><span class="str">"""\</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t398" href="#t398">398</a></span><span class="t"><span class="str">You are a senior news editor writing a brief summary of the day's news \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t399" href="#t399">399</a></span><span class="t"><span class="str">for a busy reader. Below are the sections and block titles from today's \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t400" href="#t400">400</a></span><span class="t"><span class="str">digest.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t401" href="#t401">401</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t402" href="#t402">402</a></span><span class="t"><span class="str">Write a short summary: a heading line that frames the day, followed by \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t403" href="#t403">403</a></span><span class="t"><span class="str">a bulleted list of the main storylines (5-8 bullets). Each bullet should \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t404" href="#t404">404</a></span><span class="t"><span class="str">name a thread that runs through today's news, not repeat individual \</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t405" href="#t405">405</a></span><span class="t"><span class="str">block titles.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t406" href="#t406">406</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t407" href="#t407">407</a></span><span class="t"><span class="str">Write in {language}.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t408" href="#t408">408</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t409" href="#t409">409</a></span><span class="t"><span class="str">Wrap your entire summary between these markers:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t410" href="#t410">410</a></span><span class="t"><span class="str">SUMMARY_START</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t411" href="#t411">411</a></span><span class="t"><span class="str">&lt;your summary here></span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t412" href="#t412">412</a></span><span class="t"><span class="str">SUMMARY_END</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t413" href="#t413">413</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t414" href="#t414">414</a></span><span class="t"><span class="str">=== TODAY'S DIGEST ===</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t415" href="#t415">415</a></span><span class="t"><span class="str">{output_instruction}{digest_overview}"""</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t416" href="#t416">416</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t398" href="#t398">398</a></span><span class="t"><span class="str">You are a news editor reviewing small sections in today's digest.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t399" href="#t399">399</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t400" href="#t400">400</a></span><span class="t"><span class="str">Sections marked [SMALL] have only 1-2 blocks. For each [SMALL] section, \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t401" href="#t401">401</a></span><span class="t"><span class="str">decide whether its blocks can be absorbed into an existing larger section \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t402" href="#t402">402</a></span><span class="t"><span class="str">where they are a clear thematic fit. If no larger section fits, keep the \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t403" href="#t403">403</a></span><span class="t"><span class="str">small section as-is.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t404" href="#t404">404</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t405" href="#t405">405</a></span><span class="t"><span class="str">Rules:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t406" href="#t406">406</a></span><span class="t"><span class="str">- Only move blocks FROM a [SMALL] section INTO a larger section (3+ blocks).</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t407" href="#t407">407</a></span><span class="t"><span class="str">- Do NOT move blocks out of sections that already have 3+ blocks.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t408" href="#t408">408</a></span><span class="t"><span class="str">- Do NOT merge two large sections together.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t409" href="#t409">409</a></span><span class="t"><span class="str">- Do NOT rename any section. Titles stay exactly as they were.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t410" href="#t410">410</a></span><span class="t"><span class="str">- A [SMALL] section should remain unchanged if no larger section is a \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t411" href="#t411">411</a></span><span class="t"><span class="str">clear thematic match &#8212; do not force it into a catch-all.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t412" href="#t412">412</a></span><span class="t"><span class="str">- [SMALL] is an input-only annotation &#8212; never include it in your output.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t413" href="#t413">413</a></span><span class="t"><span class="str">- Every block number (1 to {total_blocks}) must appear exactly once \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t414" href="#t414">414</a></span><span class="t"><span class="str">in one BLOCKS line.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t415" href="#t415">415</a></span><span class="t"><span class="str">- Do not skip, invent, or renumber blocks.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t416" href="#t416">416</a></span><span class="t"><span class="str">- Write the SECTION: keyword in English; the section name itself in {language}.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t417" href="#t417">417</a></span><span class="t"><span class="str">- Write summaries in {language}.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t418" href="#t418">418</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t419" href="#t419">419</a></span><span class="t"><span class="str">Current layout:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t420" href="#t420">420</a></span><span class="t"><span class="str">{layout_block}</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t421" href="#t421">421</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t422" href="#t422">422</a></span><span class="t"><span class="str">{output_instruction}Output every section (including unchanged ones) in this format:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t423" href="#t423">423</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t424" href="#t424">424</a></span><span class="t"><span class="str">SECTION: &lt;section title></span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t425" href="#t425">425</a></span><span class="t"><span class="str">SECTION_SUMMARY: &lt;one sentence></span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t426" href="#t426">426</a></span><span class="t"><span class="str">BLOCKS: &lt;comma-separated block numbers>\</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t427" href="#t427">427</a></span><span class="t"><span class="str">"""</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t428" href="#t428">428</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t429" href="#t429">429</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t430" href="#t430">430</a></span><span class="t"><span class="nam">RECAP_SUMMARIZE_PROMPT</span> <span class="op">=</span> <span class="nam">PromptTemplate</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t431" href="#t431">431</a></span><span class="t">    <span class="nam">body</span><span class="op">=</span><span class="str">"""\</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t432" href="#t432">432</a></span><span class="t"><span class="str">You are a senior news editor writing a brief summary of the day's news \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t433" href="#t433">433</a></span><span class="t"><span class="str">for a busy reader. Below are the sections and block titles from today's \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t434" href="#t434">434</a></span><span class="t"><span class="str">digest.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t435" href="#t435">435</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t436" href="#t436">436</a></span><span class="t"><span class="str">Write a short summary: a heading line that frames the day, followed by \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t437" href="#t437">437</a></span><span class="t"><span class="str">a bulleted list of the main storylines (5-8 bullets). Each bullet should \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t438" href="#t438">438</a></span><span class="t"><span class="str">name a thread that runs through today's news, not repeat individual \</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t439" href="#t439">439</a></span><span class="t"><span class="str">block titles.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t440" href="#t440">440</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t441" href="#t441">441</a></span><span class="t"><span class="str">Write in {language}.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t442" href="#t442">442</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t443" href="#t443">443</a></span><span class="t"><span class="str">Wrap your entire summary between these markers:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t444" href="#t444">444</a></span><span class="t"><span class="str">SUMMARY_START</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t445" href="#t445">445</a></span><span class="t"><span class="str">&lt;your summary here></span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t446" href="#t446">446</a></span><span class="t"><span class="str">SUMMARY_END</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t447" href="#t447">447</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t448" href="#t448">448</a></span><span class="t"><span class="str">=== TODAY'S DIGEST ===</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t449" href="#t449">449</a></span><span class="t"><span class="str">{output_instruction}{digest_overview}"""</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t450" href="#t450">450</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -505,7 +539,7 @@
             <a class="nav" href="z_edbc1d63d483c2ca_reduce_blocks_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-27 08:00 +0000
+            created at 2026-03-27 13:13 +0000
         </p>
     </div>
 </footer>
