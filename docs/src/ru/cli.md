@@ -5,7 +5,7 @@
 ## Карта Команд
 
 - `ingest`: импорт источников, статистика, проверка дедупа.
-- `recap`: пайплайн ежедневного дайджеста в режиме map-reduce или oneshot.
+- `recap`: пайплайн ежедневного дайджеста.
 
 ## Общие Замечания
 
@@ -74,10 +74,7 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 ### `recap run`
 Запуск полного пайплайна дайджеста на бизнес-дату.
 
-Пайплайн проходит несколько этапов в зависимости от режима:
-
-- **Map-reduce** (по умолчанию): classify → load_resources → enrich → deduplicate → map_blocks → reduce_blocks → split_blocks → group_sections → summarize.
-- **Oneshot** (`--oneshot`): classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций) → refine_layout (опциональная консолидация секций).
+Пайплайн проходит следующие этапы: classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций) → refine_layout (опциональная консолидация секций).
 
 Каждый этап чекпоинтится, поэтому повторный запуск пропускает уже выполненные этапы.
 
@@ -87,7 +84,6 @@ news-recap recap run --api
 news-recap recap run --date 2026-02-18
 news-recap recap run --agent claude --stop-after classify
 news-recap recap run --limit 50
-news-recap recap run --oneshot
 news-recap recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
 ```
 
@@ -98,14 +94,11 @@ news-recap recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105
 - `--limit` (ограничить число загружаемых статей)
 - `--api` (использовать прямой Anthropic API вместо CLI-агентов)
 - `--fresh` (игнорировать незавершённый пайплайн и начать новый)
-- `--oneshot` (заменить этапы map→reduce→split→group→summarize параллельными батчами
-  по ~200 статей, детерминистическим дедупом блоков и объединением секций через
-  отдельный вызов LLM)
 - `--from-pipeline` (использовать статьи из предыдущего пайплайна; бизнес-дата
   берётся из исходного пайплайна; несовместим с `--date`)
 - `--use-api-key` (не удалять ключи API вендоров из окружения агента-подпроцесса;
   по умолчанию ключи удаляются, чтобы агент использовал лимиты подписки)
-- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`, `group_sections`, `summarize`, `oneshot_digest`, `refine_layout`)
+- `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)
 
 ## API-режим
 
@@ -126,12 +119,12 @@ news-recap recap run --api
 
 ### Таблица моделей по задачам
 
-По умолчанию быстрые задачи используют `claude-haiku-4-5-20251001`, а задача reduce —
-`claude-sonnet-4-6`. Для переопределения отдельных задач используйте
-`NEWS_RECAP_API_MODEL_MAP` (пары `task_type=model_id` через запятую):
+По умолчанию все задачи используют `claude-haiku-4-5-20251001`. Для переопределения
+отдельных задач используйте `NEWS_RECAP_API_MODEL_MAP` (пары `task_type=model_id`
+через запятую):
 
 ```bash
-export NEWS_RECAP_API_MODEL_MAP="recap_reduce=claude-sonnet-4-6,recap_summarize=claude-sonnet-4-6"
+export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_classify=claude-haiku-4-5-20251001"
 ```
 
 ### Переменные окружения API-режима

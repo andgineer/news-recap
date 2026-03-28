@@ -17,10 +17,7 @@ flowchart TD
     subgraph parallel3 [Parallel workers]
         dedupW["Deduplicate (up to 4 clusters)"]
     end
-    subgraph parallel4 [Parallel workers]
-        mapW["MapBlocks (up to 3 chunks)"]
-    end
-    subgraph oneshotBatches [Parallel batches --oneshot]
+    subgraph oneshotBatches [Parallel batches]
         oneshotW["OneshotDigest batches (~200 articles each)"]
     end
 
@@ -28,8 +25,7 @@ flowchart TD
     classifyW --> loadRes[LoadResources]
     loadRes --> enrichW
     enrichW --> dedupW
-    dedupW -->|default| mapW
-    dedupW -->|--oneshot| oneshotW
+    dedupW --> oneshotW
     oneshotW --> blockDedup["BlockDedup (deterministic)"]
     blockDedup --> merge{"> 1 batch?"}
     merge -->|Yes| mergeSec[MergeSections]
@@ -38,39 +34,21 @@ flowchart TD
     needRefine -->|Yes| refineLayout["RefineLayout"]
     needRefine -->|No| done["Digest (blocks + sections)"]
     refineLayout --> done
-    mapW --> reduce[ReduceBlocks]
-    reduce --> split{SPLIT needed?}
-    split -->|No| digest["Digest (blocks)"]
-    split -->|Yes| splitW["SplitBlocks (parallel)"]
-    splitW --> digest
-    digest --> groupSec[GroupSections]
-    groupSec --> summarize[Summarize]
 ```
 
-The flow `recap_flow` runs steps in fixed order. After Deduplicate the path
-forks depending on `--oneshot`:
-
-**Default path (9 steps):**
+The flow `recap_flow` runs steps in fixed order (8 steps):
 
 1. **Classify** — batch-classify articles as `ok / vague / exclude`.
 2. **LoadResources** — download full-text for articles needing enrichment.
 3. **Enrich** — rewrite headlines and extract excerpts via LLM agents.
 4. **Deduplicate** — merge near-duplicate articles (embedding pre-filter + LLM clustering).
-5. **MapBlocks** — group headlines into titled blocks (parallel workers).
-6. **ReduceBlocks** — merge overlapping block titles into a unified list.
-7. **SplitBlocks** — break broad blocks into thematic sub-blocks (parallel workers, only if reduce produced SPLIT markers).
-8. **GroupSections** — cluster blocks into reader-friendly sections with short topic labels.
-9. **Summarize** — produce a heading + bulleted day summary from the section structure.
-
-**`--oneshot` path** (steps 1–4 identical, then):
-
 5. **OneshotDigest** — articles split into batches of ~200, processed in parallel; each batch agent groups and titles blocks and sections in one pass.
-6. **BlockDedup** *(deterministic, no LLM)* — removes exact-duplicate and subset blocks by comparing `article_ids` sets.
+6. **BlockDedup** *(deterministic, no LLM)* — removes exact-duplicate, subset, and semantically similar blocks.
 7. **MergeSections** *(only when > 1 batch)* — reconciles section names from all batches into a unified section list.
 8. **RefineLayout** *(optional, gated)* — a single LLM call that absorbs small (1–2 block) sections into semantically fitting larger sections; sections with 3+ blocks are left untouched. Skipped when all sections already have ≥ 3 blocks.
 
-Steps 1, 3, 4, 5, and 7 (default) or 5 (oneshot) run up to `_MAX_PARALLEL` concurrent workers.
-Steps 2, 6, 8, and 9 (default) or 6–8 (oneshot, when needed) are single-threaded.
+Steps 1, 3, 4, and 5 run up to `_MAX_PARALLEL` concurrent workers.
+Steps 2, 6–8 are single-threaded.
 
 ## Per-step contracts
 
@@ -170,123 +148,6 @@ Up to 4 clusters run in parallel. Partial failures are tolerated:
 `fully_completed = False` is set and a warning logged, but the pipeline
 continues.
 
-### MapBlocks
-
-| | |
-|---|---|
-| **Module** | `recap/tasks/map_blocks.py` |
-| **Task type** | `recap_map` |
-| **LLM I/O** | Inline prompt with numbered headlines; agent prints `BLOCK:` lines to stdout |
-| **Reads state** | `kept_entries`, `enriched_articles` |
-| **Writes state** | `map_blocks` — `list[{"title": str, "article_ids": list[str], "worker": int}]` |
-
-Enriched titles are merged into the index before chunking. Entries are
-split into chunks of ~300, each chunk sent to a parallel worker.
-
-Target block count: `max(5, len(entries) // 15)`, divided among workers.
-Output format per worker:
-
-```
-BLOCK: <2-4 sentence title>
-<comma-separated headline numbers>
-```
-
-Validation: headline coverage below 50% raises `RecapPipelineError`;
-below 80% logs a warning. Unassigned headlines go into an `Uncategorized`
-block. Worker success rate below 50% or zero total blocks raises.
-
-### ReduceBlocks
-
-| | |
-|---|---|
-| **Module** | `recap/tasks/reduce_blocks.py` |
-| **Task type** | `recap_reduce` |
-| **LLM I/O** | All block titles inline in prompt; agent prints `BLOCK:` / `SPLIT:` lines to stdout |
-| **Reads state** | `map_blocks` |
-| **Writes state** | `split_tasks` — `list[SplitTask]` (blocks that need splitting) |
-| **Writes digest** | `blocks` — `list[DigestBlock]` (BLOCK-line results; SPLIT blocks added later) |
-
-A single LLM agent receives numbered block titles with article counts.
-The agent outputs one of two line types per block:
-
-```
-BLOCK: <informative title>
-<comma-separated source block numbers>
-
-SPLIT: <best-effort combined title>
-<comma-separated source block numbers>
-```
-
-BLOCK actions are applied in code — article IDs from source blocks are
-concatenated and the new title is used. SPLIT actions are queued for the
-next phase. Omitted source blocks are treated as implicit single-block
-BLOCK actions (with a warning). If stdout is missing or unparseable, the
-step falls back to MAP blocks as-is.
-
-### SplitBlocks
-
-| | |
-|---|---|
-| **Module** | `recap/tasks/split_blocks.py` |
-| **Task type** | `recap_split` |
-| **LLM I/O** | Article headlines inline in prompt; agent prints `BLOCK:` lines to stdout |
-| **Reads state** | `split_tasks`, `enriched_articles`, `ctx.article_map` |
-| **Writes digest** | Appends to `blocks` — `list[DigestBlock]` |
-
-Runs only when REDUCE produced SPLIT markers. Each split task is small
-(typically 5-20 articles) and independent — they run in parallel (up to
-5 concurrent workers). The agent receives numbered article headlines and
-outputs `BLOCK:` lines with article numbers. Coverage below 50% raises
-`RecapPipelineError`. Unassigned articles are appended to the last block.
-
-If the step is skipped (no split tasks), no work is done. On worker
-failure, partial results are saved and `RecapPipelineError` is raised.
-
-### GroupSections
-
-| | |
-|---|---|
-| **Module** | `recap/tasks/group_sections.py` |
-| **Task type** | `recap_group_sections` |
-| **LLM I/O** | Numbered block titles in prompt; agent prints `SECTION:` lines to stdout |
-| **Reads digest** | `blocks` |
-| **Writes digest** | `recaps` — `list[DigestSection]` |
-
-Takes the flat list of `DigestBlock` objects produced by MAP/REDUCE/SPLIT
-and asks an LLM to cluster them into sections with short topic labels.
-
-Output format:
-
-```
-SECTION: <short topic label>
-<comma-separated block numbers>
-```
-
-Post-parse guardrails:
-- Single-block sections are merged into the nearest neighbour.
-- Orphan blocks (not assigned to any section) are appended to the last section.
-- Sections exceeding 10 blocks generate a warning.
-
-When the block count is ≤ 3, the LLM call is skipped and all blocks go
-into a single catch-all section (language-aware title).
-
-### Summarize
-
-| | |
-|---|---|
-| **Module** | `recap/tasks/summarize.py` |
-| **Task type** | `recap_summarize` |
-| **LLM I/O** | Section + block hierarchy in prompt; agent outputs freeform text between markers |
-| **Reads digest** | `recaps`, `blocks` |
-| **Writes digest** | `day_summary` — `str` |
-
-Receives the full section/block structure and writes a heading + bulleted
-storylines summary in the digest language. Output is delimited by
-`SUMMARY_START` / `SUMMARY_END` markers.
-
-If `recaps` is empty (no sections), the step is skipped and `day_summary`
-is set to an empty string.
-
 ### OneshotDigest
 
 | | |
@@ -296,9 +157,6 @@ is set to an empty string.
 | **LLM I/O** | Articles split into batches; each batch agent prints `SECTION:` / `BLOCK:` / `ARTICLES:` / `EXCLUDED:` lines; a merge agent reconciles section names |
 | **Reads** | `ctx.digest.articles` |
 | **Writes digest** | `blocks` — `list[DigestBlock]`, `recaps` — `list[DigestSection]` |
-
-Alternative to the five-step MAP→REDUCE→SPLIT→GROUP→SUMMARIZE pipeline.
-Activated via `--oneshot` CLI flag or `oneshot=True` in `pipeline_input.json`.
 
 Articles are pre-sorted by embedding similarity, then split into batches of
 `_BATCH_SIZE` (default 200). Each batch is processed by a parallel `recap_oneshot_digest`
@@ -451,8 +309,7 @@ the pipeline after the named step completes by raising `StopPipelineError`.
 The flow catches this and marks the run as completed.
 
 Valid `stop_after` values: `classify`, `load_resources`, `enrich`,
-`deduplicate`, `map_blocks`, `reduce_blocks`, `split_blocks`,
-`group_sections`, `summarize`, `oneshot_digest`, `refine_layout`.
+`deduplicate`, `oneshot_digest`, `refine_layout`.
 
 ## Output shape
 
@@ -472,16 +329,15 @@ Digest
 
 Each `DigestBlock` has:
 
-- `title` — 2-4 sentence summary produced by MAP/REDUCE.
+- `title` — short topic label.
+- `summary` — 2-4 sentence prose describing what happened.
 - `article_ids` — references to `DigestArticle.article_id` entries.
 
 Each `DigestSection` has:
 
-- `title` — short topic label produced by GROUP_SECTIONS.
+- `title` — short section label.
+- `summary` — 1-2 sentence overview of the section topic.
 - `block_indices` — zero-based indices into `blocks`.
-
-`day_summary` is a freeform markdown string (heading + bullets) produced
-by SUMMARIZE.
 
 There is no event layer; blocks reference articles directly.
 
@@ -490,7 +346,21 @@ There is no event layer; blocks reference articles directly.
 All experiments below were run on the same 703-article corpus (25 Mar 2026)
 using Claude CLI agents under a \$20/month subscription.
 
-### Map-reduce vs Oneshot
+### Pipeline tuning
+
+Before settling on the current pipeline, an alternative **map-reduce**
+approach was evaluated.  It used five LLM stages after Deduplicate:
+
+1. **MapBlocks** — split headlines into chunks of ~300 and group each chunk
+   into titled blocks in parallel.
+2. **ReduceBlocks** — merge overlapping block titles from all map workers
+   into a unified list; mark overly broad blocks as SPLIT.
+3. **SplitBlocks** — break SPLIT-marked blocks into smaller thematic
+   sub-blocks (parallel workers).
+4. **GroupSections** — cluster the flat block list into reader-facing
+   sections with short topic labels.
+5. **Summarize** — produce a heading + bulleted day summary from the
+   section structure.
 
 | | Map-reduce | Oneshot (no refine) | Oneshot + RefineLayout |
 |---|---|---|---|
@@ -504,50 +374,32 @@ using Claude CLI agents under a \$20/month subscription.
 | Day summary | yes (global) | per-section only | per-section only |
 | Sub. cost / run | ~\$0.23 (5% weekly) | ~\$0.16 (3.5%) | ~\$0.19 (4%) |
 
-**Map-reduce** produces the most compact output — the `reduce` step merges
+**Map-reduce** produced the most compact output — the reduce step merged
 overlapping blocks across map shards, resulting in fewer, denser blocks.
-Sections are well-separated (e.g. "global energy crisis" vs "Croatian fuel
-response" vs "Iran-Israel war" as three distinct sections).  Downsides:
-4× slower, ~20% more expensive, mixed-language section titles in some runs
-(e.g. "Hrvatska energetska kriza"), and no per-section summaries.
+Sections were well-separated.  Downsides: 4× slower, ~20% more expensive,
+mixed-language section titles in some runs, and no per-section summaries.
 
 **Oneshot without refine** is the fastest option.  Articles are pre-sorted
 by embedding similarity and split into batches of ~200, processed in
-parallel.  Deterministic block dedup (exact + subset absorption) removes
-redundant blocks.  Main weakness: 8–12 orphan sections with 1–2 blocks
-("Армения и религия", "Безопасность дорог и транспорт") that fragment the
-reading experience.
+parallel.  Deterministic block dedup (exact + subset + fuzzy title merge)
+removes redundant blocks.  Main weakness: 8–12 orphan sections with 1–2
+blocks that fragment the reading experience.
 
 **Oneshot + RefineLayout** adds one lightweight LLM call after block dedup
-and section merge.  Two rounds of experiments shaped the prompt:
+and section merge.  Conservative refinement: the LLM is constrained to
+only absorb `[SMALL]` (1–2 block) sections into existing larger sections
+where the thematic fit is clear.  Sections with 3+ blocks are untouched.
+Result: 33 → 27 sections, 3 remaining small sections (none has a clear
+larger home), max section size 18, average 7.1.
 
-1. *Aggressive refine* — the LLM was told to "reorganize blocks into
-   well-formed thematic sections".  It reduced sections from 33 to 17 and
-   eliminated all tiny sections, but created catch-all mega-sections
-   (29-block "Balkans" mixing crime, Easter prices, comedy films, and
-   disability policy; 27-block "Middle East" covering war, diplomacy,
-   energy, and humanitarian aid in one section).  This was worse than the
-   original fragmentation — large unfocused sections take longer to read.
-2. *Conservative refine* (current) — the LLM is constrained to only
-   absorb `[SMALL]` (1–2 block) sections into existing larger sections
-   where the thematic fit is clear.  Sections with 3+ blocks are
-   untouched.  Result: 33 → 27 sections, 3 remaining small sections
-   (none has a clear larger home), max section size 18 (focused on one
-   topic), average 7.1 — close to map-reduce's 6.6 without the 4× cost.
-
-The conservative approach was chosen because readers prefer a few small
-focused sections over large unfocused ones.
+The best qualities of the map-reduce approach (semantic block merging) were
+incorporated into the oneshot pipeline as the fuzzy title merge phase of
+BlockDedup, making the five extra LLM stages unnecessary.  The map-reduce
+code was removed.
 
 ### API mode
 
 An API-key mode (`--api`) is available using Haiku for most tasks and
-Sonnet for reduce.  It is faster per-token but adds up to ~\$13/month at
-daily use.  With the oneshot path now dominant, API mode is mainly useful
-for environments where CLI agents are not available.
-
-### Decision
-
-Oneshot + conservative RefineLayout is the default pipeline mode.  It
-offers the best balance of speed (5–8 min), cost (~4% weekly quota per
-run), and section quality (focused sections, no catch-all mega-groups,
-few orphan sections).
+Sonnet for the oneshot digest.  It is faster per-token but adds up to
+~\$13/month at daily use.  API mode is mainly useful for environments
+where CLI agents are not available.

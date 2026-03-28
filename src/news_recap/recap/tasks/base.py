@@ -58,7 +58,7 @@ def run_single_agent(
     """Materialize a task, run the agent, and return the stdout path.
 
     Encapsulates the materialize → invoke → locate stdout pattern used
-    by single-call phases (group_sections, summarize, reduce single-pass).
+    by single-call phases (oneshot_digest batches, merge_sections, refine_layout).
     """
     from news_recap.recap.agents.ai_agent import run_ai_agent
     from news_recap.recap.storage.workdir import materialize_step

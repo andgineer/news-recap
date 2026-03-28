@@ -29,7 +29,7 @@ def _api_defaults(api_model_map: dict[str, str] | None = None) -> RoutingDefault
         api_model_map=api_model_map
         or {
             "recap_classify": "claude-haiku-4-5-20251001",
-            "recap_reduce": "claude-sonnet-4-6",
+            "recap_oneshot_digest": "claude-haiku-4-5-20251001",
         },
     )
 
@@ -104,7 +104,7 @@ def test_resolve_routing_api_rejects_gemini_agent_override():
 
 
 def test_resolve_routing_api_raises_on_missing_api_model():
-    defaults = _api_defaults(api_model_map={"recap_reduce": "claude-sonnet-4-6"})
+    defaults = _api_defaults(api_model_map={"recap_oneshot_digest": "claude-haiku-4-5-20251001"})
     with pytest.raises(ValueError, match="No API model configured for task_type="):
         resolve_routing_for_enqueue(
             defaults=defaults,

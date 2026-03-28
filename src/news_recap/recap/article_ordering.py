@@ -1,7 +1,7 @@
 """Shared helpers for embedding-based article reordering.
 
-Used by both ``export_prompt`` (recap prompt command) and ``tasks/single_pass``
-(single-pass digest pipeline task).
+Used by both ``export_prompt`` (recap prompt command) and ``tasks/oneshot_digest``
+(digest pipeline task).
 """
 
 from __future__ import annotations

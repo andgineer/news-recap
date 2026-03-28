@@ -28,12 +28,12 @@ RSS feeds → `RssSourceAdapter` (HTTP cache, pagination, defusedxml) → `Fetch
 Entry point: `run_daily_ingestion()` in `pipeline.py`.
 
 ### Recap Pipeline (`src/news_recap/recap/`)
-Multi-phase pipeline: classify → load_resources → enrich → map → reduce → split → group_sections → summarize.
+Multi-phase pipeline: classify → load_resources → enrich → deduplicate → oneshot_digest → refine_layout.
 Uses `concurrent.futures.ThreadPoolExecutor` for parallel LLM calls.
 Materializes per-task workdirs with JSON contracts → executes external CLI agents (`codex`/`claude`/`gemini`) as subprocesses → parses stdout output.
 
 Subpackages:
-- **`tasks/`** — pipeline step implementations (`Classify`, `Enrich`, `MapBlocks`, etc.) subclassing `TaskLauncher`, plus prompt templates. Shared helpers in `base.py` (`read_agent_stdout`, `run_single_agent`).
+- **`tasks/`** — pipeline step implementations (`Classify`, `Enrich`, `OneshotDigest`, etc.) subclassing `TaskLauncher`, plus prompt templates. Shared helpers in `base.py` (`read_agent_stdout`, `run_single_agent`).
 - **`agents/`** — LLM agent execution (`ai_agent.py`), subprocess runner, routing resolution, mock agents (`echo.py`).
 - **`storage/`** — workdir materialization and task ID helpers (`workdir.py`), pipeline I/O and resource loading (`pipeline_io.py`), output schemas.
 - **`loaders/`** — resource loading (HTTP fetch + text extraction) with date-sharded cache in `.news_recap_data/resources/`.

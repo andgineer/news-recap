@@ -87,9 +87,7 @@ class DigestArticle(msgspec.Struct):
 class DigestBlock(msgspec.Struct):
     """A thematic block in the final digest.
 
-    In multi-pass mode ``title`` is a 2-4 sentence summary produced by MAP/REDUCE and
-    ``summary`` is empty.  In single-pass mode ``title`` is a short topic label and
-    ``summary`` holds the 2-4 sentence prose.
+    ``title`` is a short topic label and ``summary`` holds the 2-4 sentence prose.
     ``article_ids`` references the source articles that belong to this block.
     """
 
@@ -102,8 +100,7 @@ class DigestSection(msgspec.Struct):
     """A reader-facing section (recap) grouping related blocks.
 
     ``block_indices`` are indices into ``Digest.blocks``.
-    ``summary`` is a 1-2 sentence overview written by the single-pass model (empty in
-    multi-pass mode).
+    ``summary`` is a 1-2 sentence overview of the section topic.
     """
 
     title: str

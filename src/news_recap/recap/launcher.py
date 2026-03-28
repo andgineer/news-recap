@@ -37,7 +37,6 @@ class RecapRunCommand:
     stop_after: str | None = None
     fresh: bool = False
     api_mode: bool = False
-    oneshot: bool = False
     use_api_key: bool = False
     from_pipeline: Path | None = None
 
@@ -74,8 +73,6 @@ def _apply_resume_patches(
     patches: dict[str, object] = {}
     if command.agent_override:
         patches["agent_override"] = command.agent_override.strip().lower()
-    if command.oneshot:
-        patches["oneshot"] = True
     if command.use_api_key:
         patches["use_api_key"] = True
     if patches:
@@ -83,8 +80,6 @@ def _apply_resume_patches(
         if "agent_override" in patches:
             prev = previous.get("agent_override") or "default"
             yield f"Agent override changed: {prev} -> {patches['agent_override']}"
-        if "oneshot" in patches and not previous.get("oneshot"):
-            yield "oneshot enabled for resumed pipeline"
 
 
 class RecapCliController:
@@ -168,7 +163,6 @@ class RecapCliController:
                 min_resource_chars=settings.ingestion.min_resource_chars,
                 dedup_threshold=settings.dedup.threshold,
                 dedup_model_name=settings.dedup.model_name,
-                oneshot=command.oneshot,
                 use_api_key=command.use_api_key,
             )
             yield f"New pipeline: {pipeline_dir}"

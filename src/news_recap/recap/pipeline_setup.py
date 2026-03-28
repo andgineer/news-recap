@@ -104,7 +104,6 @@ def _write_pipeline_input(  # noqa: PLR0913
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS,
     dedup_threshold: float = 0.90,
     dedup_model_name: str = "intfloat/multilingual-e5-small",
-    oneshot: bool = False,
     use_api_key: bool = False,
 ) -> None:
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
@@ -119,7 +118,6 @@ def _write_pipeline_input(  # noqa: PLR0913
         "min_resource_chars": min_resource_chars,
         "dedup_threshold": dedup_threshold,
         "dedup_model_name": dedup_model_name,
-        "oneshot": oneshot,
         "use_api_key": use_api_key,
     }
     (pipeline_dir / "pipeline_input.json").write_text(

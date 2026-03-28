@@ -165,11 +165,6 @@ def recap() -> None:
             "load_resources",
             "enrich",
             "deduplicate",
-            "map_blocks",
-            "reduce_blocks",
-            "split_blocks",
-            "group_sections",
-            "summarize",
             "oneshot_digest",
             "refine_layout",
         ],
@@ -190,16 +185,6 @@ def recap() -> None:
     is_flag=True,
     default=False,
     help="Use direct Anthropic API instead of CLI agents (sets backend=api, agent=claude).",
-)
-@click.option(
-    "--oneshot",
-    "oneshot",
-    is_flag=True,
-    default=False,
-    help=(
-        "Replace map→reduce→split→group→summarize with a single LLM call. "
-        "Incompatible with --stop-after values for the five replaced stages."
-    ),
 )
 @click.option(
     "--from-pipeline",
@@ -226,24 +211,11 @@ def recap_run(  # noqa: PLR0913
     stop_after: str | None,
     fresh: bool,
     api_mode: bool,
-    oneshot: bool,
     from_pipeline: Path | None,
     use_api_key: bool,
 ) -> None:
     """Run the full news digest pipeline."""
 
-    _oneshot_incompatible = {
-        "map_blocks",
-        "reduce_blocks",
-        "split_blocks",
-        "group_sections",
-        "summarize",
-    }
-    if oneshot and stop_after in _oneshot_incompatible:
-        raise click.UsageError(
-            f"--oneshot is incompatible with --stop-after {stop_after}: "
-            "that stage does not exist in oneshot mode.",
-        )
     if from_pipeline and business_date:
         raise click.UsageError(
             "--from-pipeline already determines the business date; "
@@ -260,7 +232,6 @@ def recap_run(  # noqa: PLR0913
                 stop_after=stop_after,
                 fresh=fresh,
                 api_mode=api_mode,
-                oneshot=oneshot,
                 use_api_key=use_api_key,
                 from_pipeline=from_pipeline,
             ),

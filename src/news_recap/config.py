@@ -89,11 +89,6 @@ class OrchestratorSettings:
             "recap_classify": 900,
             "recap_enrich": 600,
             "recap_dedup": 600,
-            "recap_map": 1200,
-            "recap_reduce": 1200,
-            "recap_split": 120,
-            "recap_group_sections": 1200,
-            "recap_summarize": 600,
             "recap_oneshot_digest": 1200,
             "recap_refine_layout": 600,
         },
@@ -448,31 +443,6 @@ def _default_task_model_map() -> dict[str, dict[str, Any]]:
             "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
             "gemini": {"model": "--model gemini-2.5-flash"},
         },
-        "recap_map": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _CAPPED_THINKING},
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
-        "recap_reduce": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model opus --effort low"},  # reasoning helps merging
-            "gemini": {"model": "--model gemini-2.5-pro"},
-        },
-        "recap_split": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
-        "recap_group_sections": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _CAPPED_THINKING},
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
-        "recap_summarize": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low"},  # reasoning improves quality
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
         "recap_oneshot_digest": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low", "env": _MAX_OUTPUT},
@@ -496,11 +466,6 @@ def _default_api_model_map() -> dict[str, str]:
         "recap_classify": "claude-haiku-4-5-20251001",
         "recap_enrich": "claude-haiku-4-5-20251001",
         "recap_dedup": "claude-haiku-4-5-20251001",
-        "recap_map": "claude-haiku-4-5-20251001",
-        "recap_reduce": "claude-sonnet-4-6",
-        "recap_split": "claude-haiku-4-5-20251001",
-        "recap_group_sections": "claude-haiku-4-5-20251001",
-        "recap_summarize": "claude-haiku-4-5-20251001",
         "recap_oneshot_digest": "claude-haiku-4-5-20251001",
         "recap_merge_sections": "claude-sonnet-4-6",
         "recap_refine_layout": "claude-haiku-4-5-20251001",
@@ -511,7 +476,7 @@ def _collect_api_model_map() -> dict[str, str]:
     """Build task → API model ID map from env or defaults.
 
     Env format (CSV of ``task_type=model_id``):
-        ``NEWS_RECAP_API_MODEL_MAP=recap_reduce=claude-sonnet-4-6,recap_classify=claude-haiku-4-5-20251001``
+        ``NEWS_RECAP_API_MODEL_MAP=recap_oneshot_digest=claude-sonnet-4-6,recap_classify=claude-haiku-4-5-20251001``
     """
     raw = os.getenv("NEWS_RECAP_API_MODEL_MAP", "").strip()
     if not raw:
@@ -540,7 +505,7 @@ def _collect_task_model_map() -> dict[str, dict[str, Any]]:
     """Build task → agent → model overrides from env or defaults.
 
     Env format (CSV of ``task_type:agent=model_flags``):
-        ``NEWS_RECAP_LLM_TASK_MODEL_MAP=recap_reduce:codex=--model gpt-5.2 ...``
+        ``NEWS_RECAP_LLM_TASK_MODEL_MAP=recap_oneshot_digest:codex=--model gpt-5.2 ...``
     """
     raw = os.getenv("NEWS_RECAP_LLM_TASK_MODEL_MAP", "").strip()
     if not raw:

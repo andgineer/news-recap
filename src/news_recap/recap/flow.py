@@ -1,7 +1,7 @@
 """Top-level function for the recap pipeline.
 
 Orchestrates classify -> load_resources -> enrich -> deduplicate ->
-map_blocks -> reduce_blocks -> split_blocks -> group_sections -> summarize.
+oneshot_digest -> refine_layout.
 
 Each step lives in its own module and subclasses ``TaskLauncher``
 which handles checkpoint skip/save and early stopping.
@@ -28,14 +28,9 @@ from news_recap.recap.tasks.base import (
 from news_recap.recap.tasks.classify import Classify
 from news_recap.recap.tasks.deduplicate import Deduplicate
 from news_recap.recap.tasks.enrich import Enrich
-from news_recap.recap.tasks.group_sections import GroupSections
 from news_recap.recap.tasks.load_resources import LoadResources
-from news_recap.recap.tasks.map_blocks import MapBlocks
 from news_recap.recap.tasks.oneshot_digest import OneshotDigest
-from news_recap.recap.tasks.reduce_blocks import ReduceBlocks
 from news_recap.recap.tasks.refine_layout import RefineLayout
-from news_recap.recap.tasks.split_blocks import SplitBlocks
-from news_recap.recap.tasks.summarize import Summarize
 from news_recap.storage.io import load_msgspec
 
 logger = logging.getLogger(__name__)
@@ -142,15 +137,8 @@ def recap_flow(  # noqa: PLR0915
         LoadResources.run(ctx)
         Enrich.run(ctx)
         Deduplicate.run(ctx)
-        if inp.oneshot:
-            OneshotDigest.run(ctx)
-            RefineLayout.run(ctx)
-        else:
-            MapBlocks.run(ctx)
-            ReduceBlocks.run(ctx)
-            SplitBlocks.run(ctx)
-            GroupSections.run(ctx)
-            Summarize.run(ctx)
+        OneshotDigest.run(ctx)
+        RefineLayout.run(ctx)
 
         digest.status = "completed"
         ctx.save_checkpoint()

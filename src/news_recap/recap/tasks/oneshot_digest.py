@@ -1,8 +1,7 @@
 """Task launcher: ONESHOT_DIGEST phase.
 
-Replaces MapBlocks + ReduceBlocks + SplitBlocks + GroupSections + Summarize with a
-single LLM call (or batched parallel calls for large article sets) that groups,
-organises into sections, and summarises in one shot.
+A single LLM call (or batched parallel calls for large article sets) that groups
+articles into blocks, organises blocks into sections, and summarises in one shot.
 
 The article list is pre-sorted by embedding similarity so the model can focus on
 editorial quality rather than topical grouping.  When the article count exceeds

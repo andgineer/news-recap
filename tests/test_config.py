@@ -122,17 +122,11 @@ def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatc
     task_map = settings.orchestrator.task_model_map
     assert "recap_classify" in task_map
     assert "recap_enrich" in task_map
-    assert "recap_map" in task_map
-    assert "recap_reduce" in task_map
+    assert "recap_oneshot_digest" in task_map
     assert (
         task_map["recap_classify"]["codex"]["model"]
         == "--model gpt-5.2 -c model_reasoning_effort=low"
     )
-    assert (
-        task_map["recap_reduce"]["codex"]["model"]
-        == "--model gpt-5.2 -c model_reasoning_effort=low"
-    )
-    assert task_map["recap_reduce"]["gemini"]["model"] == "--model gemini-2.5-pro"
     assert settings.orchestrator.codex_command_template == (
         "codex exec --sandbox workspace-write "
         "-c sandbox_workspace_write.network_access=true "
@@ -262,11 +256,6 @@ _ALL_TASK_TYPES = {
     "recap_classify",
     "recap_enrich",
     "recap_dedup",
-    "recap_map",
-    "recap_reduce",
-    "recap_split",
-    "recap_group_sections",
-    "recap_summarize",
     "recap_oneshot_digest",
     "recap_merge_sections",
     "recap_refine_layout",
@@ -315,8 +304,8 @@ def test_routing_defaults_carries_agent_api_key_vars() -> None:
 def test_api_model_map_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "NEWS_RECAP_API_MODEL_MAP",
-        "recap_reduce=claude-opus-4-6,recap_classify=claude-haiku-4-5-20251001",
+        "recap_oneshot_digest=claude-opus-4-6,recap_classify=claude-haiku-4-5-20251001",
     )
     settings = Settings.from_env()
-    assert settings.orchestrator.api_model_map["recap_reduce"] == "claude-opus-4-6"
+    assert settings.orchestrator.api_model_map["recap_oneshot_digest"] == "claude-opus-4-6"
     assert settings.orchestrator.api_model_map["recap_classify"] == "claude-haiku-4-5-20251001"

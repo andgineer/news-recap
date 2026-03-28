@@ -74,18 +74,6 @@ def test_patch_pipeline_input_when_previously_none(tmp_path: Path) -> None:
     assert inp.agent_override == "gemini"
 
 
-def test_patch_pipeline_input_oneshot(tmp_path: Path) -> None:
-    """Patching oneshot updates pipeline_input.json."""
-    _write_pipeline_input(tmp_path, agent_override=None)
-
-    previous = _patch_pipeline_input(tmp_path, oneshot=True)
-
-    assert previous["oneshot"] is None  # was absent
-
-    inp = read_pipeline_input(str(tmp_path))
-    assert inp.oneshot is True
-
-
 def test_no_agent_flag_leaves_file_unchanged(tmp_path: Path) -> None:
     """Without --agent on resume, agent_override stays as-is."""
     _write_pipeline_input(tmp_path, agent_override="codex")
@@ -172,7 +160,6 @@ def _make_source_pipeline(tmp_path: Path, n_articles: int = 3) -> Path:
         },
         "agent_override": "codex",
         "data_dir": str(tmp_path),
-        "oneshot": True,
     }
     (source_dir / "pipeline_input.json").write_text(
         json.dumps(payload, ensure_ascii=False), "utf-8"
@@ -270,7 +257,7 @@ def test_from_pipeline_applies_new_options(
     mock_flow: MagicMock,
     tmp_path: Path,
 ) -> None:
-    """New options (agent, oneshot, use_api_key) override source pipeline values."""
+    """New options (agent, use_api_key) override source pipeline values."""
     source_dir = _make_source_pipeline(tmp_path, n_articles=3)
     mock_from_env.return_value = _make_settings_mock(tmp_path)
 
@@ -278,7 +265,6 @@ def test_from_pipeline_applies_new_options(
         data_dir=tmp_path,
         from_pipeline=source_dir,
         agent_override="gemini",
-        oneshot=False,
         use_api_key=True,
     )
 
@@ -287,7 +273,6 @@ def test_from_pipeline_applies_new_options(
     new_pipeline_dir = Path(mock_flow.call_args[1]["pipeline_dir"])
     new_inp = read_pipeline_input(str(new_pipeline_dir))
     assert new_inp.agent_override == "gemini"
-    assert new_inp.oneshot is False
     assert new_inp.use_api_key is True
 
 
