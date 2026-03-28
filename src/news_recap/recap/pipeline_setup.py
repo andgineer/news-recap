@@ -1,6 +1,6 @@
 """Shared helpers for setting up a recap pipeline directory.
 
-Used by both ``launcher.py`` (recap run) and ``export_prompt.py`` (recap prompt).
+Used by both ``launcher.py`` (``run`` command) and ``export_prompt.py`` (``prompt`` command).
 """
 
 from __future__ import annotations

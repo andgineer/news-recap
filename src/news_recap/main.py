@@ -124,12 +124,7 @@ def ingest_stats(
     )
 
 
-@news_recap.group()
-def recap() -> None:
-    """News digest pipeline commands."""
-
-
-@recap.command("run")
+@news_recap.command("run")
 @click.option(
     "--data-dir",
     type=click.Path(path_type=Path),
@@ -239,7 +234,7 @@ def recap_run(  # noqa: PLR0913
     )
 
 
-@recap.command("prompt")
+@news_recap.command("prompt")
 @click.option(
     "--data-dir",
     type=click.Path(path_type=Path),
@@ -250,7 +245,10 @@ def recap_run(  # noqa: PLR0913
     "--ai/--no-ai",
     default=True,
     show_default=True,
-    help="Run full classify→dedup pipeline before building the prompt (same scope as recap run).",
+    help=(
+        "Run full classify→dedup pipeline before building the prompt "
+        "(same scope as the run command)."
+    ),
 )
 @click.option(
     "--fresh",

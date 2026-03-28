@@ -1,6 +1,6 @@
 """Shared helpers for embedding-based article reordering.
 
-Used by both ``export_prompt`` (recap prompt command) and ``tasks/oneshot_digest``
+Used by both ``export_prompt`` (``prompt`` command) and ``tasks/oneshot_digest``
 (digest pipeline task).
 """
 

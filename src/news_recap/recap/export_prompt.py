@@ -1,7 +1,7 @@
-"""`recap prompt` — export a ready-to-paste LLM prompt from recent articles.
+"""``prompt`` command — export a ready-to-paste LLM prompt from recent articles.
 
-With ``--ai`` (default) the full classify → dedup pipeline runs first, matching ``recap run``
-scope.  With ``--no-ai`` no LLM calls are made and raw ingested articles are used directly.
+With ``--ai`` (default) the full classify → dedup pipeline runs first, matching the ``run``
+command scope.  With ``--no-ai`` no LLM calls are made and raw ingested articles are used directly.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def _copy_to_clipboard(text: str) -> bool:
 
 @dataclass(slots=True)
 class PromptCommand:
-    """CLI parameters for recap prompt."""
+    """CLI parameters for the ``prompt`` command."""
 
     data_dir: Path | None = None
     group_threshold: float = _DEFAULT_GROUP_THRESHOLD

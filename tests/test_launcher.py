@@ -319,7 +319,6 @@ def test_cli_rejects_from_pipeline_with_date(tmp_path: Path) -> None:
     result = runner.invoke(
         news_recap,
         [
-            "recap",
             "run",
             "--from-pipeline",
             str(source_dir),

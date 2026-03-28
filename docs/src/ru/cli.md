@@ -5,7 +5,9 @@
 ## Карта Команд
 
 - `ingest`: импорт источников, статистика, проверка дедупа.
-- `recap`: пайплайн ежедневного дайджеста.
+- `run`: запуск пайплайна ежедневного дайджеста.
+- `prompt`: экспорт LLM-промпта из последних статей.
+- `serve`: запуск веб-просмотрщика дайджестов.
 
 ## Общие Замечания
 
@@ -69,9 +71,9 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 - `--limit-clusters`
 - `--members-per-cluster`
 
-## Команды Recap-пайплайна
+## Команды пайплайна дайджеста
 
-### `recap run`
+### `run`
 Запуск полного пайплайна дайджеста на бизнес-дату.
 
 Пайплайн проходит следующие этапы: classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций) → refine_layout (опциональная консолидация секций).
@@ -79,12 +81,12 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 Каждый этап чекпоинтится, поэтому повторный запуск пропускает уже выполненные этапы.
 
 ```bash
-news-recap recap run
-news-recap recap run --api
-news-recap recap run --date 2026-02-18
-news-recap recap run --agent claude --stop-after classify
-news-recap recap run --limit 50
-news-recap recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
+news-recap run
+news-recap run --api
+news-recap run --date 2026-02-18
+news-recap run --agent claude --stop-after classify
+news-recap run --limit 50
+news-recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
 ```
 
 Ключевые опции:
@@ -112,7 +114,7 @@ news-recap recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-news-recap recap run --api
+news-recap run --api
 ```
 
 Флаг `--api` автоматически задаёт `backend=api` и `agent=claude`. Других переменных окружения не требуется.
@@ -157,7 +159,7 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ### LLM-агенты
 
 > **Подписка vs API-биллинг.** При запуске CLI-агентов (`claude`, `codex`, `gemini`)
-> как подпроцессов `recap run` по умолчанию удаляет ключи API вендоров
+> как подпроцессов `news-recap run` по умолчанию удаляет ключи API вендоров
 > (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
 > из окружения подпроцесса — чтобы агент использовал лимиты подписки, а не
 > тарифицировал вызовы через API-аккаунт.
@@ -168,7 +170,7 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 > Чтобы явно передать ключ CLI-агенту (оплата за токены), используйте `--use-api-key`:
 >
 > ```bash
-> news-recap recap run --use-api-key
+> news-recap run --use-api-key
 > ```
 
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — агент по умолчанию (`codex`, `claude` или `gemini`).
@@ -180,5 +182,5 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ```bash
 news-recap --help
 news-recap ingest --help
-news-recap recap --help
+news-recap run --help
 ```

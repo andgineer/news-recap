@@ -5,7 +5,9 @@
 ## Command Map
 
 - `ingest`: source import, stats, dedup inspection.
-- `recap`: daily digest pipeline.
+- `run`: run the daily digest pipeline.
+- `prompt`: export a ready-to-paste LLM prompt from recent articles.
+- `serve`: start the digest web viewer.
 
 ## Common Notes
 
@@ -69,9 +71,9 @@ Key options:
 - `--limit-clusters`
 - `--members-per-cluster`
 
-## Recap Pipeline Commands
+## Digest Pipeline Commands
 
-### `recap run`
+### `run`
 Run the full news digest pipeline for a business date.
 
 The pipeline goes through the following stages: classify → load_resources → enrich → deduplicate → oneshot_digest (parallel batches + deterministic block dedup + section merge) → refine_layout (optional section consolidation).
@@ -79,12 +81,12 @@ The pipeline goes through the following stages: classify → load_resources → 
 Each stage is checkpointed, so a resumed run skips already-completed stages.
 
 ```bash
-news-recap recap run
-news-recap recap run --api
-news-recap recap run --date 2026-02-18
-news-recap recap run --agent claude --stop-after classify
-news-recap recap run --limit 50
-news-recap recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
+news-recap run
+news-recap run --api
+news-recap run --date 2026-02-18
+news-recap run --agent claude --stop-after classify
+news-recap run --limit 50
+news-recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
 ```
 
 Key options:
@@ -112,7 +114,7 @@ Anthropic SDK calls — no CLI agents required.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-news-recap recap run --api
+news-recap run --api
 ```
 
 `--api` sets `backend=api` and `agent=claude` automatically. No other env vars needed.
@@ -156,7 +158,7 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ### LLM Agents
 
 > **Subscription vs API billing.** When spawning CLI agents (`claude`, `codex`, `gemini`)
-> as subprocesses, `recap run` removes vendor API keys
+> as subprocesses, `news-recap run` removes vendor API keys
 > (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
 > from the subprocess environment by default — so the agent uses its subscription
 > quota rather than billing your API account per token.
@@ -167,7 +169,7 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 > To explicitly pass the API key to a CLI agent (pay-per-token billing), use `--use-api-key`:
 >
 > ```bash
-> news-recap recap run --use-api-key
+> news-recap run --use-api-key
 > ```
 
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — default agent (`codex`, `claude`, or `gemini`).
@@ -179,5 +181,5 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ```bash
 news-recap --help
 news-recap ingest --help
-news-recap recap --help
+news-recap run --help
 ```

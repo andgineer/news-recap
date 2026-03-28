@@ -12,7 +12,7 @@ Usage — override the gemini command template in Settings, then run normally:
     settings.orchestrator.gemini_command_template = (
         "python3 tests/fixtures/mock_agent.py --model {model} {prompt_file}"
     )
-    # Then: news-recap recap run --agent gemini --limit 20
+    # Then: news-recap run --agent gemini --limit 20
 
 The script accepts (and ignores) any positional args so it fits any command template.
 cwd is set to the task workdir by task_ai_agent.py.
