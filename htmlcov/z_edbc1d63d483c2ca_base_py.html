@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/news_recap/recap/tasks/base.py: 81%</title>
+    <title>Coverage for src/news_recap/recap/tasks/base.py: 68%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src&#8201;/&#8201;news_recap&#8201;/&#8201;recap&#8201;/&#8201;tasks&#8201;/&#8201;base.py</b>:
-            <span class="pc_cov">81%</span>
+            <span class="pc_cov">68%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">69 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">56<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">13<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">47<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">22<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">3<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_edbc1d63d483c2ca_classify_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-28 05:01 +0000
+            created at 2026-03-28 05:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -140,7 +140,7 @@
     <p class="pln"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">    <span class="str">"""Materialize a task, run the agent, and return the stdout path.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t"><span class="str">    Encapsulates the materialize &#8594; invoke &#8594; locate stdout pattern used</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t"><span class="str">    by single-call phases (group_sections, summarize, reduce single-pass).</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t"><span class="str">    by single-call phases (oneshot_digest batches, merge_sections, refine_layout).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t62" href="#t62">62</a></span><span class="t"><span class="str">    """</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t63" href="#t63">63</a></span><span class="t">    <span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">agents</span><span class="op">.</span><span class="nam">ai_agent</span> <span class="key">import</span> <span class="nam">run_ai_agent</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t64" href="#t64">64</a></span><span class="t">    <span class="key">from</span> <span class="nam">news_recap</span><span class="op">.</span><span class="nam">recap</span><span class="op">.</span><span class="nam">storage</span><span class="op">.</span><span class="nam">workdir</span> <span class="key">import</span> <span class="nam">materialize_step</span>&nbsp;</span><span class="r"></span></p>
@@ -189,7 +189,7 @@
     <p class="run"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t">    <span class="nam">cc</span><span class="op">:</span> <span class="nam">ConcurrencyController</span> <span class="op">|</span> <span class="key">None</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t">    <span class="key">def</span> <span class="nam">save_checkpoint</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t">        <span class="nam">save_msgspec</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">pdir</span> <span class="op">/</span> <span class="nam">_DIGEST_FILENAME</span><span class="op">,</span> <span class="nam">self</span><span class="op">.</span><span class="nam">digest</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t">        <span class="nam">save_msgspec</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">pdir</span> <span class="op">/</span> <span class="nam">_DIGEST_FILENAME</span><span class="op">,</span> <span class="nam">self</span><span class="op">.</span><span class="nam">digest</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t111" href="#t111">111</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t112" href="#t112">112</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t113" href="#t113">113</a></span><span class="t"><span class="key">class</span> <span class="nam">TaskLauncher</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -212,24 +212,24 @@
     <p class="run"><span class="n"><a id="t130" href="#t130">130</a></span><span class="t">    <span class="op">@</span><span class="nam">classmethod</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t131" href="#t131">131</a></span><span class="t">    <span class="key">def</span> <span class="nam">run</span><span class="op">(</span><span class="nam">cls</span><span class="op">,</span> <span class="nam">ctx</span><span class="op">:</span> <span class="nam">FlowContext</span><span class="op">)</span> <span class="op">-></span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t132" href="#t132">132</a></span><span class="t">        <span class="str">"""Create an instance, handle checkpointing, and call ``execute()``."""</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t133" href="#t133">133</a></span><span class="t">        <span class="key">if</span> <span class="nam">cls</span><span class="op">.</span><span class="nam">name</span> <span class="key">in</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">digest</span><span class="op">.</span><span class="nam">completed_phases</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t133" href="#t133">133</a></span><span class="t">        <span class="key">if</span> <span class="nam">cls</span><span class="op">.</span><span class="nam">name</span> <span class="key">in</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">digest</span><span class="op">.</span><span class="nam">completed_phases</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t134" href="#t134">134</a></span><span class="t">            <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span><span class="str">"Skipping %s (already completed)"</span><span class="op">,</span> <span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t135" href="#t135">135</a></span><span class="t">            <span class="nam">cls</span><span class="op">(</span><span class="nam">ctx</span><span class="op">)</span><span class="op">.</span><span class="nam">restore_state</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t136" href="#t136">136</a></span><span class="t">            <span class="key">if</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">stop_after</span> <span class="key">and</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">stop_after</span> <span class="op">==</span> <span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t137" href="#t137">137</a></span><span class="t">                <span class="key">raise</span> <span class="nam">StopPipelineError</span><span class="op">(</span><span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t138" href="#t138">138</a></span><span class="t">            <span class="key">return</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t139" href="#t139">139</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t140" href="#t140">140</a></span><span class="t">        <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span><span class="str">"Running: %s"</span><span class="op">,</span> <span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t141" href="#t141">141</a></span><span class="t">        <span class="nam">instance</span> <span class="op">=</span> <span class="nam">cls</span><span class="op">(</span><span class="nam">ctx</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t142" href="#t142">142</a></span><span class="t">        <span class="nam">instance</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t140" href="#t140">140</a></span><span class="t">        <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span><span class="str">"Running: %s"</span><span class="op">,</span> <span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t141" href="#t141">141</a></span><span class="t">        <span class="nam">instance</span> <span class="op">=</span> <span class="nam">cls</span><span class="op">(</span><span class="nam">ctx</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t142" href="#t142">142</a></span><span class="t">        <span class="nam">instance</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t143" href="#t143">143</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t144" href="#t144">144</a></span><span class="t">        <span class="key">if</span> <span class="nam">instance</span><span class="op">.</span><span class="nam">fully_completed</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t145" href="#t145">145</a></span><span class="t">            <span class="nam">ctx</span><span class="op">.</span><span class="nam">digest</span><span class="op">.</span><span class="nam">completed_phases</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t144" href="#t144">144</a></span><span class="t">        <span class="key">if</span> <span class="nam">instance</span><span class="op">.</span><span class="nam">fully_completed</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t145" href="#t145">145</a></span><span class="t">            <span class="nam">ctx</span><span class="op">.</span><span class="nam">digest</span><span class="op">.</span><span class="nam">completed_phases</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t146" href="#t146">146</a></span><span class="t">        <span class="key">else</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t147" href="#t147">147</a></span><span class="t">            <span class="nam">logger</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span><span class="str">"%s partially completed &#8212; will retry on next run"</span><span class="op">,</span> <span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t148" href="#t148">148</a></span><span class="t">        <span class="nam">ctx</span><span class="op">.</span><span class="nam">save_checkpoint</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t148" href="#t148">148</a></span><span class="t">        <span class="nam">ctx</span><span class="op">.</span><span class="nam">save_checkpoint</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t149" href="#t149">149</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t150" href="#t150">150</a></span><span class="t">        <span class="key">if</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">stop_after</span> <span class="key">and</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">stop_after</span> <span class="op">==</span> <span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t150" href="#t150">150</a></span><span class="t">        <span class="key">if</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">stop_after</span> <span class="key">and</span> <span class="nam">ctx</span><span class="op">.</span><span class="nam">stop_after</span> <span class="op">==</span> <span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t151" href="#t151">151</a></span><span class="t">            <span class="key">raise</span> <span class="nam">StopPipelineError</span><span class="op">(</span><span class="nam">cls</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t152" href="#t152">152</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t153" href="#t153">153</a></span><span class="t">    <span class="key">def</span> <span class="nam">execute</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -251,7 +251,7 @@
             <a class="nav" href="z_edbc1d63d483c2ca_classify_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-28 05:01 +0000
+            created at 2026-03-28 05:25 +0000
         </p>
     </div>
 </footer>
