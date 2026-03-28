@@ -329,7 +329,7 @@ EXCLUDED: <comma-separated numbers>
 | **Task type** | *(no LLM — deterministic set operations)* |
 | **Invoked by** | `OneshotDigest` after all batch agents complete |
 
-Removes redundant blocks in two phases:
+Removes redundant blocks in three phases:
 
 1. **Exact-duplicate removal** — blocks whose `article_ids` form the same
    set (order-insensitive) are grouped. The block with the longest title is
@@ -338,15 +338,28 @@ Removes redundant blocks in two phases:
    of block B's, A is absorbed into B. When A is a subset of multiple
    supersets, the smallest superset wins (closest match). Chained subsets
    (A⊂B⊂C) are resolved transitively.
+3. **Fuzzy title merge** — block titles are embedded via the same
+   `SentenceTransformerEmbedder` already loaded for article pre-sorting.
+   Blocks whose title embeddings have cosine similarity ≥ 0.90 are
+   clustered (connected components via `group_similar`).  Within each
+   cluster the block with the most articles wins (longest title, then
+   earliest position as tiebreakers); `article_ids` from all cluster
+   members are combined.  This catches cross-batch overlaps where two
+   batches independently created blocks about the same story with
+   different article sets — something Phases 1–2 cannot detect because
+   they compare article-ID sets only.
 
 After removal, all `DigestSection.block_indices` are remapped to the
 compacted block list. Duplicate indices within a section are deduplicated
 while preserving order. Sections that lose all blocks are dropped.
 
-This step compensates for LLM non-determinism: the oneshot prompt instructs
-that each article number must appear in exactly one block, but in practice
-~10% of articles end up in multiple blocks — producing duplicate and subset
-blocks that this pass cleans up without additional LLM calls.
+Phases 1–2 compensate for LLM non-determinism: the oneshot prompt
+instructs that each article number must appear in exactly one block, but
+in practice ~10% of articles end up in multiple blocks — producing
+duplicate and subset blocks.  Phase 3 addresses a different issue: with
+multiple batches, two LLM calls may independently group different
+articles into blocks covering the same story.  All three phases run
+without additional LLM calls.
 
 ### MergeSections
 

@@ -18,7 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from news_recap.recap.article_ordering import build_article_lines, reorder_articles
-from news_recap.recap.dedup.embedder import SentenceTransformerEmbedder
+from news_recap.recap.dedup.cluster import group_similar
+from news_recap.recap.dedup.embedder import Embedder, SentenceTransformerEmbedder, Vector
 from news_recap.recap.models import DigestArticle, DigestBlock, DigestSection, language_display_name
 from news_recap.recap.tasks.base import (
     FlowContext,
@@ -520,6 +521,108 @@ def _dedup_blocks(
 
 
 # ---------------------------------------------------------------------------
+# fuzzy block merge (Phase 3)
+# ---------------------------------------------------------------------------
+
+_FUZZY_MERGE_THRESHOLD = 0.90
+
+
+def _apply_fuzzy_clusters(
+    blocks: list[DigestBlock],
+    clusters: list[list[str]],
+) -> tuple[dict[int, DigestBlock], dict[int, int]]:
+    """Process similarity clusters into merged blocks and an absorption map.
+
+    Returns ``(merged_blocks, absorbed_to_winner)`` where *merged_blocks*
+    maps each winner index to its merged ``DigestBlock`` and
+    *absorbed_to_winner* maps each non-winner index to its winner.
+    """
+    merged_blocks: dict[int, DigestBlock] = {}
+    absorbed_to_winner: dict[int, int] = {}
+
+    for cluster in clusters:
+        indices = sorted(int(c) for c in cluster)
+        winner = max(
+            indices,
+            key=lambda i: (len(blocks[i].article_ids), len(blocks[i].title), -i),
+        )
+        combined_ids: list[str] = []
+        for idx in indices:
+            for aid in blocks[idx].article_ids:
+                if aid not in combined_ids:
+                    combined_ids.append(aid)
+            if idx != winner:
+                absorbed_to_winner[idx] = winner
+        merged_blocks[winner] = DigestBlock(
+            title=blocks[winner].title,
+            summary=blocks[winner].summary,
+            article_ids=combined_ids,
+        )
+
+    return merged_blocks, absorbed_to_winner
+
+
+def _fuzzy_merge_blocks(
+    blocks: list[DigestBlock],
+    sections: list[DigestSection],
+    embedder: Embedder,
+    threshold: float = _FUZZY_MERGE_THRESHOLD,
+) -> tuple[list[DigestBlock], list[DigestSection]]:
+    """Merge blocks with highly similar titles via embedding cosine similarity.
+
+    Phase 3 of dedup — catches cross-batch overlaps where two batches
+    independently created blocks about the same story with different
+    article sets.  Phases 1-2 (exact / subset) only compare article-id
+    sets and cannot detect these.
+    """
+    if len(blocks) <= 1:
+        return blocks, sections
+
+    titles = [b.title for b in blocks]
+    vectors = embedder.embed(titles)
+
+    ids = [str(i) for i in range(len(blocks))]
+    embeddings: dict[str, Vector] = dict(zip(ids, vectors, strict=True))
+
+    clusters = group_similar(ids, embeddings, threshold, max_group_size=len(blocks))
+
+    if not clusters:
+        logger.debug("[oneshot_digest] fuzzy merge: no similar blocks found")
+        return blocks, sections
+
+    merged_blocks, absorbed_to_winner = _apply_fuzzy_clusters(blocks, clusters)
+    consumed = set(merged_blocks.keys()) | set(absorbed_to_winner.keys())
+
+    final_indices = sorted(
+        set(merged_blocks.keys()) | (set(range(len(blocks))) - consumed),
+    )
+    old_to_new = {old: new for new, old in enumerate(final_indices)}
+    for absorbed, winner in absorbed_to_winner.items():
+        old_to_new[absorbed] = old_to_new[winner]
+
+    new_blocks = [merged_blocks.get(i, blocks[i]) for i in final_indices]
+
+    new_sections: list[DigestSection] = []
+    for sec in sections:
+        remapped: list[int] = list(
+            dict.fromkeys(old_to_new[i] for i in sec.block_indices),
+        )
+        if remapped:
+            new_sections.append(
+                DigestSection(title=sec.title, block_indices=remapped, summary=sec.summary),
+            )
+
+    fuzzy_removed = len(blocks) - len(new_blocks)
+    if fuzzy_removed:
+        logger.info(
+            "[oneshot_digest] fuzzy merge removed %d block(s)",
+            fuzzy_removed,
+        )
+
+    return new_blocks, new_sections
+
+
+# ---------------------------------------------------------------------------
 # Task launcher
 # ---------------------------------------------------------------------------
 
@@ -590,6 +693,7 @@ class OneshotDigest(TaskLauncher):
             blocks, sections_out = _build_merged_digest_entries(merged, all_sections)
 
         blocks, sections_out = _dedup_blocks(blocks, sections_out)
+        blocks, sections_out = _fuzzy_merge_blocks(blocks, sections_out, embedder)
 
         # Coverage check
         unique_excluded = list(set(all_excluded_ids))
