@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 
 from news_recap.config import Settings
 from news_recap.ingestion.pipeline import run_daily_ingestion
@@ -18,15 +17,6 @@ class DailyIngestionCommand:
     """CLI inputs for daily ingestion command."""
 
     feed_urls: tuple[str, ...]
-
-
-@dataclass(slots=True)
-class IngestionStatsCommand:
-    """CLI inputs for stats command."""
-
-    hours: int
-    source: str | None
-    recent_runs: int
 
 
 class IngestionCliController:
@@ -84,55 +74,6 @@ class IngestionCliController:
                 f"if_modified_since={'yes' if feed.sent_if_modified_since else 'no'} "
                 f"etag={'yes' if feed.received_etag else 'no'} "
                 f"last_modified={'yes' if feed.received_last_modified else 'no'}",
-            )
-        return lines
-
-    def stats(self, command: IngestionStatsCommand) -> list[str]:
-        settings = Settings.from_env()
-        until = datetime.now(tz=UTC)
-        since = until - timedelta(hours=command.hours)
-        with _store(settings) as store:
-            summary = store.summarize_runs(
-                since=since,
-                until=until,
-                source=command.source,
-            )
-            recent = store.list_recent_runs(
-                limit=command.recent_runs,
-                source=command.source,
-            )
-
-        lines = [f"Window: {since.isoformat()} .. {until.isoformat()} (last {command.hours}h)"]
-        if command.source:
-            lines.append(f"Source filter: {command.source}")
-
-        lines.extend(
-            [
-                "Runs: "
-                f"{summary.runs_count} "
-                f"(succeeded={summary.succeeded_runs_count}, "
-                f"partial={summary.partial_runs_count}, "
-                f"failed={summary.failed_runs_count}, "
-                f"other={summary.other_runs_count})",
-                "Articles: "
-                f"ingested={summary.ingested_count} "
-                f"updated={summary.updated_count} "
-                f"skipped={summary.skipped_count}",
-                f"Gaps opened: {summary.gaps_opened_count}",
-            ],
-        )
-
-        if not recent:
-            return lines
-
-        lines.append("Recent runs:")
-        for run in recent:
-            finished_at = run.finished_at.isoformat() if run.finished_at is not None else "-"
-            lines.append(
-                f"  {run.run_id} source={run.source} status={run.status} "
-                f"started={run.started_at.isoformat()} finished={finished_at} "
-                f"ingested={run.ingested_count} updated={run.updated_count} "
-                f"skipped={run.skipped_count} gaps={run.gaps_opened_count}",
             )
         return lines
 

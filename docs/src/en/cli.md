@@ -4,7 +4,7 @@
 
 ## Command Map
 
-- `ingest`: source import, stats, dedup inspection.
+- `ingest`: run one ingestion cycle from RSS/Atom feeds.
 - `run`: run the daily digest pipeline.
 - `prompt`: export a ready-to-paste LLM prompt from recent articles.
 - `serve`: start the digest web viewer.
@@ -15,14 +15,14 @@
 - Data is stored as JSON files with daily partitioning; old partitions are
   garbage-collected automatically based on `NEWS_RECAP_GC_RETENTION_DAYS`.
 
-## Ingestion Commands
+## Ingestion
 
-### `ingest daily`
+### `ingest`
 Run one ingestion cycle from RSS/Atom feeds.
 
 ```bash
-news-recap ingest daily
-news-recap ingest daily --feed-url https://example.com/feed.xml
+news-recap ingest
+news-recap ingest --feed-url https://example.com/feed.xml
 ```
 
 Key options:
@@ -31,28 +31,6 @@ Key options:
 If `--feed-url` is omitted, feeds are loaded from:
 - `NEWS_RECAP_RSS_FEED_URLS`
 - `NEWS_RECAP_RSS_FEED_URL`
-
-### `ingest stats`
-Show ingestion and dedup metrics in a rolling window.
-
-```bash
-news-recap ingest stats --hours 24 --recent-runs 5
-```
-
-Key options:
-- `--hours`
-- `--source`
-- `--recent-runs`
-
-### `ingest clusters`
-Inspect dedup cluster distribution for a run.
-
-```bash
-news-recap ingest clusters --hours 24 --limit 20
-news-recap ingest clusters --run-id <run_id> --show-members
-```
-
-Key options:
 - `--run-id` or `--hours`/`--source` for run resolution
 - `--min-size`
 - `--members-per-cluster`

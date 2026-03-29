@@ -4,7 +4,7 @@
 
 ## Карта Команд
 
-- `ingest`: импорт источников, статистика, проверка дедупа.
+- `ingest`: один цикл ingestion из RSS/Atom источников.
 - `run`: запуск пайплайна ежедневного дайджеста.
 - `prompt`: экспорт LLM-промпта из последних статей.
 - `serve`: запуск веб-просмотрщика дайджестов.
@@ -15,14 +15,14 @@
 - Данные хранятся в JSON-файлах с ежедневным разбиением; старые партиции
   удаляются автоматически по значению `NEWS_RECAP_GC_RETENTION_DAYS`.
 
-## Команды Ingestion
+## Ingestion
 
-### `ingest daily`
+### `ingest`
 Один цикл ingestion из RSS/Atom источников.
 
 ```bash
-news-recap ingest daily
-news-recap ingest daily --feed-url https://example.com/feed.xml
+news-recap ingest
+news-recap ingest --feed-url https://example.com/feed.xml
 ```
 
 Ключевые опции:
@@ -31,28 +31,6 @@ news-recap ingest daily --feed-url https://example.com/feed.xml
 Если `--feed-url` не указан, фиды берутся из:
 - `NEWS_RECAP_RSS_FEED_URLS`
 - `NEWS_RECAP_RSS_FEED_URL`
-
-### `ingest stats`
-Статистика ingestion и дедупа в заданном окне времени.
-
-```bash
-news-recap ingest stats --hours 24 --recent-runs 5
-```
-
-Ключевые опции:
-- `--hours`
-- `--source`
-- `--recent-runs`
-
-### `ingest clusters`
-Распределение dedup-кластеров по запуску.
-
-```bash
-news-recap ingest clusters --hours 24 --limit 20
-news-recap ingest clusters --run-id <run_id> --show-members
-```
-
-Ключевые опции:
 - `--run-id` или `--hours`/`--source` для выбора запуска
 - `--min-size`
 - `--members-per-cluster`

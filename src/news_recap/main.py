@@ -11,7 +11,6 @@ from news_recap import __version__
 from news_recap.ingestion.controllers import (
     DailyIngestionCommand,
     IngestionCliController,
-    IngestionStatsCommand,
 )
 from news_recap.recap.export_prompt import PromptCliController, PromptCommand
 from news_recap.recap.launcher import (
@@ -47,63 +46,20 @@ def news_recap() -> None:
     """News recap CLI."""
 
 
-@news_recap.group()
-def ingest() -> None:
-    """Ingestion commands."""
-
-
-@ingest.command("daily")
+@news_recap.command("ingest")
 @click.option(
     "--feed-url",
     "feed_urls",
     multiple=True,
     help="RSS/Atom feed URL. Can be repeated.",
 )
-def ingest_daily(feed_urls: tuple[str, ...]) -> None:
-    """Run one daily ingestion cycle from RSS feeds."""
+def ingest(feed_urls: tuple[str, ...]) -> None:
+    """Run one ingestion cycle from RSS feeds."""
 
     _emit_lines(
         INGESTION_CONTROLLER.run_daily(
             DailyIngestionCommand(
                 feed_urls=feed_urls,
-            ),
-        ),
-    )
-
-
-@ingest.command("stats")
-@click.option(
-    "--hours",
-    type=click.IntRange(min=1),
-    default=24,
-    show_default=True,
-    help="Time window for aggregation.",
-)
-@click.option(
-    "--source",
-    default=None,
-    help="Optional source filter, for example rss.",
-)
-@click.option(
-    "--recent-runs",
-    type=click.IntRange(min=1, max=50),
-    default=5,
-    show_default=True,
-    help="How many latest runs to display.",
-)
-def ingest_stats(
-    hours: int,
-    source: str | None,
-    recent_runs: int,
-) -> None:
-    """Show ingestion statistics for a time window."""
-
-    _emit_lines(
-        INGESTION_CONTROLLER.stats(
-            IngestionStatsCommand(
-                hours=hours,
-                source=source,
-                recent_runs=recent_runs,
             ),
         ),
     )
