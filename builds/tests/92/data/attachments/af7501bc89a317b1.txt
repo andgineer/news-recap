@@ -1,0 +1,2 @@
+2026-03-26 14:16:55,484 | DEBUG   | news_recap.http.youtube_extractor - Primary transcript fetch failed for dQw4w9WgXcQ, trying fallback
+2026-03-26 14:16:55,484 | WARNING | news_recap.http.youtube_extractor - Transcript retrieval failed for dQw4w9WgXcQ: RuntimeError

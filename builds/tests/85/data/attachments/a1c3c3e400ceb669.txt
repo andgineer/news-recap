@@ -1,0 +1,3 @@
+2026-03-15 08:28:48,445 | WARNING | news_recap.recap.tasks.single_pass - [single_pass] BLOCK before SECTION — discarding
+2026-03-15 08:28:48,445 | WARNING | news_recap.recap.tasks.single_pass - [single_pass] SUMMARY before BLOCK — discarding
+2026-03-15 08:28:48,445 | WARNING | news_recap.recap.tasks.single_pass - [single_pass] ARTICLES before BLOCK — discarding

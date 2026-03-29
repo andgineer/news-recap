@@ -1,0 +1,7 @@
+2026-03-26 10:34:09,258 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] 5 articles to enrich
+2026-03-26 10:34:09,258 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Round 1: 5 articles -> 1 batch(es)
+2026-03-26 10:34:09,258 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Batch 1 — 5 articles
+2026-03-26 10:34:09,259 | WARNING | news_recap.recap.tasks.enrich - Enrich: 3/5 headlines recognised — missing: 4 (art3), 5 (art4)
+2026-03-26 10:34:09,259 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Round 2: 2 articles -> 1 batch(es)
+2026-03-26 10:34:09,260 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Batch 2 — 2 articles
+2026-03-26 10:34:09,260 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] 5/5 articles enriched

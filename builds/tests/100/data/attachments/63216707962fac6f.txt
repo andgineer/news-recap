@@ -1,0 +1,1 @@
+2026-03-29 08:36:44,736 | WARNING | news_recap.ingestion.repository - Recovered stale running ingestion run (source=rss run_id=3d93d582-890b-4340-aee4-58b0056fb62c).

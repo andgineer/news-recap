@@ -1,0 +1,5 @@
+2026-03-29 08:36:43,835 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] 25 articles to enrich
+2026-03-29 08:36:43,835 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Round 1: 25 articles -> 2 batch(es)
+2026-03-29 08:36:43,836 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Batch 1 — 20 articles
+2026-03-29 08:36:43,837 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Batch 2 — 5 articles
+2026-03-29 08:36:43,839 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] 25/25 articles enriched

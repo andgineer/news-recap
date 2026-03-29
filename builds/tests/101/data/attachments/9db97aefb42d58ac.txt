@@ -1,0 +1,1 @@
+2026-03-29 09:40:48,817 | WARNING | news_recap.recap.tasks.refine_layout - [refine_layout] LLM omitted 1 block(s) [3] — appending to last section

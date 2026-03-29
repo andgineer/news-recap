@@ -1,0 +1,1 @@
+2026-03-11 08:39:56,913 | INFO    | news_recap.recap.tasks.load_resources - [load_resources] 5/10 loaded, 5 failed (50%)

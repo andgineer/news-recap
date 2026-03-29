@@ -1,0 +1,10 @@
+2026-03-29 08:32:40,999 | INFO    | news_recap.recap.storage.pipeline_io - Loading resource texts for 1 articles…
+2026-03-29 08:32:40,999 | INFO    | news_recap.recap.storage.pipeline_io - Resource loading summary:
+  HTML domains (top 1):
+    example.com: 1/1 loaded (0 KB)
+2026-03-29 08:32:41,000 | INFO    | news_recap.recap.storage.pipeline_io - Resource texts: 1 loaded (0 cached), 0 failed, 0 filtered
+2026-03-29 08:32:41,000 | INFO    | news_recap.recap.storage.pipeline_io - Loading resource texts for 1 articles…
+2026-03-29 08:32:41,000 | INFO    | news_recap.recap.storage.pipeline_io - Resource loading summary:
+  HTML domains (top 1):
+    example.com: 1/1 loaded (0 KB)
+2026-03-29 08:32:41,000 | INFO    | news_recap.recap.storage.pipeline_io - Resource texts: 0 loaded (0 cached), 0 failed, 1 filtered

@@ -1,0 +1,1 @@
+2026-03-26 11:15:34,821 | WARNING | news_recap.recap.loaders.resource_loader - Unexpected error loading bad1 (https://example.com/crash): extractor bug

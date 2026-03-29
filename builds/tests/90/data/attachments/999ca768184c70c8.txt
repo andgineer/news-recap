@@ -1,0 +1,5 @@
+2026-03-26 10:34:09,267 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] 5 articles to enrich
+2026-03-26 10:34:09,267 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Round 1: 5 articles -> 1 batch(es)
+2026-03-26 10:34:09,268 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Batch 1 — 5 articles
+2026-03-26 10:34:09,269 | ERROR   | news_recap.recap.tasks.enrich - recap_enrich batch 1 failed: Step recap_enrich failed: stdout is empty
+2026-03-26 10:34:09,269 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] 0/5 articles enriched

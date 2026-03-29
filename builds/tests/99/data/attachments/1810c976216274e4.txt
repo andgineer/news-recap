@@ -1,0 +1,1 @@
+INFO     news_recap.recap.tasks.oneshot_digest:oneshot_digest.py:616 [oneshot_digest] fuzzy merge removed 2 block(s)

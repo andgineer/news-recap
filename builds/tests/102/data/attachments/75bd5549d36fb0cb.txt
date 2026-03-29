@@ -1,0 +1,2 @@
+INFO     news_recap.recap.tasks.oneshot_digest:oneshot_digest.py:504 [oneshot_digest] dedup removed 1 exact + 0 subset block(s)
+INFO     news_recap.recap.tasks.oneshot_digest:oneshot_digest.py:616 [oneshot_digest] fuzzy merge removed 1 block(s)

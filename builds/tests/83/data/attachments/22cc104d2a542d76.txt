@@ -1,0 +1,7 @@
+INFO     news_recap.recap.tasks.enrich:enrich.py:242 [recap_enrich] 5 articles to enrich
+INFO     news_recap.recap.tasks.enrich:enrich.py:271 [recap_enrich] Round 1: 5 articles -> 1 batch(es)
+INFO     news_recap.recap.tasks.enrich:enrich.py:257 [recap_enrich] Batch 1 — 5 articles
+WARNING  news_recap.recap.tasks.enrich:enrich.py:186 Enrich: 3/5 headlines recognised — missing: 4 (art3), 5 (art4)
+INFO     news_recap.recap.tasks.enrich:enrich.py:271 [recap_enrich] Round 2: 2 articles -> 1 batch(es)
+INFO     news_recap.recap.tasks.enrich:enrich.py:257 [recap_enrich] Batch 2 — 2 articles
+INFO     news_recap.recap.tasks.enrich:enrich.py:311 [recap_enrich] 5/5 articles enriched

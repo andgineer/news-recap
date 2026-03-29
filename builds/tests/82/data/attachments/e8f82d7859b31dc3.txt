@@ -1,0 +1,6 @@
+2026-03-11 06:43:38,166 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] 20 articles to enrich
+2026-03-11 06:43:38,166 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Round 1: 20 articles -> 2 batch(es)
+2026-03-11 06:43:38,166 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Batch 1 — 14 articles
+2026-03-11 06:43:38,167 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] Batch 2 — 6 articles
+2026-03-11 06:43:38,168 | ERROR   | news_recap.recap.tasks.enrich - recap_enrich batch 2 failed: Step recap_enrich failed: agent crashed
+2026-03-11 06:43:38,168 | INFO    | news_recap.recap.tasks.enrich - [recap_enrich] 14/20 articles enriched

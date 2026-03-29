@@ -1,0 +1,1 @@
+2026-03-25 13:39:27,875 | INFO    | news_recap.recap.tasks.load_resources - [load_resources] 1/1 loaded, 0 failed (0%)

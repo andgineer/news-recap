@@ -1,0 +1,5 @@
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:199 Loading resource texts for 2 articles…
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:178 Resource loading summary:
+  HTML domains (top 1):
+    example.com: 2/2 loaded (0 KB)
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:227 Resource texts: 1 loaded (0 cached), 0 failed, 1 filtered
