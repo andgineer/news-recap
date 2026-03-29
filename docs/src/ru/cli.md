@@ -5,9 +5,9 @@
 ## Карта Команд
 
 - `ingest`: один цикл ingestion из RSS/Atom источников.
-- `run`: запуск пайплайна ежедневного дайджеста.
+- `recap`: запуск пайплайна ежедневного дайджеста.
 - `prompt`: экспорт LLM-промпта из последних статей.
-- `digest`: показать завершённые дайджесты и непокрытые периоды.
+- `list`: показать завершённые дайджесты и непокрытые периоды.
 - `serve`: запуск веб-просмотрщика дайджестов.
 
 ## Общие Замечания
@@ -32,26 +32,10 @@ news-recap ingest --feed-url https://example.com/feed.xml
 Если `--feed-url` не указан, фиды берутся из:
 - `NEWS_RECAP_RSS_FEED_URLS`
 - `NEWS_RECAP_RSS_FEED_URL`
-- `--run-id` или `--hours`/`--source` для выбора запуска
-- `--min-size`
-- `--members-per-cluster`
-- `--show-members`
-
-### `ingest duplicates`
-Примеры дублей (кластеры размером >= 2).
-
-```bash
-news-recap ingest duplicates --hours 24 --limit-clusters 10
-```
-
-Ключевые опции:
-- `--run-id` или `--hours`/`--source`
-- `--limit-clusters`
-- `--members-per-cluster`
 
 ## Команды пайплайна дайджеста
 
-### `run`
+### `recap`
 Запуск полного пайплайна дайджеста на бизнес-дату.
 
 Пайплайн проходит следующие этапы: classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций) → refine_layout (опциональная консолидация секций).
@@ -59,11 +43,11 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 Каждый этап чекпоинтится, поэтому повторный запуск пропускает уже выполненные этапы.
 
 ```bash
-news-recap run
-news-recap run --api
-news-recap run --agent claude --stop-after classify
-news-recap run --limit 50
-news-recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
+news-recap recap
+news-recap recap --api
+news-recap recap --agent claude --stop-after classify
+news-recap recap --limit 50
+news-recap recap --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
 ```
 
 Ключевые опции:
@@ -81,12 +65,12 @@ news-recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
   по умолчанию ключи удаляются, чтобы агент использовал лимиты подписки)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)
 
-### `digest`
+### `list`
 Показать завершённые дайджесты с количеством статей, временным охватом и
 непокрытыми периодами (промежутки между дайджестами).
 
 ```bash
-news-recap digest
+news-recap list
 ```
 
 Вывод содержит список завершённых дайджестов (от новых к старым): числовой ID
@@ -110,7 +94,7 @@ news-recap serve 2
 
 Аргументы:
 - `DIGEST_ID` (необязательный) — ID дайджеста (1 = самый новый, как показано
-  в `news-recap digest`). По умолчанию — последний завершённый дайджест.
+  в `news-recap list`). По умолчанию — последний завершённый дайджест.
 
 Ключевые опции:
 - `--host` — хост для привязки (по умолчанию `127.0.0.1`).
@@ -128,7 +112,7 @@ news-recap serve 2
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-news-recap run --api
+news-recap recap --api
 ```
 
 Флаг `--api` автоматически задаёт `backend=api` и `agent=claude`. Других переменных окружения не требуется.
@@ -175,7 +159,7 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ### LLM-агенты
 
 > **Подписка vs API-биллинг.** При запуске CLI-агентов (`claude`, `codex`, `gemini`)
-> как подпроцессов `news-recap run` по умолчанию удаляет ключи API вендоров
+> как подпроцессов `news-recap recap` по умолчанию удаляет ключи API вендоров
 > (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
 > из окружения подпроцесса — чтобы агент использовал лимиты подписки, а не
 > тарифицировал вызовы через API-аккаунт.
@@ -186,7 +170,7 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 > Чтобы явно передать ключ CLI-агенту (оплата за токены), используйте `--use-api-key`:
 >
 > ```bash
-> news-recap run --use-api-key
+> news-recap recap --use-api-key
 > ```
 
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — агент по умолчанию (`codex`, `claude` или `gemini`).
@@ -198,5 +182,8 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ```bash
 news-recap --help
 news-recap ingest --help
-news-recap run --help
+news-recap recap --help
+news-recap prompt --help
+news-recap list --help
+news-recap serve --help
 ```

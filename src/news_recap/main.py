@@ -1,5 +1,6 @@
 """CLI entrypoint for news-recap."""
 
+import copy as _copy
 import logging
 from collections.abc import Iterator
 from pathlib import Path
@@ -66,7 +67,7 @@ def ingest(feed_urls: tuple[str, ...]) -> None:
     )
 
 
-@news_recap.command("run")
+@news_recap.command("recap")
 @click.option(
     "--agent",
     type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
@@ -178,7 +179,7 @@ def recap_run(  # noqa: PLR0913
     show_default=True,
     help=(
         "Run full classify→dedup pipeline before building the prompt "
-        "(same scope as the run command)."
+        "(same scope as the recap command)."
     ),
 )
 @click.option(
@@ -257,8 +258,8 @@ def recap_prompt(  # noqa: PLR0913
     )
 
 
-@news_recap.command("digest")
-def digest_cmd() -> None:
+@news_recap.command("list")
+def list_cmd() -> None:
     """Show completed digests and uncovered article periods."""
     _emit_lines(DIGEST_INFO_CONTROLLER.digest_info())
 
@@ -285,7 +286,7 @@ def serve(
 ) -> None:
     """Start the digest web viewer.
 
-    DIGEST_ID is the numeric digest ID (1 = latest, as shown by `news-recap digest`).
+    DIGEST_ID is the numeric digest ID (1 = latest, as shown by `news-recap list`).
     Defaults to the latest completed digest.
     """
     _emit_lines(
@@ -297,6 +298,15 @@ def serve(
             ),
         ),
     )
+
+
+_run_alias = _copy.copy(recap_run)
+_run_alias.hidden = True
+news_recap.add_command(_run_alias, "run")
+
+_digest_alias = _copy.copy(list_cmd)
+_digest_alias.hidden = True
+news_recap.add_command(_digest_alias, "digest")
 
 
 def _emit_lines(lines: list[str] | Iterator[str]) -> None:

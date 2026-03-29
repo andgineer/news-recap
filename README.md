@@ -11,8 +11,10 @@ subscriptions — making heavy daily summarisation practically free.
 
 ## Cost
 
-Each oneshot run consumes roughly 4% of the weekly CLI agent subscription
-quota (~\$0.19 per run, ~\$6/month at daily use). The dollar figures are
+Each didgest pipeline run consumes roughly 3-4% of the weekly CLI agent subscription
+quota (~\$0.19 per run, ~\$6/month at daily use).
+
+The dollar figures are
 approximate — the pipeline runs under flat-rate subscriptions (Codex, Claude
 Code, Gemini CLI at ~\$20/month), so the quota would mostly go unused anyway.
 

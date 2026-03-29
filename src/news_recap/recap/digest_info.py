@@ -1,4 +1,4 @@
-"""Controller for the ``digest`` CLI command."""
+"""Controller for the ``list`` CLI command."""
 
 from __future__ import annotations
 

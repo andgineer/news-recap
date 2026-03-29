@@ -1,6 +1,6 @@
 """``prompt`` command — export a ready-to-paste LLM prompt from recent articles.
 
-With ``--ai`` (default) the full classify → dedup pipeline runs first, matching the ``run``
+With ``--ai`` (default) the full classify → dedup pipeline runs first, matching the ``recap``
 command scope.  With ``--no-ai`` no LLM calls are made and raw ingested articles are used directly.
 """
 

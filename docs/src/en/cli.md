@@ -5,9 +5,9 @@
 ## Command Map
 
 - `ingest`: run one ingestion cycle from RSS/Atom feeds.
-- `run`: run the daily digest pipeline.
+- `recap`: run the daily digest pipeline.
 - `prompt`: export a ready-to-paste LLM prompt from recent articles.
-- `digest`: show completed digests and uncovered article periods.
+- `list`: show completed digests and uncovered article periods.
 - `serve`: start the digest web viewer.
 
 ## Common Notes
@@ -32,26 +32,10 @@ Key options:
 If `--feed-url` is omitted, feeds are loaded from:
 - `NEWS_RECAP_RSS_FEED_URLS`
 - `NEWS_RECAP_RSS_FEED_URL`
-- `--run-id` or `--hours`/`--source` for run resolution
-- `--min-size`
-- `--members-per-cluster`
-- `--show-members`
-
-### `ingest duplicates`
-Print duplicate cluster examples (cluster size >= 2).
-
-```bash
-news-recap ingest duplicates --hours 24 --limit-clusters 10
-```
-
-Key options:
-- `--run-id` or `--hours`/`--source`
-- `--limit-clusters`
-- `--members-per-cluster`
 
 ## Digest Pipeline Commands
 
-### `run`
+### `recap`
 Run the full news digest pipeline for a business date.
 
 The pipeline goes through the following stages: classify → load_resources → enrich → deduplicate → oneshot_digest (parallel batches + deterministic block dedup + section merge) → refine_layout (optional section consolidation).
@@ -59,11 +43,11 @@ The pipeline goes through the following stages: classify → load_resources → 
 Each stage is checkpointed, so a resumed run skips already-completed stages.
 
 ```bash
-news-recap run
-news-recap run --api
-news-recap run --agent claude --stop-after classify
-news-recap run --limit 50
-news-recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
+news-recap recap
+news-recap recap --api
+news-recap recap --agent claude --stop-after classify
+news-recap recap --limit 50
+news-recap recap --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
 ```
 
 Key options:
@@ -81,12 +65,12 @@ Key options:
   by default they are removed so the agent uses its subscription quota)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)
 
-### `digest`
+### `list`
 Show completed digests with article counts, date-time coverage, and uncovered
 periods (gaps between consecutive digests).
 
 ```bash
-news-recap digest
+news-recap list
 ```
 
 Output lists each completed digest (newest first) with its numeric ID (`#1` =
@@ -109,7 +93,7 @@ news-recap serve 2
 
 Arguments:
 - `DIGEST_ID` (optional) — digest ID to serve (1 = latest, as shown by
-  `news-recap digest`). Defaults to the latest completed digest.
+  `news-recap list`). Defaults to the latest completed digest.
 
 Key options:
 - `--host` — host to bind to (default `127.0.0.1`).
@@ -127,7 +111,7 @@ Anthropic SDK calls — no CLI agents required.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-news-recap run --api
+news-recap recap --api
 ```
 
 `--api` sets `backend=api` and `agent=claude` automatically. No other env vars needed.
@@ -173,7 +157,7 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ### LLM Agents
 
 > **Subscription vs API billing.** When spawning CLI agents (`claude`, `codex`, `gemini`)
-> as subprocesses, `news-recap run` removes vendor API keys
+> as subprocesses, `news-recap recap` removes vendor API keys
 > (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
 > from the subprocess environment by default — so the agent uses its subscription
 > quota rather than billing your API account per token.
@@ -184,7 +168,7 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 > To explicitly pass the API key to a CLI agent (pay-per-token billing), use `--use-api-key`:
 >
 > ```bash
-> news-recap run --use-api-key
+> news-recap recap --use-api-key
 > ```
 
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — default agent (`codex`, `claude`, or `gemini`).
@@ -196,5 +180,8 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ```bash
 news-recap --help
 news-recap ingest --help
-news-recap run --help
+news-recap recap --help
+news-recap prompt --help
+news-recap list --help
+news-recap serve --help
 ```

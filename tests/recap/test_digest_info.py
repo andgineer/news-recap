@@ -326,6 +326,6 @@ def test_digest_cli_help() -> None:
     from news_recap.main import news_recap
 
     runner = CliRunner()
-    result = runner.invoke(news_recap, ["digest", "--help"])
+    result = runner.invoke(news_recap, ["list", "--help"])
     assert result.exit_code == 0
     assert "completed digests" in result.output.lower()
