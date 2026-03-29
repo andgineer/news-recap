@@ -44,6 +44,7 @@ def _make_digest(
         blocks=[block],
         recaps=[section],
         day_summary="Great day summary.",
+        completed_phases=["classify", "oneshot_digest"] if status == "completed" else [],
     )
 
 
@@ -80,6 +81,23 @@ def test_find_latest_digest_skips_non_completed(tmp_path: Path) -> None:
 
     result = find_latest_digest(workdir, "2026-03-06")
     assert result is None
+
+
+def test_find_latest_digest_skips_completed_without_oneshot_phase(tmp_path: Path) -> None:
+    """A --stop-after classify pipeline should not be served as a completed digest."""
+    workdir = tmp_path / "workdir"
+    pipeline_dir = workdir / "pipeline-2026-03-06-120000"
+    digest = Digest(
+        digest_id="partial-id",
+        business_date="2026-03-06",
+        status="completed",
+        pipeline_dir=str(pipeline_dir),
+        articles=[],
+        completed_phases=["classify", "load_resources"],
+    )
+    _write_digest(pipeline_dir, digest)
+
+    assert find_latest_digest(workdir, "2026-03-06") is None
 
 
 def test_find_latest_digest_returns_none_for_missing_date(tmp_path: Path) -> None:
@@ -131,21 +149,64 @@ def test_digest_page_renders_completed_digest(tmp_path: Path) -> None:
     assert "https://example.com/1" in body
 
 
-def test_root_redirects_to_pinned_date(tmp_path: Path) -> None:
+def test_root_redirects_to_pinned_pipeline(tmp_path: Path) -> None:
     workdir = tmp_path / "workdir"
-    workdir.mkdir()
+    pipeline_dir = workdir / "pipeline-2026-03-06-120000"
+    digest = _make_digest(pipeline_dir)
+    _write_digest(pipeline_dir, digest)
 
-    app = create_app(workdir, pinned_date="2026-03-06")
+    app = create_app(workdir, pinned_pipeline_dir=pipeline_dir)
     client = app.test_client()
 
     resp = client.get("/")
     assert resp.status_code == 302
-    assert "/digest/2026-03-06" in resp.headers["Location"]
+    assert "/pipeline/pipeline-2026-03-06-120000" in resp.headers["Location"]
+
+
+def test_pipeline_route_serves_exact_digest(tmp_path: Path) -> None:
+    workdir = tmp_path / "workdir"
+    pipeline_dir = workdir / "pipeline-2026-03-06-120000"
+    digest = _make_digest(pipeline_dir)
+    _write_digest(pipeline_dir, digest)
+
+    app = create_app(workdir)
+    client = app.test_client()
+
+    resp = client.get("/pipeline/pipeline-2026-03-06-120000")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "Great day summary." in body
 
 
 # ---------------------------------------------------------------------------
 # Flask routes — error cases
 # ---------------------------------------------------------------------------
+
+
+def test_pipeline_route_returns_404_for_missing_pipeline(tmp_path: Path) -> None:
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+
+    app = create_app(workdir)
+    client = app.test_client()
+
+    resp = client.get("/pipeline/nonexistent")
+    assert resp.status_code == 404
+
+
+def test_pipeline_route_rejects_path_traversal(tmp_path: Path) -> None:
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "digest.json").write_text("{}")
+
+    app = create_app(workdir)
+    client = app.test_client()
+
+    resp = client.get("/pipeline/../outside")
+    assert resp.status_code == 404
 
 
 def test_digest_page_returns_404_for_missing_digest(tmp_path: Path) -> None:
@@ -198,6 +259,7 @@ def test_digest_page_missing_article_reference_silently_skipped(tmp_path: Path) 
         articles=[],
         blocks=[block],
         recaps=[section],
+        completed_phases=["classify", "oneshot_digest"],
     )
     _write_digest(pipeline_dir, digest)
 
@@ -228,6 +290,7 @@ def test_safe_index_uses_ondisk_path_not_pipeline_dir_metadata(tmp_path: Path) -
         pipeline_dir=str(stale_dir),  # does not match actual file location
         articles=[],
         blocks=[DigestBlock(title="Block", article_ids=[])],
+        completed_phases=["classify", "oneshot_digest"],
     )
     _write_digest(pipeline_dir, digest)
 
@@ -257,6 +320,7 @@ def test_safe_index_rejects_path_outside_workdir_root(tmp_path: Path) -> None:
         status="completed",
         pipeline_dir=str(outside_path.parent),
         articles=[],
+        completed_phases=["classify", "oneshot_digest"],
     )
     save_msgspec(outside_path, digest)
 
@@ -299,6 +363,6 @@ def test_serve_help() -> None:
     runner = CliRunner()
     result = runner.invoke(news_recap, ["serve", "--help"])
     assert result.exit_code == 0
-    assert "--date" in result.output
+    assert "DIGEST_ID" in result.output
     assert "--host" in result.output
     assert "--port" in result.output

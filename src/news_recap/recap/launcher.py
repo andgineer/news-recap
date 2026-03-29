@@ -21,6 +21,7 @@ from news_recap.recap.pipeline_setup import (
     _compute_article_window,
     _find_resumable_pipeline,
     _write_pipeline_input,
+    gc_old_pipelines,
 )
 from news_recap.storage.io import load_msgspec
 
@@ -106,10 +107,15 @@ class RecapCliController:
         )
         store.init_schema()
 
+        workdir_root = settings.orchestrator.workdir_root.resolve()
+        deleted = gc_old_pipelines(workdir_root, keep_days=settings.ingestion.gc_retention_days)
+        if deleted:
+            yield f"Auto-GC: removed {len(deleted)} old pipeline(s)."
+
         resumable = None
         if not command.fresh and not source_articles:
             resumable = _find_resumable_pipeline(
-                settings.orchestrator.workdir_root.resolve(),
+                workdir_root,
                 cap_days,
                 command.article_limit,
             )

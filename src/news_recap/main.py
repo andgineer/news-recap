@@ -2,7 +2,6 @@
 
 import logging
 from collections.abc import Iterator
-from datetime import datetime
 from pathlib import Path
 
 import rich_click as click
@@ -12,6 +11,7 @@ from news_recap.ingestion.controllers import (
     DailyIngestionCommand,
     IngestionCliController,
 )
+from news_recap.recap.digest_info import DigestInfoController
 from news_recap.recap.export_prompt import PromptCliController, PromptCommand
 from news_recap.recap.launcher import (
     RecapCliController,
@@ -37,6 +37,7 @@ click.rich_click.USE_MARKDOWN = True
 INGESTION_CONTROLLER = IngestionCliController()
 RECAP_CONTROLLER = RecapCliController()
 PROMPT_CONTROLLER = PromptCliController()
+DIGEST_INFO_CONTROLLER = DigestInfoController()
 WEB_CONTROLLER = WebCliController()
 
 
@@ -256,14 +257,14 @@ def recap_prompt(  # noqa: PLR0913
     )
 
 
+@news_recap.command("digest")
+def digest_cmd() -> None:
+    """Show completed digests and uncovered article periods."""
+    _emit_lines(DIGEST_INFO_CONTROLLER.digest_info())
+
+
 @news_recap.command("serve")
-@click.option(
-    "--date",
-    "pinned_date",
-    type=click.DateTime(formats=["%Y-%m-%d"]),
-    default=None,
-    help="Pin the default landing page to this date (YYYY-MM-DD). Defaults to today UTC.",
-)
+@click.argument("digest_id", type=click.IntRange(min=1), default=None, required=False)
 @click.option(
     "--host",
     default="127.0.0.1",
@@ -278,16 +279,22 @@ def recap_prompt(  # noqa: PLR0913
     help="Port to bind the web server to.",
 )
 def serve(
-    pinned_date: datetime | None,
+    digest_id: int | None,
     host: str,
     port: int,
 ) -> None:
-    """Start the digest web viewer."""
-    WEB_CONTROLLER.serve(
-        WebServeCommand(
-            date=pinned_date.date() if pinned_date is not None else None,
-            host=host,
-            port=port,
+    """Start the digest web viewer.
+
+    DIGEST_ID is the numeric digest ID (1 = latest, as shown by `news-recap digest`).
+    Defaults to the latest completed digest.
+    """
+    _emit_lines(
+        WEB_CONTROLLER.serve(
+            WebServeCommand(
+                digest_id=digest_id,
+                host=host,
+                port=port,
+            ),
         ),
     )
 

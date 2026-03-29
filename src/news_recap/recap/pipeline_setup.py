@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
+from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -104,10 +107,26 @@ def _find_resumable_pipeline(
     return None
 
 
-def _find_last_completed_digest_date(workdir_root: Path) -> date | None:
-    """Return the business_date of the most recent fully completed digest, or ``None``."""
+@dataclass(slots=True)
+class DigestSummary:
+    """Metadata for a single completed digest."""
+
+    digest_id: int
+    business_date: date
+    article_count: int
+    earliest_article: datetime | None
+    latest_article: datetime | None
+    pipeline_dir_name: str
+
+
+def _iter_completed_digests(workdir_root: Path) -> Iterator[tuple[Path, Digest]]:
+    """Yield ``(path, Digest)`` for completed digests, newest-first.
+
+    A digest is considered completed when ``status == "completed"``
+    and ``"oneshot_digest"`` is in ``completed_phases``.
+    """
     if not workdir_root.is_dir():
-        return None
+        return
 
     candidates = sorted(
         (p for p in workdir_root.iterdir() if p.is_dir() and p.name.startswith("pipeline-")),
@@ -126,9 +145,77 @@ def _find_last_completed_digest_date(workdir_root: Path) -> date | None:
             continue
 
         if digest.status == "completed" and "oneshot_digest" in digest.completed_phases:
-            return date.fromisoformat(digest.business_date)
+            yield pdir, digest
 
+
+def _find_last_completed_digest_date(workdir_root: Path) -> date | None:
+    """Return the business_date of the most recent fully completed digest, or ``None``."""
+    result = next(_iter_completed_digests(workdir_root), None)
+    if result is None:
+        return None
+    return date.fromisoformat(result[1].business_date)
+
+
+def _list_completed_digests(workdir_root: Path) -> list[DigestSummary]:
+    """Return metadata for all completed digests, newest-first.
+
+    Each summary gets a 1-based ``digest_id`` (1 = newest).
+    """
+    summaries: list[DigestSummary] = []
+    for idx, (pdir, digest) in enumerate(_iter_completed_digests(workdir_root), start=1):
+        timestamps: list[datetime] = []
+        for article in digest.articles:
+            try:
+                timestamps.append(datetime.fromisoformat(article.published_at))
+            except (ValueError, TypeError):
+                continue
+
+        summaries.append(
+            DigestSummary(
+                digest_id=idx,
+                business_date=date.fromisoformat(digest.business_date),
+                article_count=len(digest.articles),
+                earliest_article=min(timestamps) if timestamps else None,
+                latest_article=max(timestamps) if timestamps else None,
+                pipeline_dir_name=pdir.name,
+            ),
+        )
+    return summaries
+
+
+def _find_digest_pipeline_dir(workdir_root: Path, digest_id: int) -> Path | None:
+    """Return the pipeline directory for digest *digest_id* (1-based, newest-first)."""
+    for idx, (pdir, _digest) in enumerate(_iter_completed_digests(workdir_root), start=1):
+        if idx == digest_id:
+            return pdir
     return None
+
+
+def gc_old_pipelines(workdir_root: Path, *, keep_days: int = 7) -> list[Path]:
+    """Delete pipeline directories whose business date is outside the retention window.
+
+    Works like ``gc_old_days`` in ``storage/io.py`` but targets pipeline dirs.
+    Returns the list of deleted directories.
+    """
+    if not workdir_root.is_dir():
+        return []
+
+    cutoff = (date.today() - timedelta(days=keep_days)).isoformat()
+    deleted: list[Path] = []
+
+    for pdir in workdir_root.iterdir():
+        if not pdir.is_dir() or not pdir.name.startswith("pipeline-"):
+            continue
+        try:
+            dir_date = pdir.name.split("-", 1)[1].rsplit("-", 1)[0]
+        except (ValueError, IndexError):
+            continue
+        if dir_date <= cutoff:
+            shutil.rmtree(pdir)
+            deleted.append(pdir)
+            logger.debug("GC: removed old pipeline %s", pdir.name)
+
+    return deleted
 
 
 def _compute_article_window(

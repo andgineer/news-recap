@@ -7,6 +7,7 @@
 - `ingest`: run one ingestion cycle from RSS/Atom feeds.
 - `run`: run the daily digest pipeline.
 - `prompt`: export a ready-to-paste LLM prompt from recent articles.
+- `digest`: show completed digests and uncovered article periods.
 - `serve`: start the digest web viewer.
 
 ## Common Notes
@@ -79,6 +80,40 @@ Key options:
 - `--use-api-key` (keep vendor API keys in the agent subprocess environment;
   by default they are removed so the agent uses its subscription quota)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)
+
+### `digest`
+Show completed digests with article counts, date-time coverage, and uncovered
+periods (gaps between consecutive digests).
+
+```bash
+news-recap digest
+```
+
+Output lists each completed digest (newest first) with its numeric ID (`#1` =
+newest), business date, article count, earliest/latest article timestamps, and
+pipeline directory name. Use the ID with `news-recap serve N`.
+
+If there are time gaps between consecutive digests' article ranges, they are
+shown under "Uncovered periods".
+
+Old pipeline directories are automatically garbage-collected (same retention
+as articles, controlled by `NEWS_RECAP_GC_RETENTION_DAYS`).
+
+### `serve`
+Start the digest web viewer for a specific digest.
+
+```bash
+news-recap serve
+news-recap serve 2
+```
+
+Arguments:
+- `DIGEST_ID` (optional) — digest ID to serve (1 = latest, as shown by
+  `news-recap digest`). Defaults to the latest completed digest.
+
+Key options:
+- `--host` — host to bind to (default `127.0.0.1`).
+- `--port` — port to bind to (default `8080`).
 
 ## API Mode
 
