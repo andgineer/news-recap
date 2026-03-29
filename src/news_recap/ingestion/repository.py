@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -533,15 +533,20 @@ class IngestionStore:
         *,
         lookback_days: int | None = None,
         limit: int = 2000,
+        since: date | None = None,
     ) -> list[DigestArticle]:
         """Load articles from recent days for the recap pipeline.
 
         *lookback_days* controls how many daily partitions to load
-        (defaults to ``gc_retention_days``).
+        (defaults to ``gc_retention_days``).  When *since* is given,
+        only articles with ``published_at >= since`` are returned.
         """
         days = self._load_recent_days(n=lookback_days)
         articles = self._all_articles(days)
         sorted_arts = sorted(articles.values(), key=lambda a: a.published_at, reverse=True)
+        if since is not None:
+            cutoff = datetime(since.year, since.month, since.day, tzinfo=UTC)
+            sorted_arts = [a for a in sorted_arts if a.published_at >= cutoff]
         return [
             DigestArticle(
                 article_id=a.article_id,

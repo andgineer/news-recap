@@ -9,8 +9,7 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from pathlib import Path
+from datetime import UTC, date, datetime
 
 from news_recap.config import Settings
 from news_recap.ingestion.repository import IngestionStore
@@ -23,6 +22,7 @@ from news_recap.recap.flow import recap_flow
 from news_recap.recap.models import Digest, DigestArticle, UserPreferences, language_display_name
 from news_recap.recap.pipeline_setup import (
     _build_routing_defaults,
+    _compute_article_window,
     _find_resumable_pipeline,
     _write_pipeline_input,
 )
@@ -48,11 +48,11 @@ Do not invent information beyond what the titles tell you."""
 
 def _render_prompt(
     ordered: list[DigestArticle],
-    lookback_days: int,
+    since_date: date,
     language: str,
 ) -> str:
     article_lines = build_article_lines(ordered, include_url=True)
-    header = f"=== {len(ordered)} ARTICLES (last {lookback_days} day(s)) ==="
+    header = f"=== {len(ordered)} ARTICLES (since {since_date}) ==="
     note = "Note: articles are pre-sorted by topic similarity."
     task = _TASK_TEMPLATE.format(language=language_display_name(language))
     return f"{task}\n\n{header}\n{note}\n\n{article_lines}"
@@ -81,19 +81,22 @@ def _copy_to_clipboard(text: str) -> bool:
 class PromptCommand:
     """CLI parameters for the ``prompt`` command."""
 
-    data_dir: Path | None = None
     group_threshold: float = _DEFAULT_GROUP_THRESHOLD
     language: str = _DEFAULT_LANGUAGE
     out: str = "clipboard"
     ai: bool = True
     fresh: bool = False
     agent: str | None = None
+    max_days: int | None = None
+    all_articles: bool = False
 
 
 def _run_ai_pipeline(
     command: PromptCommand,
     settings: Settings,
     store: IngestionStore,
+    cap_days: int,
+    since_date: date,
 ) -> list[DigestArticle]:
     """Run classify → load_resources → enrich → deduplicate, return post-dedup articles."""
     routing_defaults = _build_routing_defaults(settings)
@@ -103,12 +106,13 @@ def _run_ai_pipeline(
     pdir = (
         None
         if command.fresh
-        else _find_resumable_pipeline(workdir_root, business_date, article_limit=None)
+        else _find_resumable_pipeline(workdir_root, cap_days, article_limit=None)
     )
     if pdir is None:
         articles = store.list_retrieval_articles(
-            lookback_days=settings.ingestion.digest_lookback_days,
+            lookback_days=cap_days,
             limit=2000,
+            since=since_date,
         )
         ts = datetime.now(tz=UTC).strftime("%H%M%S")
         pdir = (workdir_root / f"pipeline-{business_date}-{ts}").resolve()
@@ -139,19 +143,32 @@ class PromptCliController:
     """Load articles, reorder by similarity, render and output the prompt."""
 
     def prompt(self, command: PromptCommand) -> Iterator[str]:
-        settings = Settings.from_env(data_dir=command.data_dir)
+        settings = Settings.from_env()
         store = IngestionStore(
             settings.data_dir,
             gc_retention_days=settings.ingestion.gc_retention_days,
         )
         store.init_schema()
 
+        cap_days, since_date = _compute_article_window(
+            settings,
+            command.all_articles,
+            command.max_days,
+        )
+
         if command.ai:
-            kept_articles = _run_ai_pipeline(command, settings, store)
+            kept_articles = _run_ai_pipeline(
+                command,
+                settings,
+                store,
+                cap_days,
+                since_date,
+            )
         else:
             kept_articles = store.list_retrieval_articles(
-                lookback_days=settings.ingestion.digest_lookback_days,
+                lookback_days=cap_days,
                 limit=2000,
+                since=since_date,
             )
 
         if not kept_articles:
@@ -162,7 +179,7 @@ class PromptCliController:
         embedder = SentenceTransformerEmbedder(model_name=settings.dedup.model_name)
         ordered = reorder_articles(kept_articles, embedder, command.group_threshold)
 
-        prompt = _render_prompt(ordered, settings.ingestion.digest_lookback_days, command.language)
+        prompt = _render_prompt(ordered, since_date, command.language)
 
         if command.out == "console":
             yield prompt

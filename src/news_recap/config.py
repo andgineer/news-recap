@@ -23,7 +23,7 @@ class IngestionSettings:
     backfill_max_gaps: int = 10
     clean_text_max_chars: int = 12_000
     gc_retention_days: int = 7
-    digest_lookback_days: int = 3
+    digest_lookback_days: int = 2
     min_resource_chars: int = 200
 
 
@@ -132,7 +132,6 @@ class Settings:
     @classmethod
     def from_env(
         cls,
-        data_dir: Path | None = None,
         execution_backend: str | None = None,
     ) -> Settings:
         """Load settings from environment with sane defaults for local development.
@@ -144,7 +143,7 @@ class Settings:
 
         rss_urls = _collect_feed_urls()
         settings = cls(
-            data_dir=data_dir or Path(os.getenv("NEWS_RECAP_DATA_DIR", ".news_recap_data")),
+            data_dir=Path(os.getenv("NEWS_RECAP_DATA_DIR", ".news_recap_data")),
             ingestion=IngestionSettings(
                 page_size=int(
                     os.getenv(
@@ -164,7 +163,7 @@ class Settings:
                 backfill_max_gaps=int(os.getenv("NEWS_RECAP_BACKFILL_MAX_GAPS", "10")),
                 clean_text_max_chars=int(os.getenv("NEWS_RECAP_CLEAN_TEXT_MAX_CHARS", "12000")),
                 gc_retention_days=int(os.getenv("NEWS_RECAP_GC_RETENTION_DAYS", "7")),
-                digest_lookback_days=int(os.getenv("NEWS_RECAP_DIGEST_LOOKBACK_DAYS", "3")),
+                digest_lookback_days=int(os.getenv("NEWS_RECAP_DIGEST_LOOKBACK_DAYS", "2")),
                 min_resource_chars=int(os.getenv("NEWS_RECAP_MIN_RESOURCE_CHARS", "200")),
             ),
             dedup=DedupSettings(

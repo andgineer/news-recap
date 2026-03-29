@@ -133,16 +133,17 @@ def test_build_article_lines_empty() -> None:
 
 
 def test_render_prompt_structure() -> None:
+    from datetime import date
+
     articles = [
         _make_article("a", "Some Title", "https://news.com/a", "news.com"),
     ]
-    result = _render_prompt(articles, lookback_days=2, language="en")
-    assert "=== 1 ARTICLES (last 2 day(s)) ===" in result
+    result = _render_prompt(articles, since_date=date(2026, 3, 26), language="en")
+    assert "=== 1 ARTICLES (since 2026-03-26) ===" in result
     assert "pre-sorted by topic similarity" in result
     assert "1. Some Title" in result
     assert "=== TASK ===" in result
     assert "digest in English" in result
-    # task section appears before articles
     assert result.index("=== TASK ===") < result.index("=== 1 ARTICLES")
 
 
@@ -174,6 +175,7 @@ def test_copy_to_clipboard_succeeds_on_first_working_command() -> None:
 
 def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None:  # type: ignore[name-defined]
     """--ai path: recap_flow is called with stop_after=deduplicate and digest.articles used."""
+    from datetime import date
     from pathlib import Path
 
     from news_recap.recap.models import Digest
@@ -190,7 +192,7 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     mock_settings = MagicMock()
     mock_settings.data_dir = tmp_path
     mock_settings.ingestion.gc_retention_days = 7
-    mock_settings.ingestion.digest_lookback_days = 3
+    mock_settings.ingestion.digest_lookback_days = 2
     mock_settings.ingestion.min_resource_chars = 200
     mock_settings.dedup.threshold = 0.90
     mock_settings.dedup.model_name = "intfloat/multilingual-e5-small"
@@ -226,6 +228,7 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     mock_embedder = MagicMock()
     mock_embedder.embed.return_value = [[0.1] * 10]
 
+    since = date(2026, 3, 9)
     with (
         patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
@@ -236,6 +239,10 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
             "news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder
         ),
         patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
+        patch(
+            "news_recap.recap.export_prompt._compute_article_window",
+            return_value=(2, since),
+        ),
     ):
         controller = PromptCliController()
         output = list(controller.prompt(PromptCommand(ai=True, out="clipboard")))
@@ -248,6 +255,7 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
 
 def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ignore[name-defined]
     """--no-ai path: store is queried directly, recap_flow is never called."""
+    from datetime import date
     from pathlib import Path  # noqa: F401
 
     article = _make_article("y1", "No-AI article", "https://noai.com/1", "noai.com")
@@ -255,7 +263,7 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
     mock_settings = MagicMock()
     mock_settings.data_dir = tmp_path
     mock_settings.ingestion.gc_retention_days = 7
-    mock_settings.ingestion.digest_lookback_days = 3
+    mock_settings.ingestion.digest_lookback_days = 2
     mock_settings.dedup.model_name = "intfloat/multilingual-e5-small"
 
     mock_store = MagicMock()
@@ -264,6 +272,7 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
     mock_embedder = MagicMock()
     mock_embedder.embed.return_value = [[0.1] * 10]
 
+    since = date(2026, 3, 26)
     with (
         patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
@@ -272,17 +281,26 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
             "news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder
         ),
         patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
+        patch(
+            "news_recap.recap.export_prompt._compute_article_window",
+            return_value=(2, since),
+        ),
     ):
         controller = PromptCliController()
         output = list(controller.prompt(PromptCommand(ai=False, out="clipboard")))
 
     mock_flow.assert_not_called()
-    mock_store.list_retrieval_articles.assert_called_once_with(lookback_days=3, limit=2000)
+    mock_store.list_retrieval_articles.assert_called_once_with(
+        lookback_days=2,
+        limit=2000,
+        since=since,
+    )
     assert any("copied" in line.lower() for line in output)
 
 
 def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: ignore[name-defined]
     """--fresh: _find_resumable_pipeline is not consulted, new pipeline dir is created."""
+    from datetime import date
     from pathlib import Path
 
     from news_recap.recap.models import Digest
@@ -296,7 +314,6 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
         articles=[article],
     )
 
-    # Pre-create a pipeline dir that would be picked up by _find_resumable_pipeline
     existing_pdir = tmp_path / "pipeline-2026-03-11-000000"
     existing_pdir.mkdir()
     import msgspec
@@ -306,7 +323,7 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
     mock_settings = MagicMock()
     mock_settings.data_dir = tmp_path
     mock_settings.ingestion.gc_retention_days = 7
-    mock_settings.ingestion.digest_lookback_days = 3
+    mock_settings.ingestion.digest_lookback_days = 2
     mock_settings.ingestion.min_resource_chars = 200
     mock_settings.dedup.threshold = 0.90
     mock_settings.dedup.model_name = "intfloat/multilingual-e5-small"
@@ -343,6 +360,7 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
     mock_embedder = MagicMock()
     mock_embedder.embed.return_value = [[0.1] * 10]
 
+    since = date(2026, 3, 9)
     with (
         patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
@@ -351,6 +369,10 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
             "news_recap.recap.export_prompt.SentenceTransformerEmbedder", return_value=mock_embedder
         ),
         patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
+        patch(
+            "news_recap.recap.export_prompt._compute_article_window",
+            return_value=(2, since),
+        ),
     ):
         controller = PromptCliController()
         list(controller.prompt(PromptCommand(ai=True, fresh=True, out="clipboard")))

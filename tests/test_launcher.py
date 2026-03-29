@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,12 +18,17 @@ from news_recap.recap.launcher import (
 from news_recap.recap.models import Digest, DigestArticle
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 
-_BUSINESS_DATE = date(2026, 2, 19)
+_TODAY = datetime.now(tz=UTC).date()
 
 
-def _write_pipeline_input(tmp_path: Path, agent_override: str | None = "codex") -> None:
+def _write_pipeline_input(
+    tmp_path: Path,
+    agent_override: str | None = "codex",
+    business_date: date | None = None,
+) -> None:
+    bdate = business_date or _TODAY
     payload = {
-        "business_date": _BUSINESS_DATE.isoformat(),
+        "business_date": bdate.isoformat(),
         "articles": [],
         "preferences": {"max_headline_chars": 120, "language": "ru"},
         "routing_defaults": {
@@ -38,11 +43,17 @@ def _write_pipeline_input(tmp_path: Path, agent_override: str | None = "codex") 
     (tmp_path / "pipeline_input.json").write_text(json.dumps(payload, ensure_ascii=False), "utf-8")
 
 
-def _write_digest(pipeline_dir: Path, completed_phases: list[str] | None = None) -> None:
+def _write_digest(
+    pipeline_dir: Path,
+    completed_phases: list[str] | None = None,
+    business_date: date | None = None,
+    status: str = "in_progress",
+) -> None:
+    bdate = business_date or _TODAY
     digest = Digest(
         digest_id="test-digest",
-        business_date=_BUSINESS_DATE.isoformat(),
-        status="in_progress",
+        business_date=bdate.isoformat(),
+        status=status,
         pipeline_dir=str(pipeline_dir),
         articles=[],
         completed_phases=completed_phases or [],
@@ -91,7 +102,7 @@ def test_controller_resume_with_agent_override_normalizes(
 ) -> None:
     """Controller resume path normalizes agent_override and logs the normalized name."""
     workdir_root = tmp_path / "workdirs"
-    pipeline_dir = workdir_root / f"pipeline-{_BUSINESS_DATE}-120000"
+    pipeline_dir = workdir_root / f"pipeline-{_TODAY}-120000"
     pipeline_dir.mkdir(parents=True)
     _write_pipeline_input(pipeline_dir, agent_override="codex")
     _write_digest(pipeline_dir, completed_phases=["triage"])
@@ -110,8 +121,6 @@ def test_controller_resume_with_agent_override_normalizes(
     mock_from_env.return_value = settings
 
     command = RecapRunCommand(
-        data_dir=tmp_path,
-        business_date=_BUSINESS_DATE,
         agent_override="Claude",
     )
 
@@ -229,7 +238,6 @@ def test_from_pipeline_reuses_articles_and_date(
     mock_from_env.return_value = _make_settings_mock(tmp_path)
 
     command = RecapRunCommand(
-        data_dir=tmp_path,
         from_pipeline=source_dir,
         agent_override="claude",
     )
@@ -262,7 +270,6 @@ def test_from_pipeline_applies_new_options(
     mock_from_env.return_value = _make_settings_mock(tmp_path)
 
     command = RecapRunCommand(
-        data_dir=tmp_path,
         from_pipeline=source_dir,
         agent_override="gemini",
         use_api_key=True,
@@ -294,7 +301,6 @@ def test_from_pipeline_skips_resume_logic(
     _write_digest(resumable_dir, completed_phases=["classify"])
 
     command = RecapRunCommand(
-        data_dir=tmp_path,
         from_pipeline=source_dir,
     )
 
@@ -302,29 +308,3 @@ def test_from_pipeline_skips_resume_logic(
 
     assert not any("Resuming" in m for m in messages)
     assert any("Reusing 2 articles" in m for m in messages)
-
-
-# ---------------------------------------------------------------------------
-# CLI validation: --from-pipeline + --date
-# ---------------------------------------------------------------------------
-
-
-def test_cli_rejects_from_pipeline_with_date(tmp_path: Path) -> None:
-    from click.testing import CliRunner
-
-    from news_recap.main import news_recap
-
-    source_dir = _make_source_pipeline(tmp_path)
-    runner = CliRunner()
-    result = runner.invoke(
-        news_recap,
-        [
-            "run",
-            "--from-pipeline",
-            str(source_dir),
-            "--date",
-            "2026-03-25",
-        ],
-    )
-    assert result.exit_code != 0
-    assert "already determines the business date" in (result.output + str(result.exception))

@@ -28,7 +28,9 @@ _RSS_XML = """<?xml version="1.0"?>
 
 
 def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / "daily-cli-data"
     monkeypatch.setenv("NEWS_RECAP_DEDUP_MODEL_NAME", "hashing-test")
+    monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(data_dir))
 
     def _request_feed(
         _self: RssSource,
@@ -52,7 +54,6 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(RssSource, "_request_feed", _request_feed)
 
-    data_dir = tmp_path / "daily-cli-data"
     runner = CliRunner()
 
     first = runner.invoke(
@@ -60,8 +61,6 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
         [
             "ingest",
             "daily",
-            "--data-dir",
-            str(data_dir),
             "--feed-url",
             "https://example.com/feed.xml",
         ],
@@ -84,8 +83,6 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
         [
             "ingest",
             "daily",
-            "--data-dir",
-            str(data_dir),
             "--feed-url",
             "https://example.com/feed.xml",
         ],

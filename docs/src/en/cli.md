@@ -11,7 +11,7 @@
 
 ## Common Notes
 
-- Most commands support `--data-dir` to point to a specific data directory.
+- Set the data directory via `NEWS_RECAP_DATA_DIR` (default `.news_recap_data`).
 - Data is stored as JSON files with daily partitioning; old partitions are
   garbage-collected automatically based on `NEWS_RECAP_GC_RETENTION_DAYS`.
 
@@ -27,7 +27,6 @@ news-recap ingest daily --feed-url https://example.com/feed.xml
 
 Key options:
 - `--feed-url` (repeatable)
-- `--data-dir`
 
 If `--feed-url` is omitted, feeds are loaded from:
 - `NEWS_RECAP_RSS_FEED_URLS`
@@ -83,21 +82,22 @@ Each stage is checkpointed, so a resumed run skips already-completed stages.
 ```bash
 news-recap run
 news-recap run --api
-news-recap run --date 2026-02-18
 news-recap run --agent claude --stop-after classify
 news-recap run --limit 50
 news-recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
 ```
 
 Key options:
-- `--data-dir`
-- `--date` (business date, defaults to today UTC)
 - `--agent` (`codex`, `claude`, or `gemini`)
 - `--limit` (cap number of articles loaded)
+- `--max-days` (max days to look back for articles; default 2,
+  env `NEWS_RECAP_DIGEST_LOOKBACK_DAYS`)
+- `--all` (ignore previous digests; include all articles within
+  the lookback window)
 - `--api` (use direct Anthropic API instead of CLI agents)
 - `--fresh` (discard any incomplete pipeline and start a new one)
 - `--from-pipeline` (reuse articles from a previous pipeline directory; the business
-  date is taken from the source pipeline; mutually exclusive with `--date`)
+  date is taken from the source pipeline)
 - `--use-api-key` (keep vendor API keys in the agent subprocess environment;
   by default they are removed so the agent uses its subscription quota)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)
@@ -147,7 +147,9 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ### Data and Storage
 - `NEWS_RECAP_DATA_DIR` — root directory for all data files.
 - `NEWS_RECAP_GC_RETENTION_DAYS` — how many days of article partitions to keep (default 7).
-- `NEWS_RECAP_DIGEST_LOOKBACK_DAYS` — how many days of articles to include in a digest (default 3).
+- `NEWS_RECAP_DIGEST_LOOKBACK_DAYS` — max days of articles to include in a digest (default 2).
+  By default the window starts from the last successful digest date; use
+  `--all` to always use the full window.
 
 ### RSS Feeds
 - `NEWS_RECAP_RSS_FEED_URLS` — comma-separated list of feed URLs.

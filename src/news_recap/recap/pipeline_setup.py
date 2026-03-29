@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import msgspec
@@ -49,21 +49,68 @@ def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
 
 def _find_resumable_pipeline(
     workdir_root: Path,
-    business_date: date,
+    max_days: int,
     article_limit: int | None,
 ) -> Path | None:
-    """Find the latest incomplete pipeline dir for *business_date*.
+    """Find the latest incomplete pipeline created within the last *max_days* days.
 
+    Pipelines are scanned newest-first.  The search stops as soon as a
+    completed pipeline is found (anything older is already covered).
     Returns ``None`` when no resumable candidate exists or the candidate
-    was created with a different article limit (comparing actual article
-    count to the requested limit).
+    was created with a different article limit.
     """
     if not workdir_root.is_dir():
         return None
 
-    prefix = f"pipeline-{business_date}-"
+    cutoff = datetime.now(tz=UTC).date() - timedelta(days=max_days)
+
     candidates: list[Path] = sorted(
-        (p for p in workdir_root.iterdir() if p.is_dir() and p.name.startswith(prefix)),
+        (p for p in workdir_root.iterdir() if p.is_dir() and p.name.startswith("pipeline-")),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+
+    for pdir in candidates:
+        try:
+            dir_date = date.fromisoformat(pdir.name.split("-", 1)[1].rsplit("-", 1)[0])
+        except (ValueError, IndexError):
+            continue
+        if dir_date < cutoff:
+            break
+
+        digest_path = pdir / _DIGEST_FILENAME
+        if not digest_path.exists():
+            continue
+        try:
+            digest = load_msgspec(digest_path, Digest)
+        except Exception:  # noqa: BLE001
+            logger.debug("Cannot read digest in %s, skipping", pdir.name)
+            continue
+
+        if digest.status == "completed":
+            break
+
+        if article_limit and len(digest.articles) != article_limit:
+            logger.info(
+                "Skipping %s: article count mismatch (%d vs requested %d)",
+                pdir.name,
+                len(digest.articles),
+                article_limit,
+            )
+            continue
+
+        return pdir
+
+    return None
+
+
+def _find_last_completed_digest_date(workdir_root: Path) -> date | None:
+    """Return the business_date of the most recent fully completed digest, or ``None``."""
+    if not workdir_root.is_dir():
+        return None
+
+    candidates = sorted(
+        (p for p in workdir_root.iterdir() if p.is_dir() and p.name.startswith("pipeline-")),
         key=lambda p: p.name,
         reverse=True,
     )
@@ -78,18 +125,36 @@ def _find_resumable_pipeline(
             logger.debug("Cannot read digest in %s, skipping", pdir.name)
             continue
 
-        if article_limit and len(digest.articles) != article_limit:
-            logger.info(
-                "Skipping %s: article count mismatch (%d vs requested %d)",
-                pdir.name,
-                len(digest.articles),
-                article_limit,
-            )
-            continue
-
-        return pdir
+        if digest.status == "completed" and "oneshot_digest" in digest.completed_phases:
+            return date.fromisoformat(digest.business_date)
 
     return None
+
+
+def _compute_article_window(
+    settings: Settings,
+    all_articles: bool,
+    max_days: int | None,
+) -> tuple[int, date]:
+    """Return ``(lookback_days, since_date)`` for article retrieval.
+
+    By default articles are loaded since the last completed digest,
+    capped at *max_days* (or ``settings.ingestion.digest_lookback_days``).
+    When *all_articles* is ``True`` the last-digest anchor is skipped
+    and only the cap applies.
+    """
+    cap_days = max_days or settings.ingestion.digest_lookback_days
+    today = datetime.now(tz=UTC).date()
+    cap_cutoff = today - timedelta(days=cap_days)
+
+    last_digest_date: date | None = None
+    if not all_articles:
+        last_digest_date = _find_last_completed_digest_date(
+            settings.orchestrator.workdir_root.resolve(),
+        )
+
+    since = max(last_digest_date, cap_cutoff) if last_digest_date else cap_cutoff
+    return cap_days, since
 
 
 def _write_pipeline_input(  # noqa: PLR0913

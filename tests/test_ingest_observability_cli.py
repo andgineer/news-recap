@@ -94,14 +94,15 @@ def _seed_observability_dataset(data_dir: Path) -> str:
     return run_id
 
 
-def test_ingest_stats_command_shows_window_metrics(tmp_path: Path) -> None:
+def test_ingest_stats_command_shows_window_metrics(tmp_path: Path, monkeypatch) -> None:
     data_dir = tmp_path / "observability-data"
     run_id = _seed_observability_dataset(data_dir)
+    monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(data_dir))
 
     runner = CliRunner()
     result = runner.invoke(
         news_recap,
-        ["ingest", "stats", "--data-dir", str(data_dir), "--hours", "24"],
+        ["ingest", "stats", "--hours", "24"],
     )
 
     assert result.exit_code == 0

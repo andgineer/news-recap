@@ -102,6 +102,11 @@ def test_from_env_parses_gc_retention_days(monkeypatch: pytest.MonkeyPatch) -> N
     assert settings.ingestion.gc_retention_days == 14
 
 
+def test_digest_lookback_days_default_is_two() -> None:
+    settings = Settings.from_env()
+    assert settings.ingestion.digest_lookback_days == 2
+
+
 def test_from_env_parses_digest_lookback_days(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NEWS_RECAP_DIGEST_LOOKBACK_DAYS", "5")
     settings = Settings.from_env()

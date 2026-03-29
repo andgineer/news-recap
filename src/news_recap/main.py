@@ -54,24 +54,17 @@ def ingest() -> None:
 
 @ingest.command("daily")
 @click.option(
-    "--data-dir",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Data directory path.",
-)
-@click.option(
     "--feed-url",
     "feed_urls",
     multiple=True,
     help="RSS/Atom feed URL. Can be repeated.",
 )
-def ingest_daily(data_dir: Path | None, feed_urls: tuple[str, ...]) -> None:
+def ingest_daily(feed_urls: tuple[str, ...]) -> None:
     """Run one daily ingestion cycle from RSS feeds."""
 
     _emit_lines(
         INGESTION_CONTROLLER.run_daily(
             DailyIngestionCommand(
-                data_dir=data_dir,
                 feed_urls=feed_urls,
             ),
         ),
@@ -79,12 +72,6 @@ def ingest_daily(data_dir: Path | None, feed_urls: tuple[str, ...]) -> None:
 
 
 @ingest.command("stats")
-@click.option(
-    "--data-dir",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Data directory path.",
-)
 @click.option(
     "--hours",
     type=click.IntRange(min=1),
@@ -105,7 +92,6 @@ def ingest_daily(data_dir: Path | None, feed_urls: tuple[str, ...]) -> None:
     help="How many latest runs to display.",
 )
 def ingest_stats(
-    data_dir: Path | None,
     hours: int,
     source: str | None,
     recent_runs: int,
@@ -115,7 +101,6 @@ def ingest_stats(
     _emit_lines(
         INGESTION_CONTROLLER.stats(
             IngestionStatsCommand(
-                data_dir=data_dir,
                 hours=hours,
                 source=source,
                 recent_runs=recent_runs,
@@ -125,19 +110,6 @@ def ingest_stats(
 
 
 @news_recap.command("run")
-@click.option(
-    "--data-dir",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Data directory path.",
-)
-@click.option(
-    "--date",
-    "business_date",
-    type=click.DateTime(formats=["%Y-%m-%d"]),
-    default=None,
-    help="Business date in YYYY-MM-DD. Defaults to today (UTC).",
-)
 @click.option(
     "--agent",
     type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
@@ -198,9 +170,21 @@ def ingest_stats(
         "subprocess environment. By default they are unset so agents use their subscription."
     ),
 )
+@click.option(
+    "--max-days",
+    "max_days",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Max days to look back for articles (default: 2, env NEWS_RECAP_DIGEST_LOOKBACK_DAYS).",
+)
+@click.option(
+    "--all",
+    "all_articles",
+    is_flag=True,
+    default=False,
+    help="Ignore previous digests; include all articles within the lookback window.",
+)
 def recap_run(  # noqa: PLR0913
-    data_dir: Path | None,
-    business_date: datetime | None,
     agent: str | None,
     article_limit: int | None,
     stop_after: str | None,
@@ -208,20 +192,14 @@ def recap_run(  # noqa: PLR0913
     api_mode: bool,
     from_pipeline: Path | None,
     use_api_key: bool,
+    max_days: int | None,
+    all_articles: bool,
 ) -> None:
     """Run the full news digest pipeline."""
-
-    if from_pipeline and business_date:
-        raise click.UsageError(
-            "--from-pipeline already determines the business date; "
-            "do not pass --date together with it.",
-        )
 
     _emit_lines(
         RECAP_CONTROLLER.run_pipeline(
             RecapRunCommand(
-                data_dir=data_dir,
-                business_date=business_date.date() if business_date is not None else None,
                 agent_override=agent,
                 article_limit=article_limit,
                 stop_after=stop_after,
@@ -229,18 +207,14 @@ def recap_run(  # noqa: PLR0913
                 api_mode=api_mode,
                 use_api_key=use_api_key,
                 from_pipeline=from_pipeline,
+                max_days=max_days,
+                all_articles=all_articles,
             ),
         ),
     )
 
 
 @news_recap.command("prompt")
-@click.option(
-    "--data-dir",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Data directory path.",
-)
 @click.option(
     "--ai/--no-ai",
     default=True,
@@ -284,39 +258,49 @@ def recap_run(  # noqa: PLR0913
     show_default=True,
     help="Output destination.",
 )
+@click.option(
+    "--max-days",
+    "max_days",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Max days to look back for articles (default: 2, env NEWS_RECAP_DIGEST_LOOKBACK_DAYS).",
+)
+@click.option(
+    "--all",
+    "all_articles",
+    is_flag=True,
+    default=False,
+    help="Ignore previous digests; include all articles within the lookback window.",
+)
 def recap_prompt(  # noqa: PLR0913
-    data_dir: Path | None,
     ai: bool,
     fresh: bool,
     group_threshold: float,
     language: str,
     agent: str | None,
     out: str,
+    max_days: int | None,
+    all_articles: bool,
 ) -> None:
     """Export a ready-to-paste LLM prompt from recent articles."""
 
     _emit_lines(
         PROMPT_CONTROLLER.prompt(
             PromptCommand(
-                data_dir=data_dir,
                 group_threshold=group_threshold,
                 language=language,
                 out=out,
                 ai=ai,
                 fresh=fresh,
                 agent=agent,
+                max_days=max_days,
+                all_articles=all_articles,
             ),
         ),
     )
 
 
 @news_recap.command("serve")
-@click.option(
-    "--data-dir",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Data directory path.",
-)
 @click.option(
     "--date",
     "pinned_date",
@@ -338,7 +322,6 @@ def recap_prompt(  # noqa: PLR0913
     help="Port to bind the web server to.",
 )
 def serve(
-    data_dir: Path | None,
     pinned_date: datetime | None,
     host: str,
     port: int,
@@ -346,7 +329,6 @@ def serve(
     """Start the digest web viewer."""
     WEB_CONTROLLER.serve(
         WebServeCommand(
-            data_dir=data_dir,
             date=pinned_date.date() if pinned_date is not None else None,
             host=host,
             port=port,

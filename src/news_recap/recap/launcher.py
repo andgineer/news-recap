@@ -18,6 +18,7 @@ from news_recap.recap.models import Digest, DigestArticle, UserPreferences
 from news_recap.recap.pipeline_setup import (
     _DIGEST_FILENAME,
     _build_routing_defaults,
+    _compute_article_window,
     _find_resumable_pipeline,
     _write_pipeline_input,
 )
@@ -30,8 +31,6 @@ logger = logging.getLogger(__name__)
 class RecapRunCommand:
     """CLI parameters for a pipeline launch."""
 
-    data_dir: Path | None = None
-    business_date: date | None = None
     agent_override: str | None = None
     article_limit: int | None = None
     stop_after: str | None = None
@@ -39,6 +38,8 @@ class RecapRunCommand:
     api_mode: bool = False
     use_api_key: bool = False
     from_pipeline: Path | None = None
+    max_days: int | None = None
+    all_articles: bool = False
 
 
 def _patch_pipeline_input(pipeline_dir: Path, **fields: object) -> dict:
@@ -89,21 +90,15 @@ class RecapCliController:
         """Fetch articles from store, write pipeline_input.json, and run recap_flow."""
 
         settings = Settings.from_env(
-            data_dir=command.data_dir,
             execution_backend="api" if command.api_mode else None,
         )
         routing_defaults = _build_routing_defaults(settings)
         preferences = UserPreferences()
+        cap_days = command.max_days or settings.ingestion.digest_lookback_days
 
         source_articles: tuple[date, list[DigestArticle]] | None = None
         if command.from_pipeline:
             source_articles = _load_from_pipeline(command.from_pipeline)
-
-        business_date = (
-            source_articles[0]
-            if source_articles
-            else (command.business_date or datetime.now(tz=UTC).date())
-        )
 
         store = IngestionStore(
             settings.data_dir,
@@ -115,13 +110,14 @@ class RecapCliController:
         if not command.fresh and not source_articles:
             resumable = _find_resumable_pipeline(
                 settings.orchestrator.workdir_root.resolve(),
-                business_date,
+                cap_days,
                 command.article_limit,
             )
 
         if resumable:
             pipeline_dir = resumable
             digest = load_msgspec(resumable / _DIGEST_FILENAME, Digest)
+            business_date = date.fromisoformat(digest.business_date)
             yield (
                 f"Resuming pipeline: {pipeline_dir.name} "
                 f"({len(digest.completed_phases)} phase(s) done: "
@@ -129,6 +125,8 @@ class RecapCliController:
             )
             yield from _apply_resume_patches(command, pipeline_dir)
         else:
+            business_date = source_articles[0] if source_articles else datetime.now(tz=UTC).date()
+
             articles: list[DigestArticle]
             if source_articles:
                 articles = source_articles[1]
@@ -138,15 +136,24 @@ class RecapCliController:
                 )
             else:
                 fetch_limit = command.article_limit or 2000
+                _cap_days, since_date = _compute_article_window(
+                    settings,
+                    command.all_articles,
+                    command.max_days,
+                )
                 articles = store.list_retrieval_articles(
-                    lookback_days=settings.ingestion.digest_lookback_days,
+                    lookback_days=_cap_days,
                     limit=fetch_limit,
+                    since=since_date,
                 )
                 if not articles:
                     yield "No articles found. Run ingestion first."
                     return
                 limit_note = f" (limited to {fetch_limit})" if command.article_limit else ""
-                yield f"Found {len(articles)} articles for {business_date}{limit_note}"
+                yield (
+                    f"Found {len(articles)} articles since {since_date}"
+                    f" (cap {_cap_days}d){limit_note}"
+                )
 
             ts = datetime.now(tz=UTC).strftime("%H%M%S")
             pipeline_dir = (

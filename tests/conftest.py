@@ -19,8 +19,8 @@ def echo_agent(monkeypatch):
     """Monkeypatch Settings.from_env to use the echo agent for codex."""
     original_from_env = Settings.from_env
 
-    def _patched_from_env(data_dir=None):
-        settings = original_from_env(data_dir=data_dir)
+    def _patched_from_env(**kwargs):
+        settings = original_from_env(**kwargs)
         new_orch = replace(
             settings.orchestrator, codex_command_template=_ECHO_AGENT_COMMAND_TEMPLATE
         )

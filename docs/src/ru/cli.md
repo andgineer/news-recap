@@ -11,7 +11,7 @@
 
 ## Общие Замечания
 
-- Большинство команд поддерживают `--data-dir` для выбора каталога данных.
+- Каталог данных задаётся переменной `NEWS_RECAP_DATA_DIR` (по умолчанию `.news_recap_data`).
 - Данные хранятся в JSON-файлах с ежедневным разбиением; старые партиции
   удаляются автоматически по значению `NEWS_RECAP_GC_RETENTION_DAYS`.
 
@@ -27,7 +27,6 @@ news-recap ingest daily --feed-url https://example.com/feed.xml
 
 Ключевые опции:
 - `--feed-url` (повторяемая)
-- `--data-dir`
 
 Если `--feed-url` не указан, фиды берутся из:
 - `NEWS_RECAP_RSS_FEED_URLS`
@@ -83,21 +82,22 @@ news-recap ingest duplicates --hours 24 --limit-clusters 10
 ```bash
 news-recap run
 news-recap run --api
-news-recap run --date 2026-02-18
 news-recap run --agent claude --stop-after classify
 news-recap run --limit 50
 news-recap run --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
 ```
 
 Ключевые опции:
-- `--data-dir`
-- `--date` (бизнес-дата, по умолчанию — сегодня UTC)
 - `--agent` (`codex`, `claude` или `gemini`)
 - `--limit` (ограничить число загружаемых статей)
+- `--max-days` (максимум дней для выборки статей; по умолчанию 2,
+  переменная `NEWS_RECAP_DIGEST_LOOKBACK_DAYS`)
+- `--all` (игнорировать предыдущие дайджесты; брать все статьи
+  в пределах окна)
 - `--api` (использовать прямой Anthropic API вместо CLI-агентов)
 - `--fresh` (игнорировать незавершённый пайплайн и начать новый)
 - `--from-pipeline` (использовать статьи из предыдущего пайплайна; бизнес-дата
-  берётся из исходного пайплайна; несовместим с `--date`)
+  берётся из исходного пайплайна)
 - `--use-api-key` (не удалять ключи API вендоров из окружения агента-подпроцесса;
   по умолчанию ключи удаляются, чтобы агент использовал лимиты подписки)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)
@@ -148,7 +148,9 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 ### Данные и хранение
 - `NEWS_RECAP_DATA_DIR` — корневой каталог для всех файлов данных.
 - `NEWS_RECAP_GC_RETENTION_DAYS` — сколько дней хранить партиции статей (по умолчанию 7).
-- `NEWS_RECAP_DIGEST_LOOKBACK_DAYS` — за сколько дней брать статьи для дайджеста (по умолчанию 3).
+- `NEWS_RECAP_DIGEST_LOOKBACK_DAYS` — максимум дней для выборки статей в дайджест (по умолчанию 2).
+  По умолчанию окно начинается от даты последнего успешного дайджеста;
+  `--all` отключает эту привязку.
 
 ### RSS-фиды
 - `NEWS_RECAP_RSS_FEED_URLS` — список URL фидов через запятую.

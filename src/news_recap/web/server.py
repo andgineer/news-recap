@@ -130,7 +130,6 @@ def create_app(
 class WebServeCommand:
     """CLI parameters for the web server."""
 
-    data_dir: Path | None = None
     date: date | None = None
     host: str = "127.0.0.1"
     port: int = 8080
@@ -140,7 +139,7 @@ class WebCliController:
     """Launch the Flask digest viewer."""
 
     def serve(self, command: WebServeCommand) -> None:
-        settings = Settings.from_env(data_dir=command.data_dir)
+        settings = Settings.from_env()
         workdir_root = settings.orchestrator.workdir_root.resolve()
         pinned = command.date.isoformat() if command.date else None
         app = create_app(workdir_root, pinned_date=pinned, settings=settings)

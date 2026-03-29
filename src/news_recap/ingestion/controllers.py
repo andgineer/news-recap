@@ -6,7 +6,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from news_recap.config import Settings
 from news_recap.ingestion.pipeline import run_daily_ingestion
@@ -18,7 +17,6 @@ from news_recap.ingestion.sources.rss import RssSource, RssSourceConfig
 class DailyIngestionCommand:
     """CLI inputs for daily ingestion command."""
 
-    data_dir: Path | None
     feed_urls: tuple[str, ...]
 
 
@@ -26,7 +24,6 @@ class DailyIngestionCommand:
 class IngestionStatsCommand:
     """CLI inputs for stats command."""
 
-    data_dir: Path | None
     hours: int
     source: str | None
     recent_runs: int
@@ -36,7 +33,7 @@ class IngestionCliController:
     """Coordinates ingestion command execution."""
 
     def run_daily(self, command: DailyIngestionCommand) -> list[str]:
-        settings = Settings.from_env(data_dir=command.data_dir)
+        settings = Settings.from_env()
         settings.validate_for_rss(override_feed_urls=command.feed_urls)
         feed_urls = _effective_feed_urls(command.feed_urls, settings)
         with _store(settings) as store:
@@ -91,7 +88,7 @@ class IngestionCliController:
         return lines
 
     def stats(self, command: IngestionStatsCommand) -> list[str]:
-        settings = Settings.from_env(data_dir=command.data_dir)
+        settings = Settings.from_env()
         until = datetime.now(tz=UTC)
         since = until - timedelta(hours=command.hours)
         with _store(settings) as store:
