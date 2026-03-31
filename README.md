@@ -5,29 +5,27 @@
 `news-recap` is a CLI-first pipeline for collecting, cleaning, deduplicating news
 and producing daily recaps with LLM agents.
 
-The key idea: instead of paying per-token via expensive LLM APIs, the pipeline drives
-CLI agents (Codex, Claude Code, Gemini CLI) that run under flat-rate ~$20/month
-subscriptions — making heavy daily summarisation practically free.
+Instead of throwing raw headlines into one oversized prompt, `news-recap` processes
+news through a layered recap workflow that reduces noise, groups related stories,
+and produces a cleaner daily digest.
+
+The pipeline drives CLI agents such as Codex, Claude Code, and Gemini CLI, so heavy
+daily summarization can run on flat-rate subscriptions instead of per-token APIs.
+
+See [Pipeline spec](spec/pipeline.md) for the pipeline details.
 
 ## Cost
 
-Each didgest pipeline run consumes roughly 3-4% of the weekly CLI agent subscription
+Each digest pipeline run consumes roughly 3-4% of the weekly CLI agent subscription
 quota (~\$0.19 per run, ~\$6/month at daily use).
 
-The dollar figures are
-approximate — the pipeline runs under flat-rate subscriptions (Codex, Claude
-Code, Gemini CLI at ~\$20/month), so the quota would mostly go unused anyway.
-
-See [Pipeline spec — Experiments](spec/pipeline.md#experiments) for
-detailed mode comparisons and benchmarks.
+The dollar figures are approximate. The pipeline runs under flat-rate subscriptions
+(Codex, Claude Code, Gemini CLI at ~\$20/month), so the quota would mostly go
+unused anyway.
 
 ### Documentation
 
 - [News Recap](https://andgineer.github.io/news-recap/)
-
-## Architecture
-
-- [Pipeline spec](spec/pipeline.md) — per-step contracts, state flow, and checkpointing for the recap pipeline.
 
 # Developers
 
@@ -48,17 +46,16 @@ Run all checks:
 
 # Scripts
 
-Install [invoke](https://docs.pyinvoke.org/en/stable/) preferably with [pipx](https://pypa.github.io/pipx/):
-
-    pipx install invoke
+Install [uv](https://github.com/astral-sh/uv) first. It is used both for package
+installation and for development automation.
 
 For a list of available scripts run:
 
-    invoke --list
+    uv run invoke --list
 
 For more information about a script run:
 
-    invoke <script> --help
+    uv run invoke <script> --help
 
 ## Coverage report
 

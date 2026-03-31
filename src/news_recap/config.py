@@ -75,7 +75,7 @@ _DEFAULT_GEMINI_CMD = (
 class OrchestratorSettings:
     """CLI orchestrator settings."""
 
-    workdir_root: Path = Path(".news_recap_workdir")
+    workdir_root: Path = Path.home() / ".news_recap_data" / "workdir"
     default_agent: str = "codex"
     execution_backend: str = "cli"
     task_model_map: dict[str, dict[str, Any]] = field(
@@ -123,7 +123,7 @@ class OrchestratorSettings:
 class Settings:
     """Application settings grouped by domain concerns."""
 
-    data_dir: Path = Path(".news_recap_data")
+    data_dir: Path = Path.home() / ".news_recap_data"
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)
     dedup: DedupSettings = field(default_factory=DedupSettings)
     rss: RssSettings = field(default_factory=RssSettings)
@@ -142,8 +142,12 @@ class Settings:
         """
 
         rss_urls = _collect_feed_urls()
+        default_data_dir = str(Path.home() / ".news_recap_data")
+        data_dir = Path(os.getenv("NEWS_RECAP_DATA_DIR", default_data_dir))
+        workdir_env = os.getenv("NEWS_RECAP_LLM_WORKDIR_ROOT")
+        workdir_root = Path(workdir_env) if workdir_env else data_dir / "workdir"
         settings = cls(
-            data_dir=Path(os.getenv("NEWS_RECAP_DATA_DIR", ".news_recap_data")),
+            data_dir=data_dir,
             ingestion=IngestionSettings(
                 page_size=int(
                     os.getenv(
@@ -191,12 +195,7 @@ class Settings:
                 ),
             ),
             orchestrator=OrchestratorSettings(
-                workdir_root=Path(
-                    os.getenv(
-                        "NEWS_RECAP_LLM_WORKDIR_ROOT",
-                        ".news_recap_workdir",
-                    ),
-                ),
+                workdir_root=workdir_root,
                 default_agent=os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex"),
                 execution_backend=os.getenv("NEWS_RECAP_EXECUTION_BACKEND", "cli").strip(),
                 codex_command_template=_DEFAULT_CODEX_CMD,
@@ -348,7 +347,7 @@ class Settings:
         if not effective_feed_urls:
             raise ValueError(
                 "At least one RSS feed URL is required. "
-                "Set NEWS_RECAP_RSS_FEED_URLS or pass --feed-url.",
+                "Set NEWS_RECAP_RSS_FEED_URLS or pass --rss.",
             )
 
         for feed_url in effective_feed_urls:

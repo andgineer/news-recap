@@ -1,36 +1,15 @@
 ## Installation
 
-## Installing pipx
-[`pipx`](https://pypa.github.io/pipx/) creates isolated environments to avoid conflicts with existing system packages.
+Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/).
 
-=== "MacOS"
-    In the terminal, execute:
-    ```bash
-    --8<-- "install_pipx_macos.sh"
-    ```
-
-=== "Linux"
-    First, ensure Python is installed.
-
-    Enter in the terminal:
-
-    ```bash
-    python3 -m pip install --user pipx
-    python3 -m pipx ensurepath
-    ```
-
-=== "Windows"
-    First, install Python if it's not already installed.
-
-    In the command prompt, type (if Python was installed from the Microsoft Store, use `python3` instead of `python`):
-
-    ```bash
-    python -m pip install --user pipx
-    ```
-
-## Installing `news-recap`:
-In the terminal (command prompt), execute:
+Install `news-recap`:
 
 ```bash
-pipx install news-recap
+uv tool install news-recap
+```
+
+Check the installation:
+
+```bash
+news-recap --help
 ```

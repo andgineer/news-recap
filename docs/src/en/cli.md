@@ -9,10 +9,12 @@
 - `prompt`: export a ready-to-paste LLM prompt from recent articles.
 - `list`: show completed digests and uncovered article periods.
 - `serve`: start the digest web viewer.
+- `auto`: install daily scheduled automation.
+- `auto-off`: remove daily scheduled automation.
 
 ## Common Notes
 
-- Set the data directory via `NEWS_RECAP_DATA_DIR` (default `.news_recap_data`).
+- Set the data directory via `NEWS_RECAP_DATA_DIR` (default `~/.news_recap_data`).
 - Data is stored as JSON files with daily partitioning; old partitions are
   garbage-collected automatically based on `NEWS_RECAP_GC_RETENTION_DAYS`.
 
@@ -23,13 +25,13 @@ Run one ingestion cycle from RSS/Atom feeds.
 
 ```bash
 news-recap ingest
-news-recap ingest --feed-url https://example.com/feed.xml
+news-recap ingest --rss https://example.com/feed.xml
 ```
 
 Key options:
-- `--feed-url` (repeatable)
+- `--rss` (repeatable)
 
-If `--feed-url` is omitted, feeds are loaded from:
+If `--rss` is omitted, feeds are loaded from:
 - `NEWS_RECAP_RSS_FEED_URLS`
 - `NEWS_RECAP_RSS_FEED_URL`
 
@@ -47,7 +49,7 @@ news-recap recap
 news-recap recap --api
 news-recap recap --agent claude --stop-after classify
 news-recap recap --limit 50
-news-recap recap --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
+news-recap recap --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25-105004
 ```
 
 Key options:
@@ -139,10 +141,32 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 - `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — extra pause after a rate-limit downshift
   before the next slot acquire (default `2`).
 
+## Automation
+
+### `auto`
+Install daily scheduled automation using the platform-native scheduler
+(launchd on macOS, systemd on Linux, Task Scheduler on Windows).
+
+```bash
+news-recap auto --rss https://example.com/feed.xml
+news-recap auto --rss https://feed1.com/rss --rss https://feed2.com/rss
+news-recap auto --rss https://example.com/feed.xml --agent claude
+```
+
+RSS URLs can also be provided via `NEWS_RECAP_RSS_FEED_URLS`.
+Use `--agent` to set the LLM agent for the recap step (default from config).
+
+### `auto-off`
+Remove the scheduled automation.
+
+```bash
+news-recap auto-off
+```
+
 ## Important Environment Variables
 
 ### Data and Storage
-- `NEWS_RECAP_DATA_DIR` — root directory for all data files.
+- `NEWS_RECAP_DATA_DIR` — root directory for all data files (default `~/.news_recap_data`).
 - `NEWS_RECAP_GC_RETENTION_DAYS` — how many days of article partitions to keep (default 7).
 - `NEWS_RECAP_DIGEST_LOOKBACK_DAYS` — max days of articles to include in a digest (default 2).
   By default the window starts from the last successful digest date; use
@@ -184,4 +208,6 @@ news-recap recap --help
 news-recap prompt --help
 news-recap list --help
 news-recap serve --help
+news-recap auto --help
+news-recap auto-off --help
 ```

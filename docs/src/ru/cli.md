@@ -9,10 +9,12 @@
 - `prompt`: экспорт LLM-промпта из последних статей.
 - `list`: показать завершённые дайджесты и непокрытые периоды.
 - `serve`: запуск веб-просмотрщика дайджестов.
+- `auto`: установить ежедневный автозапуск.
+- `auto-off`: удалить ежедневный автозапуск.
 
 ## Общие Замечания
 
-- Каталог данных задаётся переменной `NEWS_RECAP_DATA_DIR` (по умолчанию `.news_recap_data`).
+- Каталог данных задаётся переменной `NEWS_RECAP_DATA_DIR` (по умолчанию `~/.news_recap_data`).
 - Данные хранятся в JSON-файлах с ежедневным разбиением; старые партиции
   удаляются автоматически по значению `NEWS_RECAP_GC_RETENTION_DAYS`.
 
@@ -23,13 +25,13 @@
 
 ```bash
 news-recap ingest
-news-recap ingest --feed-url https://example.com/feed.xml
+news-recap ingest --rss https://example.com/feed.xml
 ```
 
 Ключевые опции:
-- `--feed-url` (повторяемая)
+- `--rss` (повторяемая)
 
-Если `--feed-url` не указан, фиды берутся из:
+Если `--rss` не указан, фиды берутся из:
 - `NEWS_RECAP_RSS_FEED_URLS`
 - `NEWS_RECAP_RSS_FEED_URL`
 
@@ -47,7 +49,7 @@ news-recap recap
 news-recap recap --api
 news-recap recap --agent claude --stop-after classify
 news-recap recap --limit 50
-news-recap recap --from-pipeline .news_recap_workdir/pipeline-2026-03-25-105004
+news-recap recap --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25-105004
 ```
 
 Ключевые опции:
@@ -141,10 +143,32 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 - `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — дополнительная пауза после снижения лимита
   перед следующей попыткой захвата слота (по умолчанию `2`).
 
+## Автозапуск
+
+### `auto`
+Установить ежедневный автозапуск через системный планировщик
+(launchd на macOS, systemd на Linux, Task Scheduler на Windows).
+
+```bash
+news-recap auto --rss https://example.com/feed.xml
+news-recap auto --rss https://feed1.com/rss --rss https://feed2.com/rss
+news-recap auto --rss https://example.com/feed.xml --agent claude
+```
+
+RSS URL также можно передать через `NEWS_RECAP_RSS_FEED_URLS`.
+`--agent` задаёт LLM-агента для шага recap (по умолчанию из конфига).
+
+### `auto-off`
+Удалить автозапуск.
+
+```bash
+news-recap auto-off
+```
+
 ## Важные Переменные Окружения
 
 ### Данные и хранение
-- `NEWS_RECAP_DATA_DIR` — корневой каталог для всех файлов данных.
+- `NEWS_RECAP_DATA_DIR` — корневой каталог для всех файлов данных (по умолчанию `~/.news_recap_data`).
 - `NEWS_RECAP_GC_RETENTION_DAYS` — сколько дней хранить партиции статей (по умолчанию 7).
 - `NEWS_RECAP_DIGEST_LOOKBACK_DAYS` — максимум дней для выборки статей в дайджест (по умолчанию 2).
   По умолчанию окно начинается от даты последнего успешного дайджеста;
@@ -186,4 +210,6 @@ news-recap recap --help
 news-recap prompt --help
 news-recap list --help
 news-recap serve --help
+news-recap auto --help
+news-recap auto-off --help
 ```

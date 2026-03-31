@@ -85,7 +85,7 @@ def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
         preferences=UserPreferences.from_dict(raw["preferences"]),
         routing_defaults=RoutingDefaults.from_dict(raw["routing_defaults"]),
         agent_override=raw.get("agent_override"),
-        data_dir=raw.get("data_dir", ".news_recap_data"),
+        data_dir=raw.get("data_dir", str(Path.home() / ".news_recap_data")),
         business_date=raw["business_date"],
         min_resource_chars=int(raw.get("min_resource_chars", _DEFAULT_MIN_RESOURCE_CHARS)),
         dedup_threshold=float(raw.get("dedup_threshold", 0.90)),

@@ -18,6 +18,7 @@
 
 - Installation and environment setup: `installation.md`
 - Full CLI commands and examples: `cli.md`
+- Scheduled automation: `automation.md`
 
 ## Advanced
 

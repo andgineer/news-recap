@@ -20,7 +20,7 @@ Stress tests run in CI with `NEWS_RECAP_RUN_STRESS_TESTS=1` and `NEWS_RECAP_STRE
 
 ## Architecture
 
-Two subsystems share a file-based data directory (`.news_recap_data/`, configurable via `NEWS_RECAP_DATA_DIR`):
+Two subsystems share a file-based data directory (`~/.news_recap_data/`, configurable via `NEWS_RECAP_DATA_DIR`):
 
 ### Ingestion Pipeline (`src/news_recap/ingestion/`)
 RSS feeds → `RssSourceAdapter` (HTTP cache, pagination, defusedxml) → `FetchStageService` → `ArticleNormalizationService` (HTML cleaning, language detection) → `IngestionStore` (daily-partitioned JSON files) → `DedupStageService` (sentence-transformers embeddings → cosine-similarity clustering).
@@ -36,7 +36,7 @@ Subpackages:
 - **`tasks/`** — pipeline step implementations (`Classify`, `Enrich`, `OneshotDigest`, etc.) subclassing `TaskLauncher`, plus prompt templates. Shared helpers in `base.py` (`read_agent_stdout`, `run_single_agent`).
 - **`agents/`** — LLM agent execution (`ai_agent.py`), subprocess runner, routing resolution, mock agents (`echo.py`).
 - **`storage/`** — workdir materialization and task ID helpers (`workdir.py`), pipeline I/O and resource loading (`pipeline_io.py`), output schemas.
-- **`loaders/`** — resource loading (HTTP fetch + text extraction) with date-sharded cache in `.news_recap_data/resources/`.
+- **`loaders/`** — resource loading (HTTP fetch + text extraction) with date-sharded cache in `~/.news_recap_data/resources/`.
 
 Entry point: `recap_flow()` in `flow.py`, launched via `RecapCliController` in `launcher.py`.
 

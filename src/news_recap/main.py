@@ -8,6 +8,7 @@ from pathlib import Path
 import rich_click as click
 
 from news_recap import __version__
+from news_recap.automation import AutoController, AutoLine, resolve_rss_urls
 from news_recap.ingestion.controllers import (
     DailyIngestionCommand,
     IngestionCliController,
@@ -40,6 +41,7 @@ RECAP_CONTROLLER = RecapCliController()
 PROMPT_CONTROLLER = PromptCliController()
 DIGEST_INFO_CONTROLLER = DigestInfoController()
 WEB_CONTROLLER = WebCliController()
+AUTO_CONTROLLER = AutoController()
 
 
 @click.group()
@@ -50,7 +52,7 @@ def news_recap() -> None:
 
 @news_recap.command("ingest")
 @click.option(
-    "--feed-url",
+    "--rss",
     "feed_urls",
     multiple=True,
     help="RSS/Atom feed URL. Can be repeated.",
@@ -300,6 +302,31 @@ def serve(
     )
 
 
+@news_recap.command("auto")
+@click.option(
+    "--rss",
+    "rss_urls",
+    multiple=True,
+    help="RSS/Atom feed URL. Can be repeated.",
+)
+@click.option(
+    "--agent",
+    type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
+    default=None,
+    help="LLM agent for the recap step. Omit to use the config default.",
+)
+def auto_install(rss_urls: tuple[str, ...], agent: str | None) -> None:
+    """Install daily scheduled automation (launchd / systemd / Task Scheduler)."""
+    urls = resolve_rss_urls(rss_urls)
+    _emit_auto(AUTO_CONTROLLER.install(urls, agent=agent))
+
+
+@news_recap.command("auto-off")
+def auto_uninstall() -> None:
+    """Remove daily scheduled automation."""
+    _emit_auto(AUTO_CONTROLLER.uninstall())
+
+
 _run_alias = _copy.copy(recap_run)
 _run_alias.hidden = True
 news_recap.add_command(_run_alias, "run")
@@ -312,6 +339,30 @@ news_recap.add_command(_digest_alias, "digest")
 def _emit_lines(lines: list[str] | Iterator[str]) -> None:
     for line in lines:
         click.echo(line)
+
+
+_AUTO_STYLES: dict[str, dict[str, object]] = {
+    "ok": {"fg": "green"},
+    "info": {"fg": "cyan"},
+    "heading": {"fg": "white", "bold": True},
+    "warn": {"fg": "yellow", "bold": True},
+    "error": {"fg": "red", "bold": True},
+    "log": {"fg": "bright_black"},
+}
+
+
+def _emit_auto(lines: Iterator[AutoLine]) -> None:
+    has_error = False
+    for severity, text in lines:
+        style = _AUTO_STYLES.get(severity, {})
+        if severity == "log":
+            click.secho(f"  {text}", **style)  # type: ignore[arg-type]
+        else:
+            click.secho(text, **style)  # type: ignore[arg-type]
+        if severity == "error":
+            has_error = True
+    if has_error:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -60,7 +60,7 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
         news_recap,
         [
             "ingest",
-            "--feed-url",
+            "--rss",
             "https://example.com/feed.xml",
         ],
     )
@@ -81,7 +81,7 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
         news_recap,
         [
             "ingest",
-            "--feed-url",
+            "--rss",
             "https://example.com/feed.xml",
         ],
     )

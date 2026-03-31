@@ -2,6 +2,8 @@
 
 ## Project Structure & Module Organization
 - `src/news_recap/`: main package code. CLI entrypoint is `main.py`; package version lives in `__about__.py`.
+- `src/news_recap/automation.py`: cross-platform scheduled automation (`auto` / `auto-off` CLI commands).
+- `src/news_recap/scripts/`: runner script templates (shell/PowerShell) loaded by automation module.
 - `src/news_recap/storage/`: file-based storage utilities (`io.py` — atomic writes, GC, msgspec helpers).
 - `src/news_recap/ingestion/`: ingestion pipeline and `IngestionStore` (daily-partitioned article storage).
 - `src/news_recap/recap/`: recap pipeline (ThreadPoolExecutor-based parallel LLM agent orchestration).
@@ -14,13 +16,24 @@
 - `scripts/`: helper scripts for docs, version bumps, packaging, and uploads.
 - `tasks.py`: Invoke task definitions (`pre`, `ver-release`, `docs-en`, etc.).
 
+Data directory defaults to `~/.news_recap_data/` (configurable via `NEWS_RECAP_DATA_DIR`). Pipeline workdirs live under `~/.news_recap_data/workdir/`.
+
+## CLI Commands
+- `news-recap ingest --rss URL`: run one ingestion cycle from RSS feeds.
+- `news-recap recap --agent claude`: run the full digest pipeline.
+- `news-recap list`: show completed digests.
+- `news-recap serve [DIGEST_ID]`: start the digest web viewer.
+- `news-recap prompt`: export a ready-to-paste LLM prompt.
+- `news-recap auto --rss URL`: install daily scheduled automation (launchd / systemd / Task Scheduler).
+- `news-recap auto-off`: remove daily scheduled automation.
+
 ## Build, Test, and Development Commands
 - `./activate.sh`: activate the local development environment used by this repo.
 - `uv sync --frozen`: install locked dependencies from `uv.lock`.
 - `uv run pytest --cov=src tests/`: run tests with coverage (mirrors CI intent).
 - `pre-commit run --verbose --all-files`: run lint/format/type checks locally.
 - `invoke pre`: shortcut to run pre-commit checks.
-- `invoke --list`: list available automation tasks.
+- `invoke --list`: list available invoke tasks.
 - `./scripts/build-docs.sh`: build documentation site for configured languages.
 - `./scripts/build-docs.sh --copy-assets en` then `mkdocs serve -f docs/_mkdocs.yml`: local docs preview flow.
 
