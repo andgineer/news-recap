@@ -10,7 +10,6 @@ import shutil
 import stat
 import subprocess
 import sys
-import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from importlib.resources import files
@@ -87,56 +86,21 @@ def _app_dir(platform: str) -> Path:
     return local_app / "news-recap"
 
 
-def _start_failed(
-    cmd: str,
-    result: subprocess.CompletedProcess[bytes],
-) -> Iterator[ScheduleLine]:
-    stderr = result.stderr.decode(errors="replace").strip() if result.stderr else ""
-    msg = f"{cmd} failed (exit {result.returncode})"
-    if stderr:
-        msg += f": {stderr}"
-    yield ("error", msg)
-
-
-_RESULT_MARKER = "===== RESULT:"
-
-
-def _wait_for_new_output(
-    log_file: Path,
-    offset: int,
-    timeout: float = 30.0,
-) -> list[str]:
-    """Wait until the result marker appears in bytes written after *offset*."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if log_file.exists() and log_file.stat().st_size > offset:
-            tail = log_file.read_text(encoding="utf-8", errors="replace")[offset:]
-            if _RESULT_MARKER in tail:
-                return tail.strip().splitlines()
-        time.sleep(0.5)
-    if log_file.exists() and log_file.stat().st_size > offset:
-        return log_file.read_text(encoding="utf-8", errors="replace")[offset:].strip().splitlines()
-    return []
+def _log_dir(platform: str) -> Path:
+    """Platform-specific log directory for news-recap."""
+    home = _home()
+    if platform == "macos":
+        return home / "Library" / "Logs" / "news-recap"
+    if platform == "linux":
+        return home / ".local" / "state" / "news-recap"
+    local_app = Path(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local")))
+    return local_app / "news-recap" / "logs"
 
 
 def _emit_log_lines(lines: list[str]) -> Iterator[ScheduleLine]:
-    """Yield tagged log lines; detect success/failure from RESULT marker."""
-    success = any("RESULT: OK" in ln for ln in lines)
-    failed = any("RESULT: FAILED" in ln for ln in lines)
+    """Yield log lines as context output."""
     for line in lines:
-        if _RESULT_MARKER in line:
-            if "RESULT: OK" in line:
-                yield ("ok", line)
-            else:
-                yield ("error", line)
-        elif failed:
-            yield ("error", line)
-        else:
-            yield ("log", line)
-    if failed:
-        yield ("error", "Test run failed — check the log above")
-    elif success:
-        yield ("ok", "Test run succeeded")
+        yield ("log", line)
 
 
 def _save_schedule_meta(  # noqa: PLR0913
@@ -167,6 +131,66 @@ def _remove_schedule_meta(app_dir: Path) -> None:
         meta_file.unlink()
 
 
+_SMOKE_LIMIT = 5
+
+
+def _verify_setup(
+    cmd: str,
+    rss_urls: tuple[str, ...],
+    agent: str | None,
+    log_file: Path,
+) -> Iterator[ScheduleLine]:
+    """Run ingest + classify-only to verify the environment without producing a digest."""
+    yield ("heading", "Verifying setup…")
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    offset = log_file.stat().st_size if log_file.exists() else 0
+
+    ingest_args = [cmd, "ingest"]
+    for url in rss_urls:
+        ingest_args.extend(["--rss", url])
+    result = subprocess.run(
+        ingest_args,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    _append_to_log(log_file, f"smoke-test: ingest exit={result.returncode}")
+    if result.returncode != 0:
+        _append_to_log(log_file, result.stderr or result.stdout or "")
+        yield ("error", f"Verification failed: ingest (exit {result.returncode})")
+        yield from _emit_log_lines(_read_log_tail(log_file, offset))
+        return
+
+    create_args = [cmd, "create", "--stop-after", "classify", "--limit", str(_SMOKE_LIMIT)]
+    if agent:
+        create_args.extend(["--agent", agent])
+    result = subprocess.run(
+        create_args,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    _append_to_log(log_file, f"smoke-test: create --stop-after classify exit={result.returncode}")
+    if result.returncode != 0:
+        _append_to_log(log_file, result.stderr or result.stdout or "")
+        yield ("error", f"Verification failed: agent not responding (exit {result.returncode})")
+        yield from _emit_log_lines(_read_log_tail(log_file, offset))
+    else:
+        yield ("ok", "Verification passed (feeds and agent are working)")
+
+
+def _append_to_log(log_file: Path, text: str) -> None:
+    with log_file.open("a", encoding="utf-8") as f:
+        f.write(text.rstrip() + "\n")
+
+
+def _read_log_tail(log_file: Path, offset: int, max_lines: int = 30) -> list[str]:
+    if not log_file.exists():
+        return []
+    content = log_file.read_text(encoding="utf-8", errors="replace")[offset:]
+    return content.strip().splitlines()[-max_lines:]
+
+
 class ScheduleController:
     """Install / uninstall / query platform-native daily scheduler for news-recap."""
 
@@ -182,6 +206,7 @@ class ScheduleController:
         platform = _platform()
         rss_args = _build_rss_args(rss_urls)
         agent_args = _build_agent_args(agent)
+        cmd = venv_bin or "news-recap"
 
         app_dir = _app_dir(platform)
         app_dir.mkdir(parents=True, exist_ok=True)
@@ -218,6 +243,9 @@ class ScheduleController:
                 minute=minute,
                 venv_bin=venv_bin,
             )
+
+        log_file = _log_dir(platform) / _today_log_name()
+        yield from _verify_setup(cmd, rss_urls, agent, log_file)
 
     def uninstall(self) -> Iterator[ScheduleLine]:
         platform = _platform()
@@ -264,7 +292,6 @@ class ScheduleController:
         run_script = home / "Library" / "Application Support" / "news-recap" / "run.sh"
         plist_path = home / "Library" / "LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
         log_dir = home / "Library" / "Logs" / "news-recap"
-        log_file = log_dir / _today_log_name()
         stdout_log = log_dir / "launchd.out.log"
         stderr_log = log_dir / "launchd.err.log"
 
@@ -321,22 +348,6 @@ class ScheduleController:
         )
         yield ("ok", f"Installed LaunchAgent: {plist_path}")
         yield ("info", f"Logs: {log_dir}")
-
-        yield ("heading", "Starting test run…")
-        offset = log_file.stat().st_size if log_file.exists() else 0
-        result = subprocess.run(
-            ["launchctl", "start", _LAUNCHD_LABEL],
-            capture_output=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            yield from _start_failed("launchctl start", result)
-        else:
-            new_lines = _wait_for_new_output(log_file, offset)
-            if new_lines:
-                yield from _emit_log_lines(new_lines[:40])
-            else:
-                yield ("warn", f"No output after 30 s — check: tail -f {log_file}")
 
     def _uninstall_macos(self) -> Iterator[ScheduleLine]:
         home = _home()
@@ -427,28 +438,6 @@ WantedBy=timers.target
         yield ("ok", f"Installed: {service_path}")
         yield ("ok", f"Installed: {timer_path}")
 
-        log_dir = home / ".local" / "state" / "news-recap"
-        log_file = log_dir / _today_log_name()
-        yield ("heading", "Starting test run…")
-        offset = log_file.stat().st_size if log_file.exists() else 0
-        result = subprocess.run(
-            ["systemctl", "--user", "start", f"{_SYSTEMD_SERVICE}.service"],
-            capture_output=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            yield from _start_failed("systemctl start", result)
-        else:
-            new_lines = _wait_for_new_output(log_file, offset)
-            if new_lines:
-                yield from _emit_log_lines(new_lines[:40])
-            else:
-                yield (
-                    "warn",
-                    "No output after 30 s — check: "
-                    f"journalctl --user -u {_SYSTEMD_SERVICE}.service -n 30",
-                )
-
     def _uninstall_linux(self) -> Iterator[ScheduleLine]:
         home = _home()
         systemd_dir = home / ".config" / "systemd" / "user"
@@ -528,32 +517,6 @@ WantedBy=timers.target
             check=True,
         )
         yield ("ok", f"Installed scheduled task: {_WINDOWS_TASK}")
-
-        log_file = log_dir / _today_log_name()
-        yield ("heading", "Starting test run…")
-        offset = log_file.stat().st_size if log_file.exists() else 0
-        result = subprocess.run(
-            [
-                "powershell",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                f'Start-ScheduledTask -TaskName "{_WINDOWS_TASK}"',
-            ],
-            capture_output=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            yield from _start_failed("Start-ScheduledTask", result)
-        else:
-            new_lines = _wait_for_new_output(log_file, offset)
-            if new_lines:
-                yield from _emit_log_lines(new_lines[:40])
-            else:
-                yield (
-                    "warn",
-                    f"No output after 30 s — check: Get-Content '{log_file}' -Tail 30",
-                )
 
     def _uninstall_windows(self) -> Iterator[ScheduleLine]:
         local_app = Path(os.environ.get("LOCALAPPDATA", str(_home() / "AppData" / "Local")))

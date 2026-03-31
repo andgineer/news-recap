@@ -27,6 +27,8 @@ pytestmark = [
     allure.feature("Scheduled Daily Runs"),
 ]
 
+_MOCK_CP = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
 
 # ── _build_rss_args ───────────────────────────────────────────────────
 
@@ -322,8 +324,7 @@ def test_install_macos_creates_files(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("news_recap.automation._home", lambda: tmp_path)
     monkeypatch.setattr("news_recap.automation._platform", lambda: "macos")
 
-    with patch("news_recap.automation.subprocess.run") as mock_run:
-        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP) as mock_run:
         ctrl = ScheduleController()
         output = list(ctrl.install(("https://example.com/feed.xml",), agent="claude"))
 
@@ -346,8 +347,8 @@ def test_install_macos_creates_files(tmp_path: Path, monkeypatch):
 
     texts = [t for _, t in output]
     assert any("LaunchAgent" in t for t in texts)
-    assert any("test run" in t.lower() for t in texts)
-    assert mock_run.call_count == 3  # unload + load + start
+    assert any("verifying" in t.lower() for t in texts)
+    assert mock_run.call_count == 4  # unload + load + ingest smoke + create smoke
 
     meta_file = tmp_path / "Library" / "Application Support" / "news-recap" / "schedule.json"
     assert meta_file.exists()
@@ -360,7 +361,7 @@ def test_install_macos_custom_time(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("news_recap.automation._home", lambda: tmp_path)
     monkeypatch.setattr("news_recap.automation._platform", lambda: "macos")
 
-    with patch("news_recap.automation.subprocess.run"):
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
         list(
             ctrl.install(
@@ -384,7 +385,7 @@ def test_install_macos_venv_bin(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("news_recap.automation._home", lambda: tmp_path)
     monkeypatch.setattr("news_recap.automation._platform", lambda: "macos")
 
-    with patch("news_recap.automation.subprocess.run"):
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
         list(
             ctrl.install(
@@ -408,7 +409,7 @@ def test_install_macos_no_agent(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("news_recap.automation._home", lambda: tmp_path)
     monkeypatch.setattr("news_recap.automation._platform", lambda: "macos")
 
-    with patch("news_recap.automation.subprocess.run"):
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
         list(ctrl.install(("https://example.com/feed.xml",)))
 
@@ -422,7 +423,7 @@ def test_install_macos_idempotent(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("news_recap.automation._home", lambda: tmp_path)
     monkeypatch.setattr("news_recap.automation._platform", lambda: "macos")
 
-    with patch("news_recap.automation.subprocess.run"):
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
         list(ctrl.install(("https://feed1.com/rss",)))
         list(ctrl.install(("https://feed2.com/rss",)))
@@ -450,7 +451,7 @@ def test_uninstall_macos_removes_files(tmp_path: Path, monkeypatch):
     run_script.write_text("#!/bin/bash")
     (app_dir / "schedule.json").write_text("{}")
 
-    with patch("news_recap.automation.subprocess.run"):
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
         output = list(ctrl.uninstall())
 
@@ -513,7 +514,7 @@ def test_install_linux_creates_files(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("news_recap.automation._platform", lambda: "linux")
     monkeypatch.setattr("news_recap.automation.shutil.which", lambda cmd: "/usr/bin/systemctl")
 
-    with patch("news_recap.automation.subprocess.run"):
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
         output = list(ctrl.install(("https://example.com/feed.xml",), agent="gemini"))
 
@@ -542,7 +543,7 @@ def test_install_linux_custom_time(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("news_recap.automation._platform", lambda: "linux")
     monkeypatch.setattr("news_recap.automation.shutil.which", lambda cmd: "/usr/bin/systemctl")
 
-    with patch("news_recap.automation.subprocess.run"):
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
         list(ctrl.install(("https://example.com/feed.xml",), hour=22, minute=15))
 
@@ -578,7 +579,7 @@ def test_uninstall_linux_removes_files(tmp_path: Path, monkeypatch):
     run_script.write_text("#!/bin/bash")
     (app_dir / "schedule.json").write_text("{}")
 
-    with patch("news_recap.automation.subprocess.run"):
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
         output = list(ctrl.uninstall())
 
@@ -606,7 +607,7 @@ def test_install_windows_creates_script(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("news_recap.automation._platform", lambda: "windows")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
 
-    with patch("news_recap.automation.subprocess.run"):
+    with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
         output = list(ctrl.install(("https://example.com/feed.xml",), agent="claude"))
 

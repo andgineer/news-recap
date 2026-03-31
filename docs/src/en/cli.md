@@ -8,6 +8,7 @@
 - `create`: create a news digest from recent articles.
 - `prompt`: export a ready-to-paste LLM prompt from recent articles.
 - `list`: show completed digests and uncovered article periods.
+- `delete`: delete a digest so its articles become available for the next one.
 - `serve`: start the digest web viewer.
 - `schedule set`: install or update the daily scheduled digest job.
 - `schedule get`: show current schedule configuration.
@@ -76,15 +77,26 @@ periods (gaps between consecutive digests).
 news-recap list
 ```
 
-Output lists each completed digest (newest first) with its numeric ID (`#1` =
-newest), business date, article count, earliest/latest article timestamps, and
-pipeline directory name. Use the ID with `news-recap serve N`.
+Output is a table (newest first) with columns: numeric ID (`#1` = newest),
+business date, article count, article time period, pipeline start time,
+elapsed time, total prompt size, total output size, and tokens (when
+available). Use the ID with `news-recap serve N` or `news-recap delete N`.
 
 If there are time gaps between consecutive digests' article ranges, they are
 shown under "Uncovered periods".
 
 Old pipeline directories are automatically garbage-collected (same retention
 as articles, controlled by `NEWS_RECAP_GC_RETENTION_DAYS`).
+
+### `delete`
+Delete a completed digest so its articles become available for the next one.
+
+```bash
+news-recap delete 1
+```
+
+Arguments:
+- `DIGEST_ID` — digest ID to delete (as shown by `news-recap list`).
 
 ### `serve`
 Start the digest web viewer for a specific digest.
@@ -220,6 +232,7 @@ news-recap ingest --help
 news-recap create --help
 news-recap prompt --help
 news-recap list --help
+news-recap delete --help
 news-recap serve --help
 news-recap schedule --help
 news-recap schedule set --help

@@ -22,6 +22,7 @@ Data directory defaults to `~/.news_recap_data/` (configurable via `NEWS_RECAP_D
 - `news-recap ingest --rss URL`: run one ingestion cycle from RSS feeds.
 - `news-recap create --agent claude`: create a news digest from recent articles.
 - `news-recap list`: show completed digests.
+- `news-recap delete DIGEST_ID`: delete a digest so its articles become available for the next one.
 - `news-recap serve [DIGEST_ID]`: start the digest web viewer.
 - `news-recap prompt`: export a ready-to-paste LLM prompt.
 - `news-recap schedule set --rss URL`: install daily scheduled automation (launchd / systemd / Task Scheduler).

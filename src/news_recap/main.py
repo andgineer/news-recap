@@ -262,7 +262,17 @@ def recap_prompt(  # noqa: PLR0913
 @news_recap.command("list")
 def list_cmd() -> None:
     """Show completed digests and uncovered article periods."""
-    _emit_lines(DIGEST_INFO_CONTROLLER.digest_info())
+    DIGEST_INFO_CONTROLLER.digest_info()
+
+
+@news_recap.command("delete")
+@click.argument("digest_id", type=click.IntRange(min=1))
+def delete_cmd(digest_id: int) -> None:
+    """Delete a digest so its articles become available for the next one.
+
+    DIGEST_ID is the numeric digest ID (as shown by `news-recap list`).
+    """
+    _emit_lines(DIGEST_INFO_CONTROLLER.delete_digest(digest_id))
 
 
 @news_recap.command("serve")

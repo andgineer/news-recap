@@ -25,5 +25,5 @@ def test_help_lists_all_commands():
     runner = CliRunner()
     result = runner.invoke(news_recap, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("ingest", "create", "prompt", "list", "serve", "schedule"):
+    for cmd in ("ingest", "create", "prompt", "list", "delete", "serve", "schedule"):
         assert cmd in result.output, f"command {cmd!r} missing from --help output"

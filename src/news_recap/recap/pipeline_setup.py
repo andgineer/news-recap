@@ -5,6 +5,7 @@ Used by both ``launcher.py`` (``recap`` command) and ``export_prompt.py`` (``pro
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import shutil
@@ -117,6 +118,11 @@ class DigestSummary:
     earliest_article: datetime | None
     latest_article: datetime | None
     pipeline_dir_name: str
+    started_at: datetime | None = None
+    elapsed_seconds: float = 0.0
+    total_tokens: int = 0
+    prompt_bytes: int = 0
+    output_bytes: int = 0
 
 
 def _iter_completed_digests(workdir_root: Path) -> Iterator[tuple[Path, Digest]]:
@@ -156,6 +162,57 @@ def _find_last_completed_digest_date(workdir_root: Path) -> date | None:
     return date.fromisoformat(result[1].business_date)
 
 
+_PIPELINE_NAME_PARTS = 5
+
+
+def _parse_pipeline_start(dir_name: str) -> datetime | None:
+    """Extract UTC start time from ``pipeline-YYYY-MM-DD-HHMMSS``."""
+    parts = dir_name.split("-")
+    if len(parts) < _PIPELINE_NAME_PARTS:
+        return None
+    try:
+        d = date.fromisoformat(f"{parts[1]}-{parts[2]}-{parts[3]}")
+        t = parts[4]
+        return datetime(d.year, d.month, d.day, int(t[:2]), int(t[2:4]), int(t[4:6]), tzinfo=UTC)
+    except (ValueError, IndexError):
+        return None
+
+
+@dataclass(slots=True)
+class _UsageStats:
+    elapsed: float = 0.0
+    tokens: int = 0
+    prompt_bytes: int = 0
+    output_bytes: int = 0
+
+
+def _aggregate_usage(pdir: Path) -> _UsageStats:
+    """Collect usage metrics from all task workdirs.
+
+    Field names in usage.json must stay in sync with ``_save_usage`` /
+    ``read_agent_usage`` in ``agents/ai_agent.py`` and ``agents/api_agent.py``.
+    """
+    stats = _UsageStats()
+    for task_dir in pdir.iterdir():
+        if not task_dir.is_dir():
+            continue
+        usage_path = task_dir / "meta" / "usage.json"
+        if usage_path.exists():
+            try:
+                data = json.loads(usage_path.read_text("utf-8"))
+                stats.elapsed += float(data.get("elapsed_seconds", 0))
+                stats.tokens += int(data.get("total_tokens") or data.get("tokens_used") or 0)
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+        prompt = task_dir / "input" / "task_prompt.txt"
+        with contextlib.suppress(OSError):
+            stats.prompt_bytes += prompt.stat().st_size
+        output = task_dir / "output" / "agent_stdout.log"
+        with contextlib.suppress(OSError):
+            stats.output_bytes += output.stat().st_size
+    return stats
+
+
 def _list_completed_digests(workdir_root: Path) -> list[DigestSummary]:
     """Return metadata for all completed digests, newest-first.
 
@@ -170,6 +227,9 @@ def _list_completed_digests(workdir_root: Path) -> list[DigestSummary]:
             except (ValueError, TypeError):
                 continue
 
+        started_at = _parse_pipeline_start(pdir.name)
+        usage = _aggregate_usage(pdir)
+
         summaries.append(
             DigestSummary(
                 digest_id=idx,
@@ -178,6 +238,11 @@ def _list_completed_digests(workdir_root: Path) -> list[DigestSummary]:
                 earliest_article=min(timestamps) if timestamps else None,
                 latest_article=max(timestamps) if timestamps else None,
                 pipeline_dir_name=pdir.name,
+                started_at=started_at,
+                elapsed_seconds=usage.elapsed,
+                total_tokens=usage.tokens,
+                prompt_bytes=usage.prompt_bytes,
+                output_bytes=usage.output_bytes,
             ),
         )
     return summaries

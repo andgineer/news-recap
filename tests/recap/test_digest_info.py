@@ -8,11 +8,17 @@ from unittest.mock import MagicMock, patch
 
 import msgspec
 
-from news_recap.recap.digest_info import DigestInfoController
+from news_recap.recap.digest_info import (
+    DigestInfoController,
+    _human_elapsed,
+    _human_size,
+    _smart_period,
+)
 from news_recap.recap.models import Digest, DigestArticle
 from news_recap.recap.pipeline_setup import (
     _find_digest_pipeline_dir,
     _list_completed_digests,
+    _parse_pipeline_start,
     gc_old_pipelines,
 )
 
@@ -47,6 +53,83 @@ def _article(published_at: str) -> DigestArticle:
         published_at=published_at,
         clean_text="body",
     )
+
+
+def _local_str(iso: str) -> str:
+    """Format a UTC ISO timestamp as local ``YYYY-MM-DD HH:MM``."""
+    return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M")
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+def test_smart_period_same_day() -> None:
+    e = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
+    l = datetime(2026, 3, 1, 8, 30, tzinfo=UTC)
+    el = e.astimezone()
+    ll = l.astimezone()
+    result = _smart_period(e, l)
+    assert el.strftime("%H:%M") in result
+    assert ll.strftime("%H:%M") in result
+    assert ".." in result
+
+
+def test_smart_period_different_days() -> None:
+    e = datetime(2026, 1, 15, 22, 0, tzinfo=UTC)
+    l = datetime(2026, 1, 17, 8, 30, tzinfo=UTC)
+    el = e.astimezone()
+    ll = l.astimezone()
+    result = _smart_period(e, l)
+    assert el.strftime("%Y-%m-%d") in result
+    assert ll.strftime("%Y-%m-%d") in result
+    assert ".." in result
+
+
+def test_smart_period_none() -> None:
+    assert _smart_period(None, None) == "—"
+
+
+def test_human_elapsed_seconds() -> None:
+    assert _human_elapsed(45) == "45s"
+
+
+def test_human_elapsed_minutes() -> None:
+    assert _human_elapsed(125) == "2m 5s"
+
+
+def test_human_elapsed_hours() -> None:
+    assert _human_elapsed(3665) == "1h 1m 5s"
+
+
+def test_human_elapsed_zero() -> None:
+    assert _human_elapsed(0) == "—"
+
+
+def test_human_size_bytes() -> None:
+    assert _human_size(500) == "500 B"
+
+
+def test_human_size_kb() -> None:
+    assert _human_size(2048) == "2 KB"
+
+
+def test_human_size_mb() -> None:
+    assert _human_size(1_500_000) == "1.4 MB"
+
+
+def test_human_size_zero() -> None:
+    assert _human_size(0) == "—"
+
+
+def test_parse_pipeline_start() -> None:
+    result = _parse_pipeline_start("pipeline-2026-03-31-084018")
+    assert result == datetime(2026, 3, 31, 8, 40, 18, tzinfo=UTC)
+
+
+def test_parse_pipeline_start_invalid() -> None:
+    assert _parse_pipeline_start("something-else") is None
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +187,52 @@ def test_list_returns_completed_digests(tmp_path: Path) -> None:
     assert s.earliest_article == datetime(2026, 2, 28, 20, 0, tzinfo=UTC)
     assert s.latest_article == datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
     assert s.pipeline_dir_name == "pipeline-2026-03-01-100000"
+    assert s.started_at == datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
+    assert s.elapsed_seconds == 0.0
+    assert s.total_tokens == 0
+
+
+def test_list_aggregates_usage(tmp_path: Path) -> None:
+    import json
+
+    pdir = tmp_path / "pipeline-2026-03-01-100000"
+    _make_digest(
+        pdir,
+        "2026-03-01",
+        status="completed",
+        completed_phases=["classify", "oneshot_digest"],
+        articles=[_article("2026-03-01T10:00:00+00:00")],
+    )
+    task1_meta = pdir / "classify-1" / "meta"
+    task1_meta.mkdir(parents=True)
+    (task1_meta / "usage.json").write_text(
+        json.dumps({"elapsed_seconds": 10.5, "total_tokens": 500, "backend": "cli"})
+    )
+    task1_input = pdir / "classify-1" / "input"
+    task1_input.mkdir(parents=True)
+    (task1_input / "task_prompt.txt").write_text("A" * 1000)
+    task1_output = pdir / "classify-1" / "output"
+    task1_output.mkdir(parents=True)
+    (task1_output / "agent_stdout.log").write_text("B" * 400)
+
+    task2_meta = pdir / "classify-2" / "meta"
+    task2_meta.mkdir(parents=True)
+    (task2_meta / "usage.json").write_text(
+        json.dumps({"elapsed_seconds": 5.0, "total_tokens": 300, "backend": "cli"})
+    )
+    task2_input = pdir / "classify-2" / "input"
+    task2_input.mkdir(parents=True)
+    (task2_input / "task_prompt.txt").write_text("C" * 500)
+    task2_output = pdir / "classify-2" / "output"
+    task2_output.mkdir(parents=True)
+    (task2_output / "agent_stdout.log").write_text("D" * 200)
+
+    result = _list_completed_digests(tmp_path)
+    assert len(result) == 1
+    assert result[0].elapsed_seconds == 15.5
+    assert result[0].total_tokens == 800
+    assert result[0].prompt_bytes == 1500
+    assert result[0].output_bytes == 600
 
 
 def test_list_newest_first(tmp_path: Path) -> None:
@@ -149,16 +278,19 @@ def test_list_zero_article_digest(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_digest_info_empty_workdir(tmp_path: Path) -> None:
+def test_digest_info_empty_workdir(tmp_path: Path, capsys: object) -> None:
     settings = MagicMock()
     settings.orchestrator.workdir_root = tmp_path / "nonexistent"
     with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
-        lines = DigestInfoController().digest_info()
-    assert lines == ["No digests found."]
+        DigestInfoController().digest_info()
+    out = capsys.readouterr().out  # type: ignore[union-attr]
+    assert "no digests found" in out.lower()
 
 
-def test_digest_info_shows_digests_and_gap(tmp_path: Path) -> None:
+def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> None:
     workdir = tmp_path / "workdirs"
+    gap_end_utc = "2026-02-28T12:15:00+00:00"
+    gap_start_utc = "2026-02-28T20:12:00+00:00"
     _make_digest(
         workdir / "pipeline-2026-03-01-100000",
         "2026-03-01",
@@ -166,7 +298,7 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path) -> None:
         completed_phases=["classify", "oneshot_digest"],
         articles=[
             _article("2026-02-27T06:00:00+00:00"),
-            _article("2026-02-28T12:15:00+00:00"),
+            _article(gap_end_utc),
         ],
     )
     _make_digest(
@@ -175,7 +307,7 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path) -> None:
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
         articles=[
-            _article("2026-02-28T20:12:00+00:00"),
+            _article(gap_start_utc),
             _article("2026-03-01T14:30:00+00:00"),
         ],
     )
@@ -183,22 +315,19 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path) -> None:
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
     with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
-        lines = DigestInfoController().digest_info()
+        DigestInfoController().digest_info()
+    out = capsys.readouterr().out  # type: ignore[union-attr]
 
-    assert lines[0] == "Digests (newest first):"
-    assert "#1" in lines[1]
-    assert "2026-03-02" in lines[1]
-    assert "2 articles" in lines[1]
-    assert "#2" in lines[2]
-    assert "2026-03-01" in lines[2]
-    assert "2 articles" in lines[2]
-
-    assert "Uncovered periods:" in lines
-    gap_idx = lines.index("Uncovered periods:")
-    assert "2026-02-28 12:15 .. 2026-02-28 20:12" in lines[gap_idx + 1]
+    assert "1" in out
+    assert "2026-03-02" in out
+    assert "2" in out
+    assert "2026-03-01" in out
+    assert "Uncovered periods" in out
+    assert _local_str(gap_end_utc) in out
+    assert _local_str(gap_start_utc) in out
 
 
-def test_digest_info_no_gap_when_overlapping(tmp_path: Path) -> None:
+def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> None:
     workdir = tmp_path / "workdirs"
     _make_digest(
         workdir / "pipeline-2026-03-01-100000",
@@ -224,19 +353,22 @@ def test_digest_info_no_gap_when_overlapping(tmp_path: Path) -> None:
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
     with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
-        lines = DigestInfoController().digest_info()
+        DigestInfoController().digest_info()
+    out = capsys.readouterr().out  # type: ignore[union-attr]
 
-    assert "Uncovered periods:" not in lines
+    assert "Uncovered periods" not in out
 
 
-def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path) -> None:
+def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: object) -> None:
     workdir = tmp_path / "workdirs"
+    gap_end_utc = "2026-02-28T12:00:00+00:00"
+    gap_start_utc = "2026-03-03T08:00:00+00:00"
     _make_digest(
         workdir / "pipeline-2026-03-01-100000",
         "2026-03-01",
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
-        articles=[_article("2026-02-28T12:00:00+00:00")],
+        articles=[_article(gap_end_utc)],
     )
     _make_digest(
         workdir / "pipeline-2026-03-02-100000",
@@ -250,17 +382,18 @@ def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path) -> None:
         "2026-03-03",
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
-        articles=[_article("2026-03-03T08:00:00+00:00")],
+        articles=[_article(gap_start_utc)],
     )
 
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
     with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
-        lines = DigestInfoController().digest_info()
+        DigestInfoController().digest_info()
+    out = capsys.readouterr().out  # type: ignore[union-attr]
 
-    assert "Uncovered periods:" in lines
-    gap_idx = lines.index("Uncovered periods:")
-    assert "2026-02-28 12:00 .. 2026-03-03 08:00" in lines[gap_idx + 1]
+    assert "Uncovered periods" in out
+    assert _local_str(gap_end_utc) in out
+    assert _local_str(gap_start_utc) in out
 
 
 # ---------------------------------------------------------------------------
@@ -329,3 +462,44 @@ def test_digest_cli_help() -> None:
     result = runner.invoke(news_recap, ["list", "--help"])
     assert result.exit_code == 0
     assert "completed digests" in result.output.lower()
+
+
+def test_delete_cli_help() -> None:
+    from click.testing import CliRunner
+
+    from news_recap.main import news_recap
+
+    runner = CliRunner()
+    result = runner.invoke(news_recap, ["delete", "--help"])
+    assert result.exit_code == 0
+    assert "digest_id" in result.output.lower()
+
+
+def test_delete_nonexistent_digest(tmp_path: Path) -> None:
+    settings = MagicMock()
+    settings.orchestrator.workdir_root = tmp_path / "nonexistent"
+    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+        lines = DigestInfoController().delete_digest(99)
+    assert any("not found" in l.lower() for l in lines)
+
+
+def test_delete_removes_pipeline_dir(tmp_path: Path) -> None:
+    workdir = tmp_path / "workdirs"
+    pdir = workdir / "pipeline-2026-03-01-100000"
+    _make_digest(
+        pdir,
+        "2026-03-01",
+        status="completed",
+        completed_phases=["classify", "oneshot_digest"],
+        articles=[_article("2026-03-01T10:00:00+00:00")],
+    )
+    assert pdir.exists()
+
+    settings = MagicMock()
+    settings.orchestrator.workdir_root = workdir
+    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+        lines = DigestInfoController().delete_digest(1)
+
+    assert not pdir.exists()
+    assert any("deleted" in l.lower() for l in lines)
+    assert any("available" in l.lower() for l in lines)
