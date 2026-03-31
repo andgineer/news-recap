@@ -19,26 +19,38 @@ claude
 ## Setup
 
 ```bash
-news-recap auto --rss https://your-feed.com/rss
+news-recap schedule set --rss https://your-feed.com/rss
 ```
 
 Multiple feeds:
 
 ```bash
-news-recap auto --rss https://feed1.com/rss --rss https://feed2.com/rss
+news-recap schedule set --rss https://feed1.com/rss --rss https://feed2.com/rss
 ```
 
-To pin a specific LLM agent for the recap step:
+To pin a specific LLM agent for the digest step:
 
 ```bash
-news-recap auto --rss https://your-feed.com/rss --agent claude
+news-recap schedule set --rss https://your-feed.com/rss --agent claude
+```
+
+To change the daily run time (default 03:00):
+
+```bash
+news-recap schedule set --rss https://your-feed.com/rss --time 07:30
+```
+
+To use the current Python venv instead of global `news-recap`:
+
+```bash
+news-recap schedule set --rss https://your-feed.com/rss --venv
 ```
 
 Or set `NEWS_RECAP_RSS_FEED_URLS` (comma-separated):
 
 ```bash
 export NEWS_RECAP_RSS_FEED_URLS="https://feed1.com/rss,https://feed2.com/rss"
-news-recap auto
+news-recap schedule set
 ```
 
 The command auto-detects the platform and installs:
@@ -49,12 +61,18 @@ The command auto-detects the platform and installs:
 
 Re-running is safe — the previous configuration is replaced.
 
+## Checking the schedule
+
+```bash
+news-recap schedule get
+```
+
 ## Checking logs
 
 macOS:
 
 ```bash
-tail -f ~/Library/Logs/news-recap.log
+tail -f ~/Library/Logs/news-recap/news-recap-$(date +%Y-%m-%d).log
 ```
 
 Linux:
@@ -66,13 +84,13 @@ journalctl --user -u news-recap.service -n 200 --no-pager
 Windows:
 
 ```powershell
-Get-Content "$env:LOCALAPPDATA\news-recap\logs\news-recap.log" -Tail 200
+Get-Content "$env:LOCALAPPDATA\news-recap\logs\news-recap-$(Get-Date -Format 'yyyy-MM-dd').log" -Tail 200
 ```
 
 ## Removal
 
 ```bash
-news-recap auto-off
+news-recap schedule delete
 ```
 
 ## Troubleshooting
@@ -80,7 +98,7 @@ news-recap auto-off
 The errors below apply when using `--agent claude`.
 
 If you see `Agent command not found: claude` — make sure `claude` runs
-in your regular terminal, then run `news-recap auto` again.
+in your regular terminal, then run `news-recap schedule set` again.
 
 If you see `Not logged in · Please run /login` — run `claude` and `/login`
 in your regular terminal under the same user, then trigger the job manually:

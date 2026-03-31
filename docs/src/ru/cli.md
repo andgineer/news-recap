@@ -5,12 +5,13 @@
 ## Карта Команд
 
 - `ingest`: один цикл ingestion из RSS/Atom источников.
-- `recap`: запуск пайплайна ежедневного дайджеста.
+- `create`: создать дайджест новостей из последних статей.
 - `prompt`: экспорт LLM-промпта из последних статей.
 - `list`: показать завершённые дайджесты и непокрытые периоды.
 - `serve`: запуск веб-просмотрщика дайджестов.
-- `auto`: установить ежедневный автозапуск.
-- `auto-off`: удалить ежедневный автозапуск.
+- `schedule set`: установить или обновить ежедневный автозапуск.
+- `schedule get`: показать текущую конфигурацию расписания.
+- `schedule delete`: удалить ежедневный автозапуск.
 
 ## Общие Замечания
 
@@ -37,19 +38,19 @@ news-recap ingest --rss https://example.com/feed.xml
 
 ## Команды пайплайна дайджеста
 
-### `recap`
-Запуск полного пайплайна дайджеста на бизнес-дату.
+### `create`
+Создать дайджест новостей из последних статей.
 
 Пайплайн проходит следующие этапы: classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций) → refine_layout (опциональная консолидация секций).
 
 Каждый этап чекпоинтится, поэтому повторный запуск пропускает уже выполненные этапы.
 
 ```bash
-news-recap recap
-news-recap recap --api
-news-recap recap --agent claude --stop-after classify
-news-recap recap --limit 50
-news-recap recap --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25-105004
+news-recap create
+news-recap create --api
+news-recap create --agent claude --stop-after classify
+news-recap create --limit 50
+news-recap create --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25-105004
 ```
 
 Ключевые опции:
@@ -104,7 +105,7 @@ news-recap serve 2
 
 ## API-режим
 
-По умолчанию recap-пайплайн выполняет LLM-задачи через запуск CLI-агентов
+По умолчанию пайплайн дайджеста выполняет LLM-задачи через запуск CLI-агентов
 (`codex`, `claude`, `gemini`). **API-режим** заменяет вызовы подпроцессов прямыми
 вызовами через Anthropic SDK — CLI-агенты не нужны.
 
@@ -114,7 +115,7 @@ news-recap serve 2
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-news-recap recap --api
+news-recap create --api
 ```
 
 Флаг `--api` автоматически задаёт `backend=api` и `agent=claude`. Других переменных окружения не требуется.
@@ -143,26 +144,38 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 - `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — дополнительная пауза после снижения лимита
   перед следующей попыткой захвата слота (по умолчанию `2`).
 
-## Автозапуск
+## Расписание
 
-### `auto`
-Установить ежедневный автозапуск через системный планировщик
+### `schedule set`
+Установить или обновить ежедневный автозапуск через системный планировщик
 (launchd на macOS, systemd на Linux, Task Scheduler на Windows).
 
 ```bash
-news-recap auto --rss https://example.com/feed.xml
-news-recap auto --rss https://feed1.com/rss --rss https://feed2.com/rss
-news-recap auto --rss https://example.com/feed.xml --agent claude
+news-recap schedule set --rss https://example.com/feed.xml
+news-recap schedule set --rss https://feed1.com/rss --rss https://feed2.com/rss
+news-recap schedule set --rss https://example.com/feed.xml --agent claude
+news-recap schedule set --rss https://example.com/feed.xml --time 07:30
+news-recap schedule set --rss https://example.com/feed.xml --venv
 ```
 
-RSS URL также можно передать через `NEWS_RECAP_RSS_FEED_URLS`.
-`--agent` задаёт LLM-агента для шага recap (по умолчанию из конфига).
+Ключевые опции:
+- `--rss` (повторяемая) — RSS URL также можно передать через `NEWS_RECAP_RSS_FEED_URLS`.
+- `--agent` — LLM-агент для шага создания дайджеста (по умолчанию из конфига).
+- `--time` — время ежедневного запуска в формате HH:MM (по умолчанию `03:00`).
+- `--venv` — использовать текущий Python venv вместо глобально установленного `news-recap`.
 
-### `auto-off`
+### `schedule get`
+Показать текущую конфигурацию расписания.
+
+```bash
+news-recap schedule get
+```
+
+### `schedule delete`
 Удалить автозапуск.
 
 ```bash
-news-recap auto-off
+news-recap schedule delete
 ```
 
 ## Важные Переменные Окружения
@@ -183,7 +196,7 @@ news-recap auto-off
 ### LLM-агенты
 
 > **Подписка vs API-биллинг.** При запуске CLI-агентов (`claude`, `codex`, `gemini`)
-> как подпроцессов `news-recap recap` по умолчанию удаляет ключи API вендоров
+> как подпроцессов `news-recap create` по умолчанию удаляет ключи API вендоров
 > (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
 > из окружения подпроцесса — чтобы агент использовал лимиты подписки, а не
 > тарифицировал вызовы через API-аккаунт.
@@ -194,7 +207,7 @@ news-recap auto-off
 > Чтобы явно передать ключ CLI-агенту (оплата за токены), используйте `--use-api-key`:
 >
 > ```bash
-> news-recap recap --use-api-key
+> news-recap create --use-api-key
 > ```
 
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — агент по умолчанию (`codex`, `claude` или `gemini`).
@@ -206,10 +219,10 @@ news-recap auto-off
 ```bash
 news-recap --help
 news-recap ingest --help
-news-recap recap --help
+news-recap create --help
 news-recap prompt --help
 news-recap list --help
 news-recap serve --help
-news-recap auto --help
-news-recap auto-off --help
+news-recap schedule --help
+news-recap schedule set --help
 ```

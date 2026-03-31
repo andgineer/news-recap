@@ -1,6 +1,5 @@
 """CLI entrypoint for news-recap."""
 
-import copy as _copy
 import logging
 from collections.abc import Iterator
 from pathlib import Path
@@ -8,7 +7,7 @@ from pathlib import Path
 import rich_click as click
 
 from news_recap import __version__
-from news_recap.automation import AutoController, AutoLine, resolve_rss_urls
+from news_recap.automation import ScheduleController, ScheduleLine, resolve_rss_urls
 from news_recap.ingestion.controllers import (
     DailyIngestionCommand,
     IngestionCliController,
@@ -41,7 +40,7 @@ RECAP_CONTROLLER = RecapCliController()
 PROMPT_CONTROLLER = PromptCliController()
 DIGEST_INFO_CONTROLLER = DigestInfoController()
 WEB_CONTROLLER = WebCliController()
-AUTO_CONTROLLER = AutoController()
+SCHEDULE_CONTROLLER = ScheduleController()
 
 
 @click.group()
@@ -69,7 +68,7 @@ def ingest(feed_urls: tuple[str, ...]) -> None:
     )
 
 
-@news_recap.command("recap")
+@news_recap.command("create")
 @click.option(
     "--agent",
     type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
@@ -155,7 +154,7 @@ def recap_run(  # noqa: PLR0913
     max_days: int | None,
     all_articles: bool,
 ) -> None:
-    """Run the full news digest pipeline."""
+    """Create a news digest from recent articles."""
 
     _emit_lines(
         RECAP_CONTROLLER.run_pipeline(
@@ -181,7 +180,7 @@ def recap_run(  # noqa: PLR0913
     show_default=True,
     help=(
         "Run full classify→dedup pipeline before building the prompt "
-        "(same scope as the recap command)."
+        "(same scope as the create command)."
     ),
 )
 @click.option(
@@ -302,7 +301,15 @@ def serve(
     )
 
 
-@news_recap.command("auto")
+@click.group("schedule")
+def schedule_group() -> None:
+    """Manage daily scheduled digest creation."""
+
+
+news_recap.add_command(schedule_group)
+
+
+@schedule_group.command("set")
 @click.option(
     "--rss",
     "rss_urls",
@@ -313,27 +320,71 @@ def serve(
     "--agent",
     type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
     default=None,
-    help="LLM agent for the recap step. Omit to use the config default.",
+    help="LLM agent for the digest step. Omit to use the config default.",
 )
-def auto_install(rss_urls: tuple[str, ...], agent: str | None) -> None:
-    """Install daily scheduled automation (launchd / systemd / Task Scheduler)."""
+@click.option(
+    "--time",
+    "run_time",
+    default="03:00",
+    show_default=True,
+    help="Daily run time in HH:MM format.",
+    callback=lambda _ctx, _param, value: _validate_time(value),
+)
+@click.option(
+    "--venv",
+    "use_venv",
+    is_flag=True,
+    default=False,
+    help="Use the current Python venv binary instead of globally installed news-recap.",
+)
+def schedule_set(
+    rss_urls: tuple[str, ...],
+    agent: str | None,
+    run_time: tuple[int, int],
+    use_venv: bool,
+) -> None:
+    """Install or update the daily scheduled digest job."""
+    import sys
+
     urls = resolve_rss_urls(rss_urls)
-    _emit_auto(AUTO_CONTROLLER.install(urls, agent=agent))
+    venv_bin = str(Path(sys.executable).parent / "news-recap") if use_venv else None
+    hour, minute = run_time
+    _emit_schedule(
+        SCHEDULE_CONTROLLER.install(
+            urls,
+            agent=agent,
+            hour=hour,
+            minute=minute,
+            venv_bin=venv_bin,
+        ),
+    )
 
 
-@news_recap.command("auto-off")
-def auto_uninstall() -> None:
-    """Remove daily scheduled automation."""
-    _emit_auto(AUTO_CONTROLLER.uninstall())
+@schedule_group.command("get")
+def schedule_get() -> None:
+    """Show current schedule configuration."""
+    _emit_schedule(SCHEDULE_CONTROLLER.get_schedule())
 
 
-_run_alias = _copy.copy(recap_run)
-_run_alias.hidden = True
-news_recap.add_command(_run_alias, "run")
+@schedule_group.command("delete")
+def schedule_delete() -> None:
+    """Remove the daily scheduled digest job."""
+    _emit_schedule(SCHEDULE_CONTROLLER.uninstall())
 
-_digest_alias = _copy.copy(list_cmd)
-_digest_alias.hidden = True
-news_recap.add_command(_digest_alias, "digest")
+
+_MAX_HOUR = 23
+_MAX_MINUTE = 59
+
+
+def _validate_time(value: str) -> tuple[int, int]:
+    import re
+
+    if not re.match(r"^\d{2}:\d{2}$", value):
+        raise click.BadParameter(f"Must be HH:MM format, got {value!r}")
+    h, m = int(value[:2]), int(value[3:])
+    if not (0 <= h <= _MAX_HOUR and 0 <= m <= _MAX_MINUTE):
+        raise click.BadParameter(f"Invalid time {value!r} (hour 0-23, minute 0-59)")
+    return h, m
 
 
 def _emit_lines(lines: list[str] | Iterator[str]) -> None:
@@ -341,7 +392,7 @@ def _emit_lines(lines: list[str] | Iterator[str]) -> None:
         click.echo(line)
 
 
-_AUTO_STYLES: dict[str, dict[str, object]] = {
+_SCHEDULE_STYLES: dict[str, dict[str, object]] = {
     "ok": {"fg": "green"},
     "info": {"fg": "cyan"},
     "heading": {"fg": "white", "bold": True},
@@ -351,10 +402,10 @@ _AUTO_STYLES: dict[str, dict[str, object]] = {
 }
 
 
-def _emit_auto(lines: Iterator[AutoLine]) -> None:
+def _emit_schedule(lines: Iterator[ScheduleLine]) -> None:
     has_error = False
     for severity, text in lines:
-        style = _AUTO_STYLES.get(severity, {})
+        style = _SCHEDULE_STYLES.get(severity, {})
         if severity == "log":
             click.secho(f"  {text}", **style)  # type: ignore[arg-type]
         else:

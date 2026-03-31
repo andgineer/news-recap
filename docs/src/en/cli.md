@@ -5,12 +5,13 @@
 ## Command Map
 
 - `ingest`: run one ingestion cycle from RSS/Atom feeds.
-- `recap`: run the daily digest pipeline.
+- `create`: create a news digest from recent articles.
 - `prompt`: export a ready-to-paste LLM prompt from recent articles.
 - `list`: show completed digests and uncovered article periods.
 - `serve`: start the digest web viewer.
-- `auto`: install daily scheduled automation.
-- `auto-off`: remove daily scheduled automation.
+- `schedule set`: install or update the daily scheduled digest job.
+- `schedule get`: show current schedule configuration.
+- `schedule delete`: remove the daily scheduled digest job.
 
 ## Common Notes
 
@@ -37,19 +38,19 @@ If `--rss` is omitted, feeds are loaded from:
 
 ## Digest Pipeline Commands
 
-### `recap`
-Run the full news digest pipeline for a business date.
+### `create`
+Create a news digest from recent articles.
 
 The pipeline goes through the following stages: classify → load_resources → enrich → deduplicate → oneshot_digest (parallel batches + deterministic block dedup + section merge) → refine_layout (optional section consolidation).
 
 Each stage is checkpointed, so a resumed run skips already-completed stages.
 
 ```bash
-news-recap recap
-news-recap recap --api
-news-recap recap --agent claude --stop-after classify
-news-recap recap --limit 50
-news-recap recap --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25-105004
+news-recap create
+news-recap create --api
+news-recap create --agent claude --stop-after classify
+news-recap create --limit 50
+news-recap create --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25-105004
 ```
 
 Key options:
@@ -103,7 +104,7 @@ Key options:
 
 ## API Mode
 
-By default the recap pipeline runs LLM tasks by spawning CLI agent subprocesses
+By default the digest pipeline runs LLM tasks by spawning CLI agent subprocesses
 (`codex`, `claude`, `gemini`). **API mode** replaces subprocess calls with direct
 Anthropic SDK calls — no CLI agents required.
 
@@ -113,7 +114,7 @@ Anthropic SDK calls — no CLI agents required.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-news-recap recap --api
+news-recap create --api
 ```
 
 `--api` sets `backend=api` and `agent=claude` automatically. No other env vars needed.
@@ -141,26 +142,38 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 - `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — extra pause after a rate-limit downshift
   before the next slot acquire (default `2`).
 
-## Automation
+## Scheduling
 
-### `auto`
-Install daily scheduled automation using the platform-native scheduler
+### `schedule set`
+Install or update the daily scheduled digest job using the platform-native scheduler
 (launchd on macOS, systemd on Linux, Task Scheduler on Windows).
 
 ```bash
-news-recap auto --rss https://example.com/feed.xml
-news-recap auto --rss https://feed1.com/rss --rss https://feed2.com/rss
-news-recap auto --rss https://example.com/feed.xml --agent claude
+news-recap schedule set --rss https://example.com/feed.xml
+news-recap schedule set --rss https://feed1.com/rss --rss https://feed2.com/rss
+news-recap schedule set --rss https://example.com/feed.xml --agent claude
+news-recap schedule set --rss https://example.com/feed.xml --time 07:30
+news-recap schedule set --rss https://example.com/feed.xml --venv
 ```
 
-RSS URLs can also be provided via `NEWS_RECAP_RSS_FEED_URLS`.
-Use `--agent` to set the LLM agent for the recap step (default from config).
+Key options:
+- `--rss` (repeatable) — RSS URLs can also be provided via `NEWS_RECAP_RSS_FEED_URLS`.
+- `--agent` — LLM agent for the digest step (default from config).
+- `--time` — daily run time in HH:MM format (default `03:00`).
+- `--venv` — use the current Python venv binary instead of globally installed `news-recap`.
 
-### `auto-off`
-Remove the scheduled automation.
+### `schedule get`
+Show current schedule configuration.
 
 ```bash
-news-recap auto-off
+news-recap schedule get
+```
+
+### `schedule delete`
+Remove the scheduled digest job.
+
+```bash
+news-recap schedule delete
 ```
 
 ## Important Environment Variables
@@ -181,7 +194,7 @@ news-recap auto-off
 ### LLM Agents
 
 > **Subscription vs API billing.** When spawning CLI agents (`claude`, `codex`, `gemini`)
-> as subprocesses, `news-recap recap` removes vendor API keys
+> as subprocesses, `news-recap create` removes vendor API keys
 > (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
 > from the subprocess environment by default — so the agent uses its subscription
 > quota rather than billing your API account per token.
@@ -192,7 +205,7 @@ news-recap auto-off
 > To explicitly pass the API key to a CLI agent (pay-per-token billing), use `--use-api-key`:
 >
 > ```bash
-> news-recap recap --use-api-key
+> news-recap create --use-api-key
 > ```
 
 - `NEWS_RECAP_LLM_DEFAULT_AGENT` — default agent (`codex`, `claude`, or `gemini`).
@@ -204,10 +217,10 @@ news-recap auto-off
 ```bash
 news-recap --help
 news-recap ingest --help
-news-recap recap --help
+news-recap create --help
 news-recap prompt --help
 news-recap list --help
 news-recap serve --help
-news-recap auto --help
-news-recap auto-off --help
+news-recap schedule --help
+news-recap schedule set --help
 ```

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -19,7 +20,7 @@ from typing import Literal
 import click
 
 Severity = Literal["ok", "info", "warn", "error", "log", "heading"]
-AutoLine = tuple[Severity, str]
+ScheduleLine = tuple[Severity, str]
 
 
 def resolve_rss_urls(cli_urls: tuple[str, ...]) -> tuple[str, ...]:
@@ -39,6 +40,7 @@ def resolve_rss_urls(cli_urls: tuple[str, ...]) -> tuple[str, ...]:
 _LAUNCHD_LABEL = "com.news-recap.daily"
 _SYSTEMD_SERVICE = "news-recap"
 _WINDOWS_TASK = "news-recap-daily"
+_SCHEDULE_FILE = "schedule.json"
 
 
 def _platform() -> str:
@@ -74,10 +76,21 @@ def _today_log_name() -> str:
     return f"news-recap-{datetime.now(tz=UTC).strftime('%Y-%m-%d')}.log"
 
 
+def _app_dir(platform: str) -> Path:
+    """Platform-specific application data directory for news-recap."""
+    home = _home()
+    if platform == "macos":
+        return home / "Library" / "Application Support" / "news-recap"
+    if platform == "linux":
+        return home / ".local" / "share" / "news-recap"
+    local_app = Path(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local")))
+    return local_app / "news-recap"
+
+
 def _start_failed(
     cmd: str,
     result: subprocess.CompletedProcess[bytes],
-) -> Iterator[AutoLine]:
+) -> Iterator[ScheduleLine]:
     stderr = result.stderr.decode(errors="replace").strip() if result.stderr else ""
     msg = f"{cmd} failed (exit {result.returncode})"
     if stderr:
@@ -106,7 +119,7 @@ def _wait_for_new_output(
     return []
 
 
-def _emit_log_lines(lines: list[str]) -> Iterator[AutoLine]:
+def _emit_log_lines(lines: list[str]) -> Iterator[ScheduleLine]:
     """Yield tagged log lines; detect success/failure from RESULT marker."""
     success = any("RESULT: OK" in ln for ln in lines)
     failed = any("RESULT: FAILED" in ln for ln in lines)
@@ -126,26 +139,87 @@ def _emit_log_lines(lines: list[str]) -> Iterator[AutoLine]:
         yield ("ok", "Test run succeeded")
 
 
-class AutoController:
-    """Install / uninstall platform-native daily scheduler for news-recap."""
+def _save_schedule_meta(  # noqa: PLR0913
+    app_dir: Path,
+    *,
+    hour: int,
+    minute: int,
+    rss_urls: tuple[str, ...],
+    agent: str | None,
+    venv_bin: str | None,
+) -> None:
+    meta = {
+        "time": f"{hour:02d}:{minute:02d}",
+        "venv": venv_bin is not None,
+        "venv_bin": venv_bin,
+        "rss_urls": list(rss_urls),
+        "agent": agent,
+    }
+    (app_dir / _SCHEDULE_FILE).write_text(
+        json.dumps(meta, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _remove_schedule_meta(app_dir: Path) -> None:
+    meta_file = app_dir / _SCHEDULE_FILE
+    if meta_file.exists():
+        meta_file.unlink()
+
+
+class ScheduleController:
+    """Install / uninstall / query platform-native daily scheduler for news-recap."""
 
     def install(
         self,
         rss_urls: tuple[str, ...],
         agent: str | None = None,
-    ) -> Iterator[AutoLine]:
+        *,
+        hour: int = 3,
+        minute: int = 0,
+        venv_bin: str | None = None,
+    ) -> Iterator[ScheduleLine]:
         platform = _platform()
         rss_args = _build_rss_args(rss_urls)
         agent_args = _build_agent_args(agent)
 
-        if platform == "macos":
-            yield from self._install_macos(rss_args, agent_args)
-        elif platform == "linux":
-            yield from self._install_linux(rss_args, agent_args)
-        elif platform == "windows":
-            yield from self._install_windows(rss_args, agent_args)
+        app_dir = _app_dir(platform)
+        app_dir.mkdir(parents=True, exist_ok=True)
+        _save_schedule_meta(
+            app_dir,
+            hour=hour,
+            minute=minute,
+            rss_urls=rss_urls,
+            agent=agent,
+            venv_bin=venv_bin,
+        )
 
-    def uninstall(self) -> Iterator[AutoLine]:
+        if platform == "macos":
+            yield from self._install_macos(
+                rss_args,
+                agent_args,
+                hour=hour,
+                minute=minute,
+                venv_bin=venv_bin,
+            )
+        elif platform == "linux":
+            yield from self._install_linux(
+                rss_args,
+                agent_args,
+                hour=hour,
+                minute=minute,
+                venv_bin=venv_bin,
+            )
+        elif platform == "windows":
+            yield from self._install_windows(
+                rss_args,
+                agent_args,
+                hour=hour,
+                minute=minute,
+                venv_bin=venv_bin,
+            )
+
+    def uninstall(self) -> Iterator[ScheduleLine]:
         platform = _platform()
 
         if platform == "macos":
@@ -155,9 +229,37 @@ class AutoController:
         elif platform == "windows":
             yield from self._uninstall_windows()
 
+        _remove_schedule_meta(_app_dir(platform))
+
+    def get_schedule(self) -> Iterator[ScheduleLine]:
+        platform = _platform()
+        meta_file = _app_dir(platform) / _SCHEDULE_FILE
+        if not meta_file.exists():
+            yield ("info", "No schedule configured.")
+            return
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        yield ("heading", "Current schedule:")
+        yield ("info", f"  Time: {meta.get('time', '?')}")
+        yield ("info", f"  Venv: {meta.get('venv_bin') or 'no (global news-recap)'}")
+        agent = meta.get("agent")
+        yield ("info", f"  Agent: {agent or 'default'}")
+        rss = meta.get("rss_urls", [])
+        if rss:
+            yield ("info", f"  RSS feeds: {len(rss)}")
+            for url in rss:
+                yield ("info", f"    {url}")
+
     # ── macOS ──────────────────────────────────────────────────────────
 
-    def _install_macos(self, rss_args: str, agent_args: str) -> Iterator[AutoLine]:
+    def _install_macos(
+        self,
+        rss_args: str,
+        agent_args: str,
+        *,
+        hour: int,
+        minute: int,
+        venv_bin: str | None,
+    ) -> Iterator[ScheduleLine]:
         home = _home()
         run_script = home / "Library" / "Application Support" / "news-recap" / "run.sh"
         plist_path = home / "Library" / "LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
@@ -173,6 +275,7 @@ class AutoController:
         content = _read_template("macos_run.sh")
         content = content.replace("{{RSS_ARGS}}", rss_args)
         content = content.replace("{{AGENT_ARGS}}", agent_args)
+        content = content.replace("{{NEWS_RECAP_CMD}}", venv_bin or "news-recap")
         run_script.write_text(content, encoding="utf-8")
         run_script.chmod(run_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
         yield ("ok", f"Runner script: {run_script}")
@@ -193,9 +296,9 @@ class AutoController:
     <key>StartCalendarInterval</key>
     <dict>
       <key>Hour</key>
-      <integer>3</integer>
+      <integer>{hour}</integer>
       <key>Minute</key>
-      <integer>0</integer>
+      <integer>{minute}</integer>
     </dict>
     <key>RunAtLoad</key>
     <false/>
@@ -235,7 +338,7 @@ class AutoController:
             else:
                 yield ("warn", f"No output after 30 s — check: tail -f {log_file}")
 
-    def _uninstall_macos(self) -> Iterator[AutoLine]:
+    def _uninstall_macos(self) -> Iterator[ScheduleLine]:
         home = _home()
         plist_path = home / "Library" / "LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
         run_script = home / "Library" / "Application Support" / "news-recap" / "run.sh"
@@ -257,7 +360,15 @@ class AutoController:
 
     # ── Linux ──────────────────────────────────────────────────────────
 
-    def _install_linux(self, rss_args: str, agent_args: str) -> Iterator[AutoLine]:
+    def _install_linux(
+        self,
+        rss_args: str,
+        agent_args: str,
+        *,
+        hour: int,
+        minute: int,
+        venv_bin: str | None,
+    ) -> Iterator[ScheduleLine]:
         home = _home()
         run_script = home / ".local" / "share" / "news-recap" / "run.sh"
         systemd_dir = home / ".config" / "systemd" / "user"
@@ -273,6 +384,7 @@ class AutoController:
         content = _read_template("linux_run.sh")
         content = content.replace("{{RSS_ARGS}}", rss_args)
         content = content.replace("{{AGENT_ARGS}}", agent_args)
+        content = content.replace("{{NEWS_RECAP_CMD}}", venv_bin or "news-recap")
         run_script.write_text(content, encoding="utf-8")
         run_script.chmod(run_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
         yield ("ok", f"Runner script: {run_script}")
@@ -290,12 +402,12 @@ ExecStart={run_script}
         )
 
         timer_path.write_text(
-            """\
+            f"""\
 [Unit]
 Description=Run news-recap daily
 
 [Timer]
-OnCalendar=*-*-* 03:00:00
+OnCalendar=*-*-* {hour:02d}:{minute:02d}:00
 Persistent=true
 
 [Install]
@@ -337,7 +449,7 @@ WantedBy=timers.target
                     f"journalctl --user -u {_SYSTEMD_SERVICE}.service -n 30",
                 )
 
-    def _uninstall_linux(self) -> Iterator[AutoLine]:
+    def _uninstall_linux(self) -> Iterator[ScheduleLine]:
         home = _home()
         systemd_dir = home / ".config" / "systemd" / "user"
         service_path = systemd_dir / f"{_SYSTEMD_SERVICE}.service"
@@ -374,7 +486,15 @@ WantedBy=timers.target
 
     # ── Windows ────────────────────────────────────────────────────────
 
-    def _install_windows(self, rss_args: str, agent_args: str) -> Iterator[AutoLine]:
+    def _install_windows(
+        self,
+        rss_args: str,
+        agent_args: str,
+        *,
+        hour: int,
+        minute: int,
+        venv_bin: str | None,
+    ) -> Iterator[ScheduleLine]:
         local_app = Path(os.environ.get("LOCALAPPDATA", str(_home() / "AppData" / "Local")))
         run_script = local_app / "news-recap" / "run.ps1"
         log_dir = local_app / "news-recap" / "logs"
@@ -385,6 +505,7 @@ WantedBy=timers.target
         content = _read_template("windows_run.ps1")
         content = content.replace("{{RSS_ARGS}}", rss_args)
         content = content.replace("{{AGENT_ARGS}}", agent_args)
+        content = content.replace("{{NEWS_RECAP_CMD}}", venv_bin or "news-recap")
         run_script.write_text(content, encoding="utf-8")
         yield ("ok", f"Runner script: {run_script}")
 
@@ -397,9 +518,10 @@ WantedBy=timers.target
                 (
                     f'$action = New-ScheduledTaskAction -Execute "powershell.exe" '
                     f"-Argument \"-ExecutionPolicy Bypass -File '{run_script}'\"; "
-                    f"$trigger = New-ScheduledTaskTrigger -Daily -At 3:00AM; "
+                    f"$trigger = New-ScheduledTaskTrigger -Daily -At {hour:02d}:{minute:02d}; "
                     f'Register-ScheduledTask -TaskName "{_WINDOWS_TASK}" '
-                    f'-Action $action -Trigger $trigger -Description "news-recap daily" '
+                    f"-Action $action -Trigger $trigger "
+                    f'-Description "news-recap daily" '
                     f"-Force | Out-Null"
                 ),
             ],
@@ -428,9 +550,12 @@ WantedBy=timers.target
             if new_lines:
                 yield from _emit_log_lines(new_lines[:40])
             else:
-                yield ("warn", f"No output after 30 s — check: Get-Content '{log_file}' -Tail 30")
+                yield (
+                    "warn",
+                    f"No output after 30 s — check: Get-Content '{log_file}' -Tail 30",
+                )
 
-    def _uninstall_windows(self) -> Iterator[AutoLine]:
+    def _uninstall_windows(self) -> Iterator[ScheduleLine]:
         local_app = Path(os.environ.get("LOCALAPPDATA", str(_home() / "AppData" / "Local")))
         run_script = local_app / "news-recap" / "run.ps1"
 

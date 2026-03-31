@@ -19,26 +19,38 @@ claude
 ## Установка
 
 ```bash
-news-recap auto --rss https://your-feed.com/rss
+news-recap schedule set --rss https://your-feed.com/rss
 ```
 
 Можно передать несколько фидов:
 
 ```bash
-news-recap auto --rss https://feed1.com/rss --rss https://feed2.com/rss
+news-recap schedule set --rss https://feed1.com/rss --rss https://feed2.com/rss
 ```
 
-Чтобы зафиксировать LLM-агента для шага recap:
+Чтобы зафиксировать LLM-агента для шага создания дайджеста:
 
 ```bash
-news-recap auto --rss https://your-feed.com/rss --agent claude
+news-recap schedule set --rss https://your-feed.com/rss --agent claude
+```
+
+Чтобы изменить время ежедневного запуска (по умолчанию 03:00):
+
+```bash
+news-recap schedule set --rss https://your-feed.com/rss --time 07:30
+```
+
+Чтобы использовать текущий Python venv вместо глобально установленного `news-recap`:
+
+```bash
+news-recap schedule set --rss https://your-feed.com/rss --venv
 ```
 
 Или задать переменную `NEWS_RECAP_RSS_FEED_URLS` (URL через запятую):
 
 ```bash
 export NEWS_RECAP_RSS_FEED_URLS="https://feed1.com/rss,https://feed2.com/rss"
-news-recap auto
+news-recap schedule set
 ```
 
 Команда автоматически определит платформу и установит:
@@ -49,12 +61,18 @@ news-recap auto
 
 Повторный запуск безопасен — старая конфигурация заменяется.
 
+## Проверка расписания
+
+```bash
+news-recap schedule get
+```
+
 ## Проверка логов
 
 macOS:
 
 ```bash
-tail -f ~/Library/Logs/news-recap.log
+tail -f ~/Library/Logs/news-recap/news-recap-$(date +%Y-%m-%d).log
 ```
 
 Linux:
@@ -66,13 +84,13 @@ journalctl --user -u news-recap.service -n 200 --no-pager
 Windows:
 
 ```powershell
-Get-Content "$env:LOCALAPPDATA\news-recap\logs\news-recap.log" -Tail 200
+Get-Content "$env:LOCALAPPDATA\news-recap\logs\news-recap-$(Get-Date -Format 'yyyy-MM-dd').log" -Tail 200
 ```
 
 ## Удаление
 
 ```bash
-news-recap auto-off
+news-recap schedule delete
 ```
 
 ## Диагностика
@@ -80,7 +98,7 @@ news-recap auto-off
 Ошибки ниже относятся к `--agent claude`.
 
 Если видите `Agent command not found: claude` — добейтесь, чтобы `claude`
-запускался в обычном терминале, затем запустите `news-recap auto` ещё раз.
+запускался в обычном терминале, затем запустите `news-recap schedule set` ещё раз.
 
 Если видите `Not logged in · Please run /login` — выполните `claude` и `/login`
 в обычном терминале под тем же пользователем, затем запустите автозапуск вручную:

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 - `src/news_recap/`: main package code. CLI entrypoint is `main.py`; package version lives in `__about__.py`.
-- `src/news_recap/automation.py`: cross-platform scheduled automation (`auto` / `auto-off` CLI commands).
+- `src/news_recap/automation.py`: cross-platform scheduled automation (`schedule set/get/delete` CLI commands).
 - `src/news_recap/scripts/`: runner script templates (shell/PowerShell) loaded by automation module.
 - `src/news_recap/storage/`: file-based storage utilities (`io.py` — atomic writes, GC, msgspec helpers).
 - `src/news_recap/ingestion/`: ingestion pipeline and `IngestionStore` (daily-partitioned article storage).
@@ -20,12 +20,13 @@ Data directory defaults to `~/.news_recap_data/` (configurable via `NEWS_RECAP_D
 
 ## CLI Commands
 - `news-recap ingest --rss URL`: run one ingestion cycle from RSS feeds.
-- `news-recap recap --agent claude`: run the full digest pipeline.
+- `news-recap create --agent claude`: create a news digest from recent articles.
 - `news-recap list`: show completed digests.
 - `news-recap serve [DIGEST_ID]`: start the digest web viewer.
 - `news-recap prompt`: export a ready-to-paste LLM prompt.
-- `news-recap auto --rss URL`: install daily scheduled automation (launchd / systemd / Task Scheduler).
-- `news-recap auto-off`: remove daily scheduled automation.
+- `news-recap schedule set --rss URL`: install daily scheduled automation (launchd / systemd / Task Scheduler).
+- `news-recap schedule get`: show current schedule configuration.
+- `news-recap schedule delete`: remove daily scheduled automation.
 
 ## Build, Test, and Development Commands
 - `./activate.sh`: activate the local development environment used by this repo.
