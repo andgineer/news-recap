@@ -1,31 +1,36 @@
 # news-recap
 
-`news-recap` is a CLI-first system for:
+`news-recap` collects articles from RSS/Atom feeds and turns them into digest pages you
+can review locally or generate on a schedule.
 
-- collecting news from RSS/Atom feeds,
-- normalizing and cleaning article text,
-- semantic deduplication and clustering,
-- producing daily digests with LLM agents (Codex, Claude Code, Gemini CLI),
-- file-based article and digest storage.
+## Quick start
 
-## Current Scope
-
-- Source ingestion from RSS/Atom feeds (including Inoreader Output RSS).
-- File-based article storage with daily partitioning and automatic garbage collection.
-- Recap pipeline: classify → load_resources → enrich → deduplicate → oneshot_digest (parallel batches + deterministic block dedup + section merge) → refine_layout (optional LLM pass to consolidate fragmented sections).
-
-## Where To Start
-
-- Installation and environment setup: `installation.md`
-- Full CLI commands and examples: `cli.md`
-- Scheduled automation: `automation.md`
-
-## Advanced
-
-Use:
+Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/), then install
+`news-recap`:
 
 ```bash
+uv tool install news-recap
 news-recap --help
 ```
 
-for the complete command tree.
+Get an RSS URL.
+
+Inoreader example: open the context menu of the folder, choose `Properties`,
+and copy the RSS link shown there.
+
+Run a digest manually:
+
+```bash
+news-recap ingest --rss "https://www.inoreader.com/stream/..."
+news-recap create
+news-recap serve
+```
+
+Or set up scheduling:
+
+```bash
+news-recap schedule set --rss "https://www.inoreader.com/stream/..."
+```
+
+See [Scheduled Runs](automation.md) for setup details, logs, and troubleshooting.
+See [CLI](cli.md) for the full command reference.

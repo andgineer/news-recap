@@ -12,7 +12,7 @@ and produces a cleaner daily digest.
 The pipeline drives CLI agents such as Codex, Claude Code, and Gemini CLI, so heavy
 daily summarization can run on flat-rate subscriptions instead of per-token APIs.
 
-See [Pipeline spec](spec/pipeline.md) for the pipeline details.
+> Start with the [Quick start](https://andgineer.github.io/news-recap/#quick-start).
 
 ## Cost
 
@@ -23,9 +23,10 @@ The dollar figures are approximate. The pipeline runs under flat-rate subscripti
 (Codex, Claude Code, Gemini CLI at ~\$20/month), so the quota would mostly go
 unused anyway.
 
-### Documentation
+### Docs
 
-- [News Recap](https://andgineer.github.io/news-recap/)
+- [Manual](https://andgineer.github.io/news-recap/)
+- [Pipeline spec](spec/pipeline.md)
 
 # Developers
 

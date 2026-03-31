@@ -156,39 +156,9 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 - `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — дополнительная пауза после снижения лимита
   перед следующей попыткой захвата слота (по умолчанию `2`).
 
-## Расписание
+## Автозапуск
 
-### `schedule set`
-Установить или обновить ежедневный автозапуск через системный планировщик
-(launchd на macOS, systemd на Linux, Task Scheduler на Windows).
-
-```bash
-news-recap schedule set --rss https://example.com/feed.xml
-news-recap schedule set --rss https://feed1.com/rss --rss https://feed2.com/rss
-news-recap schedule set --rss https://example.com/feed.xml --agent claude
-news-recap schedule set --rss https://example.com/feed.xml --time 07:30
-news-recap schedule set --rss https://example.com/feed.xml --venv
-```
-
-Ключевые опции:
-- `--rss` (повторяемая) — RSS URL также можно передать через `NEWS_RECAP_RSS_FEED_URLS`.
-- `--agent` — LLM-агент для шага создания дайджеста (по умолчанию из конфига).
-- `--time` — время ежедневного запуска в формате HH:MM (по умолчанию `03:00`).
-- `--venv` — использовать текущий Python venv вместо глобально установленного `news-recap`.
-
-### `schedule get`
-Показать текущую конфигурацию расписания.
-
-```bash
-news-recap schedule get
-```
-
-### `schedule delete`
-Удалить автозапуск.
-
-```bash
-news-recap schedule delete
-```
+Подробная настройка, платформенные детали, логи и диагностика: [Автозапуск](automation.md).
 
 ## Важные Переменные Окружения
 

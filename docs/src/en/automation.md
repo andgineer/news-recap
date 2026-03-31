@@ -1,12 +1,4 @@
-# Automation
-
-Complete the steps in `installation.md` first.
-
-Verify:
-
-```bash
-news-recap --help
-```
+# Scheduled Runs
 
 If you plan to use Claude as the agent (the default for automation), also check:
 

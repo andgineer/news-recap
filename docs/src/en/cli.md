@@ -154,39 +154,9 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 - `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — extra pause after a rate-limit downshift
   before the next slot acquire (default `2`).
 
-## Scheduling
+## Scheduled Runs
 
-### `schedule set`
-Install or update the daily scheduled digest job using the platform-native scheduler
-(launchd on macOS, systemd on Linux, Task Scheduler on Windows).
-
-```bash
-news-recap schedule set --rss https://example.com/feed.xml
-news-recap schedule set --rss https://feed1.com/rss --rss https://feed2.com/rss
-news-recap schedule set --rss https://example.com/feed.xml --agent claude
-news-recap schedule set --rss https://example.com/feed.xml --time 07:30
-news-recap schedule set --rss https://example.com/feed.xml --venv
-```
-
-Key options:
-- `--rss` (repeatable) — RSS URLs can also be provided via `NEWS_RECAP_RSS_FEED_URLS`.
-- `--agent` — LLM agent for the digest step (default from config).
-- `--time` — daily run time in HH:MM format (default `03:00`).
-- `--venv` — use the current Python venv binary instead of globally installed `news-recap`.
-
-### `schedule get`
-Show current schedule configuration.
-
-```bash
-news-recap schedule get
-```
-
-### `schedule delete`
-Remove the scheduled digest job.
-
-```bash
-news-recap schedule delete
-```
+See [Scheduled Runs](automation.md) for setup, platform details, logs, and troubleshooting.
 
 ## Important Environment Variables
 

@@ -1,31 +1,36 @@
 # news-recap
 
-`news-recap` — CLI-first система для:
+`news-recap` собирает статьи из RSS/Atom и превращает их в дайджесты, которые можно
+собрать вручную, посмотреть локально или запускать по расписанию.
 
-- сбора новостей из RSS/Atom,
-- нормализации и очистки текста статей,
-- семантической дедупликации и кластеризации,
-- генерации ежедневных дайджестов с помощью LLM-агентов (Codex, Claude Code, Gemini CLI),
-- файлового хранения статей и дайджестов.
+## Быстрый старт
 
-## Текущий Scope
-
-- Ingestion из RSS/Atom (включая Inoreader Output RSS).
-- Файловое хранение статей с ежедневным разбиением и автоматической сборкой мусора.
-- Recap-пайплайн: classify → load_resources → enrich → deduplicate → oneshot_digest (параллельные батчи + детерминистический дедуп блоков + объединение секций) → refine_layout (опциональный LLM-проход для консолидации фрагментированных секций).
-
-## С чего Начать
-
-- Установка и окружение: `installation.md`
-- Полный список CLI-команд и примеры: `cli.md`
-- Автоматический запуск: `automation.md`
-
-## Дополнительно
-
-Используйте:
+Установите [`uv`](https://docs.astral.sh/uv/getting-started/installation/), затем
+установите `news-recap`:
 
 ```bash
+uv tool install news-recap
 news-recap --help
 ```
 
-чтобы посмотреть полное дерево команд.
+Получите RSS-ссылку.
+
+Пример для Inoreader: откройте контекстное меню папки, выберите `Properties` и
+скопируйте RSS-ссылку оттуда.
+
+Запустите дайджест вручную:
+
+```bash
+news-recap ingest --rss "https://www.inoreader.com/stream/..."
+news-recap create
+news-recap serve
+```
+
+Или настройте расписание:
+
+```bash
+news-recap schedule set --rss "https://www.inoreader.com/stream/..."
+```
+
+Подробности по настройке, логам и диагностике: [Автозапуск](automation.md).
+Полный список команд: [CLI](cli.md).
