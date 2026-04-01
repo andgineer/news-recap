@@ -5,6 +5,9 @@ omit =
     */*_check.py
     */__init__.py
     */conftest.py
+    # Invoked as a subprocess (python -m …) by the echo_agent fixture;
+    # coverage instrumentation doesn't reach the child process.
+    */recap/agents/echo.py
     */.tox/*
     */.venv/*
     */.eggs/*

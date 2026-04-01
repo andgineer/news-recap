@@ -1,10 +1,29 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from http.client import HTTPMessage
+from io import BytesIO
+from urllib.error import HTTPError
+from xml.etree.ElementTree import Element, SubElement
 
 import allure
+import pytest
+from defusedxml import ElementTree
 
-from news_recap.ingestion.sources.rss import RssFetchResponse, RssSource, RssSourceConfig
+from news_recap.ingestion.sources.base import NonRetryableSourceError, TemporarySourceError
+from news_recap.ingestion.sources.rss import (
+    HTTP_NOT_MODIFIED,
+    RETRYABLE_HTTP_STATUS_CODES,
+    RssFetchResponse,
+    RssSource,
+    RssSourceConfig,
+    _atom_link,
+    _build_request_headers,
+    _handle_http_error,
+    _normalize_header,
+    _parse_atom,
+    _parse_retry_after,
+)
 
 pytestmark = [
     allure.epic("Daily Ingestion"),
@@ -482,3 +501,208 @@ def test_rss_source_recreates_snapshot_when_cursor_update_row_missing() -> None:
     restored = store._snapshots.get(snapshot_key)  # noqa: SLF001
     assert restored is not None
     assert restored[1] == "2"
+
+
+def test_build_request_headers_no_conditionals() -> None:
+    headers = _build_request_headers(etag=None, last_modified=None)
+    assert headers == {
+        "Accept": "application/rss+xml, application/atom+xml, application/xml",
+    }
+
+
+def test_build_request_headers_with_if_none_match() -> None:
+    headers = _build_request_headers(etag='"abc"', last_modified=None)
+    assert headers["Accept"] == "application/rss+xml, application/atom+xml, application/xml"
+    assert headers["If-None-Match"] == '"abc"'
+    assert "If-Modified-Since" not in headers
+
+
+def test_build_request_headers_with_if_modified_since() -> None:
+    headers = _build_request_headers(etag=None, last_modified="Tue, 01 Apr 2026 12:00:00 GMT")
+    assert headers["If-Modified-Since"] == "Tue, 01 Apr 2026 12:00:00 GMT"
+    assert "If-None-Match" not in headers
+
+
+def test_build_request_headers_with_etag_and_last_modified() -> None:
+    headers = _build_request_headers(etag='"e"', last_modified="Wed, 02 Apr 2026 00:00:00 GMT")
+    assert headers["If-None-Match"] == '"e"'
+    assert headers["If-Modified-Since"] == "Wed, 02 Apr 2026 00:00:00 GMT"
+
+
+def test_build_request_headers_skips_empty_strings() -> None:
+    headers = _build_request_headers(etag="", last_modified="")
+    assert headers == {
+        "Accept": "application/rss+xml, application/atom+xml, application/xml",
+    }
+
+
+def test_handle_http_error_not_modified_returns_response() -> None:
+    headers = HTTPMessage()
+    headers["ETag"] = '"server-etag"'
+    headers["Last-Modified"] = "Thu, 03 Apr 2026 10:00:00 GMT"
+    error = HTTPError(
+        "https://example.com/feed",
+        HTTP_NOT_MODIFIED,
+        "Not Modified",
+        headers,
+        BytesIO(b""),
+    )
+    response, temp_err = _handle_http_error(
+        error=error,
+        etag='"cached"',
+        last_modified="Wed, 01 Jan 2020 00:00:00 GMT",
+    )
+    assert temp_err is None
+    assert response is not None
+    assert response.not_modified is True
+    assert response.raw_xml is None
+    assert response.etag == '"server-etag"'
+    assert response.last_modified == "Thu, 03 Apr 2026 10:00:00 GMT"
+
+
+def test_handle_http_error_not_modified_falls_back_to_request_validators() -> None:
+    headers = HTTPMessage()
+    error = HTTPError(
+        "https://example.com/feed",
+        HTTP_NOT_MODIFIED,
+        "Not Modified",
+        headers,
+        BytesIO(b""),
+    )
+    response, temp_err = _handle_http_error(
+        error=error,
+        etag='"fallback-etag"',
+        last_modified="Tue, 01 Apr 2026 12:00:00 GMT",
+    )
+    assert temp_err is None
+    assert response is not None
+    assert response.etag == '"fallback-etag"'
+    assert response.last_modified == "Tue, 01 Apr 2026 12:00:00 GMT"
+
+
+@pytest.mark.parametrize("status_code", sorted(RETRYABLE_HTTP_STATUS_CODES))
+def test_handle_http_error_retryable_returns_temporary(status_code: int) -> None:
+    headers = HTTPMessage()
+    error = HTTPError(
+        "https://example.com/feed",
+        status_code,
+        "Temporary",
+        headers,
+        BytesIO(b""),
+    )
+    response, temp_err = _handle_http_error(error=error, etag=None, last_modified=None)
+    assert response is None
+    assert isinstance(temp_err, TemporarySourceError)
+    assert temp_err.code == str(status_code)
+    assert str(status_code) in temp_err.message
+    assert temp_err.retry_after is None
+
+
+def test_handle_http_error_retryable_includes_retry_after() -> None:
+    headers = HTTPMessage()
+    headers["Retry-After"] = "90"
+    error = HTTPError(
+        "https://example.com/feed",
+        503,
+        "Service Unavailable",
+        headers,
+        BytesIO(b""),
+    )
+    _response, temp_err = _handle_http_error(error=error, etag=None, last_modified=None)
+    assert isinstance(temp_err, TemporarySourceError)
+    assert temp_err.retry_after == 90
+
+
+def test_handle_http_error_non_retryable_raises() -> None:
+    headers = HTTPMessage()
+    error = HTTPError(
+        "https://example.com/feed",
+        404,
+        "Not Found",
+        headers,
+        BytesIO(b""),
+    )
+    with pytest.raises(NonRetryableSourceError) as exc_info:
+        _handle_http_error(error=error, etag=None, last_modified=None)
+    assert exc_info.value.code == "404"
+    assert exc_info.value.__cause__ is error
+
+
+def test_parse_atom_single_entry() -> None:
+    atom_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom Site</title>
+  <entry>
+    <title>Hello Atom</title>
+    <link href="https://example.com/hello"/>
+    <id>urn:uuid:entry-1</id>
+    <summary>Short summary</summary>
+    <content type="html">&lt;p&gt;Full body&lt;/p&gt;</content>
+    <published>Mon, 01 Apr 2024 12:00:00 +0000</published>
+    <author><name>Pat Author</name></author>
+  </entry>
+</feed>
+"""
+    root = ElementTree.fromstring(atom_xml)
+    feed_url = "https://example.com/feed"
+    articles = _parse_atom(root, feed_url)
+    assert len(articles) == 1
+    article = articles[0]
+    assert article.title == "Hello Atom"
+    assert article.url == "https://example.com/hello"
+    assert article.summary == "Short summary"
+    assert article.content == "<p>Full body</p>"
+    assert article.source == "Pat Author"
+    assert article.published_at == datetime(2024, 4, 1, 12, 0, 0, tzinfo=UTC)
+    assert article.raw_payload["feed_url"] == feed_url
+    assert article.raw_payload["id"] == "urn:uuid:entry-1"
+
+
+def test_atom_link_prefers_alternate_over_self() -> None:
+    entry = Element("entry")
+    SubElement(entry, "link", {"rel": "self", "href": "https://example.com/self"})
+    SubElement(entry, "link", {"rel": "alternate", "href": "https://example.com/article"})
+    assert _atom_link(entry) == "https://example.com/article"
+
+
+def test_atom_link_prefers_empty_rel() -> None:
+    entry = Element("entry")
+    SubElement(entry, "link", {"href": "https://example.com/default"})
+    assert _atom_link(entry) == "https://example.com/default"
+
+
+def test_atom_link_fallback_to_any_href() -> None:
+    entry = Element("entry")
+    SubElement(entry, "link", {"rel": "enclosure", "href": "https://example.com/file"})
+    assert _atom_link(entry) == "https://example.com/file"
+
+
+def test_atom_link_returns_none_without_href() -> None:
+    entry = Element("entry")
+    SubElement(entry, "link", {"rel": "alternate"})
+    assert _atom_link(entry) is None
+
+
+def test_parse_retry_after_none_and_empty() -> None:
+    assert _parse_retry_after(None) is None
+    assert _parse_retry_after("") is None
+
+
+def test_parse_retry_after_invalid_returns_none() -> None:
+    assert _parse_retry_after("not-a-number") is None
+
+
+def test_parse_retry_after_seconds() -> None:
+    assert _parse_retry_after("120") == 120
+
+
+def test_normalize_header_none() -> None:
+    assert _normalize_header(None) is None
+
+
+def test_normalize_header_strips_whitespace() -> None:
+    assert _normalize_header('  "etag"  ') == '"etag"'
+
+
+def test_normalize_header_empty_string_returns_none() -> None:
+    assert _normalize_header("   ") is None
