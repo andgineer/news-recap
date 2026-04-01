@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import click
 import msgspec
 
 from news_recap.config import Settings
@@ -19,6 +20,7 @@ from news_recap.recap.pipeline_setup import (
     _DIGEST_FILENAME,
     _build_routing_defaults,
     _compute_article_window,
+    _find_digest_pipeline_dir,
     _find_resumable_pipeline,
     _write_pipeline_input,
     gc_old_pipelines,
@@ -45,7 +47,7 @@ class RecapRunCommand:
     fresh: bool = False
     api_mode: bool = False
     use_api_key: bool = False
-    from_pipeline: Path | None = None
+    from_digest: int | None = None
     max_days: int | None = None
     all_articles: bool = False
 
@@ -104,17 +106,23 @@ class RecapCliController:
         preferences = UserPreferences()
         cap_days = command.max_days or settings.ingestion.digest_lookback_days
 
+        workdir_root = settings.orchestrator.workdir_root.resolve()
+
         source_articles: tuple[date, list[DigestArticle]] | None = None
-        if command.from_pipeline:
-            source_articles = _load_from_pipeline(command.from_pipeline)
+        if command.from_digest is not None:
+            source_dir = _find_digest_pipeline_dir(workdir_root, command.from_digest)
+            if source_dir is None:
+                raise click.ClickException(
+                    f"Digest #{command.from_digest} not found. "
+                    "Use `news-recap list` to see available digests.",
+                )
+            source_articles = _load_from_pipeline(source_dir)
 
         store = IngestionStore(
             settings.data_dir,
             gc_retention_days=settings.ingestion.gc_retention_days,
         )
         store.init_schema()
-
-        workdir_root = settings.orchestrator.workdir_root.resolve()
         deleted = gc_old_pipelines(workdir_root, keep_days=settings.ingestion.gc_retention_days)
         if deleted:
             yield ("log", f"Auto-GC: removed {len(deleted)} old pipeline(s).")
@@ -146,8 +154,7 @@ class RecapCliController:
                 articles = source_articles[1]
                 yield (
                     "info",
-                    f"Reusing {len(articles)} articles from "
-                    f"{command.from_pipeline.name} ({business_date})",  # type: ignore[union-attr]
+                    f"Reusing {len(articles)} from digest #{command.from_digest} ({business_date})",
                 )
             else:
                 fetch_limit = command.article_limit or 2000

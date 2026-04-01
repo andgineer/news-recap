@@ -14,6 +14,7 @@ from click.testing import CliRunner
 
 from news_recap.automation import (
     ScheduleController,
+    ScheduleMeta,
     _build_agent_args,
     _build_rss_args,
     _platform,
@@ -291,12 +292,11 @@ def test_schedule_get_cli_delegates(monkeypatch):
 
     def fake_get_schedule(self):
         calls.append(True)
-        yield ("heading", "Current schedule:")
-        yield ("info", "  Time: 07:30")
+        return ScheduleMeta(time="07:30", venv_bin=None, agent=None, rss_urls=())
 
     monkeypatch.setattr(ScheduleController, "get_schedule", fake_get_schedule)
     runner = CliRunner()
-    result = runner.invoke(news_recap, ["schedule", "get"])
+    result = runner.invoke(news_recap, ["--no-color", "schedule", "get"])
     assert result.exit_code == 0
     assert calls == [True]
     assert "07:30" in result.output
@@ -478,8 +478,7 @@ def test_get_schedule_no_config(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("news_recap.automation._platform", lambda: "macos")
 
     ctrl = ScheduleController()
-    output = list(ctrl.get_schedule())
-    assert any("No schedule configured" in t for _, t in output)
+    assert ctrl.get_schedule() is None
 
 
 def test_get_schedule_shows_config(tmp_path: Path, monkeypatch):
@@ -498,12 +497,12 @@ def test_get_schedule_shows_config(tmp_path: Path, monkeypatch):
     (app_dir / "schedule.json").write_text(json.dumps(meta))
 
     ctrl = ScheduleController()
-    output = list(ctrl.get_schedule())
-    texts = [t for _, t in output]
-    assert any("07:30" in t for t in texts)
-    assert any("claude" in t for t in texts)
-    assert any("/my/venv/bin/news-recap" in t for t in texts)
-    assert any("https://a.com/rss" in t for t in texts)
+    result = ctrl.get_schedule()
+    assert result is not None
+    assert result.time == "07:30"
+    assert result.agent == "claude"
+    assert result.venv_bin == "/my/venv/bin/news-recap"
+    assert result.rss_urls == ("https://a.com/rss",)
 
 
 # ── Linux install ─────────────────────────────────────────────────────

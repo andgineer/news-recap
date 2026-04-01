@@ -11,6 +11,7 @@ from news_recap import __version__
 from news_recap.automation import (
     ScheduleController,
     ScheduleLine,
+    ScheduleMeta,
     _app_dir,
     _log_dir,
     _platform,
@@ -23,7 +24,7 @@ from news_recap.ingestion.controllers import (
     IngestionResult,
 )
 from news_recap.recap.digest_info import DigestInfoController
-from news_recap.recap.export_prompt import PromptCliController, PromptCommand
+from news_recap.recap.export_prompt import PromptCliController, PromptCommand, PromptLine
 from news_recap.recap.launcher import (
     PipelineLine,
     RecapCliController,
@@ -160,11 +161,11 @@ def ingest(feed_urls: tuple[str, ...]) -> None:
     help="Use direct Anthropic API instead of CLI agents (sets backend=api, agent=claude).",
 )
 @click.option(
-    "--from-pipeline",
-    "from_pipeline",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    "--from-digest",
+    "from_digest",
+    type=click.IntRange(min=1),
     default=None,
-    help="Reuse articles from an existing pipeline directory (for A/B comparisons).",
+    help="Reuse articles from an existing digest by ID (as shown by `news-recap list`).",
 )
 @click.option(
     "--use-api-key",
@@ -196,7 +197,7 @@ def recap_run(  # noqa: PLR0913
     stop_after: str | None,
     fresh: bool,
     api_mode: bool,
-    from_pipeline: Path | None,
+    from_digest: int | None,
     use_api_key: bool,
     max_days: int | None,
     all_articles: bool,
@@ -212,7 +213,7 @@ def recap_run(  # noqa: PLR0913
                 fresh=fresh,
                 api_mode=api_mode,
                 use_api_key=use_api_key,
-                from_pipeline=from_pipeline,
+                from_digest=from_digest,
                 max_days=max_days,
                 all_articles=all_articles,
             ),
@@ -278,6 +279,13 @@ def recap_run(  # noqa: PLR0913
     default=False,
     help="Ignore previous digests; include all articles within the lookback window.",
 )
+@click.option(
+    "--from-digest",
+    "from_digest",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Build prompt from an existing digest by ID (as shown by `news-recap list`).",
+)
 def recap_prompt(  # noqa: PLR0913
     ai: bool,
     fresh: bool,
@@ -287,10 +295,11 @@ def recap_prompt(  # noqa: PLR0913
     out: str,
     max_days: int | None,
     all_articles: bool,
+    from_digest: int | None,
 ) -> None:
     """Export a ready-to-paste LLM prompt from recent articles."""
 
-    _emit_lines(
+    _emit_prompt(
         PROMPT_CONTROLLER.prompt(
             PromptCommand(
                 group_threshold=group_threshold,
@@ -301,6 +310,7 @@ def recap_prompt(  # noqa: PLR0913
                 agent=agent,
                 max_days=max_days,
                 all_articles=all_articles,
+                from_digest=from_digest,
             ),
         ),
     )
@@ -426,7 +436,8 @@ def schedule_set(
 @schedule_group.command("get")
 def schedule_get() -> None:
     """Show current schedule configuration."""
-    _emit_schedule(SCHEDULE_CONTROLLER.get_schedule())
+    meta = SCHEDULE_CONTROLLER.get_schedule()
+    _print_schedule(meta)
 
 
 @schedule_group.command("delete")
@@ -466,6 +477,14 @@ def _emit_styled(severity: str, text: str) -> None:
 def _emit_pipeline(lines: Iterator[PipelineLine]) -> None:
     for severity, text in lines:
         _emit_styled(severity, text)
+
+
+def _emit_prompt(lines: Iterator[PromptLine]) -> None:
+    for severity, text in lines:
+        if severity == "text":
+            click.echo(text)
+        else:
+            _emit_styled(severity, text)
 
 
 def _print_info() -> None:
@@ -585,6 +604,40 @@ def _print_ingest(result: IngestionResult) -> None:
     dim_open = "[dim]" if not NO_COLOR else ""
     dim_close = "[/dim]" if not NO_COLOR else ""
     console.print(f"  {dim_open}Cache  {cache_line}{dim_close}")
+    console.print()
+
+
+def _print_schedule(meta: ScheduleMeta | None) -> None:
+    from rich.console import Console
+
+    console = Console(no_color=NO_COLOR, highlight=not NO_COLOR)
+
+    if meta is None:
+        console.print("No schedule configured.")
+        return
+
+    heading = "[bold]Schedule[/bold]" if not NO_COLOR else "Schedule"
+    console.print()
+    console.print(f"  {heading}")
+    console.print()
+
+    def _row(label: str, value: str) -> None:
+        padded = f"{label:<14}"
+        styled = f"[cyan]{padded}[/cyan]" if not NO_COLOR else padded
+        console.print(f"    {styled} {value}")
+
+    _row("Time", meta.time)
+    _row("Agent", meta.agent or "default")
+    _row("Venv", meta.venv_bin or "no (global news-recap)")
+
+    if meta.rss_urls:
+        console.print()
+        feeds_heading = "[bold]Feeds[/bold]" if not NO_COLOR else "Feeds"
+        console.print(f"  {feeds_heading}  ({len(meta.rss_urls)})")
+        for url in meta.rss_urls:
+            styled_url = f"[cyan]{url}[/cyan]" if not NO_COLOR else url
+            console.print(f"    {styled_url}")
+
     console.print()
 
 

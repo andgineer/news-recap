@@ -11,6 +11,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
+import click
+
 from news_recap.config import Settings
 from news_recap.ingestion.repository import IngestionStore
 from news_recap.recap.article_ordering import (  # noqa: F401 — re-exported
@@ -23,6 +25,7 @@ from news_recap.recap.models import Digest, DigestArticle, UserPreferences, lang
 from news_recap.recap.pipeline_setup import (
     _build_routing_defaults,
     _compute_article_window,
+    _find_digest_pipeline_dir,
     _find_resumable_pipeline,
     _write_pipeline_input,
 )
@@ -89,6 +92,7 @@ class PromptCommand:
     agent: str | None = None
     max_days: int | None = None
     all_articles: bool = False
+    from_digest: int | None = None
 
 
 def _run_ai_pipeline(
@@ -139,52 +143,85 @@ def _run_ai_pipeline(
     return digest.articles
 
 
+PromptLine = tuple[str, str]
+"""(severity, message) pair emitted during prompt export.
+
+Severity vocabulary: ``"ok"`` | ``"info"`` | ``"warn"`` | ``"log"`` | ``"text"``.
+``"text"`` is for the raw prompt body (no styling applied).
+"""
+
+
 class PromptCliController:
     """Load articles, reorder by similarity, render and output the prompt."""
 
-    def prompt(self, command: PromptCommand) -> Iterator[str]:
+    def prompt(self, command: PromptCommand) -> Iterator[PromptLine]:
         settings = Settings.from_env()
-        store = IngestionStore(
-            settings.data_dir,
-            gc_retention_days=settings.ingestion.gc_retention_days,
-        )
-        store.init_schema()
 
-        cap_days, since_date = _compute_article_window(
-            settings,
-            command.all_articles,
-            command.max_days,
-        )
-
-        if command.ai:
-            kept_articles = _run_ai_pipeline(
-                command,
+        if command.from_digest is not None:
+            kept_articles, since_date = self._load_digest_articles(
                 settings,
-                store,
-                cap_days,
-                since_date,
+                command.from_digest,
+            )
+            yield (
+                "info",
+                f"Loaded {len(kept_articles)} articles from digest #{command.from_digest}",
             )
         else:
-            kept_articles = store.list_retrieval_articles(
-                lookback_days=cap_days,
-                limit=2000,
-                since=since_date,
+            store = IngestionStore(
+                settings.data_dir,
+                gc_retention_days=settings.ingestion.gc_retention_days,
+            )
+            store.init_schema()
+
+            cap_days, since_date = _compute_article_window(
+                settings,
+                command.all_articles,
+                command.max_days,
             )
 
+            if command.ai:
+                kept_articles = _run_ai_pipeline(
+                    command,
+                    settings,
+                    store,
+                    cap_days,
+                    since_date,
+                )
+            else:
+                kept_articles = store.list_retrieval_articles(
+                    lookback_days=cap_days,
+                    limit=2000,
+                    since=since_date,
+                )
+
         if not kept_articles:
-            yield "No articles found."
+            yield ("warn", "No articles found.")
             return
 
-        yield "Loading embedding model (first run may download ~100 MB)…"
+        yield ("log", "Loading embedding model (first run may download ~100 MB)…")
         embedder = SentenceTransformerEmbedder(model_name=settings.dedup.model_name)
         ordered = reorder_articles(kept_articles, embedder, command.group_threshold)
 
         prompt = _render_prompt(ordered, since_date, command.language)
 
         if command.out == "console":
-            yield prompt
+            yield ("text", prompt)
         elif _copy_to_clipboard(prompt):
-            yield f"Prompt ({len(ordered)} articles) copied to clipboard."
+            yield ("ok", f"Prompt ({len(ordered)} articles) copied to clipboard.")
         else:
-            yield "Warning: no clipboard command available. Printing to console instead."
-            yield prompt
+            yield ("warn", "No clipboard command available. Printing to console instead.")
+            yield ("text", prompt)
+
+    @staticmethod
+    def _load_digest_articles(
+        settings: Settings,
+        digest_id: int,
+    ) -> tuple[list[DigestArticle], date]:
+        workdir_root = settings.orchestrator.workdir_root.resolve()
+        pdir = _find_digest_pipeline_dir(workdir_root, digest_id)
+        if pdir is None:
+            raise click.ClickException(
+                f"Digest #{digest_id} not found. Use `news-recap list` to see available digests.",
+            )
+        digest = load_msgspec(pdir / "digest.json", Digest)
+        return digest.articles, date.fromisoformat(digest.business_date)

@@ -52,7 +52,7 @@ news-recap create
 news-recap create --api
 news-recap create --agent claude --stop-after classify
 news-recap create --limit 50
-news-recap create --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25-105004
+news-recap create --from-digest 3
 ```
 
 Ключевые опции:
@@ -64,8 +64,8 @@ news-recap create --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25
   в пределах окна)
 - `--api` (использовать прямой Anthropic API вместо CLI-агентов)
 - `--fresh` (игнорировать незавершённый пайплайн и начать новый)
-- `--from-pipeline` (использовать статьи из предыдущего пайплайна; бизнес-дата
-  берётся из исходного пайплайна)
+- `--from-digest N` (использовать статьи из существующего дайджеста по ID, как
+  показано в `news-recap list`; бизнес-дата берётся из исходного дайджеста)
 - `--use-api-key` (не удалять ключи API вендоров из окружения агента-подпроцесса;
   по умолчанию ключи удаляются, чтобы агент использовал лимиты подписки)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)

@@ -140,10 +140,17 @@ def test_controller_resume_with_agent_override_normalizes(
 _SOURCE_DATE = date(2026, 3, 25)
 
 
-def _make_source_pipeline(tmp_path: Path, n_articles: int = 3) -> Path:
-    """Create a fake source pipeline dir with *n_articles* articles."""
-    source_dir = tmp_path / "pipeline-2026-03-25-080307"
-    source_dir.mkdir()
+_SOURCE_DIGEST_ID = 1
+_SOURCE_DIR_NAME = "pipeline-2026-03-25-080307"
+
+
+def _make_source_pipeline(
+    tmp_path: Path, n_articles: int = 3, *, workdir_root: Path | None = None
+) -> Path:
+    """Create a fake source pipeline dir with *n_articles* articles and a digest index."""
+    root = workdir_root or tmp_path
+    source_dir = root / _SOURCE_DIR_NAME
+    source_dir.mkdir(parents=True, exist_ok=True)
     articles = [
         msgspec.structs.asdict(
             DigestArticle(
@@ -173,6 +180,15 @@ def _make_source_pipeline(tmp_path: Path, n_articles: int = 3) -> Path:
     (source_dir / "pipeline_input.json").write_text(
         json.dumps(payload, ensure_ascii=False), "utf-8"
     )
+    index = [
+        {
+            "digest_id": _SOURCE_DIGEST_ID,
+            "pipeline_dir_name": _SOURCE_DIR_NAME,
+            "business_date": _SOURCE_DATE.isoformat(),
+            "article_count": n_articles,
+        }
+    ]
+    (root / "digests.json").write_text(json.dumps(index), "utf-8")
     return source_dir
 
 
@@ -195,7 +211,7 @@ def test_load_from_pipeline_missing_file(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# --from-pipeline through the controller
+# --from-digest through the controller
 # ---------------------------------------------------------------------------
 
 
@@ -228,23 +244,26 @@ def _make_settings_mock(tmp_path: Path) -> MagicMock:
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.Settings.from_env")
-def test_from_pipeline_reuses_articles_and_date(
+def test_from_digest_reuses_articles_and_date(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,
     tmp_path: Path,
 ) -> None:
-    """--from-pipeline loads articles and date from the source pipeline."""
-    source_dir = _make_source_pipeline(tmp_path, n_articles=7)
-    mock_from_env.return_value = _make_settings_mock(tmp_path)
+    """--from-digest loads articles and date from the source pipeline."""
+    settings = _make_settings_mock(tmp_path)
+    mock_from_env.return_value = settings
+    workdir_root = settings.orchestrator.workdir_root
+    workdir_root.mkdir(parents=True, exist_ok=True)
+    _make_source_pipeline(tmp_path, n_articles=7, workdir_root=workdir_root)
 
     command = RecapRunCommand(
-        from_pipeline=source_dir,
+        from_digest=_SOURCE_DIGEST_ID,
         agent_override="claude",
     )
 
     messages = [text for _, text in RecapCliController().run_pipeline(command)]
 
-    assert any("Reusing 7 articles" in m for m in messages)
+    assert any("Reusing 7" in m for m in messages)
     assert any("2026-03-25" in m for m in messages)
 
     mock_flow.assert_called_once()
@@ -260,17 +279,20 @@ def test_from_pipeline_reuses_articles_and_date(
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.Settings.from_env")
-def test_from_pipeline_applies_new_options(
+def test_from_digest_applies_new_options(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,
     tmp_path: Path,
 ) -> None:
     """New options (agent, use_api_key) override source pipeline values."""
-    source_dir = _make_source_pipeline(tmp_path, n_articles=3)
-    mock_from_env.return_value = _make_settings_mock(tmp_path)
+    settings = _make_settings_mock(tmp_path)
+    mock_from_env.return_value = settings
+    workdir_root = settings.orchestrator.workdir_root
+    workdir_root.mkdir(parents=True, exist_ok=True)
+    _make_source_pipeline(tmp_path, n_articles=3, workdir_root=workdir_root)
 
     command = RecapRunCommand(
-        from_pipeline=source_dir,
+        from_digest=_SOURCE_DIGEST_ID,
         agent_override="gemini",
         use_api_key=True,
     )
@@ -285,26 +307,28 @@ def test_from_pipeline_applies_new_options(
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.Settings.from_env")
-def test_from_pipeline_skips_resume_logic(
+def test_from_digest_skips_resume_logic(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,
     tmp_path: Path,
 ) -> None:
-    """--from-pipeline always creates a new pipeline, even if a resumable one exists."""
-    source_dir = _make_source_pipeline(tmp_path, n_articles=2)
+    """--from-digest always creates a new pipeline, even if a resumable one exists."""
     settings = _make_settings_mock(tmp_path)
     mock_from_env.return_value = settings
+    workdir_root = settings.orchestrator.workdir_root
+    workdir_root.mkdir(parents=True, exist_ok=True)
+    _make_source_pipeline(tmp_path, n_articles=2, workdir_root=workdir_root)
 
-    resumable_dir = settings.orchestrator.workdir_root / f"pipeline-{_SOURCE_DATE}-120000"
+    resumable_dir = workdir_root / f"pipeline-{_SOURCE_DATE}-120000"
     resumable_dir.mkdir(parents=True)
     _write_pipeline_input(resumable_dir)
     _write_digest(resumable_dir, completed_phases=["classify"])
 
     command = RecapRunCommand(
-        from_pipeline=source_dir,
+        from_digest=_SOURCE_DIGEST_ID,
     )
 
     messages = [text for _, text in RecapCliController().run_pipeline(command)]
 
     assert not any("Resuming" in m for m in messages)
-    assert any("Reusing 2 articles" in m for m in messages)
+    assert any("Reusing 2" in m for m in messages)

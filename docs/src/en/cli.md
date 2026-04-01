@@ -52,7 +52,7 @@ news-recap create
 news-recap create --api
 news-recap create --agent claude --stop-after classify
 news-recap create --limit 50
-news-recap create --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25-105004
+news-recap create --from-digest 3
 ```
 
 Key options:
@@ -64,8 +64,8 @@ Key options:
   the lookback window)
 - `--api` (use direct Anthropic API instead of CLI agents)
 - `--fresh` (discard any incomplete pipeline and start a new one)
-- `--from-pipeline` (reuse articles from a previous pipeline directory; the business
-  date is taken from the source pipeline)
+- `--from-digest N` (reuse articles from an existing digest by ID, as shown by
+  `news-recap list`; the business date is taken from the source digest)
 - `--use-api-key` (keep vendor API keys in the agent subprocess environment;
   by default they are removed so the agent uses its subscription quota)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)

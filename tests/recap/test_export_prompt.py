@@ -250,7 +250,8 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     mock_flow.assert_called_once()
     _, kwargs = mock_flow.call_args
     assert kwargs.get("stop_after") == "deduplicate"
-    assert any("article" in line.lower() or "copied" in line.lower() for line in output)
+    texts = [text for _, text in output]
+    assert any("article" in t.lower() or "copied" in t.lower() for t in texts)
 
 
 def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ignore[name-defined]
@@ -295,7 +296,8 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
         limit=2000,
         since=since,
     )
-    assert any("copied" in line.lower() for line in output)
+    texts = [text for _, text in output]
+    assert any("copied" in t.lower() for t in texts)
 
 
 def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: ignore[name-defined]

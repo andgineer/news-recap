@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
@@ -20,6 +21,16 @@ import click
 
 Severity = Literal["ok", "info", "warn", "error", "log", "heading"]
 ScheduleLine = tuple[Severity, str]
+
+
+@dataclass(slots=True)
+class ScheduleMeta:
+    """Parsed schedule configuration from schedule.json."""
+
+    time: str
+    venv_bin: str | None
+    agent: str | None
+    rss_urls: tuple[str, ...]
 
 
 def resolve_rss_urls(cli_urls: tuple[str, ...]) -> tuple[str, ...]:
@@ -267,23 +278,19 @@ class ScheduleController:
 
         _remove_schedule_meta(_app_dir(platform))
 
-    def get_schedule(self) -> Iterator[ScheduleLine]:
+    def get_schedule(self) -> ScheduleMeta | None:
+        """Return parsed schedule metadata, or *None* when no schedule exists."""
         platform = _platform()
         meta_file = _app_dir(platform) / _SCHEDULE_FILE
         if not meta_file.exists():
-            yield ("info", "No schedule configured.")
-            return
-        meta = json.loads(meta_file.read_text(encoding="utf-8"))
-        yield ("heading", "Current schedule:")
-        yield ("info", f"  Time: {meta.get('time', '?')}")
-        yield ("info", f"  Venv: {meta.get('venv_bin') or 'no (global news-recap)'}")
-        agent = meta.get("agent")
-        yield ("info", f"  Agent: {agent or 'default'}")
-        rss = meta.get("rss_urls", [])
-        if rss:
-            yield ("info", f"  RSS feeds: {len(rss)}")
-            for url in rss:
-                yield ("info", f"    {url}")
+            return None
+        raw = json.loads(meta_file.read_text(encoding="utf-8"))
+        return ScheduleMeta(
+            time=raw.get("time", "?"),
+            venv_bin=raw.get("venv_bin"),
+            agent=raw.get("agent"),
+            rss_urls=tuple(raw.get("rss_urls", ())),
+        )
 
     # ── macOS ──────────────────────────────────────────────────────────
 
