@@ -64,8 +64,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_533d5534fe729a71_transport_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-04-01 06:57 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
+            created at 2026-04-01 09:37 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -340,8 +340,8 @@
     <p class="mis show_mis"><span class="n"><a id="t258" href="#t258">258</a></span><span class="t">                    <span class="nam">stdout_size</span> <span class="op">=</span> <span class="nam">_file_size</span><span class="op">(</span><span class="nam">stdout_path</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t259" href="#t259">259</a></span><span class="t">                    <span class="nam">stderr_size</span> <span class="op">=</span> <span class="nam">_file_size</span><span class="op">(</span><span class="nam">stderr_path</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t260" href="#t260">260</a></span><span class="t">                    <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t261" href="#t261">261</a></span><span class="t">                        <span class="str">"[%s] still running (%ds elapsed, %ds until timeout,"</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t262" href="#t262">262</a></span><span class="t">                        <span class="str">" stdout=%d bytes, stderr=%d bytes)"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t261" href="#t261">261</a></span><span class="t">                        <span class="str">"[dim][cyan]%s:[/cyan] still running (%ds elapsed, %ds until timeout,"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t262" href="#t262">262</a></span><span class="t">                        <span class="str">" stdout=%d bytes, stderr=%d bytes)[/dim]"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t263" href="#t263">263</a></span><span class="t">                        <span class="nam">log_label</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t264" href="#t264">264</a></span><span class="t">                        <span class="nam">int</span><span class="op">(</span><span class="nam">elapsed</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t265" href="#t265">265</a></span><span class="t">                        <span class="nam">remaining</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -380,7 +380,7 @@
     <p class="mis show_mis"><span class="n"><a id="t298" href="#t298">298</a></span><span class="t">    <span class="key">for</span> <span class="nam">raw_line</span> <span class="key">in</span> <span class="nam">new_text</span><span class="op">.</span><span class="nam">splitlines</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t299" href="#t299">299</a></span><span class="t">        <span class="nam">stripped</span> <span class="op">=</span> <span class="nam">raw_line</span><span class="op">.</span><span class="nam">strip</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t300" href="#t300">300</a></span><span class="t">        <span class="key">if</span> <span class="nam">stripped</span> <span class="key">and</span> <span class="nam">_NOTABLE_RE</span><span class="op">.</span><span class="nam">search</span><span class="op">(</span><span class="nam">stripped</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t301" href="#t301">301</a></span><span class="t">            <span class="nam">logger</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span><span class="str">"[%s] agent %s: %s"</span><span class="op">,</span> <span class="nam">label</span><span class="op">,</span> <span class="nam">stream</span><span class="op">,</span> <span class="nam">stripped</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t301" href="#t301">301</a></span><span class="t">            <span class="nam">logger</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span><span class="str">"[cyan]%s:[/cyan] agent %s: %s"</span><span class="op">,</span> <span class="nam">label</span><span class="op">,</span> <span class="nam">stream</span><span class="op">,</span> <span class="nam">stripped</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t302" href="#t302">302</a></span><span class="t">    <span class="key">return</span> <span class="nam">size</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t303" href="#t303">303</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t304" href="#t304">304</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -405,8 +405,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_533d5534fe729a71_transport_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-04-01 06:57 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
+            created at 2026-04-01 09:37 +0000
         </p>
     </div>
 </footer>
