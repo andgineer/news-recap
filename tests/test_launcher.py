@@ -124,7 +124,7 @@ def test_controller_resume_with_agent_override_normalizes(
         agent_override="Claude",
     )
 
-    messages = list(RecapCliController().run_pipeline(command))
+    messages = [text for _, text in RecapCliController().run_pipeline(command)]
 
     assert any("Agent override changed: codex -> claude" in m for m in messages)
     assert not any("Claude" in m for m in messages), "raw CLI value should not appear in output"
@@ -242,7 +242,7 @@ def test_from_pipeline_reuses_articles_and_date(
         agent_override="claude",
     )
 
-    messages = list(RecapCliController().run_pipeline(command))
+    messages = [text for _, text in RecapCliController().run_pipeline(command)]
 
     assert any("Reusing 7 articles" in m for m in messages)
     assert any("2026-03-25" in m for m in messages)
@@ -304,7 +304,7 @@ def test_from_pipeline_skips_resume_logic(
         from_pipeline=source_dir,
     )
 
-    messages = list(RecapCliController().run_pipeline(command))
+    messages = [text for _, text in RecapCliController().run_pipeline(command)]
 
     assert not any("Resuming" in m for m in messages)
     assert any("Reusing 2 articles" in m for m in messages)

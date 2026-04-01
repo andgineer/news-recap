@@ -224,11 +224,12 @@ def load_resource_texts(
                 entry = entry_map[source_id]
                 result[source_id] = (entry.title, loaded.text)
 
+    failed_tag = f"[red]{failed}[/red]" if failed else "0"
     logger.info(
-        "Resource texts: %d loaded (%d cached), %d failed, %d filtered",
+        "Resource texts: [green]%d loaded[/green] (%d cached), %s failed, %d filtered",
         len(result),
         cache_hits,
-        failed,
+        failed_tag,
         filtered,
     )
     return result

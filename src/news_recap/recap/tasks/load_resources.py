@@ -64,7 +64,7 @@ class LoadResources(TaskLauncher):
         enrich_ids: list[str] = ctx.state.get("enrich_ids", [])
 
         if not enrich_ids:
-            logger.info("[load_resources] No articles need resources")
+            logger.info("[cyan]load_resources:[/cyan] No articles need resources")
             return
 
         already_loaded = {a.article_id for a in ctx.digest.articles if a.resource_loaded}
@@ -72,7 +72,7 @@ class LoadResources(TaskLauncher):
 
         if already_loaded:
             logger.info(
-                "[load_resources] %d already loaded, %d remaining",
+                "[cyan]load_resources:[/cyan] %d already loaded, %d remaining",
                 len(already_loaded),
                 len(remaining_ids),
             )
@@ -85,7 +85,7 @@ class LoadResources(TaskLauncher):
         eligible = _reset_ineligible_verdicts(remaining_ids, ctx, by_id)
 
         if not eligible:
-            logger.info("[load_resources] No articles with URLs to load")
+            logger.info("[cyan]load_resources:[/cyan] No articles with URLs to load")
             ctx.state["enrich_ids"] = [sid for sid in enrich_ids if sid in already_loaded]
             return
 
@@ -100,7 +100,7 @@ class LoadResources(TaskLauncher):
         failure_rate = len(failed_ids) / len(eligible)
 
         logger.info(
-            "[load_resources] %d/%d loaded, %d failed (%.0f%%)",
+            "[cyan]load_resources:[/cyan] %d/%d loaded, %d failed (%.0f%%)",
             len(loaded_ids),
             len(eligible),
             len(failed_ids),

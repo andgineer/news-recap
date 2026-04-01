@@ -179,20 +179,28 @@ class WebCliController:
     """Launch the Flask digest viewer."""
 
     def serve(self, command: WebServeCommand) -> Iterator[str]:
-        from news_recap.recap.pipeline_setup import _find_digest_pipeline_dir
+        from news_recap.recap.pipeline_setup import (
+            _find_digest_pipeline_dir,
+            _find_latest_digest_pipeline_dir,
+        )
 
         settings = Settings.from_env()
         workdir_root = settings.orchestrator.workdir_root.resolve()
 
-        digest_id = command.digest_id or 1
-        pipeline_dir = _find_digest_pipeline_dir(workdir_root, digest_id)
+        if command.digest_id is not None:
+            pipeline_dir = _find_digest_pipeline_dir(workdir_root, command.digest_id)
+            label = f"id={command.digest_id}"
+        else:
+            pipeline_dir = _find_latest_digest_pipeline_dir(workdir_root)
+            label = "latest"
+
         if pipeline_dir is None:
-            yield f"No completed digest found (id={digest_id})."
+            yield f"No completed digest found ({label})."
             return
 
         digest_path = pipeline_dir / "digest.json"
         digest = load_msgspec(digest_path, Digest)
 
-        yield f"Serving digest #{digest_id} ({digest.business_date}, {pipeline_dir.name})"
+        yield f"Serving digest ({digest.business_date}, {pipeline_dir.name})"
         app = create_app(workdir_root, pinned_pipeline_dir=pipeline_dir, settings=settings)
         app.run(host=command.host, port=command.port)

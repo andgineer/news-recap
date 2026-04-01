@@ -258,8 +258,8 @@ def run_subprocess(  # noqa: PLR0913
                     stdout_size = _file_size(stdout_path)
                     stderr_size = _file_size(stderr_path)
                     logger.info(
-                        "[%s] still running (%ds elapsed, %ds until timeout,"
-                        " stdout=%d bytes, stderr=%d bytes)",
+                        "[dim][cyan]%s:[/cyan] still running (%ds elapsed, %ds until timeout,"
+                        " stdout=%d bytes, stderr=%d bytes)[/dim]",
                         log_label,
                         int(elapsed),
                         remaining,
@@ -298,7 +298,7 @@ def _check_output(path: Path, offset: int, label: str, stream: str) -> int:
     for raw_line in new_text.splitlines():
         stripped = raw_line.strip()
         if stripped and _NOTABLE_RE.search(stripped):
-            logger.warning("[%s] agent %s: %s", label, stream, stripped)
+            logger.warning("[cyan]%s:[/cyan] agent %s: %s", label, stream, stripped)
     return size
 
 

@@ -7,9 +7,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 from news_recap.config import Settings
-from news_recap.ingestion.pipeline import run_daily_ingestion
+from news_recap.ingestion.pipeline import IngestionSummary, run_daily_ingestion
 from news_recap.ingestion.repository import IngestionStore
-from news_recap.ingestion.sources.rss import RssSource, RssSourceConfig
+from news_recap.ingestion.sources.rss import RssRunFetchStats, RssSource, RssSourceConfig
 
 
 @dataclass(slots=True)
@@ -19,10 +19,18 @@ class DailyIngestionCommand:
     feed_urls: tuple[str, ...]
 
 
+@dataclass(slots=True)
+class IngestionResult:
+    """Structured result of one ingestion CLI run."""
+
+    summary: IngestionSummary
+    fetch_stats: RssRunFetchStats
+
+
 class IngestionCliController:
     """Coordinates ingestion command execution."""
 
-    def run_daily(self, command: DailyIngestionCommand) -> list[str]:
+    def run_daily(self, command: DailyIngestionCommand) -> IngestionResult:
         settings = Settings.from_env()
         settings.validate_for_rss(override_feed_urls=command.feed_urls)
         feed_urls = _effective_feed_urls(command.feed_urls, settings)
@@ -44,38 +52,7 @@ class IngestionCliController:
             summary = run_daily_ingestion(settings=settings, store=store, source=source)
             fetch_stats = source.get_last_run_fetch_stats()
 
-        lines = [
-            "Ingestion run completed: "
-            f"run_id={summary.run_id} status={summary.status.value} "
-            f"ingested={summary.counters.ingested_count} "
-            f"updated={summary.counters.updated_count} "
-            f"skipped={summary.counters.skipped_count} "
-            f"gaps={summary.counters.gaps_opened_count}",
-            "RSS conditional GET: "
-            f"feeds={fetch_stats.feeds_total} "
-            f"conditional={fetch_stats.requests_conditional} "
-            f"not_modified={fetch_stats.responses_not_modified} "
-            f"fetched={fetch_stats.responses_fetched} "
-            f"received_etag={fetch_stats.responses_with_etag} "
-            f"received_last_modified={fetch_stats.responses_with_last_modified} "
-            f"snapshot_articles={fetch_stats.snapshot_articles} "
-            f"snapshot_expired={'yes' if fetch_stats.snapshot_expired else 'no'} "
-            f"resumed_snapshot={'yes' if fetch_stats.snapshot_restored else 'no'} "
-            f"resume_cursor={fetch_stats.resume_cursor or '-'}",
-        ]
-
-        for feed in fetch_stats.feeds:
-            lines.append(
-                "  feed="
-                f"{feed.feed_url} request_url={feed.request_url} "
-                f"requested_n={feed.requested_n} "
-                f"received_items={feed.received_items} status={feed.status} "
-                f"if_none_match={'yes' if feed.sent_if_none_match else 'no'} "
-                f"if_modified_since={'yes' if feed.sent_if_modified_since else 'no'} "
-                f"etag={'yes' if feed.received_etag else 'no'} "
-                f"last_modified={'yes' if feed.received_last_modified else 'no'}",
-            )
-        return lines
+        return IngestionResult(summary=summary, fetch_stats=fetch_stats)
 
 
 @contextmanager

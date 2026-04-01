@@ -27,6 +27,13 @@ from news_recap.storage.io import load_msgspec
 
 logger = logging.getLogger(__name__)
 
+PipelineLine = tuple[str, str]
+"""(severity, message) pair emitted during pipeline setup.
+
+Severity values follow the same vocabulary as ``ScheduleLine``:
+``"ok"`` | ``"info"`` | ``"warn"`` | ``"log"``.
+"""
+
 
 @dataclass(slots=True)
 class RecapRunCommand:
@@ -70,7 +77,7 @@ def _load_from_pipeline(pipeline_dir: Path) -> tuple[date, list[DigestArticle]]:
 def _apply_resume_patches(
     command: RecapRunCommand,
     pipeline_dir: Path,
-) -> Iterator[str]:
+) -> Iterator[PipelineLine]:
     """Patch overridable fields on a resumed pipeline and yield status messages."""
     patches: dict[str, object] = {}
     if command.agent_override:
@@ -81,13 +88,13 @@ def _apply_resume_patches(
         previous = _patch_pipeline_input(pipeline_dir, **patches)
         if "agent_override" in patches:
             prev = previous.get("agent_override") or "default"
-            yield f"Agent override changed: {prev} -> {patches['agent_override']}"
+            yield ("info", f"Agent override changed: {prev} -> {patches['agent_override']}")
 
 
 class RecapCliController:
     """Load articles, materialize pipeline inputs, and launch the recap flow."""
 
-    def run_pipeline(self, command: RecapRunCommand) -> Iterator[str]:
+    def run_pipeline(self, command: RecapRunCommand) -> Iterator[PipelineLine]:
         """Fetch articles from store, write pipeline_input.json, and run recap_flow."""
 
         settings = Settings.from_env(
@@ -110,7 +117,7 @@ class RecapCliController:
         workdir_root = settings.orchestrator.workdir_root.resolve()
         deleted = gc_old_pipelines(workdir_root, keep_days=settings.ingestion.gc_retention_days)
         if deleted:
-            yield f"Auto-GC: removed {len(deleted)} old pipeline(s)."
+            yield ("log", f"Auto-GC: removed {len(deleted)} old pipeline(s).")
 
         resumable = None
         if not command.fresh and not source_articles:
@@ -125,9 +132,10 @@ class RecapCliController:
             digest = load_msgspec(resumable / _DIGEST_FILENAME, Digest)
             business_date = date.fromisoformat(digest.business_date)
             yield (
+                "info",
                 f"Resuming pipeline: {pipeline_dir.name} "
                 f"({len(digest.completed_phases)} phase(s) done: "
-                f"{', '.join(digest.completed_phases) or 'none'})"
+                f"{', '.join(digest.completed_phases) or 'none'})",
             )
             yield from _apply_resume_patches(command, pipeline_dir)
         else:
@@ -137,8 +145,9 @@ class RecapCliController:
             if source_articles:
                 articles = source_articles[1]
                 yield (
+                    "info",
                     f"Reusing {len(articles)} articles from "
-                    f"{command.from_pipeline.name} ({business_date})"  # type: ignore[union-attr]
+                    f"{command.from_pipeline.name} ({business_date})",  # type: ignore[union-attr]
                 )
             else:
                 fetch_limit = command.article_limit or 2000
@@ -153,12 +162,13 @@ class RecapCliController:
                     since=since_date,
                 )
                 if not articles:
-                    yield "No articles found. Run ingestion first."
+                    yield ("warn", "No articles found. Run ingestion first.")
                     return
                 limit_note = f" (limited to {fetch_limit})" if command.article_limit else ""
                 yield (
+                    "info",
                     f"Found {len(articles)} articles since {since_date}"
-                    f" (cap {_cap_days}d){limit_note}"
+                    f" (cap {_cap_days}d){limit_note}",
                 )
 
             ts = datetime.now(tz=UTC).strftime("%H%M%S")
@@ -178,9 +188,9 @@ class RecapCliController:
                 dedup_model_name=settings.dedup.model_name,
                 use_api_key=command.use_api_key,
             )
-            yield f"New pipeline: {pipeline_dir}"
+            yield ("log", f"New pipeline: {pipeline_dir}")
 
-        yield "Starting pipeline…"
+        yield ("ok", "Starting pipeline…")
 
         recap_flow(
             pipeline_dir=str(pipeline_dir),

@@ -114,7 +114,9 @@ class _Parser:
 
     def _on_section_summary(self, text: str) -> None:
         if self._current_section is None:
-            logger.warning("[oneshot_digest] SECTION_SUMMARY before SECTION — discarding")
+            logger.warning(
+                "[cyan]oneshot_digest:[/cyan] SECTION_SUMMARY before SECTION — discarding",
+            )
         else:
             self._current_section.summary = text
             self._mode = "section_summary"
@@ -133,14 +135,14 @@ class _Parser:
     def _on_block(self, title: str) -> None:
         self._finalize_block()
         if self._current_section is None:
-            logger.warning("[oneshot_digest] BLOCK before SECTION — discarding")
+            logger.warning("[cyan]oneshot_digest:[/cyan] BLOCK before SECTION — discarding")
         else:
             self._current_block = _ParsedBlock(title=title)
             self._mode = "block_title"
 
     def _on_articles(self, text: str) -> None:
         if self._current_block is None:
-            logger.warning("[oneshot_digest] ARTICLES before BLOCK — discarding")
+            logger.warning("[cyan]oneshot_digest:[/cyan] ARTICLES before BLOCK — discarding")
         else:
             self._current_block.article_nums.extend(_parse_nums(text))
             self._mode = "articles"
@@ -314,7 +316,7 @@ def _run_batch(
     parsed_sections, excluded_nums = _parse_output(text)
     excluded_ids = [num_to_id[n] for n in excluded_nums if n in num_to_id]
     logger.info(
-        "[oneshot_digest] batch %s → %d section(s), %d excluded",
+        "[cyan]oneshot_digest:[/cyan] batch %s → %d section(s), %d excluded",
         batch_num or 1,
         len(parsed_sections),
         len(excluded_ids),
@@ -342,7 +344,7 @@ def _run_merge(
     text = read_agent_stdout(stdout_path, "recap_merge_sections")
     merged = _parse_merge_output(text)
     logger.info(
-        "[oneshot_digest] merge → %d final section(s) from %d source(s)",
+        "[cyan]oneshot_digest:[/cyan] merge → %d final section(s) from %d source(s)",
         len(merged),
         len(all_sections),
     )
@@ -362,14 +364,14 @@ def _build_digest_entries(
             article_ids = [num_to_id[n] for n in block.article_nums if n in num_to_id]
             if not article_ids:
                 logger.warning(
-                    "[oneshot_digest] block %r has no valid article IDs — skipping",
+                    "[cyan]oneshot_digest:[/cyan] block %r has no valid article IDs — skipping",
                     block.title,
                 )
                 continue
             blocks.append(DigestBlock(title=block.title, article_ids=article_ids))
         if len(blocks) == block_start:
             logger.warning(
-                "[oneshot_digest] section %r has no valid blocks — skipping",
+                "[cyan]oneshot_digest:[/cyan] section %r has no valid blocks — skipping",
                 section.title,
             )
             continue
@@ -395,7 +397,7 @@ def _build_merged_digest_entries(
         for idx in ms.source_indices:
             if idx < 1 or idx > len(all_sections):
                 logger.warning(
-                    "[oneshot_digest] merge INCLUDES out-of-range index %d — skipping",
+                    "[cyan]oneshot_digest:[/cyan] merge INCLUDES out-of-range index %d — skipping",
                     idx,
                 )
                 continue
@@ -409,7 +411,7 @@ def _build_merged_digest_entries(
                 )
         if len(blocks) == block_start:
             logger.warning(
-                "[oneshot_digest] merged section %r has no valid blocks — skipping",
+                "[cyan]oneshot_digest:[/cyan] merged section %r has no valid blocks — skipping",
                 ms.title,
             )
             continue
@@ -502,7 +504,7 @@ def _dedup_blocks(
     subset_removed = len(absorbed)
     if exact_removed or subset_removed:
         logger.info(
-            "[oneshot_digest] dedup removed %d exact + %d subset block(s)",
+            "[cyan]oneshot_digest:[/cyan] dedup removed %d exact + %d subset block(s)",
             exact_removed,
             subset_removed,
         )
@@ -586,7 +588,7 @@ def _fuzzy_merge_blocks(
     clusters = group_similar(ids, embeddings, threshold, max_group_size=len(blocks))
 
     if not clusters:
-        logger.debug("[oneshot_digest] fuzzy merge: no similar blocks found")
+        logger.debug("[cyan]oneshot_digest:[/cyan] fuzzy merge: no similar blocks found")
         return blocks, sections
 
     merged_blocks, absorbed_to_winner = _apply_fuzzy_clusters(blocks, clusters)
@@ -614,7 +616,7 @@ def _fuzzy_merge_blocks(
     fuzzy_removed = len(blocks) - len(new_blocks)
     if fuzzy_removed:
         logger.info(
-            "[oneshot_digest] fuzzy merge removed %d block(s)",
+            "[cyan]oneshot_digest:[/cyan] fuzzy merge removed %d block(s)",
             fuzzy_removed,
         )
 
@@ -640,10 +642,10 @@ class OneshotDigest(TaskLauncher):
         kept_articles = ctx.digest.articles
 
         if not kept_articles:
-            logger.info("[oneshot_digest] No articles to process — skipping")
+            logger.info("[cyan]oneshot_digest:[/cyan] No articles to process — skipping")
             return
 
-        logger.info("[oneshot_digest] Loading embedding model for pre-sort…")
+        logger.info("[cyan]oneshot_digest:[/cyan] Loading embedding model for pre-sort…")
         embedder = SentenceTransformerEmbedder(model_name=ctx.inp.dedup_model_name)
         ordered = reorder_articles(kept_articles, embedder, _GROUP_THRESHOLD)
         language = language_display_name(ctx.inp.preferences.language)
@@ -654,7 +656,11 @@ class OneshotDigest(TaskLauncher):
         else:
             batches = [ordered[i : i + _BATCH_SIZE] for i in range(0, len(ordered), _BATCH_SIZE)]
 
-        logger.info("[oneshot_digest] %d article(s) → %d batch(es)", len(ordered), len(batches))
+        logger.info(
+            "[cyan]oneshot_digest:[/cyan] %d article(s) → %d batch(es)",
+            len(ordered),
+            len(batches),
+        )
 
         # Run batches (parallel when more than one)
         batch_results: dict[int, tuple[list[_ParsedSection], list[str], dict[str, str]]] = {}
@@ -709,7 +715,7 @@ class OneshotDigest(TaskLauncher):
         ctx.digest.blocks = blocks
         ctx.digest.recaps = sections_out
         logger.info(
-            "[oneshot_digest] %d section(s), %d block(s), coverage %.0f%%",
+            "[cyan]oneshot_digest:[/cyan] %d section(s), %d block(s), coverage %.0f%%",
             len(sections_out),
             len(blocks),
             coverage * 100,

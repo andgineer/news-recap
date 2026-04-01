@@ -137,7 +137,7 @@ class TaskLauncher:
                 raise StopPipelineError(cls.name)
             return
 
-        logger.info("Running: %s", cls.name)
+        logger.info("── %s ──", cls.name)
         instance = cls(ctx)
         instance.execute()
 

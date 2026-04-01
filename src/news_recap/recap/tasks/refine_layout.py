@@ -100,7 +100,7 @@ def _validate_coverage(
 
     if missing:
         logger.warning(
-            "[refine_layout] LLM omitted %d block(s) %s — appending to last section",
+            "[cyan]refine_layout:[/cyan] LLM omitted %d block(s) %s — appending to last section",
             len(missing),
             sorted(idx + 1 for idx in missing),
         )
@@ -218,11 +218,11 @@ class RefineLayout(TaskLauncher):
         sections = ctx.digest.recaps
 
         if not blocks or not sections:
-            logger.info("[refine_layout] No blocks/sections — skipping")
+            logger.info("[cyan]refine_layout:[/cyan] No blocks/sections — skipping")
             return
 
         if not needs_refinement(sections, len(blocks)):
-            logger.info("[refine_layout] Layout clean — skipping refinement")
+            logger.info("[cyan]refine_layout:[/cyan] Layout clean — skipping refinement")
             return
 
         block_titles = [b.title for b in blocks]
@@ -245,13 +245,15 @@ class RefineLayout(TaskLauncher):
         refined = _parse_refine_output(text, len(prompt_num_to_block_idx))
 
         if refined is None:
-            logger.warning("[refine_layout] Invalid LLM output — keeping original sections")
+            logger.warning(
+                "[cyan]refine_layout:[/cyan] Invalid LLM output — keeping original sections",
+            )
             return
 
         remapped = _remap_sections(refined, prompt_num_to_block_idx)
         ctx.digest.recaps = remapped
         logger.info(
-            "[refine_layout] Refined %d → %d sections",
+            "[cyan]refine_layout:[/cyan] Refined %d → %d sections",
             len(sections),
             len(remapped),
         )

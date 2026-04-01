@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from news_recap.recap.agents.ai_agent import read_agent_usage
 from news_recap.recap.models import Digest, to_article_index
-from news_recap.recap.pipeline_setup import _DIGEST_FILENAME
+from news_recap.recap.pipeline_setup import _DIGEST_FILENAME, register_digest
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 from news_recap.recap.storage.workdir import TaskWorkdirManager
 from news_recap.recap.tasks.base import (
@@ -53,7 +53,11 @@ def _log_pipeline_token_summary(logger: Any, pdir: Path) -> None:
 
     total = sum(phase_tokens.values())
     parts = [f"{phase}={tokens:,}" for phase, tokens in phase_tokens.items()]
-    logger.info("Token usage: %s | total=%s", ", ".join(parts), f"{total:,}")
+    logger.info(
+        "[bold cyan]── tokens ──[/bold cyan] %s | total=%s",
+        ", ".join(parts),
+        f"{total:,}",
+    )
 
 
 def _load_checkpoint(pdir: Path) -> Digest | None:
@@ -97,7 +101,11 @@ def recap_flow(  # noqa: PLR0915
         )
 
     article_entries = to_article_index(inp.articles)
-    logger.info("Pipeline starting: %d articles, date=%s", len(inp.articles), business_date)
+    logger.info(
+        "[bold]Pipeline starting:[/bold] %d articles, date=%s",
+        len(inp.articles),
+        business_date,
+    )
 
     transport = None
     cc = None
@@ -142,17 +150,22 @@ def recap_flow(  # noqa: PLR0915
 
         digest.status = "completed"
         ctx.save_checkpoint()
-        logger.info("Pipeline completed")
+        register_digest(pdir.parent, pdir, digest)
+        logger.info("[bold green]Pipeline completed[/bold green]")
 
     except StopPipelineError:
         digest.status = "completed"
         ctx.save_checkpoint()
-        logger.info("Pipeline stopped early (stop_after=%s)", effective_stop)
+        register_digest(pdir.parent, pdir, digest)
+        logger.info(
+            "[bold green]Pipeline stopped[/bold green] (stop_after=%s)",
+            effective_stop,
+        )
 
     except RecapPipelineError as exc:
         digest.status = "failed"
         ctx.save_checkpoint()
-        logger.error("Pipeline failed: %s", exc)
+        logger.error("[bold red]Pipeline failed:[/bold red] %s", exc)
 
     except KeyboardInterrupt:
         digest.status = "failed"

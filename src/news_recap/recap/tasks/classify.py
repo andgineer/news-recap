@@ -236,7 +236,7 @@ class Classify(TaskLauncher):
 
         if already_classified:
             logger.info(
-                "[classify] %d already classified, %d remaining",
+                "[cyan]classify:[/cyan] %d already classified, %d remaining",
                 len(already_classified),
                 len(to_classify),
             )
@@ -249,7 +249,11 @@ class Classify(TaskLauncher):
         debug_max = int(os.getenv("NEWS_RECAP_CLASSIFY_MAX_BATCHES", "0")) or None
         if debug_max:
             batches = batches[:debug_max]
-        logger.info("[classify] %d articles -> %d batch(es)", len(to_classify), len(batches))
+        logger.info(
+            "[cyan]classify:[/cyan] %d articles -> %d batch(es)",
+            len(to_classify),
+            len(batches),
+        )
 
         def prepare(batch: list[DigestArticle], batch_num: int) -> str:
             prompt = build_classify_batch_prompt(batch, ctx.inp.preferences, ctx.inp.prompt_backend)
@@ -260,7 +264,7 @@ class Classify(TaskLauncher):
                 batch=batch_num,
                 prompt=prompt,
             )
-            logger.info("[classify] Batch %d — %d headlines", batch_num, len(batch))
+            logger.info("[cyan]classify:[/cyan] Batch %d — %d headlines", batch_num, len(batch))
             return task_id
 
         def parse(task_id: str, batch: list[DigestArticle], _batch_num: int) -> None:

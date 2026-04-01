@@ -70,7 +70,7 @@ def run_ai_agent(  # noqa: PLR0913
     timeout = inp.routing_defaults.task_type_timeout_map.get(step_name, _DEFAULT_TIMEOUT)
 
     logger.info(
-        "[%s] backend=%s agent=%s model=%s timeout=%ds",
+        "[dim][cyan]%s:[/cyan] backend=%s agent=%s model=%s timeout=%ds[/dim]",
         step_name,
         routing.execution_backend,
         routing.agent,
@@ -118,7 +118,12 @@ def run_ai_agent(  # noqa: PLR0913
     m, s = divmod(int(elapsed), 60)
     t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
     tokens_str = f" tokens={tokens:,}" if tokens else ""
-    logger.info("[%s] Finished in %s (exit=%s)%s", step_name, t, result.exit_code, tokens_str)
+    logger.info(
+        "[green]✓[/green] [cyan]%s:[/cyan] Finished in %s%s",
+        step_name,
+        t,
+        tokens_str,
+    )
 
     _save_usage(Path(pipeline_dir) / task_id, elapsed=elapsed, tokens=tokens)
 
@@ -198,12 +203,18 @@ def _log_agent_output(logger, step_name: str, result) -> None:
         if label == "stderr":
             summary = _summarise_stderr(text)
             if summary:
-                logger.error("[%s] agent %s: %s", step_name, label, summary)
+                logger.error("[cyan]%s:[/cyan] agent %s: %s", step_name, label, summary)
                 continue
         lines = text.splitlines()
         tail = lines[-_TAIL_LINES:]
         truncated = f"(last {_TAIL_LINES}/{len(lines)} lines)\n" if len(lines) > _TAIL_LINES else ""
-        logger.error("[%s] agent %s:\n%s%s", step_name, label, truncated, "\n".join(tail))
+        logger.error(
+            "[cyan]%s:[/cyan] agent %s:\n%s%s",
+            step_name,
+            label,
+            truncated,
+            "\n".join(tail),
+        )
 
 
 _TOKENS_RE = re.compile(r"tokens\s+used\s*\n\s*([\d,]+)", re.IGNORECASE)

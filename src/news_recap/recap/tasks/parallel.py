@@ -177,4 +177,4 @@ def _log_total_tokens(
         _, tokens = read_agent_usage(ctx.pdir / tid)
         total += tokens
     if total:
-        logger.info("[%s] total tokens: %s", step_name, f"{total:,}")
+        logger.info("[cyan]%s:[/cyan] total tokens: %s", step_name, f"{total:,}")

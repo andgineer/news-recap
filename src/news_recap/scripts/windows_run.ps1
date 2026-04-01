@@ -13,9 +13,9 @@ Add-Content -Path $LogFile -Value "USER=$env:USERNAME"
 try { Add-Content -Path $LogFile -Value "news-recap=$(Get-Command {{NEWS_RECAP_CMD}} -ErrorAction Stop)" } catch { Add-Content -Path $LogFile -Value "{{NEWS_RECAP_CMD}}: not in PATH" }
 
 try {
-    & {{NEWS_RECAP_CMD}} ingest {{RSS_ARGS}} *>> $LogFile
+    & {{NEWS_RECAP_CMD}} --no-color ingest {{RSS_ARGS}} *>> $LogFile
     if ($LASTEXITCODE -ne 0) { throw "ingest failed (exit $LASTEXITCODE)" }
-    & {{NEWS_RECAP_CMD}} create {{AGENT_ARGS}} *>> $LogFile
+    & {{NEWS_RECAP_CMD}} --no-color create {{AGENT_ARGS}} *>> $LogFile
     if ($LASTEXITCODE -ne 0) { throw "create failed (exit $LASTEXITCODE)" }
     Add-Content -Path $LogFile -Value "===== RESULT: OK"
 } catch {

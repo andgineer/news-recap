@@ -145,7 +145,7 @@ def _verify_setup(
     log_file.parent.mkdir(parents=True, exist_ok=True)
     offset = log_file.stat().st_size if log_file.exists() else 0
 
-    ingest_args = [cmd, "ingest"]
+    ingest_args = [cmd, "--no-color", "ingest"]
     for url in rss_urls:
         ingest_args.extend(["--rss", url])
     result = subprocess.run(
@@ -161,7 +161,15 @@ def _verify_setup(
         yield from _emit_log_lines(_read_log_tail(log_file, offset))
         return
 
-    create_args = [cmd, "create", "--stop-after", "classify", "--limit", str(_SMOKE_LIMIT)]
+    create_args = [
+        cmd,
+        "--no-color",
+        "create",
+        "--stop-after",
+        "classify",
+        "--limit",
+        str(_SMOKE_LIMIT),
+    ]
     if agent:
         create_args.extend(["--agent", agent])
     result = subprocess.run(

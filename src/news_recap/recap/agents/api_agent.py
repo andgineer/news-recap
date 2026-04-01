@@ -65,11 +65,16 @@ def run_api_agent(  # noqa: PLR0913
             response = transport.complete(model=model, prompt=prompt, timeout=timeout)
         except (TransportRateLimitError, TransportOverloadedError) as exc:
             concurrency_controller.release()
-            logger.warning("[%s] rate limit / overload (attempt %d): %s", step_name, attempt, exc)
+            logger.warning(
+                "[cyan]%s:[/cyan] rate limit / overload (attempt %d): %s",
+                step_name,
+                attempt,
+                exc,
+            )
             concurrency_controller.on_rate_limit()
             backoff = min(_BASE_BACKOFF * (2**attempt), max_backoff)
             sleep_time = backoff + random.uniform(0, jitter)  # noqa: S311
-            logger.info("[%s] retrying in %.1fs", step_name, sleep_time)
+            logger.info("[cyan]%s:[/cyan] retrying in %.1fs", step_name, sleep_time)
             if stop_event is not None:
                 stop_event.wait(sleep_time)
             else:
@@ -90,11 +95,10 @@ def run_api_agent(  # noqa: PLR0913
     m, s = divmod(int(elapsed), 60)
     t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
     logger.info(
-        "[%s] Finished in %s (tokens=%s, retries=%d)",
+        "[green]✓[/green] [cyan]%s:[/cyan] Finished in %s tokens=%s",
         step_name,
         t,
         f"{total_tokens:,}",
-        attempt,
     )
 
     stdout_path.write_text(response.content, "utf-8")

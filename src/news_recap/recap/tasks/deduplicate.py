@@ -200,7 +200,7 @@ class _DedupParser:
         missing = self._valid - self._seen
         if missing:
             logger.warning(
-                "[dedup] LLM output missing %d number(s): %s — treating as singles",
+                "[cyan]dedup:[/cyan] LLM output missing %d number(s): %s — treating as singles",
                 len(missing),
                 sorted(missing),
             )
@@ -228,7 +228,7 @@ class Deduplicate(TaskLauncher):
         ctx = self.ctx
         articles = ctx.digest.articles
         if len(articles) < _MIN_MERGE_SIZE:
-            logger.info("[dedup] Fewer than 2 articles, skipping")
+            logger.info("[cyan]dedup:[/cyan] Fewer than 2 articles, skipping")
             return
 
         groups = _compute_groups(ctx, articles)
@@ -248,11 +248,14 @@ class Deduplicate(TaskLauncher):
         if remove_ids:
             _update_pipeline_state(ctx, remove_ids, batch_results, id_to_article, merge_count)
         else:
-            logger.info("[dedup] No duplicates found by LLM")
+            logger.info("[cyan]dedup:[/cyan] No duplicates found by LLM")
 
         if n_failed > 0:
             self.fully_completed = False
-            logger.warning("[dedup] %d cluster(s) failed — partial results saved", n_failed)
+            logger.warning(
+                "[cyan]dedup:[/cyan] %d cluster(s) failed — partial results saved",
+                n_failed,
+            )
 
 
 def _compute_groups(ctx: FlowContext, articles: list[DigestArticle]) -> list[list[str]]:
@@ -261,18 +264,18 @@ def _compute_groups(ctx: FlowContext, articles: list[DigestArticle]) -> list[lis
     texts = [_build_embedding_text(a) for a in articles]
     ids = [a.article_id for a in articles]
 
-    logger.info("[dedup] Computing embeddings for %d articles", len(articles))
+    logger.info("[cyan]dedup:[/cyan] Computing embeddings for %d articles", len(articles))
     vectors = embedder.embed(texts)
     embeddings: dict[str, list[float]] = dict(zip(ids, vectors, strict=True))
 
     groups = group_similar(ids, embeddings, ctx.inp.dedup_threshold)
     if not groups:
-        logger.info("[dedup] No similar groups found, skipping LLM phase")
+        logger.info("[cyan]dedup:[/cyan] No similar groups found, skipping LLM phase")
         return []
 
     total_grouped = sum(len(g) for g in groups)
     logger.info(
-        "[dedup] %d groups with %d articles (threshold=%.2f)",
+        "[cyan]dedup:[/cyan] %d groups with %d articles (threshold=%.2f)",
         len(groups),
         total_grouped,
         ctx.inp.dedup_threshold,
@@ -292,7 +295,7 @@ def _log_batch_result(
     n_clusters = len(batch)
     if total_merges:
         logger.info(
-            "[dedup] Batch %d result: %d/%d cluster(s) have duplicates"
+            "[cyan]dedup:[/cyan] Batch %d result: %d/%d cluster(s) have duplicates"
             " — %d group(s), %d articles merged, %d removed",
             batch_num,
             sum(1 for r in results if r.merges),
@@ -303,7 +306,7 @@ def _log_batch_result(
         )
     else:
         logger.info(
-            "[dedup] Batch %d result: no duplicates in %d cluster(s)",
+            "[cyan]dedup:[/cyan] Batch %d result: no duplicates in %d cluster(s)",
             batch_num,
             n_clusters,
         )
@@ -316,7 +319,7 @@ def _run_llm_dedup(
 ) -> tuple[list[tuple[list[str], _DedupResult]], int]:
     """Submit batched LLM calls and return flattened (cluster, result) pairs."""
     batches = _batch_clusters(groups)
-    logger.info("[dedup] %d cluster(s) → %d batch task(s)", len(groups), len(batches))
+    logger.info("[cyan]dedup:[/cyan] %d cluster(s) → %d batch task(s)", len(groups), len(batches))
 
     def prepare(batch: ClusterBatch, batch_num: int) -> str:
         if len(batch) == 1:
@@ -342,7 +345,12 @@ def _run_llm_dedup(
             prompt=prompt,
         )
         total = sum(len(c) for c in batch)
-        logger.info("[dedup] Batch %d — %d cluster(s), %d articles", batch_num, len(batch), total)
+        logger.info(
+            "[cyan]dedup:[/cyan] Batch %d — %d cluster(s), %d articles",
+            batch_num,
+            len(batch),
+            total,
+        )
         return task_id
 
     def parse(
@@ -404,7 +412,7 @@ def _update_pipeline_state(
     ctx.state["enriched_articles"] = enriched
 
     logger.info(
-        "[dedup] %d merge(s) → removed %d duplicate(s), %d articles remain",
+        "[cyan]dedup:[/cyan] %d merge(s) → removed %d duplicate(s), %d articles remain",
         merge_count,
         len(remove_ids),
         len(ctx.digest.articles),

@@ -15,8 +15,8 @@ find "${LOG_DIR}" -name 'news-recap-*.log' -mtime +30 -delete 2>/dev/null || tru
   echo "$(date '+%Y-%m-%d %H:%M:%S') ===== news-recap"
   echo "USER=${USER} HOME=${HOME}"
   command -v {{NEWS_RECAP_CMD}} || echo "{{NEWS_RECAP_CMD}}: not in PATH"
-  {{NEWS_RECAP_CMD}} ingest {{RSS_ARGS}} && \
-  {{NEWS_RECAP_CMD}} create {{AGENT_ARGS}}
+  {{NEWS_RECAP_CMD}} --no-color ingest {{RSS_ARGS}} && \
+  {{NEWS_RECAP_CMD}} --no-color create {{AGENT_ARGS}}
   rc=$?
   if [ $rc -eq 0 ]; then
     echo "===== RESULT: OK"

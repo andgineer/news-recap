@@ -13,6 +13,7 @@ from news_recap.recap.pipeline_setup import (
     _compute_article_window,
     _find_last_completed_digest_date,
     _find_resumable_pipeline,
+    register_digest,
 )
 
 _DIGEST_FILENAME = "digest.json"
@@ -23,7 +24,7 @@ def _make_digest(
     business_date: str,
     status: str = "completed",
     completed_phases: list[str] | None = None,
-) -> None:
+) -> Digest:
     digest = Digest(
         digest_id="d-" + business_date,
         business_date=business_date,
@@ -34,6 +35,7 @@ def _make_digest(
     )
     pipeline_dir.mkdir(parents=True, exist_ok=True)
     (pipeline_dir / _DIGEST_FILENAME).write_bytes(msgspec.json.encode(digest))
+    return digest
 
 
 # ---------------------------------------------------------------------------
@@ -67,28 +69,34 @@ def test_returns_none_when_completed_but_no_oneshot_phase(tmp_path: Path) -> Non
 
 
 def test_returns_date_of_completed_digest(tmp_path: Path) -> None:
-    _make_digest(
-        tmp_path / "pipeline-2026-03-25-080000",
+    pdir = tmp_path / "pipeline-2026-03-25-080000"
+    digest = _make_digest(
+        pdir,
         "2026-03-25",
         status="completed",
         completed_phases=["classify", "enrich", "oneshot_digest", "refine_layout"],
     )
+    register_digest(tmp_path, pdir, digest)
     assert _find_last_completed_digest_date(tmp_path) == date(2026, 3, 25)
 
 
 def test_returns_most_recent_completed_date(tmp_path: Path) -> None:
-    _make_digest(
-        tmp_path / "pipeline-2026-03-24-080000",
+    p1 = tmp_path / "pipeline-2026-03-24-080000"
+    d1 = _make_digest(
+        p1,
         "2026-03-24",
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
     )
-    _make_digest(
-        tmp_path / "pipeline-2026-03-26-080000",
+    register_digest(tmp_path, p1, d1)
+    p2 = tmp_path / "pipeline-2026-03-26-080000"
+    d2 = _make_digest(
+        p2,
         "2026-03-26",
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
     )
+    register_digest(tmp_path, p2, d2)
     _make_digest(
         tmp_path / "pipeline-2026-03-27-080000",
         "2026-03-27",
@@ -99,16 +107,19 @@ def test_returns_most_recent_completed_date(tmp_path: Path) -> None:
 
 
 def test_skips_malformed_digest_files(tmp_path: Path) -> None:
+    """Malformed pipeline dirs don't affect the index-based lookup."""
     bad_dir = tmp_path / "pipeline-2026-03-28-080000"
     bad_dir.mkdir(parents=True)
     (bad_dir / _DIGEST_FILENAME).write_text("not-json", "utf-8")
 
-    _make_digest(
-        tmp_path / "pipeline-2026-03-25-080000",
+    pdir = tmp_path / "pipeline-2026-03-25-080000"
+    digest = _make_digest(
+        pdir,
         "2026-03-25",
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
     )
+    register_digest(tmp_path, pdir, digest)
     assert _find_last_completed_digest_date(tmp_path) == date(2026, 3, 25)
 
 
@@ -136,12 +147,14 @@ def test_compute_window_no_previous_digest(tmp_path: Path) -> None:
 def test_compute_window_with_previous_digest(tmp_path: Path) -> None:
     today = datetime.now(tz=UTC).date()
     yesterday = today - timedelta(days=1)
-    _make_digest(
-        tmp_path / f"pipeline-{yesterday}-080000",
+    pdir = tmp_path / f"pipeline-{yesterday}-080000"
+    digest = _make_digest(
+        pdir,
         yesterday.isoformat(),
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
     )
+    register_digest(tmp_path, pdir, digest)
     settings = _make_settings(tmp_path, lookback_days=2)
     cap_days, since = _compute_article_window(settings, all_articles=False, max_days=None)
 
@@ -153,12 +166,14 @@ def test_compute_window_caps_old_digest(tmp_path: Path) -> None:
     """When the last digest is older than the cap, the cap wins."""
     today = datetime.now(tz=UTC).date()
     old_date = today - timedelta(days=10)
-    _make_digest(
-        tmp_path / f"pipeline-{old_date}-080000",
+    pdir = tmp_path / f"pipeline-{old_date}-080000"
+    digest = _make_digest(
+        pdir,
         old_date.isoformat(),
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
     )
+    register_digest(tmp_path, pdir, digest)
     settings = _make_settings(tmp_path, lookback_days=2)
     cap_days, since = _compute_article_window(settings, all_articles=False, max_days=None)
 
@@ -169,12 +184,14 @@ def test_compute_window_caps_old_digest(tmp_path: Path) -> None:
 def test_compute_window_all_articles(tmp_path: Path) -> None:
     today = datetime.now(tz=UTC).date()
     yesterday = today - timedelta(days=1)
-    _make_digest(
-        tmp_path / f"pipeline-{yesterday}-080000",
+    pdir = tmp_path / f"pipeline-{yesterday}-080000"
+    digest = _make_digest(
+        pdir,
         yesterday.isoformat(),
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
     )
+    register_digest(tmp_path, pdir, digest)
     settings = _make_settings(tmp_path, lookback_days=3)
     cap_days, since = _compute_article_window(settings, all_articles=True, max_days=None)
 

@@ -47,15 +47,16 @@ def test_info_shows_app_paths():
         patch("news_recap.main._app_dir", return_value=app_dir),
         patch("news_recap.main._log_dir", return_value=log_dir),
     ):
-        result = runner.invoke(news_recap, ["info"])
+        result = runner.invoke(news_recap, ["--no-color", "info"])
 
     assert result.exit_code == 0
-    assert "App paths:" in result.output
-    assert f"DB / data dir: {data_dir}" in result.output
-    assert f"Feed cache: {data_dir / 'feeds.json'}" in result.output
-    assert f"Run history: {data_dir / 'runs.json'}" in result.output
-    assert f"Resource cache: {data_dir / 'resources'}" in result.output
-    assert f"Digest workdir: {workdir_root}" in result.output
-    assert f"App dir: {app_dir}" in result.output
-    assert f"Schedule metadata: {app_dir / 'schedule.json'}" in result.output
-    assert f"Logs: {log_dir}" in result.output
+    assert "Data" in result.output
+    assert str(data_dir) in result.output
+    assert str(data_dir / "feeds.json") in result.output
+    assert str(data_dir / "runs.json") in result.output
+    assert str(data_dir / "resources") in result.output
+    assert str(workdir_root) in result.output
+    assert "Automation" in result.output
+    assert str(app_dir) in result.output
+    assert str(app_dir / "schedule.json") in result.output
+    assert str(log_dir) in result.output

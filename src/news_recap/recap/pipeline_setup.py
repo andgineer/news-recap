@@ -9,7 +9,6 @@ import contextlib
 import json
 import logging
 import shutil
-from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -20,11 +19,54 @@ from news_recap.config import Settings
 from news_recap.recap.agents.routing import RoutingDefaults
 from news_recap.recap.models import Digest, DigestArticle, UserPreferences
 from news_recap.recap.storage.pipeline_io import _DEFAULT_MIN_RESOURCE_CHARS
-from news_recap.storage.io import load_msgspec
+from news_recap.storage.io import load_msgspec, save_msgspec
 
 logger = logging.getLogger(__name__)
 
 _DIGEST_FILENAME = "digest.json"
+_DIGEST_INDEX_FILENAME = "digests.json"
+
+
+class DigestIndexEntry(msgspec.Struct):
+    """Pre-computed metadata for a completed digest, stored in the index."""
+
+    digest_id: int
+    pipeline_dir_name: str
+    business_date: str
+    article_count: int
+    earliest_article: str | None = None
+    latest_article: str | None = None
+    started_at: str | None = None
+    elapsed_seconds: float = 0.0
+    total_tokens: int = 0
+    prompt_bytes: int = 0
+    output_bytes: int = 0
+
+
+def _load_digest_index(workdir_root: Path) -> list[DigestIndexEntry]:
+    """Load the digest index from ``digests.json``, or return ``[]``."""
+    path = workdir_root / _DIGEST_INDEX_FILENAME
+    if not path.exists():
+        return []
+    try:
+        return load_msgspec(path, list[DigestIndexEntry])
+    except Exception:  # noqa: BLE001
+        logger.warning("Cannot read digest index %s, starting fresh", path)
+        return []
+
+
+def _save_digest_index(workdir_root: Path, entries: list[DigestIndexEntry]) -> None:
+    """Atomically write the digest index."""
+    save_msgspec(workdir_root / _DIGEST_INDEX_FILENAME, entries)
+
+
+def _next_free_id(entries: list[DigestIndexEntry]) -> int:
+    """Return the smallest positive integer not used as a digest ID."""
+    used = {e.digest_id for e in entries}
+    n = 1
+    while n in used:
+        n += 1
+    return n
 
 
 def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
@@ -125,41 +167,13 @@ class DigestSummary:
     output_bytes: int = 0
 
 
-def _iter_completed_digests(workdir_root: Path) -> Iterator[tuple[Path, Digest]]:
-    """Yield ``(path, Digest)`` for completed digests, newest-first.
-
-    A digest is considered completed when ``status == "completed"``
-    and ``"oneshot_digest"`` is in ``completed_phases``.
-    """
-    if not workdir_root.is_dir():
-        return
-
-    candidates = sorted(
-        (p for p in workdir_root.iterdir() if p.is_dir() and p.name.startswith("pipeline-")),
-        key=lambda p: p.name,
-        reverse=True,
-    )
-
-    for pdir in candidates:
-        digest_path = pdir / _DIGEST_FILENAME
-        if not digest_path.exists():
-            continue
-        try:
-            digest = load_msgspec(digest_path, Digest)
-        except Exception:  # noqa: BLE001
-            logger.debug("Cannot read digest in %s, skipping", pdir.name)
-            continue
-
-        if digest.status == "completed" and "oneshot_digest" in digest.completed_phases:
-            yield pdir, digest
-
-
 def _find_last_completed_digest_date(workdir_root: Path) -> date | None:
     """Return the business_date of the most recent fully completed digest, or ``None``."""
-    result = next(_iter_completed_digests(workdir_root), None)
-    if result is None:
+    entries = _load_digest_index(workdir_root)
+    if not entries:
         return None
-    return date.fromisoformat(result[1].business_date)
+    newest = max(entries, key=lambda e: e.pipeline_dir_name)
+    return date.fromisoformat(newest.business_date)
 
 
 _PIPELINE_NAME_PARTS = 5
@@ -213,53 +227,105 @@ def _aggregate_usage(pdir: Path) -> _UsageStats:
     return stats
 
 
-def _list_completed_digests(workdir_root: Path) -> list[DigestSummary]:
-    """Return metadata for all completed digests, newest-first.
+def register_digest(workdir_root: Path, pdir: Path, digest: Digest) -> None:
+    """Register a completed digest in the index.
 
-    Each summary gets a 1-based ``digest_id`` (1 = newest).
+    No-op when the digest does not qualify (wrong status / missing phase)
+    or when it is already registered (idempotent).
     """
-    summaries: list[DigestSummary] = []
-    for idx, (pdir, digest) in enumerate(_iter_completed_digests(workdir_root), start=1):
-        timestamps: list[datetime] = []
-        for article in digest.articles:
-            try:
-                timestamps.append(datetime.fromisoformat(article.published_at))
-            except (ValueError, TypeError):
-                continue
+    if digest.status != "completed" or "oneshot_digest" not in digest.completed_phases:
+        return
 
-        started_at = _parse_pipeline_start(pdir.name)
-        usage = _aggregate_usage(pdir)
+    entries = _load_digest_index(workdir_root)
+    dir_name = pdir.name
+    if any(e.pipeline_dir_name == dir_name for e in entries):
+        return
 
-        summaries.append(
-            DigestSummary(
-                digest_id=idx,
-                business_date=date.fromisoformat(digest.business_date),
-                article_count=len(digest.articles),
-                earliest_article=min(timestamps) if timestamps else None,
-                latest_article=max(timestamps) if timestamps else None,
-                pipeline_dir_name=pdir.name,
-                started_at=started_at,
-                elapsed_seconds=usage.elapsed,
-                total_tokens=usage.tokens,
-                prompt_bytes=usage.prompt_bytes,
-                output_bytes=usage.output_bytes,
+    timestamps: list[datetime] = []
+    for article in digest.articles:
+        try:
+            timestamps.append(datetime.fromisoformat(article.published_at))
+        except (ValueError, TypeError):
+            continue
+
+    usage = _aggregate_usage(pdir)
+    started = _parse_pipeline_start(dir_name)
+
+    entry = DigestIndexEntry(
+        digest_id=_next_free_id(entries),
+        pipeline_dir_name=dir_name,
+        business_date=digest.business_date,
+        article_count=len(digest.articles),
+        earliest_article=min(timestamps).isoformat() if timestamps else None,
+        latest_article=max(timestamps).isoformat() if timestamps else None,
+        started_at=started.isoformat() if started else None,
+        elapsed_seconds=usage.elapsed,
+        total_tokens=usage.tokens,
+        prompt_bytes=usage.prompt_bytes,
+        output_bytes=usage.output_bytes,
+    )
+    entries.append(entry)
+    _save_digest_index(workdir_root, entries)
+    logger.info("Registered digest #%d (%s)", entry.digest_id, dir_name)
+
+
+def unregister_digest(workdir_root: Path, digest_id: int) -> str | None:
+    """Remove a digest from the index. Returns the ``pipeline_dir_name`` or ``None``."""
+    entries = _load_digest_index(workdir_root)
+    for i, e in enumerate(entries):
+        if e.digest_id == digest_id:
+            removed = entries.pop(i)
+            _save_digest_index(workdir_root, entries)
+            return removed.pipeline_dir_name
+    return None
+
+
+def _list_completed_digests(workdir_root: Path) -> list[DigestSummary]:
+    """Return metadata for all completed digests, newest-first."""
+    entries = _load_digest_index(workdir_root)
+    newest_first = sorted(entries, key=lambda e: e.pipeline_dir_name, reverse=True)
+    return [
+        DigestSummary(
+            digest_id=e.digest_id,
+            business_date=date.fromisoformat(e.business_date),
+            article_count=e.article_count,
+            earliest_article=(
+                datetime.fromisoformat(e.earliest_article) if e.earliest_article else None
             ),
+            latest_article=(datetime.fromisoformat(e.latest_article) if e.latest_article else None),
+            pipeline_dir_name=e.pipeline_dir_name,
+            started_at=datetime.fromisoformat(e.started_at) if e.started_at else None,
+            elapsed_seconds=e.elapsed_seconds,
+            total_tokens=e.total_tokens,
+            prompt_bytes=e.prompt_bytes,
+            output_bytes=e.output_bytes,
         )
-    return summaries
+        for e in newest_first
+    ]
 
 
 def _find_digest_pipeline_dir(workdir_root: Path, digest_id: int) -> Path | None:
-    """Return the pipeline directory for digest *digest_id* (1-based, newest-first)."""
-    for idx, (pdir, _digest) in enumerate(_iter_completed_digests(workdir_root), start=1):
-        if idx == digest_id:
-            return pdir
+    """Return the pipeline directory for the given stable *digest_id*."""
+    for e in _load_digest_index(workdir_root):
+        if e.digest_id == digest_id:
+            return workdir_root / e.pipeline_dir_name
     return None
+
+
+def _find_latest_digest_pipeline_dir(workdir_root: Path) -> Path | None:
+    """Return the pipeline directory of the newest completed digest."""
+    entries = _load_digest_index(workdir_root)
+    if not entries:
+        return None
+    newest = max(entries, key=lambda e: e.pipeline_dir_name)
+    return workdir_root / newest.pipeline_dir_name
 
 
 def gc_old_pipelines(workdir_root: Path, *, keep_days: int = 7) -> list[Path]:
     """Delete pipeline directories whose business date is outside the retention window.
 
     Works like ``gc_old_days`` in ``storage/io.py`` but targets pipeline dirs.
+    Also removes matching entries from ``digests.json``.
     Returns the list of deleted directories.
     """
     if not workdir_root.is_dir():
@@ -279,6 +345,13 @@ def gc_old_pipelines(workdir_root: Path, *, keep_days: int = 7) -> list[Path]:
             shutil.rmtree(pdir)
             deleted.append(pdir)
             logger.debug("GC: removed old pipeline %s", pdir.name)
+
+    if deleted:
+        deleted_names = {p.name for p in deleted}
+        entries = _load_digest_index(workdir_root)
+        cleaned = [e for e in entries if e.pipeline_dir_name not in deleted_names]
+        if len(cleaned) != len(entries):
+            _save_digest_index(workdir_root, cleaned)
 
     return deleted
 

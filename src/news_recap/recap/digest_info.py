@@ -11,8 +11,8 @@ from rich.table import Table
 from news_recap.config import Settings
 from news_recap.recap.pipeline_setup import (
     DigestSummary,
-    _find_digest_pipeline_dir,
     _list_completed_digests,
+    unregister_digest,
 )
 
 _MIN_FOR_GAP_CHECK = 2
@@ -137,12 +137,17 @@ def _find_uncovered_periods(
 class DigestInfoController:
     """Show completed digests and uncovered article periods."""
 
-    def digest_info(self) -> None:
+    def digest_info(self, *, no_color: bool = False) -> None:
         settings = Settings.from_env()
         workdir_root = settings.orchestrator.workdir_root.resolve()
         summaries = _list_completed_digests(workdir_root)
 
-        console = Console(width=_MIN_CONSOLE_WIDTH, height=25)
+        console = Console(
+            width=_MIN_CONSOLE_WIDTH,
+            height=25,
+            no_color=no_color,
+            highlight=not no_color,
+        )
 
         if not summaries:
             console.print("No digests found.")
@@ -153,7 +158,9 @@ class DigestInfoController:
         gaps = _find_uncovered_periods(summaries)
         if gaps:
             console.print()
-            console.print("[bold]Uncovered periods:[/bold]")
+            console.print(
+                "[bold]Uncovered periods:[/bold]" if not no_color else "Uncovered periods:",
+            )
             for g in gaps:
                 console.print(g)
 
@@ -162,12 +169,14 @@ class DigestInfoController:
         settings = Settings.from_env()
         workdir_root = settings.orchestrator.workdir_root.resolve()
 
-        pdir = _find_digest_pipeline_dir(workdir_root, digest_id)
-        if pdir is None:
+        dir_name = unregister_digest(workdir_root, digest_id)
+        if dir_name is None:
             return [f"Digest #{digest_id} not found."]
 
-        shutil.rmtree(pdir)
+        pdir = workdir_root / dir_name
+        if pdir.is_dir():
+            shutil.rmtree(pdir)
         return [
-            f"Deleted digest #{digest_id} ({pdir.name}).",
+            f"Deleted digest #{digest_id} ({dir_name}).",
             "Its articles are now available for the next digest.",
         ]

@@ -58,43 +58,24 @@ def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatc
 
     first = runner.invoke(
         news_recap,
-        [
-            "ingest",
-            "--rss",
-            "https://example.com/feed.xml",
-        ],
+        ["--no-color", "ingest", "--rss", "https://example.com/feed.xml"],
     )
     assert first.exit_code == 0
-    assert (
-        "RSS conditional GET: feeds=1 conditional=0 not_modified=0 fetched=1 "
-        "received_etag=1 received_last_modified=1 snapshot_articles=1 "
-        "snapshot_expired=no "
-        "resumed_snapshot=no resume_cursor=-"
-    ) in first.output
-    assert (
-        "feed=https://example.com/feed.xml request_url=https://example.com/feed.xml "
-        "requested_n=10000 received_items=1 status=fetched if_none_match=no if_modified_since=no etag=yes "
-        "last_modified=yes"
-    ) in first.output
+    assert "Ingestion completed" in first.output
+    assert "succeeded" in first.output
+    assert "Ingested" in first.output
+    assert "1/10000 items" in first.output
+    assert "https://example.com/feed.xml" in first.output
+    assert "fetched" in first.output
+    assert "conditional=0/1" in first.output
 
     second = runner.invoke(
         news_recap,
-        [
-            "ingest",
-            "--rss",
-            "https://example.com/feed.xml",
-        ],
+        ["--no-color", "ingest", "--rss", "https://example.com/feed.xml"],
     )
     assert second.exit_code == 0
-    assert (
-        "RSS conditional GET: feeds=1 conditional=1 not_modified=1 fetched=0 "
-        "received_etag=1 received_last_modified=1 snapshot_articles=0 "
-        "snapshot_expired=no "
-        "resumed_snapshot=no resume_cursor=-"
-    ) in second.output
-    assert (
-        "feed=https://example.com/feed.xml request_url=https://example.com/feed.xml "
-        "requested_n=10000 received_items=0 status=not_modified "
-        "if_none_match=yes if_modified_since=yes etag=yes "
-        "last_modified=yes"
-    ) in second.output
+    assert "succeeded" in second.output
+    assert "0/10000 items" in second.output
+    assert "not_modified" in second.output
+    assert "conditional=1/1" in second.output
+    assert "not-modified=1" in second.output

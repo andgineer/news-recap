@@ -1,6 +1,7 @@
 """CLI entrypoint for news-recap."""
 
 import logging
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -19,10 +20,12 @@ from news_recap.config import Settings
 from news_recap.ingestion.controllers import (
     DailyIngestionCommand,
     IngestionCliController,
+    IngestionResult,
 )
 from news_recap.recap.digest_info import DigestInfoController
 from news_recap.recap.export_prompt import PromptCliController, PromptCommand
 from news_recap.recap.launcher import (
+    PipelineLine,
     RecapCliController,
     RecapRunCommand,
 )
@@ -30,13 +33,39 @@ from news_recap.web.server import WebCliController, WebServeCommand
 
 
 def _configure_logging() -> None:
+    from rich.logging import RichHandler
+
     root = logging.getLogger("news_recap")
-    if not root.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s - %(message)s"),
-        )
-        root.addHandler(handler)
+    root.handlers.clear()
+    root.addHandler(
+        RichHandler(
+            show_path=False,
+            rich_tracebacks=True,
+            markup=True,
+            log_time_format="[%H:%M:%S]",
+        ),
+    )
+    root.setLevel(logging.INFO)
+
+
+class _PlainFormatter(logging.Formatter):
+    """Logging formatter that strips Rich markup tags for plain-text output."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        from rich.text import Text
+
+        record.msg = Text.from_markup(str(record.msg)).plain
+        return super().format(record)
+
+
+def _configure_plain_logging() -> None:
+    root = logging.getLogger("news_recap")
+    root.handlers.clear()
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        _PlainFormatter("%(asctime)s | %(levelname)-7s | %(message)s"),
+    )
+    root.addHandler(handler)
     root.setLevel(logging.INFO)
 
 
@@ -50,11 +79,24 @@ DIGEST_INFO_CONTROLLER = DigestInfoController()
 WEB_CONTROLLER = WebCliController()
 SCHEDULE_CONTROLLER = ScheduleController()
 
+NO_COLOR = False
+
 
 @click.group()
 @click.version_option(version=__version__, prog_name="news-recap")
-def news_recap() -> None:
+@click.option(
+    "--no-color",
+    "no_color",
+    is_flag=True,
+    default=False,
+    help="Disable colors and progress indicators (for log-friendly output).",
+)
+def news_recap(no_color: bool) -> None:
     """News recap CLI."""
+    global NO_COLOR  # noqa: PLW0603
+    NO_COLOR = no_color
+    if no_color:
+        _configure_plain_logging()
 
 
 @news_recap.command("ingest")
@@ -67,13 +109,10 @@ def news_recap() -> None:
 def ingest(feed_urls: tuple[str, ...]) -> None:
     """Run one ingestion cycle from RSS feeds."""
 
-    _emit_lines(
-        INGESTION_CONTROLLER.run_daily(
-            DailyIngestionCommand(
-                feed_urls=feed_urls,
-            ),
-        ),
+    result = INGESTION_CONTROLLER.run_daily(
+        DailyIngestionCommand(feed_urls=feed_urls),
     )
+    _print_ingest(result)
 
 
 @news_recap.command("create")
@@ -164,7 +203,7 @@ def recap_run(  # noqa: PLR0913
 ) -> None:
     """Create a news digest from recent articles."""
 
-    _emit_lines(
+    _emit_pipeline(
         RECAP_CONTROLLER.run_pipeline(
             RecapRunCommand(
                 agent_override=agent,
@@ -270,13 +309,13 @@ def recap_prompt(  # noqa: PLR0913
 @news_recap.command("info")
 def info_cmd() -> None:
     """Show important app paths."""
-    _emit_lines(_info_lines())
+    _print_info()
 
 
 @news_recap.command("list")
 def list_cmd() -> None:
     """Show completed digests and uncovered article periods."""
-    DIGEST_INFO_CONTROLLER.digest_info()
+    DIGEST_INFO_CONTROLLER.digest_info(no_color=NO_COLOR)
 
 
 @news_recap.command("delete")
@@ -401,8 +440,6 @@ _MAX_MINUTE = 59
 
 
 def _validate_time(value: str) -> tuple[int, int]:
-    import re
-
     if not re.match(r"^\d{2}:\d{2}$", value):
         raise click.BadParameter(f"Must be HH:MM format, got {value!r}")
     h, m = int(value[:2]), int(value[3:])
@@ -416,7 +453,24 @@ def _emit_lines(lines: list[str] | Iterator[str]) -> None:
         click.echo(line)
 
 
-def _info_lines() -> list[str]:
+def _emit_styled(severity: str, text: str) -> None:
+    """Print a single severity-tagged line, respecting ``NO_COLOR``."""
+    display = f"  {text}" if severity == "log" else text
+    if NO_COLOR:
+        click.echo(display)
+    else:
+        style = _SCHEDULE_STYLES.get(severity, {})
+        click.secho(display, **style)  # type: ignore[arg-type]
+
+
+def _emit_pipeline(lines: Iterator[PipelineLine]) -> None:
+    for severity, text in lines:
+        _emit_styled(severity, text)
+
+
+def _print_info() -> None:
+    from rich.console import Console
+
     settings = Settings.from_env()
     platform = _platform()
     data_dir = settings.data_dir.resolve()
@@ -424,17 +478,114 @@ def _info_lines() -> list[str]:
     app_dir = _app_dir(platform).resolve()
     log_dir = _log_dir(platform).resolve()
 
-    return [
-        "App paths:",
-        f"  DB / data dir: {data_dir}",
-        f"  Feed cache: {data_dir / 'feeds.json'}",
-        f"  Run history: {data_dir / 'runs.json'}",
-        f"  Resource cache: {data_dir / 'resources'}",
-        f"  Digest workdir: {workdir_root}",
-        f"  App dir: {app_dir}",
-        f"  Schedule metadata: {app_dir / 'schedule.json'}",
-        f"  Logs: {log_dir}",
+    console = Console(no_color=NO_COLOR, highlight=not NO_COLOR)
+
+    groups: list[tuple[str, list[tuple[str, str]]]] = [
+        (
+            "Data",
+            [
+                ("Data dir", str(data_dir)),
+                ("Feed cache", str(data_dir / "feeds.json")),
+                ("Run history", str(data_dir / "runs.json")),
+                ("Resource cache", str(data_dir / "resources")),
+            ],
+        ),
+        (
+            "Pipeline",
+            [
+                ("Digest workdir", str(workdir_root)),
+            ],
+        ),
+        (
+            "Automation",
+            [
+                ("App dir", str(app_dir)),
+                ("Schedule", str(app_dir / "schedule.json")),
+                ("Logs", str(log_dir)),
+            ],
+        ),
     ]
+
+    for i, (heading, rows) in enumerate(groups):
+        if i > 0:
+            console.print()
+        console.print(f"[bold]{heading}[/bold]" if not NO_COLOR else heading)
+        for label, path in rows:
+            padded = f"{label:<18}"
+            styled = f"[cyan]{padded}[/cyan]" if not NO_COLOR else padded
+            console.print(f"  {styled} {path}")
+
+
+def _print_ingest(result: IngestionResult) -> None:
+    from rich.console import Console
+
+    s = result.summary
+    fs = result.fetch_stats
+    console = Console(no_color=NO_COLOR, highlight=not NO_COLOR)
+
+    status = s.status.value
+    if s.status.value == "succeeded":
+        status_display = "[green]succeeded[/green]" if not NO_COLOR else "succeeded"
+    elif s.status.value == "partial":
+        status_display = "[yellow]partial[/yellow]" if not NO_COLOR else "partial"
+    else:
+        status_display = f"[red]{status}[/red]" if not NO_COLOR else status
+
+    console.print()
+    heading = "[bold]Ingestion completed[/bold]" if not NO_COLOR else "Ingestion completed"
+    console.print(f"  {heading}  {status_display}")
+    console.print()
+
+    def _row(label: str, value: object) -> None:
+        padded = f"{label:<14}"
+        styled = f"[cyan]{padded}[/cyan]" if not NO_COLOR else padded
+        console.print(f"    {styled} {value}")
+
+    _row("Run ID", s.run_id[:12])
+    _row("Ingested", s.counters.ingested_count)
+    _row("Updated", s.counters.updated_count)
+    _row("Skipped", s.counters.skipped_count)
+    if s.counters.gaps_opened_count:
+        gaps = (
+            f"[yellow]{s.counters.gaps_opened_count}[/yellow]"
+            if not NO_COLOR
+            else str(s.counters.gaps_opened_count)
+        )
+        _row("Gaps", gaps)
+
+    if fs.feeds:
+        console.print()
+        feeds_heading = "[bold]Feeds[/bold]" if not NO_COLOR else "Feeds"
+        console.print(f"  {feeds_heading}")
+        for feed in fs.feeds:
+            yes = "[green]✓[/green]" if not NO_COLOR else "yes"
+            no = "[dim]✗[/dim]" if not NO_COLOR else "no"
+            parts = [
+                f"{feed.received_items}/{feed.requested_n} items",
+                feed.status,
+                f"etag {yes if feed.received_etag else no}",
+                f"last-modified {yes if feed.received_last_modified else no}",
+            ]
+            detail = "  ".join(parts)
+            url = f"[cyan]{feed.feed_url}[/cyan]" if not NO_COLOR else feed.feed_url
+            console.print(f"    {url}")
+            console.print(f"      {detail}")
+
+    cache_parts = [
+        f"conditional={fs.requests_conditional}/{fs.feeds_total}",
+        f"not-modified={fs.responses_not_modified}",
+        f"fetched={fs.responses_fetched}",
+    ]
+    if fs.snapshot_articles:
+        cache_parts.append(f"snapshot={fs.snapshot_articles} articles")
+    if fs.snapshot_restored:
+        cache_parts.append("resumed=yes")
+    cache_line = "  ".join(cache_parts)
+    console.print()
+    dim_open = "[dim]" if not NO_COLOR else ""
+    dim_close = "[/dim]" if not NO_COLOR else ""
+    console.print(f"  {dim_open}Cache  {cache_line}{dim_close}")
+    console.print()
 
 
 _SCHEDULE_STYLES: dict[str, dict[str, object]] = {
@@ -450,11 +601,7 @@ _SCHEDULE_STYLES: dict[str, dict[str, object]] = {
 def _emit_schedule(lines: Iterator[ScheduleLine]) -> None:
     has_error = False
     for severity, text in lines:
-        style = _SCHEDULE_STYLES.get(severity, {})
-        if severity == "log":
-            click.secho(f"  {text}", **style)  # type: ignore[arg-type]
-        else:
-            click.secho(text, **style)  # type: ignore[arg-type]
+        _emit_styled(severity, text)
         if severity == "error":
             has_error = True
     if has_error:

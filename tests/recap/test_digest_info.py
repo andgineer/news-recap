@@ -1,4 +1,4 @@
-"""Tests for _list_completed_digests and DigestInfoController."""
+"""Tests for digest index, _list_completed_digests, and DigestInfoController."""
 
 from __future__ import annotations
 
@@ -16,10 +16,16 @@ from news_recap.recap.digest_info import (
 )
 from news_recap.recap.models import Digest, DigestArticle
 from news_recap.recap.pipeline_setup import (
+    DigestIndexEntry,
     _find_digest_pipeline_dir,
+    _find_latest_digest_pipeline_dir,
     _list_completed_digests,
+    _load_digest_index,
+    _next_free_id,
     _parse_pipeline_start,
     gc_old_pipelines,
+    register_digest,
+    unregister_digest,
 )
 
 _DIGEST_FILENAME = "digest.json"
@@ -31,7 +37,7 @@ def _make_digest(
     status: str = "completed",
     completed_phases: list[str] | None = None,
     articles: list[DigestArticle] | None = None,
-) -> None:
+) -> Digest:
     digest = Digest(
         digest_id="d-" + business_date,
         business_date=business_date,
@@ -42,6 +48,26 @@ def _make_digest(
     )
     pipeline_dir.mkdir(parents=True, exist_ok=True)
     (pipeline_dir / _DIGEST_FILENAME).write_bytes(msgspec.json.encode(digest))
+    return digest
+
+
+def _make_and_register(
+    workdir: Path,
+    dir_name: str,
+    business_date: str,
+    articles: list[DigestArticle] | None = None,
+) -> Digest:
+    """Create a completed digest on disk and register it in the index."""
+    pdir = workdir / dir_name
+    digest = _make_digest(
+        pdir,
+        business_date,
+        status="completed",
+        completed_phases=["classify", "oneshot_digest"],
+        articles=articles,
+    )
+    register_digest(workdir, pdir, digest)
+    return digest
 
 
 def _article(published_at: str) -> DigestArticle:
@@ -133,70 +159,108 @@ def test_parse_pipeline_start_invalid() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _list_completed_digests
+# _next_free_id
 # ---------------------------------------------------------------------------
 
 
-def test_list_empty_workdir(tmp_path: Path) -> None:
-    assert _list_completed_digests(tmp_path / "nonexistent") == []
+def test_next_free_id_empty() -> None:
+    assert _next_free_id([]) == 1
 
 
-def test_list_skips_failed_and_running(tmp_path: Path) -> None:
-    _make_digest(
-        tmp_path / "pipeline-2026-03-01-100000",
+def test_next_free_id_sequential() -> None:
+    entries = [
+        DigestIndexEntry(
+            digest_id=1, pipeline_dir_name="p1", business_date="2026-03-01", article_count=10
+        ),
+        DigestIndexEntry(
+            digest_id=2, pipeline_dir_name="p2", business_date="2026-03-02", article_count=20
+        ),
+    ]
+    assert _next_free_id(entries) == 3
+
+
+def test_next_free_id_with_gap() -> None:
+    entries = [
+        DigestIndexEntry(
+            digest_id=2, pipeline_dir_name="p2", business_date="2026-03-02", article_count=20
+        ),
+        DigestIndexEntry(
+            digest_id=3, pipeline_dir_name="p3", business_date="2026-03-03", article_count=30
+        ),
+    ]
+    assert _next_free_id(entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# register_digest / unregister_digest
+# ---------------------------------------------------------------------------
+
+
+def test_register_digest_creates_index(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-01-100000"
+    digest = _make_digest(
+        pdir,
         "2026-03-01",
-        status="failed",
-        completed_phases=["classify"],
+        status="completed",
+        completed_phases=["classify", "oneshot_digest"],
+        articles=[_article("2026-03-01T10:00:00+00:00")],
     )
-    _make_digest(
-        tmp_path / "pipeline-2026-03-02-100000",
-        "2026-03-02",
-        status="running",
-        completed_phases=["classify"],
-    )
-    assert _list_completed_digests(tmp_path) == []
+    register_digest(tmp_path, pdir, digest)
+    entries = _load_digest_index(tmp_path)
+    assert len(entries) == 1
+    assert entries[0].digest_id == 1
+    assert entries[0].pipeline_dir_name == "pipeline-2026-03-01-100000"
+    assert entries[0].article_count == 1
 
 
-def test_list_skips_incomplete_phases(tmp_path: Path) -> None:
-    _make_digest(
-        tmp_path / "pipeline-2026-03-01-100000",
+def test_register_digest_skips_failed(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-01-100000"
+    digest = _make_digest(pdir, "2026-03-01", status="failed", completed_phases=["classify"])
+    register_digest(tmp_path, pdir, digest)
+    assert _load_digest_index(tmp_path) == []
+
+
+def test_register_digest_skips_incomplete_phases(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-01-100000"
+    digest = _make_digest(
+        pdir,
         "2026-03-01",
         status="completed",
         completed_phases=["classify", "enrich"],
     )
-    assert _list_completed_digests(tmp_path) == []
+    register_digest(tmp_path, pdir, digest)
+    assert _load_digest_index(tmp_path) == []
 
 
-def test_list_returns_completed_digests(tmp_path: Path) -> None:
-    _make_digest(
-        tmp_path / "pipeline-2026-03-01-100000",
+def test_register_digest_idempotent(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-01-100000"
+    digest = _make_digest(
+        pdir,
         "2026-03-01",
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
-        articles=[
-            _article("2026-02-28T20:00:00+00:00"),
-            _article("2026-03-01T10:00:00+00:00"),
-        ],
     )
-    result = _list_completed_digests(tmp_path)
-    assert len(result) == 1
-    s = result[0]
-    assert s.digest_id == 1
-    assert s.business_date == date(2026, 3, 1)
-    assert s.article_count == 2
-    assert s.earliest_article == datetime(2026, 2, 28, 20, 0, tzinfo=UTC)
-    assert s.latest_article == datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
-    assert s.pipeline_dir_name == "pipeline-2026-03-01-100000"
-    assert s.started_at == datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
-    assert s.elapsed_seconds == 0.0
-    assert s.total_tokens == 0
+    register_digest(tmp_path, pdir, digest)
+    register_digest(tmp_path, pdir, digest)
+    entries = _load_digest_index(tmp_path)
+    assert len(entries) == 1
 
 
-def test_list_aggregates_usage(tmp_path: Path) -> None:
+def test_register_digest_reuses_freed_id(tmp_path: Path) -> None:
+    _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01")
+    _make_and_register(tmp_path, "pipeline-2026-03-02-100000", "2026-03-02")
+    unregister_digest(tmp_path, 1)
+    _make_and_register(tmp_path, "pipeline-2026-03-03-100000", "2026-03-03")
+    entries = _load_digest_index(tmp_path)
+    ids = {e.digest_id for e in entries}
+    assert ids == {1, 2}
+
+
+def test_register_digest_aggregates_usage(tmp_path: Path) -> None:
     import json
 
     pdir = tmp_path / "pipeline-2026-03-01-100000"
-    _make_digest(
+    digest = _make_digest(
         pdir,
         "2026-03-01",
         status="completed",
@@ -227,50 +291,106 @@ def test_list_aggregates_usage(tmp_path: Path) -> None:
     task2_output.mkdir(parents=True)
     (task2_output / "agent_stdout.log").write_text("D" * 200)
 
+    register_digest(tmp_path, pdir, digest)
+    entries = _load_digest_index(tmp_path)
+    assert entries[0].elapsed_seconds == 15.5
+    assert entries[0].total_tokens == 800
+    assert entries[0].prompt_bytes == 1500
+    assert entries[0].output_bytes == 600
+
+
+def test_unregister_digest_returns_dir_name(tmp_path: Path) -> None:
+    _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01")
+    result = unregister_digest(tmp_path, 1)
+    assert result == "pipeline-2026-03-01-100000"
+    assert _load_digest_index(tmp_path) == []
+
+
+def test_unregister_digest_not_found(tmp_path: Path) -> None:
+    assert unregister_digest(tmp_path, 99) is None
+
+
+# ---------------------------------------------------------------------------
+# _list_completed_digests
+# ---------------------------------------------------------------------------
+
+
+def test_list_empty_workdir(tmp_path: Path) -> None:
+    assert _list_completed_digests(tmp_path / "nonexistent") == []
+
+
+def test_list_returns_completed_digests(tmp_path: Path) -> None:
+    _make_and_register(
+        tmp_path,
+        "pipeline-2026-03-01-100000",
+        "2026-03-01",
+        articles=[
+            _article("2026-02-28T20:00:00+00:00"),
+            _article("2026-03-01T10:00:00+00:00"),
+        ],
+    )
     result = _list_completed_digests(tmp_path)
     assert len(result) == 1
-    assert result[0].elapsed_seconds == 15.5
-    assert result[0].total_tokens == 800
-    assert result[0].prompt_bytes == 1500
-    assert result[0].output_bytes == 600
+    s = result[0]
+    assert s.digest_id == 1
+    assert s.business_date == date(2026, 3, 1)
+    assert s.article_count == 2
+    assert s.earliest_article == datetime(2026, 2, 28, 20, 0, tzinfo=UTC)
+    assert s.latest_article == datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
+    assert s.pipeline_dir_name == "pipeline-2026-03-01-100000"
+    assert s.started_at == datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
 
 
 def test_list_newest_first(tmp_path: Path) -> None:
-    _make_digest(
-        tmp_path / "pipeline-2026-03-01-100000",
+    _make_and_register(
+        tmp_path,
+        "pipeline-2026-03-01-100000",
         "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
         articles=[_article("2026-03-01T10:00:00+00:00")],
     )
-    _make_digest(
-        tmp_path / "pipeline-2026-03-02-100000",
+    _make_and_register(
+        tmp_path,
+        "pipeline-2026-03-02-100000",
         "2026-03-02",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
         articles=[_article("2026-03-02T10:00:00+00:00")],
     )
     result = _list_completed_digests(tmp_path)
     assert len(result) == 2
-    assert result[0].digest_id == 1
     assert result[0].business_date == date(2026, 3, 2)
-    assert result[1].digest_id == 2
     assert result[1].business_date == date(2026, 3, 1)
 
 
 def test_list_zero_article_digest(tmp_path: Path) -> None:
-    _make_digest(
-        tmp_path / "pipeline-2026-03-01-100000",
-        "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
-        articles=[],
-    )
+    _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01", articles=[])
     result = _list_completed_digests(tmp_path)
     assert len(result) == 1
     assert result[0].article_count == 0
     assert result[0].earliest_article is None
     assert result[0].latest_article is None
+
+
+# ---------------------------------------------------------------------------
+# _find_digest_pipeline_dir / _find_latest_digest_pipeline_dir
+# ---------------------------------------------------------------------------
+
+
+def test_find_digest_by_id(tmp_path: Path) -> None:
+    _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01")
+    _make_and_register(tmp_path, "pipeline-2026-03-02-100000", "2026-03-02")
+    assert _find_digest_pipeline_dir(tmp_path, 1) == tmp_path / "pipeline-2026-03-01-100000"
+    assert _find_digest_pipeline_dir(tmp_path, 2) == tmp_path / "pipeline-2026-03-02-100000"
+    assert _find_digest_pipeline_dir(tmp_path, 99) is None
+
+
+def test_find_latest_digest(tmp_path: Path) -> None:
+    _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01")
+    _make_and_register(tmp_path, "pipeline-2026-03-02-100000", "2026-03-02")
+    result = _find_latest_digest_pipeline_dir(tmp_path)
+    assert result == tmp_path / "pipeline-2026-03-02-100000"
+
+
+def test_find_latest_digest_empty(tmp_path: Path) -> None:
+    assert _find_latest_digest_pipeline_dir(tmp_path) is None
 
 
 # ---------------------------------------------------------------------------
@@ -291,21 +411,19 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> No
     workdir = tmp_path / "workdirs"
     gap_end_utc = "2026-02-28T12:15:00+00:00"
     gap_start_utc = "2026-02-28T20:12:00+00:00"
-    _make_digest(
-        workdir / "pipeline-2026-03-01-100000",
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-01-100000",
         "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
         articles=[
             _article("2026-02-27T06:00:00+00:00"),
             _article(gap_end_utc),
         ],
     )
-    _make_digest(
-        workdir / "pipeline-2026-03-02-100000",
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-02-100000",
         "2026-03-02",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
         articles=[
             _article(gap_start_utc),
             _article("2026-03-01T14:30:00+00:00"),
@@ -318,9 +436,7 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> No
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
 
-    assert "1" in out
     assert "2026-03-02" in out
-    assert "2" in out
     assert "2026-03-01" in out
     assert "Uncovered periods" in out
     assert _local_str(gap_end_utc) in out
@@ -329,21 +445,19 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> No
 
 def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> None:
     workdir = tmp_path / "workdirs"
-    _make_digest(
-        workdir / "pipeline-2026-03-01-100000",
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-01-100000",
         "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
         articles=[
             _article("2026-02-27T06:00:00+00:00"),
             _article("2026-02-28T20:00:00+00:00"),
         ],
     )
-    _make_digest(
-        workdir / "pipeline-2026-03-02-100000",
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-02-100000",
         "2026-03-02",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
         articles=[
             _article("2026-02-28T08:00:00+00:00"),
             _article("2026-03-01T14:30:00+00:00"),
@@ -363,25 +477,17 @@ def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: obj
     workdir = tmp_path / "workdirs"
     gap_end_utc = "2026-02-28T12:00:00+00:00"
     gap_start_utc = "2026-03-03T08:00:00+00:00"
-    _make_digest(
-        workdir / "pipeline-2026-03-01-100000",
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-01-100000",
         "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
         articles=[_article(gap_end_utc)],
     )
-    _make_digest(
-        workdir / "pipeline-2026-03-02-100000",
-        "2026-03-02",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
-        articles=[],
-    )
-    _make_digest(
-        workdir / "pipeline-2026-03-03-100000",
+    _make_and_register(workdir, "pipeline-2026-03-02-100000", "2026-03-02", articles=[])
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-03-100000",
         "2026-03-03",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
         articles=[_article(gap_start_utc)],
     )
 
@@ -394,29 +500,6 @@ def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: obj
     assert "Uncovered periods" in out
     assert _local_str(gap_end_utc) in out
     assert _local_str(gap_start_utc) in out
-
-
-# ---------------------------------------------------------------------------
-# _find_digest_pipeline_dir
-# ---------------------------------------------------------------------------
-
-
-def test_find_digest_by_id(tmp_path: Path) -> None:
-    _make_digest(
-        tmp_path / "pipeline-2026-03-01-100000",
-        "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
-    )
-    _make_digest(
-        tmp_path / "pipeline-2026-03-02-100000",
-        "2026-03-02",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
-    )
-    assert _find_digest_pipeline_dir(tmp_path, 1) == tmp_path / "pipeline-2026-03-02-100000"
-    assert _find_digest_pipeline_dir(tmp_path, 2) == tmp_path / "pipeline-2026-03-01-100000"
-    assert _find_digest_pipeline_dir(tmp_path, 99) is None
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +525,30 @@ def test_gc_old_pipelines_removes_old(tmp_path: Path) -> None:
     assert deleted[0] == old_dir
     assert not old_dir.exists()
     assert recent_dir.exists()
+
+
+def test_gc_old_pipelines_cleans_index(tmp_path: Path) -> None:
+    today = date.today()
+    old_date = today - timedelta(days=10)
+    recent_date = today - timedelta(days=1)
+
+    _make_and_register(
+        tmp_path,
+        f"pipeline-{old_date.isoformat()}-100000",
+        old_date.isoformat(),
+    )
+    _make_and_register(
+        tmp_path,
+        f"pipeline-{recent_date.isoformat()}-100000",
+        recent_date.isoformat(),
+    )
+    assert len(_load_digest_index(tmp_path)) == 2
+
+    gc_old_pipelines(tmp_path, keep_days=7)
+
+    entries = _load_digest_index(tmp_path)
+    assert len(entries) == 1
+    assert recent_date.isoformat() in entries[0].pipeline_dir_name
 
 
 def test_gc_old_pipelines_noop_when_missing(tmp_path: Path) -> None:
@@ -483,17 +590,17 @@ def test_delete_nonexistent_digest(tmp_path: Path) -> None:
     assert any("not found" in l.lower() for l in lines)
 
 
-def test_delete_removes_pipeline_dir(tmp_path: Path) -> None:
+def test_delete_removes_pipeline_dir_and_index_entry(tmp_path: Path) -> None:
     workdir = tmp_path / "workdirs"
     pdir = workdir / "pipeline-2026-03-01-100000"
-    _make_digest(
-        pdir,
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-01-100000",
         "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
         articles=[_article("2026-03-01T10:00:00+00:00")],
     )
     assert pdir.exists()
+    assert len(_load_digest_index(workdir)) == 1
 
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
@@ -501,5 +608,6 @@ def test_delete_removes_pipeline_dir(tmp_path: Path) -> None:
         lines = DigestInfoController().delete_digest(1)
 
     assert not pdir.exists()
+    assert _load_digest_index(workdir) == []
     assert any("deleted" in l.lower() for l in lines)
     assert any("available" in l.lower() for l in lines)

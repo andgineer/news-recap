@@ -208,7 +208,7 @@ def _warn_unprocessed(
     remaining = [e for e in entries if e.article_id not in all_enriched]
     if remaining:
         logger.warning(
-            "[%s] %d/%d articles still unprocessed after %d round(s)",
+            "[cyan]%s:[/cyan] %d/%d articles still unprocessed after %d round(s)",
             step_name,
             len(remaining),
             total,
@@ -234,12 +234,12 @@ def _run_enrich(
     should persist partial results and stop the pipeline.
     """
     if not entries:
-        logger.info("[%s] No articles to enrich", step_name)
+        logger.info("[cyan]%s:[/cyan] No articles to enrich", step_name)
         return {}, False
 
     remaining = list(entries)
     total = len(remaining)
-    logger.info("[%s] %d articles to enrich", step_name, total)
+    logger.info("[cyan]%s:[/cyan] %d articles to enrich", step_name, total)
 
     all_enriched: dict[str, str] = {}
     batch_counter = next_batch_number(ctx.pdir, step_name) - 1
@@ -254,7 +254,7 @@ def _run_enrich(
             batch=batch_num,
             prompt=prompt,
         )
-        logger.info("[%s] Batch %d — %d articles", step_name, batch_num, len(batch))
+        logger.info("[cyan]%s:[/cyan] Batch %d — %d articles", step_name, batch_num, len(batch))
         return task_id
 
     def parse(task_id: str, batch: list[EnrichEntry], _batch_num: int) -> dict[str, str]:
@@ -269,7 +269,7 @@ def _run_enrich(
         round_entries = list(remaining)
         batches = split_into_enrich_batches(round_entries)
         logger.info(
-            "[%s] Round %d: %d articles -> %d batch(es)",
+            "[cyan]%s:[/cyan] Round %d: %d articles -> %d batch(es)",
             step_name,
             round_num,
             len(round_entries),
@@ -299,7 +299,7 @@ def _run_enrich(
 
         if remaining and len(all_enriched) == enriched_before:
             logger.warning(
-                "[%s] No progress in round %d — stopping retries",
+                "[cyan]%s:[/cyan] No progress in round %d — stopping retries",
                 step_name,
                 round_num,
             )
@@ -308,7 +308,7 @@ def _run_enrich(
     if not had_crash:
         _warn_unprocessed(logger, step_name, entries, all_enriched, total)
 
-    logger.info("[%s] %d/%d articles enriched", step_name, len(all_enriched), total)
+    logger.info("[cyan]%s:[/cyan] %d/%d articles enriched", step_name, len(all_enriched), total)
     return all_enriched, had_crash
 
 
@@ -338,7 +338,7 @@ class Enrich(TaskLauncher):
 
         if already_enriched:
             logger.info(
-                "[enrich] %d already enriched, %d remaining",
+                "[cyan]enrich:[/cyan] %d already enriched, %d remaining",
                 len(already_enriched),
                 len(remaining_ids),
             )
@@ -356,7 +356,8 @@ class Enrich(TaskLauncher):
         entries = _build_enrich_entries(ctx, remaining_ids)
         if not entries:
             logger.warning(
-                "[enrich] No cached resources for %d remaining articles — marking incomplete",
+                "[cyan]enrich:[/cyan] No cached resources for %d remaining articles"
+                " — marking incomplete",
                 len(remaining_ids),
             )
             ctx.state["enriched_articles"] = prev_enriched
