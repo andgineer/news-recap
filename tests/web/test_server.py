@@ -37,7 +37,7 @@ def _make_digest(
     section = DigestSection(title="Top Stories", block_indices=[0])
     return Digest(
         digest_id=digest_id,
-        business_date=date_str,
+        run_date=date_str,
         status=status,
         pipeline_dir=str(pipeline_dir),
         articles=[article],
@@ -89,7 +89,7 @@ def test_find_latest_digest_skips_completed_without_oneshot_phase(tmp_path: Path
     pipeline_dir = workdir / "pipeline-2026-03-06-120000"
     digest = Digest(
         digest_id="partial-id",
-        business_date="2026-03-06",
+        run_date="2026-03-06",
         status="completed",
         pipeline_dir=str(pipeline_dir),
         articles=[],
@@ -253,7 +253,7 @@ def test_digest_page_missing_article_reference_silently_skipped(tmp_path: Path) 
     section = DigestSection(title="Section", block_indices=[0])
     digest = Digest(
         digest_id="orphan-digest",
-        business_date="2026-03-06",
+        run_date="2026-03-06",
         status="completed",
         pipeline_dir=str(pipeline_dir),
         articles=[],
@@ -285,7 +285,7 @@ def test_safe_index_uses_ondisk_path_not_pipeline_dir_metadata(tmp_path: Path) -
     stale_dir = tmp_path / "some-other-location"
     digest = Digest(
         digest_id="stale-meta-id",
-        business_date="2026-03-06",
+        run_date="2026-03-06",
         status="completed",
         pipeline_dir=str(stale_dir),  # does not match actual file location
         articles=[],
@@ -316,7 +316,7 @@ def test_safe_index_rejects_path_outside_workdir_root(tmp_path: Path) -> None:
     # Write a valid digest outside workdir so we can call _safe_index with it
     digest = Digest(
         digest_id="outside-id",
-        business_date="2026-03-06",
+        run_date="2026-03-06",
         status="completed",
         pipeline_dir=str(outside_path.parent),
         articles=[],

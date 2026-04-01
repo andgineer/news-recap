@@ -69,7 +69,7 @@ def _load_checkpoint(pdir: Path) -> Digest | None:
 
 def recap_flow(  # noqa: PLR0915
     pipeline_dir: str,
-    business_date: str,
+    run_date: str,
     stop_after: str | None = None,
 ) -> None:
     """Run the daily recap pipeline.
@@ -94,7 +94,7 @@ def recap_flow(  # noqa: PLR0915
     else:
         digest = Digest(
             digest_id=str(uuid4()),
-            business_date=business_date,
+            run_date=run_date,
             status="running",
             pipeline_dir=str(pdir),
             articles=list(inp.articles),
@@ -104,7 +104,7 @@ def recap_flow(  # noqa: PLR0915
     logger.info(
         "[bold]Pipeline starting:[/bold] %d articles, date=%s",
         len(inp.articles),
-        business_date,
+        run_date,
     )
 
     transport = None

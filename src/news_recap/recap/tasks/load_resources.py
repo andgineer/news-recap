@@ -91,7 +91,7 @@ class LoadResources(TaskLauncher):
 
         loaded = load_resource_texts(
             eligible,
-            cache_dir=resource_cache_dir(ctx.inp.data_dir, ctx.inp.business_date),
+            cache_dir=resource_cache_dir(ctx.inp.data_dir, ctx.inp.run_date),
             min_resource_chars=ctx.inp.min_resource_chars,
         )
 

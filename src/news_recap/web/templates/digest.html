@@ -2,10 +2,10 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <title>News Recap {{ digest.business_date }}</title>
+  <title>News Recap {{ digest.run_date }}</title>
 </head>
 <body>
-  <h1>{{ digest.business_date }}</h1>
+  <h1>{{ digest.run_date }}</h1>
 
   {% if digest.day_summary %}
   <blockquote>{{ digest.day_summary | nl2br }}</blockquote>

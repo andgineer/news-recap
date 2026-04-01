@@ -201,6 +201,6 @@ class WebCliController:
         digest_path = pipeline_dir / "digest.json"
         digest = load_msgspec(digest_path, Digest)
 
-        yield f"Serving digest ({digest.business_date}, {pipeline_dir.name})"
+        yield f"Serving digest ({digest.run_date}, {pipeline_dir.name})"
         app = create_app(workdir_root, pinned_pipeline_dir=pipeline_dir, settings=settings)
         app.run(host=command.host, port=command.port)

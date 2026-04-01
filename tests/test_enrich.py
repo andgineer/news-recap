@@ -194,7 +194,7 @@ def _make_fake_ctx(tmp_path):
 
     digest = Digest(
         digest_id="test-digest",
-        business_date="2026-01-01",
+        run_date="2026-01-01",
         status="running",
         pipeline_dir=str(pdir),
         articles=[],

@@ -15,6 +15,7 @@ from click.testing import CliRunner
 
 from news_recap.main import (
     _collect_task_rows,
+    _emit_pipeline,
     _emit_prompt,
     news_recap,
 )
@@ -85,7 +86,7 @@ def _make_digest_on_disk(
     articles = [_article(f"art-{i}") for i in range(n_articles)]
     digest = Digest(
         digest_id="test-digest",
-        business_date="2026-03-01",
+        run_date="2026-03-01",
         status=status,
         pipeline_dir=str(pipeline_dir),
         articles=articles,
@@ -107,7 +108,7 @@ def _make_summary(
 ) -> DigestSummary:
     return DigestSummary(
         digest_id=digest_id,
-        business_date=date(2026, 3, 1),
+        run_date=date(2026, 3, 1),
         article_count=5,
         earliest_article=datetime(2026, 2, 28, 20, 0, tzinfo=UTC),
         latest_article=datetime(2026, 3, 1, 10, 0, tzinfo=UTC),
@@ -232,6 +233,8 @@ def test_info_digest_shows_detail(tmp_path: Path) -> None:
     assert "2 KB" in result.output  # prompts
     assert "1 KB" in result.output  # output
     assert "5,000" in result.output  # tokens
+    started_local = summary.started_at.astimezone()
+    assert started_local.strftime("%Y-%m-%d %H:%M") in result.output
 
 
 def test_info_digest_shows_task_table(tmp_path: Path) -> None:
@@ -416,6 +419,22 @@ def test_emit_run_summary_completed(tmp_path: Path) -> None:
     assert str(pipeline_dir) in log_line
 
 
+def test_emit_pipeline_prints_stage_table(tmp_path: Path, capsys) -> None:
+    """After pipeline lines, _emit_pipeline prints the per-stage table."""
+    pipeline_dir = tmp_path / "pipeline-2026-03-01-100000"
+    _make_task_dir(pipeline_dir, "classify-1", elapsed=10.5, tokens=500, prompt_text="A" * 1000)
+    _make_task_dir(pipeline_dir, "enrich-1", elapsed=5.0, tokens=200, output_text="B" * 300)
+
+    lines: list[tuple[str, str]] = [
+        ("ok", "Done: 5 articles, 15s, prompts=1 KB, output=300 B"),
+        ("log", f"Workdir: {pipeline_dir}"),
+    ]
+    _emit_pipeline(iter(lines))
+    out = capsys.readouterr().out
+    assert "classify-1" in out
+    assert "enrich-1" in out
+
+
 def test_emit_run_summary_no_digest_file(tmp_path: Path) -> None:
     pipeline_dir = tmp_path / "empty-dir"
     pipeline_dir.mkdir(parents=True)
@@ -439,7 +458,7 @@ def test_digest_detail_found(tmp_path: Path) -> None:
     pdir = tmp_path / "pipeline-2026-03-01-100000"
     digest = Digest(
         digest_id="d-1",
-        business_date="2026-03-01",
+        run_date="2026-03-01",
         status="completed",
         pipeline_dir=str(pdir),
         articles=[_article()],
@@ -477,7 +496,7 @@ def test_prompt_from_digest_loads_articles(tmp_path: Path) -> None:
 
     digest = Digest(
         digest_id="digest-42",
-        business_date="2026-03-10",
+        run_date="2026-03-10",
         status="completed",
         pipeline_dir=str(tmp_path / "p1"),
         articles=[_article("x1"), _article("x2")],
@@ -497,7 +516,7 @@ def test_prompt_from_digest_loads_articles(tmp_path: Path) -> None:
         {
             "digest_id": 1,
             "pipeline_dir_name": "p1",
-            "business_date": "2026-03-10",
+            "run_date": "2026-03-10",
             "article_count": 2,
         }
     ]

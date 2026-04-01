@@ -112,7 +112,7 @@ class Digest(msgspec.Struct):
     """Top-level digest state — the single checkpoint object for the recap pipeline."""
 
     digest_id: str
-    business_date: str
+    run_date: str
     status: str
     pipeline_dir: str
     articles: list[DigestArticle]

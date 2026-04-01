@@ -457,7 +457,7 @@ class TestPipelineInputMinResourceChars:
         from news_recap.recap.storage.pipeline_io import read_pipeline_input
 
         payload = {
-            "business_date": "2026-01-01",
+            "run_date": "2026-01-01",
             "articles": [],
             "preferences": {"max_headline_chars": 120, "language": "ru"},
             "routing_defaults": {
@@ -485,7 +485,7 @@ class TestPipelineInputMinResourceChars:
         )
 
         payload = {
-            "business_date": "2026-01-01",
+            "run_date": "2026-01-01",
             "articles": [],
             "preferences": {"max_headline_chars": 120, "language": "ru"},
             "routing_defaults": {

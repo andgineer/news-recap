@@ -24,11 +24,11 @@ _TODAY = datetime.now(tz=UTC).date()
 def _write_pipeline_input(
     tmp_path: Path,
     agent_override: str | None = "codex",
-    business_date: date | None = None,
+    run_date: date | None = None,
 ) -> None:
-    bdate = business_date or _TODAY
+    bdate = run_date or _TODAY
     payload = {
-        "business_date": bdate.isoformat(),
+        "run_date": bdate.isoformat(),
         "articles": [],
         "preferences": {"max_headline_chars": 120, "language": "ru"},
         "routing_defaults": {
@@ -46,13 +46,13 @@ def _write_pipeline_input(
 def _write_digest(
     pipeline_dir: Path,
     completed_phases: list[str] | None = None,
-    business_date: date | None = None,
+    run_date: date | None = None,
     status: str = "in_progress",
 ) -> None:
-    bdate = business_date or _TODAY
+    bdate = run_date or _TODAY
     digest = Digest(
         digest_id="test-digest",
-        business_date=bdate.isoformat(),
+        run_date=bdate.isoformat(),
         status=status,
         pipeline_dir=str(pipeline_dir),
         articles=[],
@@ -165,7 +165,7 @@ def _make_source_pipeline(
         for i in range(n_articles)
     ]
     payload = {
-        "business_date": _SOURCE_DATE.isoformat(),
+        "run_date": _SOURCE_DATE.isoformat(),
         "articles": articles,
         "preferences": {"max_headline_chars": 120, "language": "ru"},
         "routing_defaults": {
@@ -184,7 +184,7 @@ def _make_source_pipeline(
         {
             "digest_id": _SOURCE_DIGEST_ID,
             "pipeline_dir_name": _SOURCE_DIR_NAME,
-            "business_date": _SOURCE_DATE.isoformat(),
+            "run_date": _SOURCE_DATE.isoformat(),
             "article_count": n_articles,
         }
     ]
@@ -268,13 +268,13 @@ def test_from_digest_reuses_articles_and_date(
 
     mock_flow.assert_called_once()
     call_kwargs = mock_flow.call_args
-    assert call_kwargs[1]["business_date"] == "2026-03-25"
+    assert call_kwargs[1]["run_date"] == "2026-03-25"
 
     new_pipeline_dir = Path(call_kwargs[1]["pipeline_dir"])
     new_inp = read_pipeline_input(str(new_pipeline_dir))
     assert len(new_inp.articles) == 7
     assert new_inp.agent_override == "claude"
-    assert new_inp.business_date == _SOURCE_DATE.isoformat()
+    assert new_inp.run_date == _SOURCE_DATE.isoformat()
 
 
 @patch("news_recap.recap.launcher.recap_flow")

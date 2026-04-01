@@ -13,7 +13,7 @@ from news_recap.recap.tasks.prompts import PromptBackend
 def _write_pipeline_input(tmp_path: Path, extra: dict | None = None) -> Path:
     """Write a minimal pipeline_input.json (without optional new fields)."""
     payload = {
-        "business_date": "2026-01-01",
+        "run_date": "2026-01-01",
         "articles": [],
         "preferences": {
             "exclude": "",

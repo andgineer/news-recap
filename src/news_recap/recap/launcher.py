@@ -26,6 +26,7 @@ from news_recap.recap.pipeline_setup import (
     _find_resumable_pipeline,
     _write_pipeline_input,
     gc_old_pipelines,
+    since_display_date,
 )
 from news_recap.storage.io import load_msgspec
 
@@ -73,9 +74,9 @@ def _load_from_pipeline(pipeline_dir: Path) -> tuple[date, list[DigestArticle]]:
     if not path.exists():
         raise FileNotFoundError(f"No pipeline_input.json in {pipeline_dir}")
     raw = json.loads(path.read_text("utf-8"))
-    business_date = date.fromisoformat(raw["business_date"])
+    run_date = date.fromisoformat(raw["run_date"])
     articles = [msgspec.convert(a, DigestArticle) for a in raw["articles"]]
-    return business_date, articles
+    return run_date, articles
 
 
 def _apply_resume_patches(
@@ -162,7 +163,7 @@ class RecapCliController:
         if resumable:
             pipeline_dir = resumable
             digest = load_msgspec(resumable / _DIGEST_FILENAME, Digest)
-            business_date = date.fromisoformat(digest.business_date)
+            run_date = date.fromisoformat(digest.run_date)
             yield (
                 "info",
                 f"Resuming pipeline: {pipeline_dir.name} "
@@ -171,14 +172,14 @@ class RecapCliController:
             )
             yield from _apply_resume_patches(command, pipeline_dir)
         else:
-            business_date = source_articles[0] if source_articles else datetime.now(tz=UTC).date()
+            run_date = source_articles[0] if source_articles else datetime.now(tz=UTC).date()
 
             articles: list[DigestArticle]
             if source_articles:
                 articles = source_articles[1]
                 yield (
                     "info",
-                    f"Reusing {len(articles)} from digest #{command.from_digest} ({business_date})",
+                    f"Reusing {len(articles)} from digest #{command.from_digest} ({run_date})",
                 )
             else:
                 fetch_limit = command.article_limit or 2000
@@ -198,17 +199,18 @@ class RecapCliController:
                 limit_note = f" (limited to {fetch_limit})" if command.article_limit else ""
                 yield (
                     "info",
-                    f"Found {len(articles)} articles since {since_date}"
+                    f"Found {len(articles)} articles since"
+                    f" {since_display_date(since_date)}"
                     f" (cap {_cap_days}d){limit_note}",
                 )
 
             ts = datetime.now(tz=UTC).strftime("%H%M%S")
             pipeline_dir = (
-                settings.orchestrator.workdir_root / f"pipeline-{business_date}-{ts}"
+                settings.orchestrator.workdir_root / f"pipeline-{run_date}-{ts}"
             ).resolve()
             _write_pipeline_input(
                 pipeline_dir,
-                business_date=business_date,
+                run_date=run_date,
                 articles=articles,
                 preferences=preferences,
                 routing_defaults=routing_defaults,
@@ -225,7 +227,7 @@ class RecapCliController:
 
         recap_flow(
             pipeline_dir=str(pipeline_dir),
-            business_date=business_date.isoformat(),
+            run_date=run_date.isoformat(),
             stop_after=command.stop_after,
         )
 

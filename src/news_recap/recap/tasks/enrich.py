@@ -397,7 +397,7 @@ def _build_enrich_entries(
 
     loaded = load_cached_resource_texts(
         index_entries,
-        cache_dir=resource_cache_dir(ctx.inp.data_dir, ctx.inp.business_date),
+        cache_dir=resource_cache_dir(ctx.inp.data_dir, ctx.inp.run_date),
         min_resource_chars=ctx.inp.min_resource_chars,
     )
     return [

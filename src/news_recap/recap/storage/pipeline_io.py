@@ -38,7 +38,7 @@ class PipelineInput:
     routing_defaults: RoutingDefaults
     agent_override: str | None
     data_dir: str
-    business_date: str
+    run_date: str
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS
     dedup_threshold: float = 0.90
     dedup_model_name: str = "intfloat/multilingual-e5-small"
@@ -71,9 +71,9 @@ class PipelineInput:
         return self.routing_defaults.agent_launch_delay.get(self.active_agent, 0.0)
 
 
-def resource_cache_dir(data_dir: str, business_date: str) -> Path:
+def resource_cache_dir(data_dir: str, run_date: str) -> Path:
     """Return the date-sharded resource cache directory."""
-    return Path(data_dir) / "resources" / business_date
+    return Path(data_dir) / "resources" / run_date
 
 
 def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
@@ -86,7 +86,7 @@ def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
         routing_defaults=RoutingDefaults.from_dict(raw["routing_defaults"]),
         agent_override=raw.get("agent_override"),
         data_dir=raw.get("data_dir", str(Path.home() / ".news_recap_data")),
-        business_date=raw["business_date"],
+        run_date=raw["run_date"],
         min_resource_chars=int(raw.get("min_resource_chars", _DEFAULT_MIN_RESOURCE_CHARS)),
         dedup_threshold=float(raw.get("dedup_threshold", 0.90)),
         dedup_model_name=raw.get("dedup_model_name", "intfloat/multilingual-e5-small"),

@@ -489,8 +489,13 @@ def _emit_styled(severity: str, text: str) -> None:
 
 
 def _emit_pipeline(lines: Iterator[PipelineLine]) -> None:
+    workdir: Path | None = None
     for severity, text in lines:
         _emit_styled(severity, text)
+        if text.startswith("Workdir: "):
+            workdir = Path(text.removeprefix("Workdir: "))
+    if workdir and workdir.is_dir():
+        _print_stage_table(workdir)
 
 
 def _emit_prompt(lines: Iterator[PromptLine]) -> None:
@@ -640,6 +645,30 @@ def _collect_task_rows(workdir: Path) -> list[tuple[str, float, int, int, int]]:
     return rows
 
 
+def _print_stage_table(workdir: Path) -> None:
+    """Print a per-stage metrics table for tasks in *workdir*."""
+    rows = _collect_task_rows(workdir)
+    if not rows:
+        return
+    console = Console(no_color=NO_COLOR, highlight=not NO_COLOR)
+    console.print()
+    table = Table(show_lines=False, pad_edge=False, box=None)
+    table.add_column("Phase", no_wrap=True)
+    table.add_column("Elapsed", justify="right", no_wrap=True)
+    table.add_column("Prompt", justify="right", no_wrap=True)
+    table.add_column("Output", justify="right", no_wrap=True)
+    table.add_column("Tokens", justify="right", no_wrap=True)
+    for name, elapsed, prompt_sz, output_sz, tok in rows:
+        table.add_row(
+            name,
+            _human_elapsed(elapsed),
+            _human_size(prompt_sz),
+            _human_size(output_sz),
+            f"{tok:,}" if tok else "—",
+        )
+    console.print(table)
+
+
 def _print_digest_detail(digest_id: int) -> None:
     s = DIGEST_INFO_CONTROLLER.digest_detail(digest_id)
     if s is None:
@@ -660,7 +689,6 @@ def _print_digest_detail(digest_id: int) -> None:
         styled = f"[cyan]{padded}[/cyan]" if not NO_COLOR else padded
         console.print(f"    {styled} {value}")
 
-    _row("Date", str(s.business_date))
     _row("Started", _fmt_dt(s.started_at))
     _row("Articles", str(s.article_count))
     _row("Article period", _smart_period(s.earliest_article, s.latest_article))
@@ -672,24 +700,7 @@ def _print_digest_detail(digest_id: int) -> None:
     _row("Workdir", str(workdir))
 
     if workdir.is_dir():
-        rows = _collect_task_rows(workdir)
-        if rows:
-            console.print()
-            table = Table(show_lines=False, pad_edge=False, box=None)
-            table.add_column("Phase", no_wrap=True)
-            table.add_column("Elapsed", justify="right", no_wrap=True)
-            table.add_column("Prompt", justify="right", no_wrap=True)
-            table.add_column("Output", justify="right", no_wrap=True)
-            table.add_column("Tokens", justify="right", no_wrap=True)
-            for name, elapsed, prompt_sz, output_sz, tok in rows:
-                table.add_row(
-                    name,
-                    _human_elapsed(elapsed),
-                    _human_size(prompt_sz),
-                    _human_size(output_sz),
-                    f"{tok:,}" if tok else "—",
-                )
-            console.print(table)
+        _print_stage_table(workdir)
 
     console.print()
 

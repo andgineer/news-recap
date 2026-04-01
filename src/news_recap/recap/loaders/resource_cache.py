@@ -3,7 +3,7 @@
 Stores loaded resources (successes *and* failures) as JSON files so that
 pipeline steps share fetched content without re-downloading or re-hitting
 APIs that already returned errors.  The cache directory is provided by
-the caller (typically ``{data_dir}/resources/{business_date}/``).
+the caller (typically ``{data_dir}/resources/{run_date}/``).
 """
 
 from __future__ import annotations

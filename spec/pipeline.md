@@ -318,7 +318,7 @@ The final digest contains:
 ```
 Digest
   digest_id: str
-  business_date: str
+  run_date: str
   status: str
   articles: list[DigestArticle]
   blocks: list[DigestBlock]

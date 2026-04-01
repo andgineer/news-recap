@@ -533,20 +533,24 @@ class IngestionStore:
         *,
         lookback_days: int | None = None,
         limit: int = 2000,
-        since: date | None = None,
+        since: datetime | date | None = None,
     ) -> list[DigestArticle]:
         """Load articles from recent days for the recap pipeline.
 
         *lookback_days* controls how many daily partitions to load
         (defaults to ``gc_retention_days``).  When *since* is given,
-        only articles with ``published_at >= since`` are returned.
+        only articles published **after** *since* are returned
+        (``>`` for ``datetime``, ``>=`` midnight for ``date``).
         """
         days = self._load_recent_days(n=lookback_days)
         articles = self._all_articles(days)
         sorted_arts = sorted(articles.values(), key=lambda a: a.published_at, reverse=True)
         if since is not None:
-            cutoff = datetime(since.year, since.month, since.day, tzinfo=UTC)
-            sorted_arts = [a for a in sorted_arts if a.published_at >= cutoff]
+            if type(since) is datetime:  # strict >; datetime is a date subclass
+                sorted_arts = [a for a in sorted_arts if a.published_at > since]
+            else:
+                cutoff = datetime(since.year, since.month, since.day, tzinfo=UTC)
+                sorted_arts = [a for a in sorted_arts if a.published_at >= cutoff]
         return [
             DigestArticle(
                 article_id=a.article_id,

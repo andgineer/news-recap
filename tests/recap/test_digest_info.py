@@ -33,14 +33,14 @@ _DIGEST_FILENAME = "digest.json"
 
 def _make_digest(
     pipeline_dir: Path,
-    business_date: str,
+    run_date: str,
     status: str = "completed",
     completed_phases: list[str] | None = None,
     articles: list[DigestArticle] | None = None,
 ) -> Digest:
     digest = Digest(
-        digest_id="d-" + business_date,
-        business_date=business_date,
+        digest_id="d-" + run_date,
+        run_date=run_date,
         status=status,
         pipeline_dir=str(pipeline_dir),
         articles=articles or [],
@@ -54,14 +54,14 @@ def _make_digest(
 def _make_and_register(
     workdir: Path,
     dir_name: str,
-    business_date: str,
+    run_date: str,
     articles: list[DigestArticle] | None = None,
 ) -> Digest:
     """Create a completed digest on disk and register it in the index."""
     pdir = workdir / dir_name
     digest = _make_digest(
         pdir,
-        business_date,
+        run_date,
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
         articles=articles,
@@ -170,10 +170,10 @@ def test_next_free_id_empty() -> None:
 def test_next_free_id_sequential() -> None:
     entries = [
         DigestIndexEntry(
-            digest_id=1, pipeline_dir_name="p1", business_date="2026-03-01", article_count=10
+            digest_id=1, pipeline_dir_name="p1", run_date="2026-03-01", article_count=10
         ),
         DigestIndexEntry(
-            digest_id=2, pipeline_dir_name="p2", business_date="2026-03-02", article_count=20
+            digest_id=2, pipeline_dir_name="p2", run_date="2026-03-02", article_count=20
         ),
     ]
     assert _next_free_id(entries) == 3
@@ -182,10 +182,10 @@ def test_next_free_id_sequential() -> None:
 def test_next_free_id_with_gap() -> None:
     entries = [
         DigestIndexEntry(
-            digest_id=2, pipeline_dir_name="p2", business_date="2026-03-02", article_count=20
+            digest_id=2, pipeline_dir_name="p2", run_date="2026-03-02", article_count=20
         ),
         DigestIndexEntry(
-            digest_id=3, pipeline_dir_name="p3", business_date="2026-03-03", article_count=30
+            digest_id=3, pipeline_dir_name="p3", run_date="2026-03-03", article_count=30
         ),
     ]
     assert _next_free_id(entries) == 1
@@ -333,7 +333,7 @@ def test_list_returns_completed_digests(tmp_path: Path) -> None:
     assert len(result) == 1
     s = result[0]
     assert s.digest_id == 1
-    assert s.business_date == date(2026, 3, 1)
+    assert s.run_date == date(2026, 3, 1)
     assert s.article_count == 2
     assert s.earliest_article == datetime(2026, 2, 28, 20, 0, tzinfo=UTC)
     assert s.latest_article == datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
@@ -356,8 +356,8 @@ def test_list_newest_first(tmp_path: Path) -> None:
     )
     result = _list_completed_digests(tmp_path)
     assert len(result) == 2
-    assert result[0].business_date == date(2026, 3, 2)
-    assert result[1].business_date == date(2026, 3, 1)
+    assert result[0].run_date == date(2026, 3, 2)
+    assert result[1].run_date == date(2026, 3, 1)
 
 
 def test_list_zero_article_digest(tmp_path: Path) -> None:

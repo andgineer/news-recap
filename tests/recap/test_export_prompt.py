@@ -183,7 +183,7 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     article = _make_article("x1", "AI article", "https://ai.com/1", "ai.com")
     digest_obj = Digest(
         digest_id="test-id",
-        business_date="2026-03-11",
+        run_date="2026-03-11",
         status="completed",
         pipeline_dir=str(tmp_path),
         articles=[article],
@@ -216,9 +216,7 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     mock_store = MagicMock()
     mock_store.list_retrieval_articles.return_value = [article]
 
-    def fake_recap_flow(
-        pipeline_dir: str, business_date: str, stop_after: str | None = None
-    ) -> None:
+    def fake_recap_flow(pipeline_dir: str, run_date: str, stop_after: str | None = None) -> None:
         import msgspec
 
         pdir = Path(pipeline_dir)
@@ -310,7 +308,7 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
     article = _make_article("z1", "Fresh article", "https://fresh.com/1", "fresh.com")
     digest_obj = Digest(
         digest_id="fresh-id",
-        business_date="2026-03-11",
+        run_date="2026-03-11",
         status="completed",
         pipeline_dir=str(tmp_path),
         articles=[article],
@@ -351,9 +349,7 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
 
     created_dirs: list[str] = []
 
-    def fake_recap_flow(
-        pipeline_dir: str, business_date: str, stop_after: str | None = None
-    ) -> None:
+    def fake_recap_flow(pipeline_dir: str, run_date: str, stop_after: str | None = None) -> None:
         pdir = Path(pipeline_dir)
         created_dirs.append(pdir.name)
         pdir.mkdir(parents=True, exist_ok=True)

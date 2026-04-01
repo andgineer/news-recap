@@ -28,6 +28,7 @@ from news_recap.recap.pipeline_setup import (
     _find_digest_pipeline_dir,
     _find_resumable_pipeline,
     _write_pipeline_input,
+    since_display_date,
 )
 from news_recap.storage.io import load_msgspec
 
@@ -51,11 +52,11 @@ Do not invent information beyond what the titles tell you."""
 
 def _render_prompt(
     ordered: list[DigestArticle],
-    since_date: date,
+    since_date: date | datetime,
     language: str,
 ) -> str:
     article_lines = build_article_lines(ordered, include_url=True)
-    header = f"=== {len(ordered)} ARTICLES (since {since_date}) ==="
+    header = f"=== {len(ordered)} ARTICLES (since {since_display_date(since_date)}) ==="
     note = "Note: articles are pre-sorted by topic similarity."
     task = _TASK_TEMPLATE.format(language=language_display_name(language))
     return f"{task}\n\n{header}\n{note}\n\n{article_lines}"
@@ -100,11 +101,11 @@ def _run_ai_pipeline(
     settings: Settings,
     store: IngestionStore,
     cap_days: int,
-    since_date: date,
+    since_date: datetime | date,
 ) -> list[DigestArticle]:
     """Run classify → load_resources → enrich → deduplicate, return post-dedup articles."""
     routing_defaults = _build_routing_defaults(settings)
-    business_date = datetime.now(tz=UTC).date()
+    run_date = datetime.now(tz=UTC).date()
     workdir_root = settings.orchestrator.workdir_root.resolve()
 
     pdir = (
@@ -119,10 +120,10 @@ def _run_ai_pipeline(
             since=since_date,
         )
         ts = datetime.now(tz=UTC).strftime("%H%M%S")
-        pdir = (workdir_root / f"pipeline-{business_date}-{ts}").resolve()
+        pdir = (workdir_root / f"pipeline-{run_date}-{ts}").resolve()
         _write_pipeline_input(
             pdir,
-            business_date=business_date,
+            run_date=run_date,
             articles=articles,
             preferences=UserPreferences(),
             routing_defaults=routing_defaults,
@@ -135,7 +136,7 @@ def _run_ai_pipeline(
 
     recap_flow(
         pipeline_dir=str(pdir),
-        business_date=business_date.isoformat(),
+        run_date=run_date.isoformat(),
         stop_after="deduplicate",
     )
 
@@ -224,4 +225,4 @@ class PromptCliController:
                 f"Digest #{digest_id} not found. Use `news-recap list` to see available digests.",
             )
         digest = load_msgspec(pdir / "digest.json", Digest)
-        return digest.articles, date.fromisoformat(digest.business_date)
+        return digest.articles, date.fromisoformat(digest.run_date)

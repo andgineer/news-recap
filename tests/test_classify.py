@@ -197,7 +197,7 @@ class TestClassifyExecutePartialPersist:
 
         digest = Digest(
             digest_id="test",
-            business_date="2026-01-01",
+            run_date="2026-01-01",
             status="running",
             pipeline_dir=str(pdir),
             articles=[

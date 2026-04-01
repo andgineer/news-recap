@@ -103,7 +103,7 @@ def _build_digest_table(summaries: list[DigestSummary]) -> Table:
         started = _local(s.started_at).strftime("%H:%M") if s.started_at else "—"
         row = [
             str(s.digest_id),
-            str(s.business_date),
+            str(s.run_date),
             str(s.article_count),
             _smart_period(s.earliest_article, s.latest_article),
             started,

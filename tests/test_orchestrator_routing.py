@@ -186,7 +186,7 @@ def _pipeline_input(
         routing_defaults=rd,
         agent_override=agent_override,
         data_dir=".news_recap_data",
-        business_date="2026-02-19",
+        run_date="2026-02-19",
     )
 
 

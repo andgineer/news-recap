@@ -32,7 +32,7 @@ class DigestIndexEntry(msgspec.Struct):
 
     digest_id: int
     pipeline_dir_name: str
-    business_date: str
+    run_date: str
     article_count: int
     earliest_article: str | None = None
     latest_article: str | None = None
@@ -155,7 +155,7 @@ class DigestSummary:
     """Metadata for a single completed digest."""
 
     digest_id: int
-    business_date: date
+    run_date: date
     article_count: int
     earliest_article: datetime | None
     latest_article: datetime | None
@@ -167,13 +167,22 @@ class DigestSummary:
     output_bytes: int = 0
 
 
-def _find_last_completed_digest_date(workdir_root: Path) -> date | None:
-    """Return the business_date of the most recent fully completed digest, or ``None``."""
+def _find_last_digest_cutoff(workdir_root: Path) -> date | datetime | None:
+    """Return the cutoff from the most recent completed digest.
+
+    When ``latest_article`` is recorded, returns its ``datetime`` (callers
+    apply strict ``>`` so the boundary article is excluded).  Otherwise falls
+    back to ``run_date`` as a plain ``date`` (callers apply ``>=`` midnight
+    so all articles from that day are included).
+    Returns ``None`` when no completed digests exist.
+    """
     entries = _load_digest_index(workdir_root)
     if not entries:
         return None
     newest = max(entries, key=lambda e: e.pipeline_dir_name)
-    return date.fromisoformat(newest.business_date)
+    if newest.latest_article:
+        return datetime.fromisoformat(newest.latest_article)
+    return date.fromisoformat(newest.run_date)
 
 
 _PIPELINE_NAME_PARTS = 5
@@ -254,7 +263,7 @@ def register_digest(workdir_root: Path, pdir: Path, digest: Digest) -> None:
     entry = DigestIndexEntry(
         digest_id=_next_free_id(entries),
         pipeline_dir_name=dir_name,
-        business_date=digest.business_date,
+        run_date=digest.run_date,
         article_count=len(digest.articles),
         earliest_article=min(timestamps).isoformat() if timestamps else None,
         latest_article=max(timestamps).isoformat() if timestamps else None,
@@ -287,7 +296,7 @@ def _list_completed_digests(workdir_root: Path) -> list[DigestSummary]:
     return [
         DigestSummary(
             digest_id=e.digest_id,
-            business_date=date.fromisoformat(e.business_date),
+            run_date=date.fromisoformat(e.run_date),
             article_count=e.article_count,
             earliest_article=(
                 datetime.fromisoformat(e.earliest_article) if e.earliest_article else None
@@ -360,11 +369,12 @@ def _compute_article_window(
     settings: Settings,
     all_articles: bool,
     max_days: int | None,
-) -> tuple[int, date]:
-    """Return ``(lookback_days, since_date)`` for article retrieval.
+) -> tuple[int, date | datetime]:
+    """Return ``(lookback_days, since)`` for article retrieval.
 
-    By default articles are loaded since the last completed digest,
-    capped at *max_days* (or ``settings.ingestion.digest_lookback_days``).
+    *since* is a ``datetime`` when anchored to the last completed digest
+    (strict ``>`` filter excludes the boundary article), or a ``date``
+    when only the lookback-days cap applies (``>=`` midnight).
     When *all_articles* is ``True`` the last-digest anchor is skipped
     and only the cap applies.
     """
@@ -372,20 +382,34 @@ def _compute_article_window(
     today = datetime.now(tz=UTC).date()
     cap_cutoff = today - timedelta(days=cap_days)
 
-    last_digest_date: date | None = None
+    last_cutoff: date | datetime | None = None
     if not all_articles:
-        last_digest_date = _find_last_completed_digest_date(
+        last_cutoff = _find_last_digest_cutoff(
             settings.orchestrator.workdir_root.resolve(),
         )
 
-    since = max(last_digest_date, cap_cutoff) if last_digest_date else cap_cutoff
-    return cap_days, since
+    if last_cutoff is None:
+        return cap_days, cap_cutoff
+    if type(last_cutoff) is datetime:
+        cap_cutoff_dt = datetime(
+            cap_cutoff.year,
+            cap_cutoff.month,
+            cap_cutoff.day,
+            tzinfo=UTC,
+        )
+        return cap_days, max(last_cutoff, cap_cutoff_dt)
+    return cap_days, max(last_cutoff, cap_cutoff)
+
+
+def since_display_date(since: date | datetime) -> date:
+    """Extract plain ``date`` from a ``since`` cutoff for user-facing messages."""
+    return since.date() if type(since) is datetime else since
 
 
 def _write_pipeline_input(  # noqa: PLR0913
     pipeline_dir: Path,
     *,
-    business_date: date,
+    run_date: date,
     articles: list[DigestArticle],
     preferences: UserPreferences,
     routing_defaults: RoutingDefaults,
@@ -399,7 +423,7 @@ def _write_pipeline_input(  # noqa: PLR0913
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
     pipeline_dir.mkdir(parents=True, exist_ok=True)
     payload = {
-        "business_date": business_date.isoformat(),
+        "run_date": run_date.isoformat(),
         "articles": [msgspec.structs.asdict(a) for a in articles],
         "preferences": msgspec.structs.asdict(preferences),
         "routing_defaults": msgspec.structs.asdict(routing_defaults),
