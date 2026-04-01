@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/news_recap/recap/export_prompt.py: 86%</title>
+    <title>Coverage for src/news_recap/recap/export_prompt.py: 95%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src&#8201;/&#8201;news_recap&#8201;/&#8201;recap&#8201;/&#8201;export_prompt.py</b>:
-            <span class="pc_cov">86%</span>
+            <span class="pc_cov">95%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">93 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">80<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">13<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">88<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">5<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_8034ccf3fff5054b_flow_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-01 09:49 +0000
+            created at 2026-04-01 10:20 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -240,14 +240,14 @@
     <p class="run"><span class="n"><a id="t158" href="#t158">158</a></span><span class="t">        <span class="nam">settings</span> <span class="op">=</span> <span class="nam">Settings</span><span class="op">.</span><span class="nam">from_env</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t159" href="#t159">159</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t160" href="#t160">160</a></span><span class="t">        <span class="key">if</span> <span class="nam">command</span><span class="op">.</span><span class="nam">from_digest</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t161" href="#t161">161</a></span><span class="t">            <span class="nam">kept_articles</span><span class="op">,</span> <span class="nam">since_date</span> <span class="op">=</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_load_digest_articles</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t162" href="#t162">162</a></span><span class="t">                <span class="nam">settings</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t163" href="#t163">163</a></span><span class="t">                <span class="nam">command</span><span class="op">.</span><span class="nam">from_digest</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t164" href="#t164">164</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t165" href="#t165">165</a></span><span class="t">            <span class="key">yield</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t166" href="#t166">166</a></span><span class="t">                <span class="str">"info"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t167" href="#t167">167</a></span><span class="t">                <span class="fst">f"</span><span class="fst">Loaded </span><span class="op">{</span><span class="nam">len</span><span class="op">(</span><span class="nam">kept_articles</span><span class="op">)</span><span class="op">}</span><span class="fst"> articles from digest #</span><span class="op">{</span><span class="nam">command</span><span class="op">.</span><span class="nam">from_digest</span><span class="op">}</span><span class="fst">"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t168" href="#t168">168</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t161" href="#t161">161</a></span><span class="t">            <span class="nam">kept_articles</span><span class="op">,</span> <span class="nam">since_date</span> <span class="op">=</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_load_digest_articles</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t162" href="#t162">162</a></span><span class="t">                <span class="nam">settings</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t163" href="#t163">163</a></span><span class="t">                <span class="nam">command</span><span class="op">.</span><span class="nam">from_digest</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t164" href="#t164">164</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t165" href="#t165">165</a></span><span class="t">            <span class="key">yield</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t166" href="#t166">166</a></span><span class="t">                <span class="str">"info"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t167" href="#t167">167</a></span><span class="t">                <span class="fst">f"</span><span class="fst">Loaded </span><span class="op">{</span><span class="nam">len</span><span class="op">(</span><span class="nam">kept_articles</span><span class="op">)</span><span class="op">}</span><span class="fst"> articles from digest #</span><span class="op">{</span><span class="nam">command</span><span class="op">.</span><span class="nam">from_digest</span><span class="op">}</span><span class="fst">"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t168" href="#t168">168</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t169" href="#t169">169</a></span><span class="t">        <span class="key">else</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t170" href="#t170">170</a></span><span class="t">            <span class="nam">store</span> <span class="op">=</span> <span class="nam">IngestionStore</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t171" href="#t171">171</a></span><span class="t">                <span class="nam">settings</span><span class="op">.</span><span class="nam">data_dir</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -299,14 +299,14 @@
     <p class="run run2"><span class="n"><a id="t217" href="#t217">217</a></span><span class="t">        <span class="nam">settings</span><span class="op">:</span> <span class="nam">Settings</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t218" href="#t218">218</a></span><span class="t">        <span class="nam">digest_id</span><span class="op">:</span> <span class="nam">int</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t219" href="#t219">219</a></span><span class="t">    <span class="op">)</span> <span class="op">-></span> <span class="nam">tuple</span><span class="op">[</span><span class="nam">list</span><span class="op">[</span><span class="nam">DigestArticle</span><span class="op">]</span><span class="op">,</span> <span class="nam">date</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t220" href="#t220">220</a></span><span class="t">        <span class="nam">workdir_root</span> <span class="op">=</span> <span class="nam">settings</span><span class="op">.</span><span class="nam">orchestrator</span><span class="op">.</span><span class="nam">workdir_root</span><span class="op">.</span><span class="nam">resolve</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t221" href="#t221">221</a></span><span class="t">        <span class="nam">pdir</span> <span class="op">=</span> <span class="nam">_find_digest_pipeline_dir</span><span class="op">(</span><span class="nam">workdir_root</span><span class="op">,</span> <span class="nam">digest_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t222" href="#t222">222</a></span><span class="t">        <span class="key">if</span> <span class="nam">pdir</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t223" href="#t223">223</a></span><span class="t">            <span class="key">raise</span> <span class="nam">click</span><span class="op">.</span><span class="nam">ClickException</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t224" href="#t224">224</a></span><span class="t">                <span class="fst">f"</span><span class="fst">Digest #</span><span class="op">{</span><span class="nam">digest_id</span><span class="op">}</span><span class="fst"> not found. Use `news-recap list` to see available digests.</span><span class="fst">"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t225" href="#t225">225</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t226" href="#t226">226</a></span><span class="t">        <span class="nam">digest</span> <span class="op">=</span> <span class="nam">load_msgspec</span><span class="op">(</span><span class="nam">pdir</span> <span class="op">/</span> <span class="str">"digest.json"</span><span class="op">,</span> <span class="nam">Digest</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t227" href="#t227">227</a></span><span class="t">        <span class="key">return</span> <span class="nam">digest</span><span class="op">.</span><span class="nam">articles</span><span class="op">,</span> <span class="nam">date</span><span class="op">.</span><span class="nam">fromisoformat</span><span class="op">(</span><span class="nam">digest</span><span class="op">.</span><span class="nam">business_date</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t220" href="#t220">220</a></span><span class="t">        <span class="nam">workdir_root</span> <span class="op">=</span> <span class="nam">settings</span><span class="op">.</span><span class="nam">orchestrator</span><span class="op">.</span><span class="nam">workdir_root</span><span class="op">.</span><span class="nam">resolve</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t221" href="#t221">221</a></span><span class="t">        <span class="nam">pdir</span> <span class="op">=</span> <span class="nam">_find_digest_pipeline_dir</span><span class="op">(</span><span class="nam">workdir_root</span><span class="op">,</span> <span class="nam">digest_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t222" href="#t222">222</a></span><span class="t">        <span class="key">if</span> <span class="nam">pdir</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t223" href="#t223">223</a></span><span class="t">            <span class="key">raise</span> <span class="nam">click</span><span class="op">.</span><span class="nam">ClickException</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t224" href="#t224">224</a></span><span class="t">                <span class="fst">f"</span><span class="fst">Digest #</span><span class="op">{</span><span class="nam">digest_id</span><span class="op">}</span><span class="fst"> not found. Use `news-recap list` to see available digests.</span><span class="fst">"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t225" href="#t225">225</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t226" href="#t226">226</a></span><span class="t">        <span class="nam">digest</span> <span class="op">=</span> <span class="nam">load_msgspec</span><span class="op">(</span><span class="nam">pdir</span> <span class="op">/</span> <span class="str">"digest.json"</span><span class="op">,</span> <span class="nam">Digest</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t227" href="#t227">227</a></span><span class="t">        <span class="key">return</span> <span class="nam">digest</span><span class="op">.</span><span class="nam">articles</span><span class="op">,</span> <span class="nam">date</span><span class="op">.</span><span class="nam">fromisoformat</span><span class="op">(</span><span class="nam">digest</span><span class="op">.</span><span class="nam">business_date</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -316,7 +316,7 @@
             <a class="nav" href="z_8034ccf3fff5054b_flow_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-01 09:49 +0000
+            created at 2026-04-01 10:20 +0000
         </p>
     </div>
 </footer>
