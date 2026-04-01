@@ -14,10 +14,12 @@ import msgspec
 
 from news_recap.config import Settings
 from news_recap.ingestion.repository import IngestionStore
+from news_recap.recap.digest_info import _human_elapsed, _human_size
 from news_recap.recap.flow import recap_flow
 from news_recap.recap.models import Digest, DigestArticle, UserPreferences
 from news_recap.recap.pipeline_setup import (
     _DIGEST_FILENAME,
+    _aggregate_usage,
     _build_routing_defaults,
     _compute_article_window,
     _find_digest_pipeline_dir,
@@ -91,6 +93,28 @@ def _apply_resume_patches(
         if "agent_override" in patches:
             prev = previous.get("agent_override") or "default"
             yield ("info", f"Agent override changed: {prev} -> {patches['agent_override']}")
+
+
+def _emit_run_summary(pipeline_dir: Path) -> Iterator[PipelineLine]:
+    """Yield a few summary lines after pipeline completion."""
+    digest_path = pipeline_dir / _DIGEST_FILENAME
+    if not digest_path.exists():
+        return
+    digest = load_msgspec(digest_path, Digest)
+    if digest.status != "completed":
+        return
+
+    usage = _aggregate_usage(pipeline_dir)
+    elapsed = _human_elapsed(usage.elapsed)
+    prompts = _human_size(usage.prompt_bytes)
+    output = _human_size(usage.output_bytes)
+    tokens = f"  tokens={usage.tokens:,}" if usage.tokens else ""
+    yield (
+        "ok",
+        f"Done: {len(digest.articles)} articles, "
+        f"{elapsed}, prompts={prompts}, output={output}{tokens}",
+    )
+    yield ("log", f"Workdir: {pipeline_dir}")
 
 
 class RecapCliController:
@@ -204,3 +228,5 @@ class RecapCliController:
             business_date=business_date.isoformat(),
             stop_after=command.stop_after,
         )
+
+        yield from _emit_run_summary(pipeline_dir)

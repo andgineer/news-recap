@@ -164,6 +164,15 @@ class DigestInfoController:
             for g in gaps:
                 console.print(g)
 
+    def digest_detail(self, digest_id: int) -> DigestSummary | None:
+        """Return summary for a single digest, or None if not found."""
+        settings = Settings.from_env()
+        workdir_root = settings.orchestrator.workdir_root.resolve()
+        for s in _list_completed_digests(workdir_root):
+            if s.digest_id == digest_id:
+                return s
+        return None
+
     def delete_digest(self, digest_id: int) -> list[str]:
         """Delete a completed digest, making its articles available for the next one."""
         settings = Settings.from_env()

@@ -1,11 +1,18 @@
 """CLI entrypoint for news-recap."""
 
+import contextlib
+import json
 import logging
 import re
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 import rich_click as click
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.table import Table
+from rich.text import Text
 
 from news_recap import __version__
 from news_recap.automation import (
@@ -23,7 +30,13 @@ from news_recap.ingestion.controllers import (
     IngestionCliController,
     IngestionResult,
 )
-from news_recap.recap.digest_info import DigestInfoController
+from news_recap.recap.digest_info import (
+    DigestInfoController,
+    _fmt_dt,
+    _human_elapsed,
+    _human_size,
+    _smart_period,
+)
 from news_recap.recap.export_prompt import PromptCliController, PromptCommand, PromptLine
 from news_recap.recap.launcher import (
     PipelineLine,
@@ -34,8 +47,6 @@ from news_recap.web.server import WebCliController, WebServeCommand
 
 
 def _configure_logging() -> None:
-    from rich.logging import RichHandler
-
     root = logging.getLogger("news_recap")
     root.handlers.clear()
     root.addHandler(
@@ -53,8 +64,6 @@ class _PlainFormatter(logging.Formatter):
     """Logging formatter that strips Rich markup tags for plain-text output."""
 
     def format(self, record: logging.LogRecord) -> str:
-        from rich.text import Text
-
         record.msg = Text.from_markup(str(record.msg)).plain
         return super().format(record)
 
@@ -317,9 +326,16 @@ def recap_prompt(  # noqa: PLR0913
 
 
 @news_recap.command("info")
-def info_cmd() -> None:
-    """Show important app paths."""
-    _print_info()
+@click.argument("digest_id", type=click.IntRange(min=1), default=None, required=False)
+def info_cmd(digest_id: int | None) -> None:
+    """Show app paths, or detailed info about a digest.
+
+    DIGEST_ID (optional) — show details for this digest (as shown by `news-recap list`).
+    """
+    if digest_id is not None:
+        _print_digest_detail(digest_id)
+    else:
+        _print_info()
 
 
 @news_recap.command("list")
@@ -417,8 +433,6 @@ def schedule_set(
     use_venv: bool,
 ) -> None:
     """Install or update the daily scheduled digest job."""
-    import sys
-
     urls = resolve_rss_urls(rss_urls)
     venv_bin = str(Path(sys.executable).parent / "news-recap") if use_venv else None
     hour, minute = run_time
@@ -488,8 +502,6 @@ def _emit_prompt(lines: Iterator[PromptLine]) -> None:
 
 
 def _print_info() -> None:
-    from rich.console import Console
-
     settings = Settings.from_env()
     platform = _platform()
     data_dir = settings.data_dir.resolve()
@@ -536,8 +548,6 @@ def _print_info() -> None:
 
 
 def _print_ingest(result: IngestionResult) -> None:
-    from rich.console import Console
-
     s = result.summary
     fs = result.fetch_stats
     console = Console(no_color=NO_COLOR, highlight=not NO_COLOR)
@@ -607,9 +617,84 @@ def _print_ingest(result: IngestionResult) -> None:
     console.print()
 
 
-def _print_schedule(meta: ScheduleMeta | None) -> None:
-    from rich.console import Console
+def _collect_task_rows(workdir: Path) -> list[tuple[str, float, int, int, int]]:
+    """Scan task sub-dirs for usage/size metrics."""
+    rows: list[tuple[str, float, int, int, int]] = []
+    for task_dir in sorted(workdir.iterdir()):
+        if not task_dir.is_dir():
+            continue
+        elapsed, tokens = 0.0, 0
+        usage_path = task_dir / "meta" / "usage.json"
+        if usage_path.exists():
+            with contextlib.suppress(OSError, json.JSONDecodeError, ValueError):
+                data = json.loads(usage_path.read_text("utf-8"))
+                elapsed = float(data.get("elapsed_seconds", 0))
+                tokens = int(data.get("total_tokens") or data.get("tokens_used") or 0)
+        prompt_size = output_size = 0
+        with contextlib.suppress(OSError):
+            prompt_size = (task_dir / "input" / "task_prompt.txt").stat().st_size
+        with contextlib.suppress(OSError):
+            output_size = (task_dir / "output" / "agent_stdout.log").stat().st_size
+        if elapsed or tokens or prompt_size or output_size:
+            rows.append((task_dir.name, elapsed, prompt_size, output_size, tokens))
+    return rows
 
+
+def _print_digest_detail(digest_id: int) -> None:
+    s = DIGEST_INFO_CONTROLLER.digest_detail(digest_id)
+    if s is None:
+        click.echo(f"Digest #{digest_id} not found.")
+        raise SystemExit(1)
+
+    console = Console(no_color=NO_COLOR, highlight=not NO_COLOR)
+    settings = Settings.from_env()
+    workdir = settings.orchestrator.workdir_root.resolve() / s.pipeline_dir_name
+
+    console.print()
+    heading = f"[bold]Digest #{s.digest_id}[/bold]" if not NO_COLOR else f"Digest #{s.digest_id}"
+    console.print(f"  {heading}")
+    console.print()
+
+    def _row(label: str, value: str) -> None:
+        padded = f"{label:<16}"
+        styled = f"[cyan]{padded}[/cyan]" if not NO_COLOR else padded
+        console.print(f"    {styled} {value}")
+
+    _row("Date", str(s.business_date))
+    _row("Started", _fmt_dt(s.started_at))
+    _row("Articles", str(s.article_count))
+    _row("Article period", _smart_period(s.earliest_article, s.latest_article))
+    _row("Elapsed", _human_elapsed(s.elapsed_seconds))
+    _row("Prompts", _human_size(s.prompt_bytes))
+    _row("Output", _human_size(s.output_bytes))
+    if s.total_tokens:
+        _row("Tokens", f"{s.total_tokens:,}")
+    _row("Workdir", str(workdir))
+
+    if workdir.is_dir():
+        rows = _collect_task_rows(workdir)
+        if rows:
+            console.print()
+            table = Table(show_lines=False, pad_edge=False, box=None)
+            table.add_column("Phase", no_wrap=True)
+            table.add_column("Elapsed", justify="right", no_wrap=True)
+            table.add_column("Prompt", justify="right", no_wrap=True)
+            table.add_column("Output", justify="right", no_wrap=True)
+            table.add_column("Tokens", justify="right", no_wrap=True)
+            for name, elapsed, prompt_sz, output_sz, tok in rows:
+                table.add_row(
+                    name,
+                    _human_elapsed(elapsed),
+                    _human_size(prompt_sz),
+                    _human_size(output_sz),
+                    f"{tok:,}" if tok else "—",
+                )
+            console.print(table)
+
+    console.print()
+
+
+def _print_schedule(meta: ScheduleMeta | None) -> None:
     console = Console(no_color=NO_COLOR, highlight=not NO_COLOR)
 
     if meta is None:
