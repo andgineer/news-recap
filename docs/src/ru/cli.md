@@ -7,6 +7,7 @@
 - `ingest`: один цикл ingestion из RSS/Atom источников.
 - `create`: создать дайджест новостей из последних статей.
 - `prompt`: экспорт LLM-промпта из последних статей.
+- `info`: показать важные пути приложения.
 - `list`: показать завершённые дайджесты и непокрытые периоды.
 - `delete`: удалить дайджест, чтобы его статьи стали доступны для следующего.
 - `serve`: запуск веб-просмотрщика дайджестов.
@@ -68,6 +69,14 @@ news-recap create --from-pipeline ~/.news_recap_data/workdir/pipeline-2026-03-25
 - `--use-api-key` (не удалять ключи API вендоров из окружения агента-подпроцесса;
   по умолчанию ключи удаляются, чтобы агент использовал лимиты подписки)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)
+
+### `info`
+Показать важные пути приложения: каталог данных, workdir, metadata расписания
+и логи.
+
+```bash
+news-recap info
+```
 
 ### `list`
 Показать завершённые дайджесты с количеством статей, временным охватом и
@@ -203,6 +212,7 @@ news-recap --help
 news-recap ingest --help
 news-recap create --help
 news-recap prompt --help
+news-recap info --help
 news-recap list --help
 news-recap delete --help
 news-recap serve --help

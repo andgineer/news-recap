@@ -7,7 +7,15 @@ from pathlib import Path
 import rich_click as click
 
 from news_recap import __version__
-from news_recap.automation import ScheduleController, ScheduleLine, resolve_rss_urls
+from news_recap.automation import (
+    ScheduleController,
+    ScheduleLine,
+    _app_dir,
+    _log_dir,
+    _platform,
+    resolve_rss_urls,
+)
+from news_recap.config import Settings
 from news_recap.ingestion.controllers import (
     DailyIngestionCommand,
     IngestionCliController,
@@ -259,6 +267,12 @@ def recap_prompt(  # noqa: PLR0913
     )
 
 
+@news_recap.command("info")
+def info_cmd() -> None:
+    """Show important app paths."""
+    _emit_lines(_info_lines())
+
+
 @news_recap.command("list")
 def list_cmd() -> None:
     """Show completed digests and uncovered article periods."""
@@ -400,6 +414,27 @@ def _validate_time(value: str) -> tuple[int, int]:
 def _emit_lines(lines: list[str] | Iterator[str]) -> None:
     for line in lines:
         click.echo(line)
+
+
+def _info_lines() -> list[str]:
+    settings = Settings.from_env()
+    platform = _platform()
+    data_dir = settings.data_dir.resolve()
+    workdir_root = settings.orchestrator.workdir_root.resolve()
+    app_dir = _app_dir(platform).resolve()
+    log_dir = _log_dir(platform).resolve()
+
+    return [
+        "App paths:",
+        f"  DB / data dir: {data_dir}",
+        f"  Feed cache: {data_dir / 'feeds.json'}",
+        f"  Run history: {data_dir / 'runs.json'}",
+        f"  Resource cache: {data_dir / 'resources'}",
+        f"  Digest workdir: {workdir_root}",
+        f"  App dir: {app_dir}",
+        f"  Schedule metadata: {app_dir / 'schedule.json'}",
+        f"  Logs: {log_dir}",
+    ]
 
 
 _SCHEDULE_STYLES: dict[str, dict[str, object]] = {

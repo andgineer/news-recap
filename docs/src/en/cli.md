@@ -7,6 +7,7 @@
 - `ingest`: run one ingestion cycle from RSS/Atom feeds.
 - `create`: create a news digest from recent articles.
 - `prompt`: export a ready-to-paste LLM prompt from recent articles.
+- `info`: show important app paths.
 - `list`: show completed digests and uncovered article periods.
 - `delete`: delete a digest so its articles become available for the next one.
 - `serve`: start the digest web viewer.
@@ -68,6 +69,14 @@ Key options:
 - `--use-api-key` (keep vendor API keys in the agent subprocess environment;
   by default they are removed so the agent uses its subscription quota)
 - `--stop-after` (`classify`, `load_resources`, `enrich`, `deduplicate`, `oneshot_digest`, `refine_layout`)
+
+### `info`
+Show important app paths such as the data directory, workdir, schedule metadata,
+and logs.
+
+```bash
+news-recap info
+```
 
 ### `list`
 Show completed digests with article counts, date-time coverage, and uncovered
@@ -201,6 +210,7 @@ news-recap --help
 news-recap ingest --help
 news-recap create --help
 news-recap prompt --help
+news-recap info --help
 news-recap list --help
 news-recap delete --help
 news-recap serve --help
