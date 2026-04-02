@@ -45,7 +45,7 @@ def reorder_articles(
     if not articles:
         return []
 
-    titles = [a.title for a in articles]
+    titles = [a.enriched_title or a.title for a in articles]
     vectors = embedder.embed(titles)
     ids: list[str] = []
     embeddings: dict[str, Vector] = {}
@@ -80,11 +80,12 @@ def build_article_lines(ordered: list[DigestArticle], *, include_url: bool = Fal
     URLs are omitted by default — the pipeline restores them from the article index after parsing.
     No headers, no task section — plain numbered list only.
     """
+
     if include_url:
         return "\n".join(
-            f"{i}. {article.title} ({article.source}) \u2014 {article.url}"
-            for i, article in enumerate(ordered, start=1)
+            f"{i}. {a.enriched_title or a.title} ({a.source}) \u2014 {a.url}"
+            for i, a in enumerate(ordered, start=1)
         )
     return "\n".join(
-        f"{i}. {article.title} ({article.source})" for i, article in enumerate(ordered, start=1)
+        f"{i}. {a.enriched_title or a.title} ({a.source})" for i, a in enumerate(ordered, start=1)
     )

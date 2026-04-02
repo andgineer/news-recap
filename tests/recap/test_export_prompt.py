@@ -127,6 +127,36 @@ def test_build_article_lines_empty() -> None:
     assert build_article_lines([]) == ""
 
 
+def test_build_article_lines_prefers_enriched_title() -> None:
+    a = _make_article("a", "Clickbait teaser title", source="example.com")
+    a.enriched_title = "Informative rewritten title"
+    b = _make_article("b", "Normal title", source="other.org")
+    result = build_article_lines([a, b])
+    lines = result.splitlines()
+    assert lines[0] == "1. Informative rewritten title (example.com)"
+    assert lines[1] == "2. Normal title (other.org)"
+
+
+def test_build_article_lines_enriched_with_url() -> None:
+    a = _make_article("a", "Teaser", "https://example.com/page", "example.com")
+    a.enriched_title = "Better title"
+    result = build_article_lines([a], include_url=True)
+    assert result == "1. Better title (example.com) \u2014 https://example.com/page"
+
+
+def test_reorder_articles_uses_enriched_title() -> None:
+    """Enriched titles should be used for embedding-based clustering."""
+    embedder = HashingEmbedder(model_name="test")
+    a = _make_article("a", "Clickbait question headline?")
+    a.enriched_title = "Ukraine war ceasefire talks in Berlin"
+    b = _make_article("b", "Ukraine war ceasefire talks in Paris")
+    c = _make_article("c", "Stock market rally Wall Street")
+    ordered = reorder_articles([a, b, c], embedder, threshold=0.65)
+    assert len(ordered) == 3
+    assert {o.article_id for o in ordered} == {"a", "b", "c"}
+    assert ordered[-1].article_id == "c"
+
+
 # ---------------------------------------------------------------------------
 # _render_prompt
 # ---------------------------------------------------------------------------

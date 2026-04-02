@@ -51,7 +51,9 @@ described category even without sharing any exact words with the description.
 
 For each headline below, decide:
 1. Story matches an EXCLUDE category → exclude
-2. Headline too vague to identify the specific story → vague
+2. Headline is vague or clickbait — it hides key facts behind teasers, \
+rhetorical questions, or deliberate omissions (e.g. "on a popular \
+island…", "one trend…", "the secret of…", "expert revealed…") → vague
 3. Otherwise → ok
 
 Read the headlines below and provide your verdicts.
@@ -189,7 +191,8 @@ Your task:
 1. Group related articles into named thematic blocks.
 2. Organize the blocks into broader sections.
 3. For each block write a 1-2 sentence description that tells the reader what happened —
-   specific facts, who, where, outcome. This IS the block title the reader sees;
+   specific facts, who, where, outcome. No clickbait, no vague teasers.
+   This IS the block title the reader sees;
    make it informative enough that opening the block is optional.
 4. Write a single sentence label for each section (topic area, not a summary).
 5. Articles that do not fit any coherent narrative: list as EXCLUDED.
