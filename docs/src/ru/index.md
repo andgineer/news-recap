@@ -3,13 +3,22 @@
 `news-recap` собирает статьи из RSS/Atom и превращает их в дайджесты, которые можно
 собрать вручную, посмотреть локально или запускать по расписанию.
 
+Запускает CLI-агенты — ChatGPT Codex, Claude Code, Gemini CLI — и работает
+в рамках подписок с фиксированной ценой.
+
+При ежедневном использовании за 7 дней расходуется примерно 20% недельного лимита
+подписки Claude, для ChatGPT / Google — ещё меньше.
+
+Для сравнения, Inoreader за ИИ-агрегацию берёт дополнительно \$19.90/мес **сверх**
+Pro-подписки.
+
 ## Быстрый старт
 
 Установите [`uv`](https://docs.astral.sh/uv/getting-started/installation/), затем
 установите `news-recap`:
 
 ```bash
-uv tool install news-recap
+uv tool install news-recap --upgrade --python 3.13
 news-recap --help
 ```
 

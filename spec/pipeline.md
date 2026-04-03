@@ -4,6 +4,10 @@ Developer specification for the daily recap pipeline.
 This document describes the runtime behaviour implemented in
 `src/news_recap/recap/flow.py` and its task modules.
 
+> Instead of throwing raw headlines into one oversized prompt, `news-recap`
+> processes news through a layered recap workflow that reduces noise, groups related stories,
+> and produces a cleaner daily digest.
+
 ## Pipeline overview
 
 ```mermaid
@@ -341,6 +345,22 @@ Each `DigestSection` has:
 
 There is no event layer; blocks reference articles directly.
 
+## Cost
+
+Each digest pipeline run consumes roughly 3–4% of the weekly CLI agent
+subscription quota (~\$0.19 per run).  At daily use this adds up to
+~20% of the weekly limit, or ~\$6/month in equivalent dollar terms.
+
+The dollar figures are approximate.  The pipeline runs under flat-rate
+subscriptions (Codex, Claude Code, Gemini CLI at ~\$20/month), so
+the quota would mostly go unused anyway — the pipeline effectively
+runs for free within the existing subscription.
+
+An API-key mode (`--api`) is available using Haiku for most tasks and
+Sonnet for the oneshot digest.  It is faster per-token but adds up to
+~\$13/month at daily use.  API mode is mainly useful for environments
+where CLI agents are not available.
+
 ## Experiments
 
 All experiments below were run on the same 703-article corpus (25 Mar 2026)
@@ -399,7 +419,4 @@ code was removed.
 
 ### API mode
 
-An API-key mode (`--api`) is available using Haiku for most tasks and
-Sonnet for the oneshot digest.  It is faster per-token but adds up to
-~\$13/month at daily use.  API mode is mainly useful for environments
-where CLI agents are not available.
+See [Cost](#cost) for API mode details and pricing comparison.

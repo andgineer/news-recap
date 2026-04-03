@@ -5,23 +5,16 @@
 `news-recap` is a CLI-first pipeline for collecting, cleaning, deduplicating news
 and producing daily recaps with LLM agents.
 
-Instead of throwing raw headlines into one oversized prompt, `news-recap` processes
-news through a layered recap workflow that reduces noise, groups related stories,
-and produces a cleaner daily digest.
+The pipeline drives CLI agents such as ChatGPT Codex, Claude Code, and Google Antigravity, so
+it runs on flat-rate subscriptions.
 
-The pipeline drives CLI agents such as Codex, Claude Code, and Gemini CLI, so heavy
-daily summarization can run on flat-rate subscriptions instead of per-token APIs.
+Running it daily for 7 days consumes roughly 20% of the weekly Claude subscription
+limit and less than that for ChatGPT / Google.
+
+For comparison, Inoreader charges an additional \$19.90/month **on top** of
+a Pro subscription for AI-powered aggregation.
 
 > Start with the [Quick start](https://andgineer.github.io/news-recap/#quick-start).
-
-## Cost
-
-Each digest pipeline run consumes roughly 3-4% of the weekly CLI agent subscription
-quota (~\$0.19 per run, ~\$6/month at daily use).
-
-The dollar figures are approximate. The pipeline runs under flat-rate subscriptions
-(Codex, Claude Code, Gemini CLI at ~\$20/month), so the quota would mostly go
-unused anyway.
 
 ### Docs
 
