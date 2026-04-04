@@ -139,7 +139,7 @@ def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatc
     )
     assert settings.orchestrator.claude_command_template == (
         "claude -p {model} --permission-mode dontAsk "
-        '--allowed-tools "Read,Write,Edit,WebFetch,'
+        '--allowed-tools "Read,WebFetch,'
         'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
         '-- "Read your task from {prompt_file} and execute it."'
     )
