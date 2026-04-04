@@ -26,13 +26,8 @@ from pathlib import Path
 
 
 def main() -> None:
-    # cli_backend sets cwd=manifest.workdir — read articles from there
     articles_index_path = Path("input") / "articles_index.json"
     if not articles_index_path.exists():
-        # Not a classify task (enrich/group/etc.) — write empty JSON result
-        result_path = _find_output_result_path()
-        if result_path:
-            result_path.write_text('{"status": "mock", "processed": 0}', "utf-8")
         sys.exit(0)
 
     raw = json.loads(articles_index_path.read_text("utf-8"))
@@ -40,7 +35,6 @@ def main() -> None:
 
     for i, article in enumerate(articles):
         source_id = article.get("source_id", f"unknown_{i}")
-        # Deterministic distribution: 80% ok, 10% exclude, 10% enrich
         r = i % 10
         if r == 0:
             verdict = "exclude"
@@ -51,23 +45,6 @@ def main() -> None:
         print(f"{source_id}\t{verdict}")
 
     sys.exit(0)
-
-
-def _find_output_result_path() -> Path | None:
-    """Find output_result_path from task_manifest.json if present."""
-    manifest_path = Path("meta") / "task_manifest.json"
-    if not manifest_path.exists():
-        return None
-    try:
-        manifest = json.loads(manifest_path.read_text("utf-8"))
-        p = manifest.get("output_result_path")
-        if p:
-            out = Path(p)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            return out
-    except Exception:  # noqa: BLE001
-        pass
-    return None
 
 
 if __name__ == "__main__":

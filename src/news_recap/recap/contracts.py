@@ -30,17 +30,33 @@ class TaskInputContract:
 
 @dataclass(slots=True)
 class TaskManifest:
-    """Manifest stored with each queued task."""
+    """Manifest stored with each queued task.
+
+    All I/O paths are derived from ``workdir`` via deterministic layout::
+
+        {workdir}/input/task_input.json
+        {workdir}/input/articles_index.json
+        {workdir}/output/agent_stdout.log
+        {workdir}/output/agent_stderr.log
+        {workdir}/meta/task_manifest.json
+    """
 
     contract_version: int
     task_id: str
     task_type: str
     workdir: str
-    task_input_path: str
-    articles_index_path: str
-    output_result_path: str
-    output_stdout_path: str
-    output_stderr_path: str
+
+    @property
+    def task_input_path(self) -> Path:
+        return Path(self.workdir) / "input" / "task_input.json"
+
+    @property
+    def output_stdout_path(self) -> Path:
+        return Path(self.workdir) / "output" / "agent_stdout.log"
+
+    @property
+    def output_stderr_path(self) -> Path:
+        return Path(self.workdir) / "output" / "agent_stderr.log"
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -91,16 +107,7 @@ def read_manifest(path: Path) -> TaskManifest:
     """Load and validate task manifest."""
 
     raw = load_json(path)
-    required = {
-        "task_id",
-        "task_type",
-        "workdir",
-        "task_input_path",
-        "articles_index_path",
-        "output_result_path",
-        "output_stdout_path",
-        "output_stderr_path",
-    }
+    required = {"task_id", "task_type", "workdir"}
     missing = [key for key in sorted(required) if key not in raw]
     if missing:
         raise ValueError(f"Manifest missing required fields: {', '.join(missing)}")
@@ -115,11 +122,6 @@ def read_manifest(path: Path) -> TaskManifest:
             task_id=str(raw["task_id"]),
             task_type=str(raw["task_type"]),
             workdir=str(raw["workdir"]),
-            task_input_path=str(raw["task_input_path"]),
-            articles_index_path=str(raw["articles_index_path"]),
-            output_result_path=str(raw["output_result_path"]),
-            output_stdout_path=str(raw["output_stdout_path"]),
-            output_stderr_path=str(raw["output_stderr_path"]),
         )
     except Exception as error:  # noqa: BLE001
         raise ValueError(f"Invalid task manifest at {path}") from error

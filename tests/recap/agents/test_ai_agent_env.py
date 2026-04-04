@@ -32,11 +32,6 @@ def _make_manifest(tmp_path: Path) -> TaskManifest:
         task_id="test-task",
         task_type="recap_classify",
         workdir=str(workdir),
-        task_input_path=str(input_dir / "task_input.json"),
-        articles_index_path=str(input_dir / "articles_index.json"),
-        output_result_path=str(output_dir / "result.json"),
-        output_stdout_path=str(output_dir / "stdout.txt"),
-        output_stderr_path=str(output_dir / "stderr.txt"),
     )
 
 
@@ -44,8 +39,8 @@ def _fake_result(manifest: TaskManifest) -> SubprocessResult:
     return SubprocessResult(
         exit_code=0,
         timed_out=False,
-        stdout_path=Path(manifest.output_stdout_path),
-        stderr_path=Path(manifest.output_stderr_path),
+        stdout_path=manifest.output_stdout_path,
+        stderr_path=manifest.output_stderr_path,
     )
 
 

@@ -39,6 +39,20 @@ class RecapPipelineError(RuntimeError):
         self.step = step
 
 
+_STDOUT_SNIPPET_CHARS = 500
+
+
+def log_parse_failure(label: str, raw_stdout: str, *, log: logging.Logger) -> None:
+    """Log a truncated snippet of raw agent stdout for post-mortem diagnostics."""
+    snippet = raw_stdout[:_STDOUT_SNIPPET_CHARS].replace("\n", "\\n")
+    log.error(
+        "%s parse failure — raw agent stdout (first %d chars): %s",
+        label,
+        _STDOUT_SNIPPET_CHARS,
+        snippet,
+    )
+
+
 def read_agent_stdout(stdout_path: Path, step_name: str) -> str:
     """Read agent stdout, raising ``RecapPipelineError`` if the file is missing or empty."""
     if not stdout_path.exists():

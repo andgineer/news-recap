@@ -21,6 +21,7 @@ from news_recap.recap.tasks.base import (
     FlowContext,
     RecapPipelineError,
     TaskLauncher,
+    log_parse_failure,
     read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
@@ -175,6 +176,7 @@ def parse_enrich_stdout(
 
     recognition = len(parsed) / len(entries) if entries else 1.0
     if recognition < _MIN_RECOGNITION_RATE:
+        log_parse_failure("Enrich", text, log=logger)
         raise RecapPipelineError(
             "recap_enrich",
             f"Agent enriched only {len(parsed)}/{len(entries)} articles ({recognition:.0%})",

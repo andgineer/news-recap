@@ -42,20 +42,11 @@ def test_task_workdir_manager_writes_manifest(tmp_path: Path) -> None:
         articles_index=entries,
     )
     raw = json.loads(materialized.manifest_path.read_text("utf-8"))
-    required = {
-        "contract_version",
-        "task_id",
-        "task_type",
-        "workdir",
-        "task_input_path",
-        "articles_index_path",
-        "output_result_path",
-        "output_stdout_path",
-        "output_stderr_path",
-    }
-    assert required <= raw.keys()
+    assert {"contract_version", "task_id", "task_type", "workdir"} <= raw.keys()
     assert raw["task_id"] == "classify"
     assert raw["task_type"] == "recap_classify"
+    assert "output_result_path" not in raw
+    assert "output_stdout_path" not in raw
 
 
 def test_task_workdir_manager_writes_task_input(tmp_path: Path) -> None:
@@ -69,8 +60,7 @@ def test_task_workdir_manager_writes_task_input(tmp_path: Path) -> None:
         task_input=task_input,
         articles_index=entries,
     )
-    task_input_path = Path(materialized.manifest.task_input_path)
-    data = json.loads(task_input_path.read_text("utf-8"))
+    data = json.loads(materialized.manifest.task_input_path.read_text("utf-8"))
     assert data["prompt"] == prompt
 
 

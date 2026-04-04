@@ -24,6 +24,7 @@ from news_recap.recap.tasks.base import (
     FlowContext,
     RecapPipelineError,
     TaskLauncher,
+    log_parse_failure,
     read_agent_stdout,
     run_single_agent,
 )
@@ -314,6 +315,8 @@ def _run_batch(
     stdout_path = run_single_agent(ctx, "recap_oneshot_digest", prompt, batch=batch_num)
     text = read_agent_stdout(stdout_path, label)
     parsed_sections, excluded_nums = _parse_output(text)
+    if not parsed_sections:
+        log_parse_failure("Oneshot digest", text, log=logger)
     excluded_ids = [num_to_id[n] for n in excluded_nums if n in num_to_id]
     logger.info(
         "[cyan]oneshot_digest:[/cyan] batch %s → %d section(s), %d excluded",

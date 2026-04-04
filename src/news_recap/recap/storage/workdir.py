@@ -50,26 +50,16 @@ class TaskWorkdirManager:
         output_dir.mkdir(parents=True, exist_ok=True)
         meta_dir.mkdir(parents=True, exist_ok=True)
 
-        task_input_path = input_dir / "task_input.json"
-        articles_index_path = input_dir / "articles_index.json"
-        output_result_path = output_dir / "agent_result.json"
-        output_stdout_path = output_dir / "agent_stdout.log"
-        output_stderr_path = output_dir / "agent_stderr.log"
         manifest_path = meta_dir / "task_manifest.json"
 
-        write_task_input(task_input_path, task_input)
-        write_articles_index(articles_index_path, articles_index)
+        write_task_input(input_dir / "task_input.json", task_input)
+        write_articles_index(input_dir / "articles_index.json", articles_index)
 
         manifest = TaskManifest(
             contract_version=2,
             task_id=task_id,
             task_type=task_type,
             workdir=str(base_dir),
-            task_input_path=str(task_input_path),
-            articles_index_path=str(articles_index_path),
-            output_result_path=str(output_result_path),
-            output_stdout_path=str(output_stdout_path),
-            output_stderr_path=str(output_stderr_path),
         )
         write_manifest(manifest_path, manifest)
 

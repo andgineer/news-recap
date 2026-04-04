@@ -61,7 +61,7 @@ _DEFAULT_CODEX_CMD = (
 )
 _DEFAULT_CLAUDE_CMD = (
     "claude -p {model} --permission-mode dontAsk "
-    '--allowed-tools "Read,Write,Edit,WebFetch,'
+    '--allowed-tools "Read,WebFetch,'
     'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
     '-- "Read your task from {prompt_file} and execute it."'
 )

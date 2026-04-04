@@ -15,6 +15,7 @@ from news_recap.recap.tasks.base import (
     FlowContext,
     RecapPipelineError,
     TaskLauncher,
+    log_parse_failure,
     read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
@@ -123,6 +124,7 @@ def parse_multi_dedup_output(text: str, batch: ClusterBatch) -> list[_DedupResul
     cluster_sections = sections[1:]  # sections[0] is text before the first header
 
     if len(cluster_sections) != len(batch):
+        log_parse_failure("Dedup", text, log=logger)
         raise RecapPipelineError(
             "recap_dedup",
             f"Expected {len(batch)} CLUSTER header(s) in output, "

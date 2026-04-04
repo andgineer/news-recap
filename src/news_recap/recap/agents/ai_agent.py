@@ -282,9 +282,9 @@ def _run_agent_cli(  # noqa: PLR0913
     stop_event: threading.Event | None = None,
 ):
     """Render command and run the agent process in an isolated temp dir."""
-    task_input = read_task_input(Path(manifest.task_input_path))
-    stdout_path = Path(manifest.output_stdout_path)
-    stderr_path = Path(manifest.output_stderr_path)
+    task_input = read_task_input(manifest.task_input_path)
+    stdout_path = manifest.output_stdout_path
+    stderr_path = manifest.output_stderr_path
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -12,6 +12,7 @@ from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_nu
 from news_recap.recap.tasks.base import (
     RecapPipelineError,
     TaskLauncher,
+    log_parse_failure,
     read_agent_stdout,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
@@ -180,6 +181,7 @@ def parse_classify_batch_stdout(
 
     recognition_rate = len(parsed) / len(entries) if entries else 1.0
     if recognition_rate < _MIN_RECOGNITION_RATE:
+        log_parse_failure("Classify", text, log=logger)
         raise RecapPipelineError(
             "recap_classify",
             f"Agent classified only {len(parsed)}/{len(entries)} articles ({recognition_rate:.0%})",
