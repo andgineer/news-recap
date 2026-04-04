@@ -29,7 +29,7 @@
 | src/news\_recap/recap/agents/transport.py                |       10 |        0 |    100% |           |
 | src/news\_recap/recap/agents/transport\_anthropic.py     |       19 |        1 |     95% |        35 |
 | src/news\_recap/recap/article\_ordering.py               |       44 |        0 |    100% |           |
-| src/news\_recap/recap/contracts.py                       |       67 |        6 |     91% |58, 76, 78, 80, 124-125 |
+| src/news\_recap/recap/contracts.py                       |       71 |        6 |     92% |74, 92, 94, 96, 126-127 |
 | src/news\_recap/recap/dedup/calibration.py               |       66 |       32 |     52% |71-95, 105-107, 113-143 |
 | src/news\_recap/recap/dedup/cluster.py                   |       51 |        2 |     96% |    62, 66 |
 | src/news\_recap/recap/dedup/embedder.py                  |       71 |       15 |     79% |27-30, 40, 58, 61, 83-86, 89-91, 110, 117 |
@@ -42,19 +42,19 @@
 | src/news\_recap/recap/models.py                          |       59 |        8 |     86% |42-47, 50, 59 |
 | src/news\_recap/recap/pipeline\_setup.py                 |      217 |       16 |     93% |53-55, 122-123, 129, 140-146, 200-201, 228-229, 257-258, 351-352 |
 | src/news\_recap/recap/storage/pipeline\_io.py            |      154 |       15 |     90% |71, 105-111, 134, 140-141, 155, 207, 218, 254 |
-| src/news\_recap/recap/storage/workdir.py                 |       53 |        4 |     92% |   100-103 |
-| src/news\_recap/recap/tasks/base.py                      |       69 |       22 |     68% |63-80, 110, 133-151, 154 |
-| src/news\_recap/recap/tasks/classify.py                  |      151 |       20 |     87% |139, 145, 220-230, 238, 245-246, 251, 295-297 |
-| src/news\_recap/recap/tasks/deduplicate.py               |      235 |       94 |     60% |59-63, 67-71, 108-113, 228-255, 263-283, 292-308, 321-388, 399-414, 462 |
-| src/news\_recap/recap/tasks/enrich.py                    |      187 |       15 |     92% |144, 210, 237-238, 301-306, 326-330, 340, 353-354, 396 |
+| src/news\_recap/recap/storage/workdir.py                 |       48 |        4 |     92% |     90-93 |
+| src/news\_recap/recap/tasks/base.py                      |       73 |       22 |     70% |77-94, 124, 147-165, 168 |
+| src/news\_recap/recap/tasks/classify.py                  |      152 |       20 |     87% |140, 146, 222-232, 240, 247-248, 253, 297-299 |
+| src/news\_recap/recap/tasks/deduplicate.py               |      236 |       94 |     60% |60-64, 68-72, 109-114, 230-257, 265-285, 294-310, 323-390, 401-416, 464 |
+| src/news\_recap/recap/tasks/enrich.py                    |      188 |       15 |     92% |145, 212, 239-240, 303-308, 328-332, 342, 355-356, 398 |
 | src/news\_recap/recap/tasks/load\_resources.py           |       55 |        6 |     89% |42, 81-82, 88-90 |
-| src/news\_recap/recap/tasks/oneshot\_digest.py           |      359 |      130 |     64% |161, 168-171, 197, 251-287, 305-324, 333-351, 359-385, 393-425, 516, 641-717, 726 |
+| src/news\_recap/recap/tasks/oneshot\_digest.py           |      361 |      132 |     63% |162, 169-172, 198, 252-288, 306-327, 336-354, 362-388, 396-428, 519, 644-720, 729 |
 | src/news\_recap/recap/tasks/parallel.py                  |       80 |       19 |     76% |37-38, 95-96, 102, 121-128, 150, 157-160, 180 |
 | src/news\_recap/recap/tasks/prompts.py                   |       21 |        0 |    100% |           |
 | src/news\_recap/recap/tasks/refine\_layout.py            |      115 |       24 |     79% |216-255, 262 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
 | src/news\_recap/web/server.py                            |      129 |       31 |     76% |32-34, 60-62, 71-72, 90, 94-96, 142-143, 162, 182-206 |
-| **TOTAL**                                                | **5533** |  **889** | **84%** |           |
+| **TOTAL**                                                | **5541** |  **891** | **84%** |           |
 
 
 ## Setup coverage badge
