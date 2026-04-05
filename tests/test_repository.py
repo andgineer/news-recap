@@ -72,26 +72,26 @@ def test_start_run_rejects_parallel_runs_for_same_source(tmp_path: Path) -> None
     store.close()
 
 
-def test_start_run_recovers_stale_running_run(tmp_path: Path) -> None:
-    store = IngestionStore(tmp_path)
+def test_gc_old_runs_recovers_stale_running_run(tmp_path: Path) -> None:
+    store = IngestionStore(tmp_path, gc_retention_days=7)
 
     stale_run_id = store.start_run(source="rss")
 
     runs_store = store._load_runs()
     for run in runs_store.runs:
         if run.run_id == stale_run_id:
-            run.heartbeat_at = datetime(2000, 1, 1, tzinfo=UTC)
+            run.started_at = datetime(2000, 1, 1, tzinfo=UTC)
     store._save_runs()
     store._runs = None
 
-    new_run_id = store.start_run(source="rss", stale_after=timedelta(seconds=1))
-    assert new_run_id != stale_run_id
+    store.init_schema()
 
     runs_store = store._load_runs()
-    stale_run = next(r for r in runs_store.runs if r.run_id == stale_run_id)
-    assert stale_run.status == RunStatus.FAILED.value
-    assert "Auto-recovered stale running run" in str(stale_run.error_summary)
-    assert stale_run.finished_at is not None
+    remaining = [r for r in runs_store.runs if r.run_id == stale_run_id]
+    assert remaining == []
+
+    new_run_id = store.start_run(source="rss")
+    assert new_run_id != stale_run_id
     store.close()
 
 

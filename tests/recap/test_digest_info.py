@@ -8,10 +8,13 @@ from unittest.mock import MagicMock, patch
 
 import msgspec
 
+from news_recap.ingestion.repository import IngestionStore
 from news_recap.recap.digest_info import (
     DigestInfoController,
+    _find_uncovered_periods,
     _human_elapsed,
     _human_size,
+    _last_successful_ingestion,
     _smart_period,
 )
 from news_recap.recap.models import Digest, DigestArticle
@@ -412,6 +415,7 @@ def test_find_latest_digest_empty(tmp_path: Path) -> None:
 def test_digest_info_empty_workdir(tmp_path: Path, capsys: object) -> None:
     settings = MagicMock()
     settings.orchestrator.workdir_root = tmp_path / "nonexistent"
+    settings.data_dir = tmp_path
     with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
@@ -445,6 +449,7 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> No
 
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
+    settings.data_dir = tmp_path
     with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
@@ -454,6 +459,7 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> No
     assert "Uncovered periods" in out
     assert _local_str(coverage_end_1) in out
     assert _local_str(coverage_start_2) in out
+    assert "(0 articles)" in out
 
 
 def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> None:
@@ -481,6 +487,7 @@ def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> 
 
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
+    settings.data_dir = tmp_path
     with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
@@ -510,6 +517,7 @@ def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: obj
 
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
+    settings.data_dir = tmp_path
     with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
@@ -517,6 +525,83 @@ def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: obj
     assert "Uncovered periods" in out
     assert _local_str(coverage_end_1) in out
     assert _local_str(coverage_start_3) in out
+
+
+# ---------------------------------------------------------------------------
+# _last_successful_ingestion
+# ---------------------------------------------------------------------------
+
+
+def _store_with_runs(tmp_path: Path, statuses: list[tuple[str, datetime | None]]) -> IngestionStore:
+    """Create an IngestionStore and register runs with given (status, finished_at) pairs."""
+    from news_recap.ingestion.models import IngestionRunCounters, RunStatus
+
+    store = IngestionStore(tmp_path)
+    for status_str, finished_at in statuses:
+        run_id = store.start_run(source="rss")
+        store.finish_run(run_id, status=RunStatus(status_str), counters=IngestionRunCounters())
+        if finished_at is not None:
+            runs = store._load_runs()  # noqa: SLF001
+            for r in runs.runs:
+                if r.run_id == run_id:
+                    r.finished_at = finished_at
+            store._save_runs()  # noqa: SLF001
+    return store
+
+
+def test_last_successful_ingestion_returns_finished_at(tmp_path: Path) -> None:
+    finished = datetime(2026, 4, 5, 10, 0, 0, tzinfo=UTC)
+    store = _store_with_runs(tmp_path, [("succeeded", finished)])
+    assert _last_successful_ingestion(store) == finished
+
+
+def test_last_successful_ingestion_skips_failed(tmp_path: Path) -> None:
+    good_time = datetime(2026, 4, 4, 8, 0, tzinfo=UTC)
+    store = _store_with_runs(tmp_path, [("failed", None), ("succeeded", good_time)])
+    assert _last_successful_ingestion(store) == good_time
+
+
+def test_last_successful_ingestion_no_runs(tmp_path: Path) -> None:
+    store = IngestionStore(tmp_path)
+    assert _last_successful_ingestion(store) is None
+
+
+# ---------------------------------------------------------------------------
+# _find_uncovered_periods — trailing gap
+# ---------------------------------------------------------------------------
+
+
+def test_trailing_gap_shown_when_latest_ingested_after_coverage(tmp_path: Path) -> None:
+    workdir = tmp_path / "workdirs"
+    _make_and_register(
+        workdir,
+        "pipeline-2026-04-01-100000",
+        "2026-04-01",
+        articles=[_article("2026-04-01T12:00:00+00:00")],
+        coverage_start="2026-04-01T00:00:00+00:00",
+    )
+    summaries = _list_completed_digests(workdir)
+    latest_ingested = datetime(2026, 4, 2, 8, 0, tzinfo=UTC)
+    gaps = _find_uncovered_periods(summaries, latest_ingested=latest_ingested)
+    assert len(gaps) == 1
+    assert gaps[0] == (
+        datetime(2026, 4, 1, 12, 0, tzinfo=UTC),
+        datetime(2026, 4, 2, 8, 0, tzinfo=UTC),
+    )
+
+
+def test_no_trailing_gap_when_no_latest_ingested(tmp_path: Path) -> None:
+    workdir = tmp_path / "workdirs"
+    _make_and_register(
+        workdir,
+        "pipeline-2026-04-01-100000",
+        "2026-04-01",
+        articles=[_article("2026-04-01T12:00:00+00:00")],
+        coverage_start="2026-04-01T00:00:00+00:00",
+    )
+    summaries = _list_completed_digests(workdir)
+    gaps = _find_uncovered_periods(summaries)
+    assert gaps == []
 
 
 # ---------------------------------------------------------------------------

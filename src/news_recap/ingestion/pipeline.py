@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
 
 from news_recap.config import Settings
 from news_recap.ingestion.models import IngestionRunCounters, RunStatus
@@ -49,10 +48,7 @@ class IngestionOrchestrator:
 
     def run_daily(self) -> IngestionSummary:
         counters = IngestionRunCounters()
-        run_id = self.store.start_run(
-            source=self.source.name,
-            stale_after=timedelta(seconds=self.settings.ingestion.active_run_stale_after_seconds),
-        )
+        run_id = self.store.start_run(source=self.source.name)
 
         try:
             self.store.touch_run(run_id)

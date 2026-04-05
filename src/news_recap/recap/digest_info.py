@@ -9,13 +9,12 @@ from rich.console import Console
 from rich.table import Table
 
 from news_recap.config import Settings
+from news_recap.ingestion.repository import IngestionStore
 from news_recap.recap.pipeline_setup import (
     DigestSummary,
     _list_completed_digests,
     unregister_digest,
 )
-
-_MIN_FOR_GAP_CHECK = 2
 
 
 def _local(dt: datetime) -> datetime:
@@ -117,20 +116,37 @@ def _build_digest_table(summaries: list[DigestSummary]) -> Table:
     return table
 
 
+def _last_successful_ingestion(store: IngestionStore) -> datetime | None:
+    """Return ``finished_at`` of the latest successful ingestion run, or ``None``."""
+    for run in store.list_recent_runs(limit=20):
+        if run.status == "succeeded" and run.finished_at is not None:
+            return run.finished_at
+    return None
+
+
 def _find_uncovered_periods(
     summaries: list[DigestSummary],
-) -> list[str]:
+    *,
+    latest_ingested: datetime | None = None,
+) -> list[tuple[datetime, datetime]]:
+    """Return (start, end) pairs for gaps between digest coverage intervals."""
     with_range = [
         s for s in summaries if s.coverage_start is not None and s.coverage_end is not None
     ]
-    if len(with_range) < _MIN_FOR_GAP_CHECK:
+    if not with_range:
         return []
 
     oldest_first = sorted(with_range, key=lambda s: s.coverage_start)  # type: ignore[arg-type]
-    gaps: list[str] = []
+    gaps: list[tuple[datetime, datetime]] = []
     for prev, nxt in zip(oldest_first, oldest_first[1:], strict=False):
         if prev.coverage_end < nxt.coverage_start:  # type: ignore[operator]
-            gaps.append(f"  {_fmt_dt(prev.coverage_end)} .. {_fmt_dt(nxt.coverage_start)}")
+            gaps.append((prev.coverage_end, nxt.coverage_start))  # type: ignore[arg-type]
+
+    if latest_ingested is not None:
+        newest = oldest_first[-1]
+        if newest.coverage_end < latest_ingested:  # type: ignore[operator]
+            gaps.append((newest.coverage_end, latest_ingested))  # type: ignore[arg-type]
+
     return gaps
 
 
@@ -155,14 +171,18 @@ class DigestInfoController:
 
         console.print(_build_digest_table(summaries))
 
-        gaps = _find_uncovered_periods(summaries)
+        ingestion_store = IngestionStore(settings.data_dir)
+        latest_ingested = _last_successful_ingestion(ingestion_store)
+        gaps = _find_uncovered_periods(summaries, latest_ingested=latest_ingested)
         if gaps:
             console.print()
             console.print(
                 "[bold]Uncovered periods:[/bold]" if not no_color else "Uncovered periods:",
             )
-            for g in gaps:
-                console.print(g)
+            for start, end in gaps:
+                articles = ingestion_store.list_retrieval_articles(since=start)
+                n = sum(1 for a in articles if datetime.fromisoformat(a.published_at) <= end)
+                console.print(f"  {_fmt_dt(start)} .. {_fmt_dt(end)}  ({n} articles)")
 
     def digest_detail(self, digest_id: int) -> DigestSummary | None:
         """Return summary for a single digest, or None if not found."""

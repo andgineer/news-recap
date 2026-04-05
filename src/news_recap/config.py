@@ -19,7 +19,6 @@ class IngestionSettings:
 
     page_size: int = 50
     max_pages: int = 0
-    active_run_stale_after_seconds: int = 1_800
     backfill_max_gaps: int = 10
     clean_text_max_chars: int = 12_000
     gc_retention_days: int = 7
@@ -161,9 +160,6 @@ class Settings:
                         os.getenv("NEWS_RECAP_INOREADER_MAX_PAGES", "0"),
                     ),
                 ),
-                active_run_stale_after_seconds=int(
-                    os.getenv("NEWS_RECAP_ACTIVE_RUN_STALE_AFTER_SECONDS", "1800"),
-                ),
                 backfill_max_gaps=int(os.getenv("NEWS_RECAP_BACKFILL_MAX_GAPS", "10")),
                 clean_text_max_chars=int(os.getenv("NEWS_RECAP_CLEAN_TEXT_MAX_CHARS", "12000")),
                 gc_retention_days=int(os.getenv("NEWS_RECAP_GC_RETENTION_DAYS", "7")),
@@ -251,8 +247,6 @@ class Settings:
         self._validate_orchestrator_runtime_limits()
 
     def _validate_storage_and_ingestion(self) -> None:
-        if self.ingestion.active_run_stale_after_seconds <= 0:
-            raise ValueError("NEWS_RECAP_ACTIVE_RUN_STALE_AFTER_SECONDS must be > 0.")
         if self.ingestion.gc_retention_days < 1:
             raise ValueError("NEWS_RECAP_GC_RETENTION_DAYS must be >= 1.")
         if self.ingestion.digest_lookback_days < 1:
@@ -339,9 +333,6 @@ class Settings:
 
     def validate_for_rss(self, override_feed_urls: tuple[str, ...] = ()) -> None:
         """Raise configuration error if RSS feed URLs are missing or invalid."""
-
-        if self.ingestion.active_run_stale_after_seconds <= 0:
-            raise ValueError("NEWS_RECAP_ACTIVE_RUN_STALE_AFTER_SECONDS must be > 0.")
 
         effective_feed_urls = _normalize_feed_urls(override_feed_urls or self.rss.feed_urls)
         if not effective_feed_urls:

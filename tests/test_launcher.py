@@ -108,6 +108,7 @@ def test_controller_resume_with_agent_override_normalizes(
     _write_digest(pipeline_dir, completed_phases=["triage"])
 
     settings = MagicMock()
+    settings.data_dir = tmp_path / "data"
     settings.orchestrator.workdir_root = workdir_root
     settings.orchestrator.default_agent = "codex"
     settings.orchestrator.task_model_map = {}
@@ -234,6 +235,7 @@ def _make_settings_mock(tmp_path: Path) -> MagicMock:
     settings.orchestrator.api_retry_max_backoff_seconds = 60.0
     settings.orchestrator.api_retry_jitter_seconds = 1.0
     settings.orchestrator.agent_api_key_vars = {}
+    settings.data_dir = tmp_path / "data"
     settings.ingestion.gc_retention_days = 30
     settings.ingestion.digest_lookback_days = 7
     settings.ingestion.min_resource_chars = 200

@@ -37,8 +37,6 @@ from news_recap.storage.io import (
 )
 
 logger = logging.getLogger(__name__)
-DEFAULT_ACTIVE_RUN_STALE_AFTER = timedelta(minutes=30)
-_MAX_RUNS_KEPT = 50
 
 
 class IngestionStore:
@@ -70,6 +68,7 @@ class IngestionStore:
         deleted = gc_old_days(self.data_dir, keep_days=self._gc_retention_days)
         if deleted:
             logger.info("Auto-GC: deleted %d old daily partition(s).", len(deleted))
+        self._gc_old_runs()
 
     # ------------------------------------------------------------------
     # Daily article storage
@@ -124,38 +123,41 @@ class IngestionStore:
         if self._runs is not None:
             save_msgspec(self._runs_path, self._runs)
 
-    def start_run(
-        self,
-        source: str,
-        *,
-        stale_after: timedelta = DEFAULT_ACTIVE_RUN_STALE_AFTER,
-    ) -> str:
-        if stale_after.total_seconds() <= 0:
-            raise ValueError("stale_after must be > 0")
+    def _gc_old_runs(self) -> None:
+        """Drop old run records and recover stale running runs.
 
+        Uses ``gc_retention_days`` as the single retention threshold for everything.
+        """
+        runs_store = self._load_runs()
+        cutoff = utc_now() - timedelta(days=self._gc_retention_days)
+        dirty = False
+
+        for run in runs_store.runs:
+            if run.status == RunStatus.RUNNING.value and run.started_at < cutoff:
+                run.status = RunStatus.FAILED.value
+                run.finished_at = cutoff
+                run.error_summary = "Auto-recovered stale running run after crash/interruption."
+                logger.warning(
+                    "Recovered stale running ingestion run (run_id=%s).",
+                    run.run_id,
+                )
+                dirty = True
+
+        before = len(runs_store.runs)
+        runs_store.runs = [r for r in runs_store.runs if r.started_at >= cutoff]
+        if len(runs_store.runs) < before or dirty:
+            self._save_runs()
+
+    def start_run(self, source: str) -> str:
         runs_store = self._load_runs()
         now = utc_now()
 
-        active = [
-            r for r in runs_store.runs if r.source == source and r.status == RunStatus.RUNNING.value
-        ]
-        for run in active:
-            heartbeat = run.heartbeat_at or run.started_at
-            if (now - heartbeat) > stale_after:
-                run.status = RunStatus.FAILED.value
-                run.finished_at = now
-                run.heartbeat_at = now
-                run.error_summary = "Auto-recovered stale running run after crash/interruption."
-                logger.warning(
-                    "Recovered stale running ingestion run (source=%s run_id=%s).",
-                    source,
-                    run.run_id,
-                )
-            else:
+        for run in runs_store.runs:
+            if run.source == source and run.status == RunStatus.RUNNING.value:
                 raise RuntimeError(
                     "Another ingestion run is already active for this source "
                     f"(source={source}, run_id={run.run_id}, "
-                    f"heartbeat_at={heartbeat.isoformat()}).",
+                    f"started_at={run.started_at.isoformat()}).",
                 )
 
         run_id = str(uuid4())
@@ -169,7 +171,6 @@ class IngestionStore:
                 heartbeat_at=now,
             ),
         )
-        runs_store.runs = runs_store.runs[:_MAX_RUNS_KEPT]
         self._save_runs()
         return run_id
 

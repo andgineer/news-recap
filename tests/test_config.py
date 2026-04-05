@@ -63,16 +63,6 @@ def test_validate_for_rss_rejects_non_positive_per_feed_override() -> None:
         settings.validate_for_rss()
 
 
-def test_validate_for_rss_rejects_non_positive_active_run_stale_after_seconds() -> None:
-    settings = Settings(
-        ingestion=IngestionSettings(active_run_stale_after_seconds=0),
-        rss=RssSettings(feed_urls=("https://example.com/feed.xml",)),
-    )
-
-    with pytest.raises(ValueError, match="ACTIVE_RUN_STALE_AFTER_SECONDS"):
-        settings.validate_for_rss()
-
-
 def test_from_env_parses_per_feed_items(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "NEWS_RECAP_RSS_FEED_URLS", "https://a.example/feed.xml,https://b.example/feed.xml"
