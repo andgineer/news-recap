@@ -6,7 +6,7 @@
 |--------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/news\_recap/\_\_about\_\_.py                         |        1 |        0 |    100% |           |
 | src/news\_recap/automation.py                            |      250 |       15 |     94% |82, 113-114, 170-173, 194-196, 207-210, 554 |
-| src/news\_recap/config.py                                |      289 |       56 |     81% |240-242, 255, 259, 261, 267, 282, 285, 290, 311, 313, 315, 317, 321, 323, 366, 373, 389, 391, 401-402, 406, 487, 489, 497, 512-529, 538, 540, 556-564, 570, 580, 587, 594 |
+| src/news\_recap/config.py                                |      284 |       55 |     81% |236-238, 253, 255, 261, 276, 279, 284, 305, 307, 309, 311, 315, 317, 357, 364, 380, 382, 392-393, 397, 478, 480, 488, 503-520, 529, 531, 547-555, 561, 571, 578, 585 |
 | src/news\_recap/http/fetcher.py                          |       42 |        4 |     90% |47, 92, 95, 98 |
 | src/news\_recap/http/html\_extractor.py                  |       29 |        7 |     76% |47-49, 60-62, 69 |
 | src/news\_recap/http/youtube\_extractor.py               |       94 |       15 |     84% |116-120, 140, 144, 158, 160-165, 190, 198 |
@@ -14,8 +14,8 @@
 | src/news\_recap/ingestion/controllers.py                 |       40 |        1 |     98% |        91 |
 | src/news\_recap/ingestion/language.py                    |       23 |        2 |     91% |    21, 35 |
 | src/news\_recap/ingestion/models.py                      |      149 |        0 |    100% |           |
-| src/news\_recap/ingestion/pipeline.py                    |       35 |        0 |    100% |           |
-| src/news\_recap/ingestion/repository.py                  |      260 |       35 |     87% |92, 134, 205, 215-235, 247, 316, 394, 545-554 |
+| src/news\_recap/ingestion/pipeline.py                    |       34 |        0 |    100% |           |
+| src/news\_recap/ingestion/repository.py                  |      264 |       27 |     90% |91, 206, 216-236, 248, 317, 395, 553-554 |
 | src/news\_recap/ingestion/services/fetch\_service.py     |       65 |        2 |     97% |   79, 120 |
 | src/news\_recap/ingestion/services/normalize\_service.py |       14 |        0 |    100% |           |
 | src/news\_recap/ingestion/sources/base.py                |       31 |        3 |     90% |46, 55, 64 |
@@ -33,7 +33,7 @@
 | src/news\_recap/recap/dedup/calibration.py               |       66 |       32 |     52% |71-95, 105-107, 113-143 |
 | src/news\_recap/recap/dedup/cluster.py                   |       51 |        2 |     96% |    62, 66 |
 | src/news\_recap/recap/dedup/embedder.py                  |       71 |       15 |     79% |27-30, 40, 58, 61, 83-86, 89-91, 110, 117 |
-| src/news\_recap/recap/digest\_info.py                    |      115 |        7 |     94% |28, 82-84, 100, 115, 127 |
+| src/news\_recap/recap/digest\_info.py                    |      128 |        7 |     95% |27, 81-83, 99, 114, 137 |
 | src/news\_recap/recap/export\_prompt.py                  |       93 |        5 |     95% |199-200, 209, 213-214 |
 | src/news\_recap/recap/flow.py                            |      102 |       62 |     39% |67-71, 75-78, 91-194 |
 | src/news\_recap/recap/launcher.py                        |      118 |       12 |     90% |91, 140, 153, 186-211 |
@@ -54,7 +54,7 @@
 | src/news\_recap/recap/tasks/refine\_layout.py            |      115 |       24 |     79% |216-255, 262 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
 | src/news\_recap/web/server.py                            |      129 |       31 |     76% |32-34, 60-62, 71-72, 90, 94-96, 142-143, 162, 182-206 |
-| **TOTAL**                                                | **5561** |  **875** | **84%** |           |
+| **TOTAL**                                                | **5572** |  **866** | **84%** |           |
 
 
 ## Setup coverage badge
