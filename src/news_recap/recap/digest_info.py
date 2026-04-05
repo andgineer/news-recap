@@ -174,15 +174,19 @@ class DigestInfoController:
         ingestion_store = IngestionStore(settings.data_dir)
         latest_ingested = _last_successful_ingestion(ingestion_store)
         gaps = _find_uncovered_periods(summaries, latest_ingested=latest_ingested)
-        if gaps:
+        gap_lines: list[str] = []
+        for start, end in gaps:
+            articles = ingestion_store.list_retrieval_articles(since=start)
+            n = sum(1 for a in articles if datetime.fromisoformat(a.published_at) <= end)
+            if n > 0:
+                gap_lines.append(f"  {_fmt_dt(start)} .. {_fmt_dt(end)}  ({n} articles)")
+        if gap_lines:
             console.print()
             console.print(
                 "[bold]Uncovered periods:[/bold]" if not no_color else "Uncovered periods:",
             )
-            for start, end in gaps:
-                articles = ingestion_store.list_retrieval_articles(since=start)
-                n = sum(1 for a in articles if datetime.fromisoformat(a.published_at) <= end)
-                console.print(f"  {_fmt_dt(start)} .. {_fmt_dt(end)}  ({n} articles)")
+            for line in gap_lines:
+                console.print(line)
 
     def digest_detail(self, digest_id: int) -> DigestSummary | None:
         """Return summary for a single digest, or None if not found."""

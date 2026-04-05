@@ -422,7 +422,7 @@ def test_digest_info_empty_workdir(tmp_path: Path, capsys: object) -> None:
     assert "no digests found" in out.lower()
 
 
-def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> None:
+def test_digest_info_hides_gap_with_zero_articles(tmp_path: Path, capsys: object) -> None:
     workdir = tmp_path / "workdirs"
     coverage_end_1 = "2026-02-28T12:15:00+00:00"
     coverage_start_2 = "2026-02-28T20:12:00+00:00"
@@ -456,10 +456,15 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> No
 
     assert "2026-03-02" in out
     assert "2026-03-01" in out
-    assert "Uncovered periods" in out
-    assert _local_str(coverage_end_1) in out
-    assert _local_str(coverage_start_2) in out
-    assert "(0 articles)" in out
+
+    summaries = _list_completed_digests(workdir)
+    gaps = _find_uncovered_periods(summaries)
+    assert len(gaps) == 1
+    assert gaps[0] == (
+        datetime.fromisoformat(coverage_end_1),
+        datetime.fromisoformat(coverage_start_2),
+    )
+    assert "Uncovered periods" not in out
 
 
 def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> None:
@@ -522,9 +527,14 @@ def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: obj
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
 
-    assert "Uncovered periods" in out
-    assert _local_str(coverage_end_1) in out
-    assert _local_str(coverage_start_3) in out
+    summaries = _list_completed_digests(workdir)
+    gaps = _find_uncovered_periods(summaries)
+    assert len(gaps) == 1
+    assert gaps[0] == (
+        datetime.fromisoformat(coverage_end_1),
+        datetime.fromisoformat(coverage_start_3),
+    )
+    assert "Uncovered periods" not in out
 
 
 # ---------------------------------------------------------------------------
