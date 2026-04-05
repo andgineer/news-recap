@@ -33,7 +33,7 @@
 | src/news\_recap/recap/dedup/calibration.py               |       66 |       32 |     52% |71-95, 105-107, 113-143 |
 | src/news\_recap/recap/dedup/cluster.py                   |       51 |        2 |     96% |    62, 66 |
 | src/news\_recap/recap/dedup/embedder.py                  |       71 |       15 |     79% |27-30, 40, 58, 61, 83-86, 89-91, 110, 117 |
-| src/news\_recap/recap/digest\_info.py                    |      128 |        7 |     95% |27, 81-83, 99, 114, 137 |
+| src/news\_recap/recap/digest\_info.py                    |      132 |       12 |     91% |27, 81-83, 99, 114, 137, 182, 184-189 |
 | src/news\_recap/recap/export\_prompt.py                  |       93 |        5 |     95% |199-200, 209, 213-214 |
 | src/news\_recap/recap/flow.py                            |      102 |       62 |     39% |67-71, 75-78, 91-194 |
 | src/news\_recap/recap/launcher.py                        |      118 |       12 |     90% |91, 140, 153, 186-211 |
@@ -54,7 +54,7 @@
 | src/news\_recap/recap/tasks/refine\_layout.py            |      115 |       24 |     79% |216-255, 262 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
 | src/news\_recap/web/server.py                            |      129 |       31 |     76% |32-34, 60-62, 71-72, 90, 94-96, 142-143, 162, 182-206 |
-| **TOTAL**                                                | **5572** |  **866** | **84%** |           |
+| **TOTAL**                                                | **5576** |  **871** | **84%** |           |
 
 
 ## Setup coverage badge
