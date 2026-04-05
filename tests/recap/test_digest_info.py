@@ -31,20 +31,30 @@ from news_recap.recap.pipeline_setup import (
 _DIGEST_FILENAME = "digest.json"
 
 
+def _latest_published(articles: list[DigestArticle]) -> str | None:
+    if not articles:
+        return None
+    return max(a.published_at for a in articles)
+
+
 def _make_digest(
     pipeline_dir: Path,
     run_date: str,
     status: str = "completed",
     completed_phases: list[str] | None = None,
     articles: list[DigestArticle] | None = None,
+    coverage_start: str | None = None,
 ) -> Digest:
+    arts = articles or []
     digest = Digest(
         digest_id="d-" + run_date,
         run_date=run_date,
         status=status,
         pipeline_dir=str(pipeline_dir),
-        articles=articles or [],
+        articles=arts,
         completed_phases=completed_phases or [],
+        coverage_start=coverage_start,
+        coverage_end=_latest_published(arts),
     )
     pipeline_dir.mkdir(parents=True, exist_ok=True)
     (pipeline_dir / _DIGEST_FILENAME).write_bytes(msgspec.json.encode(digest))
@@ -56,6 +66,7 @@ def _make_and_register(
     dir_name: str,
     run_date: str,
     articles: list[DigestArticle] | None = None,
+    coverage_start: str | None = None,
 ) -> Digest:
     """Create a completed digest on disk and register it in the index."""
     pdir = workdir / dir_name
@@ -65,6 +76,7 @@ def _make_and_register(
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
         articles=articles,
+        coverage_start=coverage_start,
     )
     register_digest(workdir, pdir, digest)
     return digest
@@ -335,8 +347,7 @@ def test_list_returns_completed_digests(tmp_path: Path) -> None:
     assert s.digest_id == 1
     assert s.run_date == date(2026, 3, 1)
     assert s.article_count == 2
-    assert s.earliest_article == datetime(2026, 2, 28, 20, 0, tzinfo=UTC)
-    assert s.latest_article == datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
+    assert s.coverage_end == datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
     assert s.pipeline_dir_name == "pipeline-2026-03-01-100000"
     assert s.started_at == datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
 
@@ -365,8 +376,8 @@ def test_list_zero_article_digest(tmp_path: Path) -> None:
     result = _list_completed_digests(tmp_path)
     assert len(result) == 1
     assert result[0].article_count == 0
-    assert result[0].earliest_article is None
-    assert result[0].latest_article is None
+    assert result[0].coverage_start is None
+    assert result[0].coverage_end is None
 
 
 # ---------------------------------------------------------------------------
@@ -409,25 +420,27 @@ def test_digest_info_empty_workdir(tmp_path: Path, capsys: object) -> None:
 
 def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> None:
     workdir = tmp_path / "workdirs"
-    gap_end_utc = "2026-02-28T12:15:00+00:00"
-    gap_start_utc = "2026-02-28T20:12:00+00:00"
+    coverage_end_1 = "2026-02-28T12:15:00+00:00"
+    coverage_start_2 = "2026-02-28T20:12:00+00:00"
     _make_and_register(
         workdir,
         "pipeline-2026-03-01-100000",
         "2026-03-01",
         articles=[
             _article("2026-02-27T06:00:00+00:00"),
-            _article(gap_end_utc),
+            _article(coverage_end_1),
         ],
+        coverage_start="2026-02-27T00:00:00+00:00",
     )
     _make_and_register(
         workdir,
         "pipeline-2026-03-02-100000",
         "2026-03-02",
         articles=[
-            _article(gap_start_utc),
+            _article(coverage_start_2),
             _article("2026-03-01T14:30:00+00:00"),
         ],
+        coverage_start=coverage_start_2,
     )
 
     settings = MagicMock()
@@ -439,8 +452,8 @@ def test_digest_info_shows_digests_and_gap(tmp_path: Path, capsys: object) -> No
     assert "2026-03-02" in out
     assert "2026-03-01" in out
     assert "Uncovered periods" in out
-    assert _local_str(gap_end_utc) in out
-    assert _local_str(gap_start_utc) in out
+    assert _local_str(coverage_end_1) in out
+    assert _local_str(coverage_start_2) in out
 
 
 def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> None:
@@ -453,6 +466,7 @@ def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> 
             _article("2026-02-27T06:00:00+00:00"),
             _article("2026-02-28T20:00:00+00:00"),
         ],
+        coverage_start="2026-02-27T00:00:00+00:00",
     )
     _make_and_register(
         workdir,
@@ -462,6 +476,7 @@ def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> 
             _article("2026-02-28T08:00:00+00:00"),
             _article("2026-03-01T14:30:00+00:00"),
         ],
+        coverage_start="2026-02-28T20:00:00+00:00",
     )
 
     settings = MagicMock()
@@ -475,20 +490,22 @@ def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> 
 
 def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: object) -> None:
     workdir = tmp_path / "workdirs"
-    gap_end_utc = "2026-02-28T12:00:00+00:00"
-    gap_start_utc = "2026-03-03T08:00:00+00:00"
+    coverage_end_1 = "2026-02-28T12:00:00+00:00"
+    coverage_start_3 = "2026-03-03T08:00:00+00:00"
     _make_and_register(
         workdir,
         "pipeline-2026-03-01-100000",
         "2026-03-01",
-        articles=[_article(gap_end_utc)],
+        articles=[_article(coverage_end_1)],
+        coverage_start="2026-02-28T00:00:00+00:00",
     )
     _make_and_register(workdir, "pipeline-2026-03-02-100000", "2026-03-02", articles=[])
     _make_and_register(
         workdir,
         "pipeline-2026-03-03-100000",
         "2026-03-03",
-        articles=[_article(gap_start_utc)],
+        articles=[_article(coverage_start_3)],
+        coverage_start=coverage_start_3,
     )
 
     settings = MagicMock()
@@ -498,8 +515,8 @@ def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: obj
     out = capsys.readouterr().out  # type: ignore[union-attr]
 
     assert "Uncovered periods" in out
-    assert _local_str(gap_end_utc) in out
-    assert _local_str(gap_start_utc) in out
+    assert _local_str(coverage_end_1) in out
+    assert _local_str(coverage_start_3) in out
 
 
 # ---------------------------------------------------------------------------

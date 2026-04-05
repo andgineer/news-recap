@@ -30,20 +30,30 @@ def _article(published_at: str) -> DigestArticle:
     )
 
 
+def _latest_published(articles: list[DigestArticle]) -> str | None:
+    if not articles:
+        return None
+    return max(a.published_at for a in articles)
+
+
 def _make_digest(
     pipeline_dir: Path,
     run_date: str,
     status: str = "completed",
     completed_phases: list[str] | None = None,
     articles: list[DigestArticle] | None = None,
+    coverage_start: str | None = None,
 ) -> Digest:
+    arts = articles or []
     digest = Digest(
         digest_id="d-" + run_date,
         run_date=run_date,
         status=status,
         pipeline_dir=str(pipeline_dir),
-        articles=articles or [],
+        articles=arts,
         completed_phases=completed_phases or [],
+        coverage_start=coverage_start,
+        coverage_end=_latest_published(arts),
     )
     pipeline_dir.mkdir(parents=True, exist_ok=True)
     (pipeline_dir / _DIGEST_FILENAME).write_bytes(msgspec.json.encode(digest))
@@ -80,7 +90,7 @@ def test_returns_none_when_completed_but_no_oneshot_phase(tmp_path: Path) -> Non
     assert _find_last_digest_cutoff(tmp_path) is None
 
 
-def test_returns_latest_article_datetime(tmp_path: Path) -> None:
+def test_returns_coverage_end_datetime(tmp_path: Path) -> None:
     pdir = tmp_path / "pipeline-2026-03-25-080000"
     digest = _make_digest(
         pdir,
@@ -251,7 +261,7 @@ def test_compute_window_max_days_override(tmp_path: Path) -> None:
 
 
 def test_compute_window_digest_without_articles_returns_date(tmp_path: Path) -> None:
-    """A digest whose latest_article is None yields a date (>= midnight semantics)."""
+    """A digest whose coverage_end is None yields a date (>= midnight semantics)."""
     today = datetime.now(tz=UTC).date()
     yesterday = today - timedelta(days=1)
     pdir = tmp_path / f"pipeline-{yesterday}-080000"
@@ -286,6 +296,35 @@ def test_compute_window_same_day_digest_excludes_covered_articles(tmp_path: Path
     settings = _make_settings(tmp_path, lookback_days=2)
     _, since = _compute_article_window(settings, all_articles=False, max_days=None)
     assert since == datetime(today.year, today.month, today.day, 9, 30, tzinfo=UTC)
+
+
+def test_register_digest_stores_coverage_from_digest(tmp_path: Path) -> None:
+    """Coverage interval comes from digest.coverage_start/end, not from filtered articles."""
+    from news_recap.recap.pipeline_setup import _load_digest_index
+
+    pdir = tmp_path / "pipeline-2026-04-01-080000"
+    kept = [
+        _article("2026-04-01T06:00:00+00:00"),
+        _article("2026-04-01T08:00:00+00:00"),
+    ]
+
+    digest = _make_digest(
+        pdir,
+        "2026-04-01",
+        status="completed",
+        completed_phases=["classify", "oneshot_digest"],
+        articles=kept,
+        coverage_start="2026-03-31T22:00:00+00:00",
+    )
+    digest.coverage_end = "2026-04-01T10:00:00+00:00"
+    digest.articles = kept
+    register_digest(tmp_path, pdir, digest)
+
+    entries = _load_digest_index(tmp_path)
+    assert len(entries) == 1
+    assert entries[0].coverage_start == "2026-03-31T22:00:00+00:00"
+    assert entries[0].coverage_end == "2026-04-01T10:00:00+00:00"
+    assert entries[0].article_count == 2
 
 
 # ---------------------------------------------------------------------------

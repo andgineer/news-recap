@@ -120,3 +120,5 @@ class Digest(msgspec.Struct):
     completed_phases: list[str] = []
     recaps: list[DigestSection] = []
     day_summary: str = ""
+    coverage_start: str | None = None
+    coverage_end: str | None = None

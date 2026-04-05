@@ -91,7 +91,7 @@ def _build_digest_table(summaries: list[DigestSummary]) -> Table:
     table.add_column("#", justify="right", style="bold", no_wrap=True)
     table.add_column("Date", no_wrap=True)
     table.add_column("Articles", justify="right", no_wrap=True)
-    table.add_column("Article period", no_wrap=True)
+    table.add_column("Coverage", no_wrap=True)
     table.add_column("Started", justify="right", no_wrap=True)
     table.add_column("Elapsed", justify="right", no_wrap=True)
     table.add_column("Prompts", justify="right", no_wrap=True)
@@ -105,7 +105,7 @@ def _build_digest_table(summaries: list[DigestSummary]) -> Table:
             str(s.digest_id),
             str(s.run_date),
             str(s.article_count),
-            _smart_period(s.earliest_article, s.latest_article),
+            _smart_period(s.coverage_start, s.coverage_end),
             started,
             _human_elapsed(s.elapsed_seconds),
             _human_size(s.prompt_bytes),
@@ -121,16 +121,16 @@ def _find_uncovered_periods(
     summaries: list[DigestSummary],
 ) -> list[str]:
     with_range = [
-        s for s in summaries if s.earliest_article is not None and s.latest_article is not None
+        s for s in summaries if s.coverage_start is not None and s.coverage_end is not None
     ]
     if len(with_range) < _MIN_FOR_GAP_CHECK:
         return []
 
-    oldest_first = sorted(with_range, key=lambda s: s.earliest_article)  # type: ignore[arg-type]
+    oldest_first = sorted(with_range, key=lambda s: s.coverage_start)  # type: ignore[arg-type]
     gaps: list[str] = []
     for prev, nxt in zip(oldest_first, oldest_first[1:], strict=False):
-        if prev.latest_article < nxt.earliest_article:  # type: ignore[operator]
-            gaps.append(f"  {_fmt_dt(prev.latest_article)} .. {_fmt_dt(nxt.earliest_article)}")
+        if prev.coverage_end < nxt.coverage_start:  # type: ignore[operator]
+            gaps.append(f"  {_fmt_dt(prev.coverage_end)} .. {_fmt_dt(nxt.coverage_start)}")
     return gaps
 
 

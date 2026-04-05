@@ -691,7 +691,7 @@ def _print_digest_detail(digest_id: int) -> None:
 
     _row("Started", _fmt_dt(s.started_at))
     _row("Articles", str(s.article_count))
-    _row("Article period", _smart_period(s.earliest_article, s.latest_article))
+    _row("Coverage", _smart_period(s.coverage_start, s.coverage_end))
     _row("Elapsed", _human_elapsed(s.elapsed_seconds))
     _row("Prompts", _human_size(s.prompt_bytes))
     _row("Output", _human_size(s.output_bytes))

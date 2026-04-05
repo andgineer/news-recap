@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import socket
+import ssl
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -436,9 +438,11 @@ class RssSource(PageCheckpointSourceAdapter):
                 if maybe_response is not None:
                     return maybe_response
             except URLError as exc:
+                last_error = _handle_url_error(exc)
+            except TimeoutError:
                 last_error = TemporarySourceError(
-                    message=f"RSS transport error: {exc.reason}",
-                    code="transport",
+                    message="RSS request timed out",
+                    code="timeout",
                 )
 
             if last_error is None:
@@ -504,6 +508,38 @@ def _handle_http_error(
         message=f"Non-retryable RSS HTTP error: {error.code}",
         code=str(error.code),
     ) from error
+
+
+def _is_retryable_url_error(exc: URLError) -> bool:
+    """Check whether a URLError is transient (worth retrying).
+
+    Permanent failures — unknown host, SSL certificate verification — are
+    not retried.  Everything else (connection refused/reset, DNS temporary
+    failure, generic socket errors) is assumed transient.
+    """
+    reason = exc.reason
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return False
+    return not (
+        isinstance(reason, socket.gaierror) and reason.args and reason.args[0] == socket.EAI_NONAME
+    )
+
+
+def _handle_url_error(exc: URLError) -> TemporarySourceError:
+    """Convert a URLError into the right source-error type.
+
+    Raises ``NonRetryableSourceError`` immediately for permanent failures;
+    returns ``TemporarySourceError`` for transient ones.
+    """
+    if not _is_retryable_url_error(exc):
+        raise NonRetryableSourceError(
+            message=f"RSS transport error: {exc.reason}",
+            code="transport",
+        ) from exc
+    return TemporarySourceError(
+        message=f"RSS transport error: {exc.reason}",
+        code="transport",
+    )
 
 
 def _parse_cursor_offset(cursor: str | None) -> int:

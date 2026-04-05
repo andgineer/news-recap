@@ -110,8 +110,8 @@ def _make_summary(
         digest_id=digest_id,
         run_date=date(2026, 3, 1),
         article_count=5,
-        earliest_article=datetime(2026, 2, 28, 20, 0, tzinfo=UTC),
-        latest_article=datetime(2026, 3, 1, 10, 0, tzinfo=UTC),
+        coverage_start=datetime(2026, 2, 28, 20, 0, tzinfo=UTC),
+        coverage_end=datetime(2026, 3, 1, 10, 0, tzinfo=UTC),
         pipeline_dir_name=pipeline_dir_name,
         started_at=datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC),
         elapsed_seconds=elapsed,
@@ -456,13 +456,16 @@ def test_digest_detail_found(tmp_path: Path) -> None:
     from news_recap.recap.pipeline_setup import register_digest
 
     pdir = tmp_path / "pipeline-2026-03-01-100000"
+    arts = [_article()]
     digest = Digest(
         digest_id="d-1",
         run_date="2026-03-01",
         status="completed",
         pipeline_dir=str(pdir),
-        articles=[_article()],
+        articles=arts,
         completed_phases=["classify", "oneshot_digest"],
+        coverage_start=arts[0].published_at,
+        coverage_end=arts[0].published_at,
     )
     pdir.mkdir(parents=True, exist_ok=True)
     (pdir / "digest.json").write_bytes(msgspec.json.encode(digest))

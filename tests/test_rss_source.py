@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import socket
+import ssl
 from datetime import UTC, datetime, timedelta
 from http.client import HTTPMessage
 from io import BytesIO
-from urllib.error import HTTPError
+from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 from xml.etree.ElementTree import Element, SubElement
 
 import allure
@@ -20,6 +23,7 @@ from news_recap.ingestion.sources.rss import (
     _atom_link,
     _build_request_headers,
     _handle_http_error,
+    _is_retryable_url_error,
     _normalize_header,
     _parse_atom,
     _parse_retry_after,
@@ -706,3 +710,151 @@ def test_normalize_header_strips_whitespace() -> None:
 
 def test_normalize_header_empty_string_returns_none() -> None:
     assert _normalize_header("   ") is None
+
+
+# ---------------------------------------------------------------------------
+# _is_retryable_url_error classification
+# ---------------------------------------------------------------------------
+
+
+def test_is_retryable_url_error_ssl_cert_failure() -> None:
+    reason = ssl.SSLCertVerificationError("certificate verify failed")
+    assert _is_retryable_url_error(URLError(reason)) is False
+
+
+def test_is_retryable_url_error_unknown_host() -> None:
+    reason = socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+    assert _is_retryable_url_error(URLError(reason)) is False
+
+
+def test_is_retryable_url_error_dns_temporary() -> None:
+    reason = socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution")
+    assert _is_retryable_url_error(URLError(reason)) is True
+
+
+def test_is_retryable_url_error_connection_refused() -> None:
+    assert _is_retryable_url_error(URLError(ConnectionRefusedError())) is True
+
+
+def test_is_retryable_url_error_connection_reset() -> None:
+    assert _is_retryable_url_error(URLError(ConnectionResetError())) is True
+
+
+def test_is_retryable_url_error_generic_oserror() -> None:
+    assert _is_retryable_url_error(URLError(OSError("Network is unreachable"))) is True
+
+
+# ---------------------------------------------------------------------------
+# _request_feed retry behaviour (integration through the real retry loop)
+# ---------------------------------------------------------------------------
+
+_FEED_URL = "https://example.com/feed.xml"
+
+
+def _make_source(*, max_retries: int = 3) -> RssSource:
+    return RssSource(
+        RssSourceConfig(
+            feed_urls=(_FEED_URL,),
+            max_retries=max_retries,
+            retry_backoff_seconds=0,
+        )
+    )
+
+
+def test_request_feed_retries_on_timeout_error() -> None:
+    source = _make_source(max_retries=3)
+    with patch("news_recap.ingestion.sources.rss.urlopen", side_effect=TimeoutError):
+        with pytest.raises(TemporarySourceError, match="timed out"):
+            source._request_feed(_FEED_URL)
+
+
+def test_request_feed_retries_on_connection_refused() -> None:
+    source = _make_source(max_retries=2)
+    mock_urlopen = patch(
+        "news_recap.ingestion.sources.rss.urlopen",
+        side_effect=URLError(ConnectionRefusedError()),
+    )
+    with mock_urlopen as m:
+        with pytest.raises(TemporarySourceError, match="transport"):
+            source._request_feed(_FEED_URL)
+        assert m.call_count == 2
+
+
+def test_request_feed_retries_on_http_503() -> None:
+    source = _make_source(max_retries=2)
+    error = HTTPError(_FEED_URL, 503, "Service Unavailable", HTTPMessage(), BytesIO(b""))
+    mock_urlopen = patch(
+        "news_recap.ingestion.sources.rss.urlopen",
+        side_effect=error,
+    )
+    with mock_urlopen as m:
+        with pytest.raises(TemporarySourceError, match="503"):
+            source._request_feed(_FEED_URL)
+        assert m.call_count == 2
+
+
+def test_request_feed_no_retry_on_ssl_cert_error() -> None:
+    source = _make_source(max_retries=3)
+    reason = ssl.SSLCertVerificationError("certificate verify failed")
+    mock_urlopen = patch(
+        "news_recap.ingestion.sources.rss.urlopen",
+        side_effect=URLError(reason),
+    )
+    with mock_urlopen as m:
+        with pytest.raises(NonRetryableSourceError, match="transport"):
+            source._request_feed(_FEED_URL)
+        assert m.call_count == 1
+
+
+def test_request_feed_no_retry_on_unknown_host() -> None:
+    source = _make_source(max_retries=3)
+    reason = socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+    mock_urlopen = patch(
+        "news_recap.ingestion.sources.rss.urlopen",
+        side_effect=URLError(reason),
+    )
+    with mock_urlopen as m:
+        with pytest.raises(NonRetryableSourceError, match="transport"):
+            source._request_feed(_FEED_URL)
+        assert m.call_count == 1
+
+
+def test_request_feed_no_retry_on_http_404() -> None:
+    source = _make_source(max_retries=3)
+    error = HTTPError(_FEED_URL, 404, "Not Found", HTTPMessage(), BytesIO(b""))
+    mock_urlopen = patch(
+        "news_recap.ingestion.sources.rss.urlopen",
+        side_effect=error,
+    )
+    with mock_urlopen as m:
+        with pytest.raises(NonRetryableSourceError, match="404"):
+            source._request_feed(_FEED_URL)
+        assert m.call_count == 1
+
+
+def test_request_feed_retries_then_succeeds() -> None:
+    """First attempt fails transiently, second succeeds."""
+    source = _make_source(max_retries=3)
+    response_cm = _FakeResponseCM(b"<rss><channel></channel></rss>")
+    calls = [URLError(ConnectionResetError()), response_cm]
+    with patch("news_recap.ingestion.sources.rss.urlopen", side_effect=calls) as m:
+        result = source._request_feed(_FEED_URL)
+        assert result.raw_xml == "<rss><channel></channel></rss>"
+        assert m.call_count == 2
+
+
+class _FakeResponseCM:
+    """Minimal urlopen response context manager for testing."""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+        self.headers = HTTPMessage()
+
+    def __enter__(self) -> _FakeResponseCM:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        pass
+
+    def read(self) -> bytes:
+        return self._body

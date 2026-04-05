@@ -9,14 +9,16 @@ which handles checkpoint skip/save and early stopping.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from news_recap.recap.agents.ai_agent import read_agent_usage
-from news_recap.recap.models import Digest, to_article_index
+from news_recap.recap.models import Digest, DigestArticle, to_article_index
 from news_recap.recap.pipeline_setup import _DIGEST_FILENAME, register_digest
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 from news_recap.recap.storage.workdir import TaskWorkdirManager
@@ -60,6 +62,15 @@ def _log_pipeline_token_summary(logger: Any, pdir: Path) -> None:
     )
 
 
+def _latest_published_at(articles: list[DigestArticle]) -> str | None:
+    """Return the latest ``published_at`` ISO timestamp, or ``None``."""
+    timestamps: list[datetime] = []
+    for a in articles:
+        with contextlib.suppress(ValueError, TypeError):
+            timestamps.append(datetime.fromisoformat(a.published_at))
+    return max(timestamps).isoformat() if timestamps else None
+
+
 def _load_checkpoint(pdir: Path) -> Digest | None:
     path = pdir / _DIGEST_FILENAME
     if path.exists():
@@ -98,6 +109,8 @@ def recap_flow(  # noqa: PLR0915
             status="running",
             pipeline_dir=str(pdir),
             articles=list(inp.articles),
+            coverage_start=inp.coverage_start,
+            coverage_end=_latest_published_at(inp.articles),
         )
 
     article_entries = to_article_index(inp.articles)

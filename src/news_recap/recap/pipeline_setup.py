@@ -34,8 +34,8 @@ class DigestIndexEntry(msgspec.Struct):
     pipeline_dir_name: str
     run_date: str
     article_count: int
-    earliest_article: str | None = None
-    latest_article: str | None = None
+    coverage_start: str | None = None
+    coverage_end: str | None = None
     started_at: str | None = None
     elapsed_seconds: float = 0.0
     total_tokens: int = 0
@@ -157,8 +157,8 @@ class DigestSummary:
     digest_id: int
     run_date: date
     article_count: int
-    earliest_article: datetime | None
-    latest_article: datetime | None
+    coverage_start: datetime | None
+    coverage_end: datetime | None
     pipeline_dir_name: str
     started_at: datetime | None = None
     elapsed_seconds: float = 0.0
@@ -170,7 +170,7 @@ class DigestSummary:
 def _find_last_digest_cutoff(workdir_root: Path) -> date | datetime | None:
     """Return the cutoff from the most recent completed digest.
 
-    When ``latest_article`` is recorded, returns its ``datetime`` (callers
+    When ``coverage_end`` is recorded, returns its ``datetime`` (callers
     apply strict ``>`` so the boundary article is excluded).  Otherwise falls
     back to ``run_date`` as a plain ``date`` (callers apply ``>=`` midnight
     so all articles from that day are included).
@@ -180,8 +180,8 @@ def _find_last_digest_cutoff(workdir_root: Path) -> date | datetime | None:
     if not entries:
         return None
     newest = max(entries, key=lambda e: e.pipeline_dir_name)
-    if newest.latest_article:
-        return datetime.fromisoformat(newest.latest_article)
+    if newest.coverage_end:
+        return datetime.fromisoformat(newest.coverage_end)
     return date.fromisoformat(newest.run_date)
 
 
@@ -250,13 +250,6 @@ def register_digest(workdir_root: Path, pdir: Path, digest: Digest) -> None:
     if any(e.pipeline_dir_name == dir_name for e in entries):
         return
 
-    timestamps: list[datetime] = []
-    for article in digest.articles:
-        try:
-            timestamps.append(datetime.fromisoformat(article.published_at))
-        except (ValueError, TypeError):
-            continue
-
     usage = _aggregate_usage(pdir)
     started = _parse_pipeline_start(dir_name)
 
@@ -265,8 +258,8 @@ def register_digest(workdir_root: Path, pdir: Path, digest: Digest) -> None:
         pipeline_dir_name=dir_name,
         run_date=digest.run_date,
         article_count=len(digest.articles),
-        earliest_article=min(timestamps).isoformat() if timestamps else None,
-        latest_article=max(timestamps).isoformat() if timestamps else None,
+        coverage_start=digest.coverage_start,
+        coverage_end=digest.coverage_end,
         started_at=started.isoformat() if started else None,
         elapsed_seconds=usage.elapsed,
         total_tokens=usage.tokens,
@@ -298,10 +291,8 @@ def _list_completed_digests(workdir_root: Path) -> list[DigestSummary]:
             digest_id=e.digest_id,
             run_date=date.fromisoformat(e.run_date),
             article_count=e.article_count,
-            earliest_article=(
-                datetime.fromisoformat(e.earliest_article) if e.earliest_article else None
-            ),
-            latest_article=(datetime.fromisoformat(e.latest_article) if e.latest_article else None),
+            coverage_start=(datetime.fromisoformat(e.coverage_start) if e.coverage_start else None),
+            coverage_end=(datetime.fromisoformat(e.coverage_end) if e.coverage_end else None),
             pipeline_dir_name=e.pipeline_dir_name,
             started_at=datetime.fromisoformat(e.started_at) if e.started_at else None,
             elapsed_seconds=e.elapsed_seconds,
@@ -415,6 +406,7 @@ def _write_pipeline_input(  # noqa: PLR0913
     routing_defaults: RoutingDefaults,
     agent_override: str | None,
     data_dir: str,
+    coverage_start: str | None = None,
     min_resource_chars: int = _DEFAULT_MIN_RESOURCE_CHARS,
     dedup_threshold: float = 0.90,
     dedup_model_name: str = "intfloat/multilingual-e5-small",
@@ -429,6 +421,7 @@ def _write_pipeline_input(  # noqa: PLR0913
         "routing_defaults": msgspec.structs.asdict(routing_defaults),
         "agent_override": agent_override,
         "data_dir": data_dir,
+        "coverage_start": coverage_start,
         "min_resource_chars": min_resource_chars,
         "dedup_threshold": dedup_threshold,
         "dedup_model_name": dedup_model_name,

@@ -175,6 +175,7 @@ class RecapCliController:
             run_date = source_articles[0] if source_articles else datetime.now(tz=UTC).date()
 
             articles: list[DigestArticle]
+            coverage_start: str | None = None
             if source_articles:
                 articles = source_articles[1]
                 yield (
@@ -187,6 +188,16 @@ class RecapCliController:
                     settings,
                     command.all_articles,
                     command.max_days,
+                )
+                coverage_start = (
+                    since_date.isoformat()
+                    if isinstance(since_date, datetime)
+                    else datetime(
+                        since_date.year,
+                        since_date.month,
+                        since_date.day,
+                        tzinfo=UTC,
+                    ).isoformat()
                 )
                 articles = store.list_retrieval_articles(
                     lookback_days=_cap_days,
@@ -216,6 +227,7 @@ class RecapCliController:
                 routing_defaults=routing_defaults,
                 agent_override=command.agent_override,
                 data_dir=str(settings.data_dir),
+                coverage_start=coverage_start,
                 min_resource_chars=settings.ingestion.min_resource_chars,
                 dedup_threshold=settings.dedup.threshold,
                 dedup_model_name=settings.dedup.model_name,
