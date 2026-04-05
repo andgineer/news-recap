@@ -1,0 +1,1 @@
+INFO     news_recap.ingestion.repository:repository.py:72 Auto-GC: deleted 1 old daily partition(s).

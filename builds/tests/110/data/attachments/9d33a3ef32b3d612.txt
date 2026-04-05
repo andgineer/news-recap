@@ -1,0 +1,7 @@
+           INFO     recap_enrich: 20 articles to enrich                         
+[09:36:45] INFO     recap_enrich: Round 1: 20 articles -> 2 batch(es)           
+           INFO     recap_enrich: Batch 1 — 14 articles                         
+           INFO     recap_enrich: Batch 2 — 6 articles                          
+           ERROR    recap_enrich batch 2 failed: Step recap_enrich failed: agent
+                    crashed                                                     
+           INFO     recap_enrich: 14/20 articles enriched                       

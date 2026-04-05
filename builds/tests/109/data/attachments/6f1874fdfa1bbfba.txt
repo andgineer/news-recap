@@ -1,0 +1,3 @@
+2026-04-01 06:56:38,324 | WARNING | news_recap.recap.tasks.oneshot_digest - [oneshot_digest] BLOCK before SECTION — discarding
+2026-04-01 06:56:38,325 | WARNING | news_recap.recap.tasks.oneshot_digest - [oneshot_digest] SECTION_SUMMARY before SECTION — discarding
+2026-04-01 06:56:38,325 | WARNING | news_recap.recap.tasks.oneshot_digest - [oneshot_digest] ARTICLES before BLOCK — discarding

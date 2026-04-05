@@ -1,0 +1,6 @@
+           INFO     recap_enrich: 5 articles to enrich                          
+           INFO     recap_enrich: Round 1: 5 articles -> 1 batch(es)            
+           INFO     recap_enrich: Batch 1 — 5 articles                          
+           ERROR    recap_enrich batch 1 failed: Step recap_enrich failed:      
+                    stdout is empty                                             
+           INFO     recap_enrich: 0/5 articles enriched                         

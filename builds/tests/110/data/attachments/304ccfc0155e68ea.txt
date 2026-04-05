@@ -1,0 +1,6 @@
+           INFO     classify: 6 articles -> 2 batch(es)                         
+           INFO     classify: Batch 1 — 3 headlines                             
+           INFO     classify: Batch 2 — 3 headlines                             
+           ERROR    classify batch 2 failed: Step recap_classify failed: agent  
+                    crashed                                                     
+           INFO     Classify: 6 kept (0 vague for enrichment), 0 excluded       

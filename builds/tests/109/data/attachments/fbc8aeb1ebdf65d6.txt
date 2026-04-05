@@ -1,0 +1,1 @@
+2026-04-01 06:56:40,882 | WARNING | news_recap.http.youtube_extractor - Transcript retrieval failed for dQw4w9WgXcQ: RuntimeError

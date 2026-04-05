@@ -1,0 +1,1 @@
+[10:23:25] INFO     oneshot_digest: fuzzy merge removed 1 block(s)              

@@ -1,0 +1,5 @@
+INFO     news_recap.recap.tasks.enrich:enrich.py:242 [cyan]recap_enrich:[/cyan] 25 articles to enrich
+INFO     news_recap.recap.tasks.enrich:enrich.py:271 [cyan]recap_enrich:[/cyan] Round 1: 25 articles -> 2 batch(es)
+INFO     news_recap.recap.tasks.enrich:enrich.py:257 [cyan]recap_enrich:[/cyan] Batch 1 — 20 articles
+INFO     news_recap.recap.tasks.enrich:enrich.py:257 [cyan]recap_enrich:[/cyan] Batch 2 — 5 articles
+INFO     news_recap.recap.tasks.enrich:enrich.py:311 [cyan]recap_enrich:[/cyan] 25/25 articles enriched

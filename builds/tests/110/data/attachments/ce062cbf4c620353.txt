@@ -1,0 +1,2 @@
+           WARNING  HTTP error fetching https://example.com/broken: connection  
+                    reset                                                       

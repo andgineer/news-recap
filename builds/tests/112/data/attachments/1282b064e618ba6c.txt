@@ -1,0 +1,2 @@
+INFO     news_recap.recap.pipeline_setup:pipeline_setup.py:269 Registered digest #1 (pipeline-2026-03-22-100000)
+INFO     news_recap.recap.pipeline_setup:pipeline_setup.py:269 Registered digest #2 (pipeline-2026-03-31-100000)

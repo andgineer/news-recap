@@ -1,0 +1,5 @@
+           INFO     recap_enrich: 25 articles to enrich                         
+           INFO     recap_enrich: Round 1: 25 articles -> 2 batch(es)           
+           INFO     recap_enrich: Batch 1 — 20 articles                         
+           INFO     recap_enrich: Batch 2 — 5 articles                          
+           INFO     recap_enrich: 25/25 articles enriched                       

@@ -1,0 +1,3 @@
+           DEBUG    Primary transcript fetch failed for dQw4w9WgXcQ, trying     
+                    fallback                                                    
+           WARNING  Transcript retrieval failed for dQw4w9WgXcQ: RuntimeError   
