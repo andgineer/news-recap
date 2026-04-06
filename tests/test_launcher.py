@@ -9,11 +9,13 @@ from unittest.mock import MagicMock, patch
 
 import msgspec
 
+from conftest import make_settings_mock
 from news_recap.recap.launcher import (
     RecapCliController,
     RecapRunCommand,
     _load_from_pipeline,
     _patch_pipeline_input,
+    _selection_params_for_create,
 )
 from news_recap.recap.models import Digest, DigestArticle
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
@@ -25,9 +27,10 @@ def _write_pipeline_input(
     tmp_path: Path,
     agent_override: str | None = "codex",
     run_date: date | None = None,
+    selection_params: dict | None = None,
 ) -> None:
     bdate = run_date or _TODAY
-    payload = {
+    payload: dict = {
         "run_date": bdate.isoformat(),
         "articles": [],
         "preferences": {"max_headline_chars": 120, "language": "ru"},
@@ -40,6 +43,8 @@ def _write_pipeline_input(
         "agent_override": agent_override,
         "data_dir": str(tmp_path),
     }
+    if selection_params is not None:
+        payload["selection_params"] = selection_params
     (tmp_path / "pipeline_input.json").write_text(json.dumps(payload, ensure_ascii=False), "utf-8")
 
 
@@ -104,7 +109,9 @@ def test_controller_resume_with_agent_override_normalizes(
     workdir_root = tmp_path / "workdirs"
     pipeline_dir = workdir_root / f"pipeline-{_TODAY}-120000"
     pipeline_dir.mkdir(parents=True)
-    _write_pipeline_input(pipeline_dir, agent_override="codex")
+    command = RecapRunCommand(agent_override="Claude")
+    sel_params = _selection_params_for_create(command)
+    _write_pipeline_input(pipeline_dir, agent_override="codex", selection_params=sel_params)
     _write_digest(pipeline_dir, completed_phases=["triage"])
 
     settings = MagicMock()
@@ -120,10 +127,6 @@ def test_controller_resume_with_agent_override_normalizes(
     settings.ingestion.gc_retention_days = 30
     settings.ingestion.digest_lookback_days = 7
     mock_from_env.return_value = settings
-
-    command = RecapRunCommand(
-        agent_override="Claude",
-    )
 
     messages = [text for _, text in RecapCliController().run_pipeline(command)]
 
@@ -217,31 +220,7 @@ def test_load_from_pipeline_missing_file(tmp_path: Path) -> None:
 
 
 def _make_settings_mock(tmp_path: Path) -> MagicMock:
-    settings = MagicMock()
-    settings.orchestrator.workdir_root = tmp_path / "workdirs"
-    settings.orchestrator.default_agent = "codex"
-    settings.orchestrator.task_model_map = {}
-    settings.orchestrator.claude_command_template = ""
-    settings.orchestrator.codex_command_template = ""
-    settings.orchestrator.gemini_command_template = ""
-    settings.orchestrator.task_type_timeout_map = {}
-    settings.orchestrator.agent_max_parallel = {}
-    settings.orchestrator.agent_launch_delay = {}
-    settings.orchestrator.execution_backend = "cli"
-    settings.orchestrator.api_model_map = {}
-    settings.orchestrator.api_max_parallel = 4
-    settings.orchestrator.api_concurrency_recovery_successes = 3
-    settings.orchestrator.api_downshift_pause_seconds = 5.0
-    settings.orchestrator.api_retry_max_backoff_seconds = 60.0
-    settings.orchestrator.api_retry_jitter_seconds = 1.0
-    settings.orchestrator.agent_api_key_vars = {}
-    settings.data_dir = tmp_path / "data"
-    settings.ingestion.gc_retention_days = 30
-    settings.ingestion.digest_lookback_days = 7
-    settings.ingestion.min_resource_chars = 200
-    settings.dedup.threshold = 0.90
-    settings.dedup.model_name = "intfloat/multilingual-e5-small"
-    return settings
+    return make_settings_mock(tmp_path)
 
 
 @patch("news_recap.recap.launcher.recap_flow")

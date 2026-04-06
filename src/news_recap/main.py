@@ -6,6 +6,7 @@ import logging
 import re
 import sys
 from collections.abc import Iterator
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import rich_click as click
@@ -44,6 +45,97 @@ from news_recap.recap.launcher import (
     RecapRunCommand,
 )
 from news_recap.web.server import WebCliController, WebServeCommand
+
+
+def _common_article_options(fn):  # type: ignore[no-untyped-def]
+    """Shared ``--agent --fresh --from-digest --max-days --all --from --to`` options."""
+    decorators = [
+        click.option(
+            "--agent",
+            type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
+            default=None,
+            help="LLM agent to use for pipeline steps. Overrides default_agent from config.",
+        ),
+        click.option(
+            "--fresh",
+            is_flag=True,
+            default=False,
+            help="Ignore any incomplete pipeline and start a new one.",
+        ),
+        click.option(
+            "--from-digest",
+            "from_digest",
+            type=click.IntRange(min=1),
+            default=None,
+            help="Reuse articles from an existing digest by ID (as shown by `news-recap list`).",
+        ),
+        click.option(
+            "--max-days",
+            "max_days",
+            type=click.IntRange(min=1),
+            default=None,
+            help=(
+                "Max days to look back for articles"
+                " (default: 2, env NEWS_RECAP_DIGEST_LOOKBACK_DAYS)."
+            ),
+        ),
+        click.option(
+            "--all",
+            "all_articles",
+            is_flag=True,
+            default=False,
+            help="Ignore previous digests; include all articles within the lookback window.",
+        ),
+        click.option(
+            "--from",
+            "date_from",
+            type=DateOrDateTime(),
+            default=None,
+            help=(
+                "Only include articles on or after this date[time]"
+                " (YYYY-MM-DD or YYYY-MM-DDTHH:MM)."
+            ),
+        ),
+        click.option(
+            "--to",
+            "date_to",
+            type=DateOrDateTime(),
+            default=None,
+            help=(
+                "Only include articles on or before this date[time]."
+                " Defaults to now when --from is set."
+            ),
+        ),
+    ]
+    for decorator in reversed(decorators):
+        fn = decorator(fn)
+    return fn
+
+
+class DateOrDateTime(click.ParamType):
+    """Parse ``YYYY-MM-DD`` as `date`, ``YYYY-MM-DDTHH:MM`` as `datetime` (UTC)."""
+
+    name = "date[time]"
+
+    def convert(
+        self,
+        value: str | date | datetime,
+        param: click.Parameter | None,
+        ctx: click.Context | None,
+    ) -> date | datetime:
+        if type(value) is datetime:
+            return value
+        if type(value) is date:
+            return value
+        assert isinstance(value, str)
+        try:
+            return datetime.strptime(value, "%Y-%m-%dT%H:%M").replace(tzinfo=UTC)
+        except ValueError:
+            pass
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            self.fail(f"Cannot parse '{value}' as YYYY-MM-DD or YYYY-MM-DDTHH:MM", param, ctx)
 
 
 def _configure_logging() -> None:
@@ -126,12 +218,7 @@ def ingest(feed_urls: tuple[str, ...]) -> None:
 
 
 @news_recap.command("create")
-@click.option(
-    "--agent",
-    type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
-    default=None,
-    help="LLM agent to use for all pipeline steps. Overrides default_agent from config.",
-)
+@_common_article_options
 @click.option(
     "--limit",
     "article_limit",
@@ -157,24 +244,11 @@ def ingest(feed_urls: tuple[str, ...]) -> None:
     help="Stop pipeline after this phase (e.g. --stop-after classify).",
 )
 @click.option(
-    "--fresh",
-    is_flag=True,
-    default=False,
-    help="Ignore any incomplete pipeline and start a new one.",
-)
-@click.option(
     "--api",
     "api_mode",
     is_flag=True,
     default=False,
     help="Use direct Anthropic API instead of CLI agents (sets backend=api, agent=claude).",
-)
-@click.option(
-    "--from-digest",
-    "from_digest",
-    type=click.IntRange(min=1),
-    default=None,
-    help="Reuse articles from an existing digest by ID (as shown by `news-recap list`).",
 )
 @click.option(
     "--use-api-key",
@@ -186,20 +260,6 @@ def ingest(feed_urls: tuple[str, ...]) -> None:
         "subprocess environment. By default they are unset so agents use their subscription."
     ),
 )
-@click.option(
-    "--max-days",
-    "max_days",
-    type=click.IntRange(min=1),
-    default=None,
-    help="Max days to look back for articles (default: 2, env NEWS_RECAP_DIGEST_LOOKBACK_DAYS).",
-)
-@click.option(
-    "--all",
-    "all_articles",
-    is_flag=True,
-    default=False,
-    help="Ignore previous digests; include all articles within the lookback window.",
-)
 def recap_run(  # noqa: PLR0913
     agent: str | None,
     article_limit: int | None,
@@ -210,6 +270,8 @@ def recap_run(  # noqa: PLR0913
     use_api_key: bool,
     max_days: int | None,
     all_articles: bool,
+    date_from: date | datetime | None,
+    date_to: date | datetime | None,
 ) -> None:
     """Create a news digest from recent articles."""
 
@@ -225,12 +287,15 @@ def recap_run(  # noqa: PLR0913
                 from_digest=from_digest,
                 max_days=max_days,
                 all_articles=all_articles,
+                date_from=date_from,
+                date_to=date_to,
             ),
         ),
     )
 
 
 @news_recap.command("prompt")
+@_common_article_options
 @click.option(
     "--ai/--no-ai",
     default=True,
@@ -239,12 +304,6 @@ def recap_run(  # noqa: PLR0913
         "Run full classify→dedup pipeline before building the prompt "
         "(same scope as the create command)."
     ),
-)
-@click.option(
-    "--fresh",
-    is_flag=True,
-    default=False,
-    help="Discard any existing pipeline for today and start fresh. Ignored when --no-ai is set.",
 )
 @click.option(
     "--group-threshold",
@@ -260,40 +319,11 @@ def recap_run(  # noqa: PLR0913
     help="Language for task instruction.",
 )
 @click.option(
-    "--agent",
-    type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
-    default=None,
-    help=(
-        "LLM agent to use for classify/enrich pipeline steps. Overrides default_agent from config."
-    ),
-)
-@click.option(
     "--out",
     type=click.Choice(["console", "clipboard"], case_sensitive=False),
     default="clipboard",
     show_default=True,
     help="Output destination.",
-)
-@click.option(
-    "--max-days",
-    "max_days",
-    type=click.IntRange(min=1),
-    default=None,
-    help="Max days to look back for articles (default: 2, env NEWS_RECAP_DIGEST_LOOKBACK_DAYS).",
-)
-@click.option(
-    "--all",
-    "all_articles",
-    is_flag=True,
-    default=False,
-    help="Ignore previous digests; include all articles within the lookback window.",
-)
-@click.option(
-    "--from-digest",
-    "from_digest",
-    type=click.IntRange(min=1),
-    default=None,
-    help="Build prompt from an existing digest by ID (as shown by `news-recap list`).",
 )
 def recap_prompt(  # noqa: PLR0913
     ai: bool,
@@ -305,6 +335,8 @@ def recap_prompt(  # noqa: PLR0913
     max_days: int | None,
     all_articles: bool,
     from_digest: int | None,
+    date_from: date | datetime | None,
+    date_to: date | datetime | None,
 ) -> None:
     """Export a ready-to-paste LLM prompt from recent articles."""
 
@@ -320,6 +352,8 @@ def recap_prompt(  # noqa: PLR0913
                 max_days=max_days,
                 all_articles=all_articles,
                 from_digest=from_digest,
+                date_from=date_from,
+                date_to=date_to,
             ),
         ),
     )

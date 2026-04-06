@@ -21,12 +21,19 @@ from news_recap.recap.article_ordering import (  # noqa: F401 — re-exported
 )
 from news_recap.recap.dedup.embedder import SentenceTransformerEmbedder
 from news_recap.recap.flow import recap_flow
+from news_recap.recap.launcher import (
+    _base_selection_params,
+    _find_matching_resumable,
+    _patch_pipeline_input,
+    _validate_date_filters,
+)
 from news_recap.recap.models import Digest, DigestArticle, UserPreferences, language_display_name
 from news_recap.recap.pipeline_setup import (
     _build_routing_defaults,
-    _compute_article_window,
+    _effective_to,
+    _filter_articles_before,
     _find_digest_pipeline_dir,
-    _find_resumable_pipeline,
+    _resolve_article_window,
     _write_pipeline_input,
     since_display_date,
 )
@@ -94,6 +101,19 @@ class PromptCommand:
     max_days: int | None = None
     all_articles: bool = False
     from_digest: int | None = None
+    date_from: date | datetime | None = None
+    date_to: date | datetime | None = None
+
+
+def _selection_params_for_prompt(command: PromptCommand) -> dict[str, object]:
+    """Selection params for ``prompt`` (no command-specific extras)."""
+    return _base_selection_params(
+        from_digest=command.from_digest,
+        max_days=command.max_days,
+        all_articles=command.all_articles,
+        date_from=command.date_from,
+        date_to=command.date_to,
+    )
 
 
 def _run_ai_pipeline(
@@ -108,17 +128,25 @@ def _run_ai_pipeline(
     run_date = datetime.now(tz=UTC).date()
     workdir_root = settings.orchestrator.workdir_root.resolve()
 
-    pdir = (
-        None
-        if command.fresh
-        else _find_resumable_pipeline(workdir_root, cap_days, article_limit=None)
-    )
-    if pdir is None:
+    sel_params = _selection_params_for_prompt(command)
+    pdir = None if command.fresh else _find_matching_resumable(workdir_root, cap_days, sel_params)
+    if pdir is not None:
+        if command.agent:
+            _patch_pipeline_input(pdir, agent_override=command.agent.strip().lower())
+    else:
         articles = store.list_retrieval_articles(
             lookback_days=cap_days,
             limit=2000,
             since=since_date,
         )
+
+        upper = _effective_to(command.date_from, command.date_to)
+        if upper is not None:
+            articles = _filter_articles_before(articles, upper)
+
+        if not articles:
+            return []
+
         ts = datetime.now(tz=UTC).strftime("%H%M%S")
         pdir = (workdir_root / f"pipeline-{run_date}-{ts}").resolve()
         _write_pipeline_input(
@@ -132,6 +160,7 @@ def _run_ai_pipeline(
             min_resource_chars=settings.ingestion.min_resource_chars,
             dedup_threshold=settings.dedup.threshold,
             dedup_model_name=settings.dedup.model_name,
+            selection_params=sel_params,
         )
 
     recap_flow(
@@ -155,7 +184,15 @@ Severity vocabulary: ``"ok"`` | ``"info"`` | ``"warn"`` | ``"log"`` | ``"text"``
 class PromptCliController:
     """Load articles, reorder by similarity, render and output the prompt."""
 
-    def prompt(self, command: PromptCommand) -> Iterator[PromptLine]:
+    def prompt(self, command: PromptCommand) -> Iterator[PromptLine]:  # noqa: C901
+        _validate_date_filters(
+            command.date_from,
+            command.date_to,
+            command.from_digest,
+            command.max_days,
+            command.all_articles,
+        )
+
         settings = Settings.from_env()
 
         if command.from_digest is not None:
@@ -174,7 +211,8 @@ class PromptCliController:
             )
             store.init_schema()
 
-            cap_days, since_date = _compute_article_window(
+            cap_days, since_date = _resolve_article_window(
+                command.date_from,
                 settings,
                 command.all_articles,
                 command.max_days,
@@ -194,6 +232,9 @@ class PromptCliController:
                     limit=2000,
                     since=since_date,
                 )
+                upper = _effective_to(command.date_from, command.date_to)
+                if upper is not None:
+                    kept_articles = _filter_articles_before(kept_articles, upper)
 
         if not kept_articles:
             yield ("warn", "No articles found.")

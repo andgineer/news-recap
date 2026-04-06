@@ -12,7 +12,6 @@ from news_recap.recap.models import Digest, DigestArticle
 from news_recap.recap.pipeline_setup import (
     _compute_article_window,
     _find_last_digest_cutoff,
-    _find_resumable_pipeline,
     register_digest,
 )
 
@@ -325,85 +324,3 @@ def test_register_digest_stores_coverage_from_digest(tmp_path: Path) -> None:
     assert entries[0].coverage_start == "2026-03-31T22:00:00+00:00"
     assert entries[0].coverage_end == "2026-04-01T10:00:00+00:00"
     assert entries[0].article_count == 2
-
-
-# ---------------------------------------------------------------------------
-# _find_resumable_pipeline
-# ---------------------------------------------------------------------------
-
-
-def test_resumable_returns_none_when_workdir_missing(tmp_path: Path) -> None:
-    assert (
-        _find_resumable_pipeline(tmp_path / "nonexistent", max_days=2, article_limit=None) is None
-    )
-
-
-def test_resumable_finds_incomplete_pipeline_within_window(tmp_path: Path) -> None:
-    today = datetime.now(tz=UTC).date()
-    _make_digest(
-        tmp_path / f"pipeline-{today}-100000",
-        today.isoformat(),
-        status="in_progress",
-        completed_phases=["classify"],
-    )
-    result = _find_resumable_pipeline(tmp_path, max_days=2, article_limit=None)
-    assert result is not None
-    assert result.name == f"pipeline-{today}-100000"
-
-
-def test_resumable_stops_at_completed_pipeline(tmp_path: Path) -> None:
-    today = datetime.now(tz=UTC).date()
-    _make_digest(
-        tmp_path / f"pipeline-{today}-100000",
-        today.isoformat(),
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
-    )
-    assert _find_resumable_pipeline(tmp_path, max_days=2, article_limit=None) is None
-
-
-def test_resumable_ignores_incomplete_older_than_completed(tmp_path: Path) -> None:
-    """An incomplete pipeline older than a completed one is not considered."""
-    today = datetime.now(tz=UTC).date()
-    yesterday = today - timedelta(days=1)
-    _make_digest(
-        tmp_path / f"pipeline-{today}-100000",
-        today.isoformat(),
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
-    )
-    _make_digest(
-        tmp_path / f"pipeline-{yesterday}-080000",
-        yesterday.isoformat(),
-        status="in_progress",
-        completed_phases=["classify"],
-    )
-    assert _find_resumable_pipeline(tmp_path, max_days=2, article_limit=None) is None
-
-
-def test_resumable_skips_pipelines_outside_window(tmp_path: Path) -> None:
-    old_date = datetime.now(tz=UTC).date() - timedelta(days=5)
-    _make_digest(
-        tmp_path / f"pipeline-{old_date}-100000",
-        old_date.isoformat(),
-        status="in_progress",
-        completed_phases=["classify"],
-    )
-    assert _find_resumable_pipeline(tmp_path, max_days=2, article_limit=None) is None
-
-
-def test_resumable_skips_article_limit_mismatch(tmp_path: Path) -> None:
-    today = datetime.now(tz=UTC).date()
-    digest = Digest(
-        digest_id="d-test",
-        run_date=today.isoformat(),
-        status="in_progress",
-        pipeline_dir=str(tmp_path / f"pipeline-{today}-100000"),
-        articles=[{"article_id": f"a-{i}"} for i in range(10)],  # type: ignore[list-item]
-        completed_phases=["classify"],
-    )
-    pdir = tmp_path / f"pipeline-{today}-100000"
-    pdir.mkdir(parents=True)
-    (pdir / _DIGEST_FILENAME).write_bytes(msgspec.json.encode(digest))
-
-    assert _find_resumable_pipeline(tmp_path, max_days=2, article_limit=5) is None

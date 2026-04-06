@@ -93,63 +93,6 @@ def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
     )
 
 
-def _find_resumable_pipeline(
-    workdir_root: Path,
-    max_days: int,
-    article_limit: int | None,
-) -> Path | None:
-    """Find the latest incomplete pipeline created within the last *max_days* days.
-
-    Pipelines are scanned newest-first.  The search stops as soon as a
-    completed pipeline is found (anything older is already covered).
-    Returns ``None`` when no resumable candidate exists or the candidate
-    was created with a different article limit.
-    """
-    if not workdir_root.is_dir():
-        return None
-
-    cutoff = datetime.now(tz=UTC).date() - timedelta(days=max_days)
-
-    candidates: list[Path] = sorted(
-        (p for p in workdir_root.iterdir() if p.is_dir() and p.name.startswith("pipeline-")),
-        key=lambda p: p.name,
-        reverse=True,
-    )
-
-    for pdir in candidates:
-        try:
-            dir_date = date.fromisoformat(pdir.name.split("-", 1)[1].rsplit("-", 1)[0])
-        except (ValueError, IndexError):
-            continue
-        if dir_date < cutoff:
-            break
-
-        digest_path = pdir / _DIGEST_FILENAME
-        if not digest_path.exists():
-            continue
-        try:
-            digest = load_msgspec(digest_path, Digest)
-        except Exception:  # noqa: BLE001
-            logger.debug("Cannot read digest in %s, skipping", pdir.name)
-            continue
-
-        if digest.status == "completed":
-            break
-
-        if article_limit and len(digest.articles) != article_limit:
-            logger.info(
-                "Skipping %s: article count mismatch (%d vs requested %d)",
-                pdir.name,
-                len(digest.articles),
-                article_limit,
-            )
-            continue
-
-        return pdir
-
-    return None
-
-
 @dataclass(slots=True)
 class DigestSummary:
     """Metadata for a single completed digest."""
@@ -397,6 +340,59 @@ def since_display_date(since: date | datetime) -> date:
     return since.date() if type(since) is datetime else since
 
 
+def _resolve_article_window(
+    date_from: date | datetime | None,
+    settings: Settings,
+    all_articles: bool,
+    max_days: int | None,
+) -> tuple[int, date | datetime]:
+    """Compute ``(lookback_days, since_date)`` respecting an explicit ``--from``.
+
+    When *date_from* is set the lookback window is extended to cover the
+    requested date.  Otherwise falls through to ``_compute_article_window``.
+    """
+    if date_from is not None:
+        from_date = date_from.date() if type(date_from) is datetime else date_from
+        today = datetime.now(tz=UTC).date()
+        cap_days = max((today - from_date).days + 1, 1)
+        return cap_days, date_from
+    return _compute_article_window(settings, all_articles, max_days)
+
+
+def _effective_to(
+    date_from: date | datetime | None,
+    date_to: date | datetime | None,
+) -> date | datetime | None:
+    """Resolve the effective upper bound for article filtering.
+
+    - ``date_to`` set → use it directly.
+    - ``date_from`` set but ``date_to`` omitted → default to now.
+    - Neither set → ``None`` (no upper-bound filtering).
+    """
+    if date_to is not None:
+        return date_to
+    if date_from is not None:
+        return datetime.now(tz=UTC)
+    return None
+
+
+def _filter_articles_before(
+    articles: list[DigestArticle],
+    date_to: date | datetime,
+) -> list[DigestArticle]:
+    """Return articles published on or before *date_to*.
+
+    - ``date`` (date-only): includes the entire day (strict ``<`` next-day midnight).
+    - ``datetime``: includes articles up to and including the exact instant (``<=``).
+    """
+    if type(date_to) is date:
+        cutoff = datetime(date_to.year, date_to.month, date_to.day, tzinfo=UTC) + timedelta(
+            days=1,
+        )
+        return [a for a in articles if datetime.fromisoformat(a.published_at) < cutoff]
+    return [a for a in articles if datetime.fromisoformat(a.published_at) <= date_to]
+
+
 def _write_pipeline_input(  # noqa: PLR0913
     pipeline_dir: Path,
     *,
@@ -411,10 +407,11 @@ def _write_pipeline_input(  # noqa: PLR0913
     dedup_threshold: float = 0.90,
     dedup_model_name: str = "intfloat/multilingual-e5-small",
     use_api_key: bool = False,
+    selection_params: dict[str, object] | None = None,
 ) -> None:
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
     pipeline_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
+    payload: dict[str, object] = {
         "run_date": run_date.isoformat(),
         "articles": [msgspec.structs.asdict(a) for a in articles],
         "preferences": msgspec.structs.asdict(preferences),
@@ -427,6 +424,8 @@ def _write_pipeline_input(  # noqa: PLR0913
         "dedup_model_name": dedup_model_name,
         "use_api_key": use_api_key,
     }
+    if selection_params is not None:
+        payload["selection_params"] = selection_params
     (pipeline_dir / "pipeline_input.json").write_text(
         json.dumps(payload, ensure_ascii=False, default=str),
         "utf-8",

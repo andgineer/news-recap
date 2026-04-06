@@ -6,7 +6,7 @@ import json
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import click
@@ -21,9 +21,10 @@ from news_recap.recap.pipeline_setup import (
     _DIGEST_FILENAME,
     _aggregate_usage,
     _build_routing_defaults,
-    _compute_article_window,
+    _effective_to,
+    _filter_articles_before,
     _find_digest_pipeline_dir,
-    _find_resumable_pipeline,
+    _resolve_article_window,
     _write_pipeline_input,
     gc_old_pipelines,
     since_display_date,
@@ -53,6 +54,8 @@ class RecapRunCommand:
     from_digest: int | None = None
     max_days: int | None = None
     all_articles: bool = False
+    date_from: date | datetime | None = None
+    date_to: date | datetime | None = None
 
 
 def _patch_pipeline_input(pipeline_dir: Path, **fields: object) -> dict:
@@ -118,18 +121,211 @@ def _emit_run_summary(pipeline_dir: Path) -> Iterator[PipelineLine]:
     yield ("log", f"Workdir: {pipeline_dir}")
 
 
+def _serialize_bound(value: date | datetime | None) -> dict[str, str] | None:
+    """Serialize a date/datetime bound for stable JSON equality in selection_params."""
+    if value is None:
+        return None
+    if type(value) is datetime:
+        return {"kind": "datetime", "value": value.isoformat()}
+    return {"kind": "date", "value": value.isoformat()}
+
+
+def _base_selection_params(
+    *,
+    from_digest: int | None,
+    max_days: int | None,
+    all_articles: bool,
+    date_from: date | datetime | None,
+    date_to: date | datetime | None,
+) -> dict[str, object]:
+    """Article-selection params shared by ``create`` and ``prompt``.
+
+    Used by ``_find_matching_resumable`` to decide whether an existing
+    incomplete pipeline can be resumed.  Runtime-only overrides
+    (``agent_override``, ``use_api_key``) are intentionally excluded.
+    """
+    return {
+        "from_digest": from_digest,
+        "max_days": max_days,
+        "all_articles": all_articles,
+        "date_from": _serialize_bound(date_from),
+        "date_to": _serialize_bound(date_to),
+    }
+
+
+def _selection_params_for_create(command: RecapRunCommand) -> dict[str, object]:
+    """Selection params for ``create``, adding ``article_limit``."""
+    params = _base_selection_params(
+        from_digest=command.from_digest,
+        max_days=command.max_days,
+        all_articles=command.all_articles,
+        date_from=command.date_from,
+        date_to=command.date_to,
+    )
+    params["article_limit"] = command.article_limit
+    return params
+
+
+def _validate_date_filters(
+    date_from: date | datetime | None,
+    date_to: date | datetime | None,
+    from_digest: int | None,
+    max_days: int | None,
+    all_articles: bool,
+) -> None:
+    """Raise ``click.UsageError`` for incompatible flag combinations."""
+    has_date = date_from is not None or date_to is not None
+    if not has_date:
+        return
+
+    if from_digest is not None:
+        raise click.UsageError("--from/--to cannot be combined with --from-digest.")
+    if max_days is not None:
+        raise click.UsageError("--from/--to cannot be combined with --max-days.")
+    if all_articles:
+        raise click.UsageError("--from/--to cannot be combined with --all.")
+
+    if date_from is not None and date_to is not None:
+        from_utc = (
+            datetime(date_from.year, date_from.month, date_from.day, tzinfo=UTC)
+            if type(date_from) is date
+            else date_from
+        )
+        to_utc_exclusive = (
+            datetime(date_to.year, date_to.month, date_to.day, tzinfo=UTC) + timedelta(days=1)
+            if type(date_to) is date
+            else date_to
+        )
+        if from_utc >= to_utc_exclusive:
+            raise click.UsageError("--from must be before --to.")
+
+
+def _read_stored_selection_params(pdir: Path) -> dict[str, object] | None:
+    """Read ``selection_params`` from ``pipeline_input.json`` in *pdir*, or ``None``."""
+    pi_path = pdir / "pipeline_input.json"
+    if not pi_path.exists():
+        return None
+    try:
+        raw = json.loads(pi_path.read_text("utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    sp = raw.get("selection_params")
+    return sp if isinstance(sp, dict) else None
+
+
+def _find_matching_resumable(
+    workdir_root: Path,
+    max_days: int,
+    selection_params: dict[str, object],
+) -> Path | None:
+    """Find the latest incomplete pipeline whose selection params match.
+
+    Scans newest-first within the lookback window.  Skips completed
+    pipelines and legacy pipelines that lack ``selection_params``.
+    """
+    if not workdir_root.is_dir():
+        return None
+
+    cutoff = datetime.now(tz=UTC).date() - timedelta(days=max_days)
+    candidates: list[Path] = sorted(
+        (p for p in workdir_root.iterdir() if p.is_dir() and p.name.startswith("pipeline-")),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+
+    for pdir in candidates:
+        try:
+            dir_date = date.fromisoformat(pdir.name.split("-", 1)[1].rsplit("-", 1)[0])
+        except (ValueError, IndexError):
+            continue
+        if dir_date < cutoff:
+            break
+
+        digest_path = pdir / _DIGEST_FILENAME
+        if not digest_path.exists():
+            continue
+        try:
+            digest = load_msgspec(digest_path, Digest)
+        except Exception:  # noqa: BLE001
+            logger.debug("Cannot read digest in %s, skipping", pdir.name)
+            continue
+
+        if digest.status == "completed":
+            continue
+
+        stored = _read_stored_selection_params(pdir)
+        if stored is None:
+            continue
+        if stored == selection_params:
+            return pdir
+
+    return None
+
+
+def _load_fresh_articles(
+    command: RecapRunCommand,
+    settings: Settings,
+    store: IngestionStore,
+) -> tuple[list[DigestArticle], str | None, PipelineLine]:
+    """Load articles from ingestion store, applying ``--from``/``--to`` filters."""
+    cap_days, since_date = _resolve_article_window(
+        command.date_from,
+        settings,
+        command.all_articles,
+        command.max_days,
+    )
+
+    coverage_start = (
+        since_date.isoformat()
+        if isinstance(since_date, datetime)
+        else datetime(since_date.year, since_date.month, since_date.day, tzinfo=UTC).isoformat()
+    )
+
+    fetch_limit = command.article_limit or 2000
+    articles = store.list_retrieval_articles(
+        lookback_days=cap_days,
+        limit=fetch_limit,
+        since=since_date,
+    )
+
+    upper = _effective_to(command.date_from, command.date_to)
+    if upper is not None:
+        articles = _filter_articles_before(articles, upper)
+
+    limit_note = f" (limited to {fetch_limit})" if command.article_limit else ""
+    info: PipelineLine = (
+        "info",
+        f"Found {len(articles)} articles since"
+        f" {since_display_date(since_date)}"
+        f" (cap {cap_days}d){limit_note}",
+    )
+    return articles, coverage_start, info
+
+
 class RecapCliController:
     """Load articles, materialize pipeline inputs, and launch the recap flow."""
 
-    def run_pipeline(self, command: RecapRunCommand) -> Iterator[PipelineLine]:
+    def run_pipeline(self, command: RecapRunCommand) -> Iterator[PipelineLine]:  # noqa: C901
         """Fetch articles from store, write pipeline_input.json, and run recap_flow."""
+        _validate_date_filters(
+            command.date_from,
+            command.date_to,
+            command.from_digest,
+            command.max_days,
+            command.all_articles,
+        )
 
         settings = Settings.from_env(
             execution_backend="api" if command.api_mode else None,
         )
         routing_defaults = _build_routing_defaults(settings)
         preferences = UserPreferences()
-        cap_days = command.max_days or settings.ingestion.digest_lookback_days
+        cap_days, _ = _resolve_article_window(
+            command.date_from,
+            settings,
+            command.all_articles,
+            command.max_days,
+        )
 
         workdir_root = settings.orchestrator.workdir_root.resolve()
 
@@ -152,13 +348,11 @@ class RecapCliController:
         if deleted:
             yield ("log", f"Auto-GC: removed {len(deleted)} old pipeline(s).")
 
+        sel_params = _selection_params_for_create(command)
+
         resumable = None
         if not command.fresh and not source_articles:
-            resumable = _find_resumable_pipeline(
-                workdir_root,
-                cap_days,
-                command.article_limit,
-            )
+            resumable = _find_matching_resumable(workdir_root, cap_days, sel_params)
 
         if resumable:
             pipeline_dir = resumable
@@ -183,37 +377,15 @@ class RecapCliController:
                     f"Reusing {len(articles)} from digest #{command.from_digest} ({run_date})",
                 )
             else:
-                fetch_limit = command.article_limit or 2000
-                _cap_days, since_date = _compute_article_window(
+                articles, coverage_start, info_line = _load_fresh_articles(
+                    command,
                     settings,
-                    command.all_articles,
-                    command.max_days,
-                )
-                coverage_start = (
-                    since_date.isoformat()
-                    if isinstance(since_date, datetime)
-                    else datetime(
-                        since_date.year,
-                        since_date.month,
-                        since_date.day,
-                        tzinfo=UTC,
-                    ).isoformat()
-                )
-                articles = store.list_retrieval_articles(
-                    lookback_days=_cap_days,
-                    limit=fetch_limit,
-                    since=since_date,
+                    store,
                 )
                 if not articles:
                     yield ("warn", "No articles found. Run ingestion first.")
                     return
-                limit_note = f" (limited to {fetch_limit})" if command.article_limit else ""
-                yield (
-                    "info",
-                    f"Found {len(articles)} articles since"
-                    f" {since_display_date(since_date)}"
-                    f" (cap {_cap_days}d){limit_note}",
-                )
+                yield info_line
 
             ts = datetime.now(tz=UTC).strftime("%H%M%S")
             pipeline_dir = (
@@ -232,6 +404,7 @@ class RecapCliController:
                 dedup_threshold=settings.dedup.threshold,
                 dedup_model_name=settings.dedup.model_name,
                 use_api_key=command.use_api_key,
+                selection_params=sel_params,
             )
             yield ("log", f"New pipeline: {pipeline_dir}")
 

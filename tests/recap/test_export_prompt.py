@@ -268,7 +268,7 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
         ),
         patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
         patch(
-            "news_recap.recap.export_prompt._compute_article_window",
+            "news_recap.recap.export_prompt._resolve_article_window",
             return_value=(2, since),
         ),
     ):
@@ -311,7 +311,7 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
         ),
         patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
         patch(
-            "news_recap.recap.export_prompt._compute_article_window",
+            "news_recap.recap.export_prompt._resolve_article_window",
             return_value=(2, since),
         ),
     ):
@@ -329,7 +329,7 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
 
 
 def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: ignore[name-defined]
-    """--fresh: _find_resumable_pipeline is not consulted, new pipeline dir is created."""
+    """--fresh: _find_matching_resumable is not consulted, new pipeline dir is created."""
     from datetime import date
     from pathlib import Path
 
@@ -398,7 +398,7 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
         ),
         patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True),
         patch(
-            "news_recap.recap.export_prompt._compute_article_window",
+            "news_recap.recap.export_prompt._resolve_article_window",
             return_value=(2, since),
         ),
     ):
