@@ -373,18 +373,25 @@ def info_cmd(digest_id: int | None) -> None:
 
 
 @news_recap.command("list")
-def list_cmd() -> None:
-    """Show completed digests and uncovered article periods."""
-    DIGEST_INFO_CONTROLLER.digest_info(no_color=NO_COLOR)
+@click.option(
+    "--all",
+    "show_all",
+    is_flag=True,
+    default=False,
+    help="Also show unfinished digests (running, failed, or stopped early).",
+)
+def list_cmd(show_all: bool) -> None:
+    """Show completed digests and uncovered article periods.
+
+    With --all, also show running and failed digests.
+    """
+    DIGEST_INFO_CONTROLLER.digest_info(no_color=NO_COLOR, show_all=show_all)
 
 
 @news_recap.command("delete")
 @click.argument("digest_id", type=click.IntRange(min=1))
 def delete_cmd(digest_id: int) -> None:
-    """Delete a digest so its articles become available for the next one.
-
-    DIGEST_ID is the numeric digest ID (as shown by `news-recap list`).
-    """
+    """Delete a digest by its numeric ID (as shown by ``news-recap list``)."""
     _emit_lines(DIGEST_INFO_CONTROLLER.delete_digest(digest_id))
 
 

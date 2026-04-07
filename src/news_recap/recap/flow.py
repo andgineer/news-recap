@@ -19,7 +19,7 @@ from uuid import uuid4
 
 from news_recap.recap.agents.ai_agent import read_agent_usage
 from news_recap.recap.models import Digest, DigestArticle, to_article_index
-from news_recap.recap.pipeline_setup import _DIGEST_FILENAME, register_digest
+from news_recap.recap.pipeline_setup import _DIGEST_FILENAME, finalize_digest_entry
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 from news_recap.recap.storage.workdir import TaskWorkdirManager
 from news_recap.recap.tasks.base import (
@@ -162,14 +162,10 @@ def recap_flow(  # noqa: PLR0915
         RefineLayout.run(ctx)
 
         digest.status = "completed"
-        ctx.save_checkpoint()
-        register_digest(pdir.parent, pdir, digest)
         logger.info("[bold green]Pipeline completed[/bold green]")
 
     except StopPipelineError:
         digest.status = "completed"
-        ctx.save_checkpoint()
-        register_digest(pdir.parent, pdir, digest)
         logger.info(
             "[bold green]Pipeline stopped[/bold green] (stop_after=%s)",
             effective_stop,
@@ -177,18 +173,21 @@ def recap_flow(  # noqa: PLR0915
 
     except RecapPipelineError as exc:
         digest.status = "failed"
-        ctx.save_checkpoint()
         logger.error("[bold red]Pipeline failed:[/bold red] %s", exc)
 
     except KeyboardInterrupt:
         digest.status = "failed"
         ctx.save_checkpoint()
+        finalize_digest_entry(pdir.parent, pdir, digest)
         logger.warning("Pipeline interrupted (Ctrl+C)")
         os._exit(130)  # force-exit: avoids blocking on in-flight HTTP thread joins
 
     except Exception:  # noqa: BLE001
         digest.status = "failed"
-        ctx.save_checkpoint()
         logger.exception("Pipeline unexpected error")
+
+    finally:
+        ctx.save_checkpoint()
+        finalize_digest_entry(pdir.parent, pdir, digest)
 
     _log_pipeline_token_summary(logger, pdir)

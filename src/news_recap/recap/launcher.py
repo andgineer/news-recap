@@ -26,6 +26,8 @@ from news_recap.recap.pipeline_setup import (
     _find_digest_pipeline_dir,
     _resolve_article_window,
     _write_pipeline_input,
+    create_digest_entry,
+    ensure_digest_entry,
     gc_old_pipelines,
     since_display_date,
 )
@@ -358,6 +360,7 @@ class RecapCliController:
             pipeline_dir = resumable
             digest = load_msgspec(resumable / _DIGEST_FILENAME, Digest)
             run_date = date.fromisoformat(digest.run_date)
+            ensure_digest_entry(workdir_root, pipeline_dir, digest)
             yield (
                 "info",
                 f"Resuming pipeline: {pipeline_dir.name} "
@@ -406,7 +409,14 @@ class RecapCliController:
                 use_api_key=command.use_api_key,
                 selection_params=sel_params,
             )
-            yield ("log", f"New pipeline: {pipeline_dir}")
+            digest_id = create_digest_entry(
+                workdir_root,
+                pipeline_dir.name,
+                run_date.isoformat(),
+                len(articles),
+                coverage_start=coverage_start,
+            )
+            yield ("log", f"New digest #{digest_id}: {pipeline_dir.name}")
 
         yield ("ok", "Starting pipeline…")
 

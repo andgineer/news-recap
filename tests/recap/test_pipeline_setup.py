@@ -12,7 +12,8 @@ from news_recap.recap.models import Digest, DigestArticle
 from news_recap.recap.pipeline_setup import (
     _compute_article_window,
     _find_last_digest_cutoff,
-    register_digest,
+    create_digest_entry,
+    finalize_digest_entry,
 )
 
 _DIGEST_FILENAME = "digest.json"
@@ -68,24 +69,32 @@ def test_returns_none_when_workdir_missing(tmp_path: Path) -> None:
     assert _find_last_digest_cutoff(tmp_path / "nonexistent") is None
 
 
-def test_returns_none_when_no_completed_digests(tmp_path: Path) -> None:
-    _make_digest(
-        tmp_path / "pipeline-2026-03-25-080000",
-        "2026-03-25",
-        status="failed",
-        completed_phases=["classify"],
+def _register(tmp_path: Path, pdir: Path, digest: Digest) -> None:
+    """Create + finalize a digest entry (replaces old register_digest)."""
+    arts = digest.articles
+    create_digest_entry(
+        tmp_path,
+        pdir.name,
+        digest.run_date,
+        len(arts),
+        coverage_start=digest.coverage_start,
     )
+    finalize_digest_entry(tmp_path, pdir, digest)
+
+
+def test_returns_none_when_no_completed_digests(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-25-080000"
+    digest = _make_digest(pdir, "2026-03-25", status="failed", completed_phases=["classify"])
+    create_digest_entry(tmp_path, pdir.name, "2026-03-25", 0)
+    finalize_digest_entry(tmp_path, pdir, digest)
     assert _find_last_digest_cutoff(tmp_path) is None
 
 
-def test_returns_none_when_completed_but_no_oneshot_phase(tmp_path: Path) -> None:
-    """A --stop-after classify pipeline should not count as a fully completed digest."""
-    _make_digest(
-        tmp_path / "pipeline-2026-03-25-080000",
-        "2026-03-25",
-        status="completed",
-        completed_phases=["classify", "load_resources"],
-    )
+def test_running_digest_ignored_by_cutoff(tmp_path: Path) -> None:
+    """A running digest should not count as a completed digest for cutoff."""
+    pdir = tmp_path / "pipeline-2026-03-25-080000"
+    _make_digest(pdir, "2026-03-25", status="running", completed_phases=["classify"])
+    create_digest_entry(tmp_path, pdir.name, "2026-03-25", 5)
     assert _find_last_digest_cutoff(tmp_path) is None
 
 
@@ -101,7 +110,7 @@ def test_returns_coverage_end_datetime(tmp_path: Path) -> None:
             _article("2026-03-25T10:30:00+00:00"),
         ],
     )
-    register_digest(tmp_path, pdir, digest)
+    _register(tmp_path, pdir, digest)
     result = _find_last_digest_cutoff(tmp_path)
     assert result == datetime(2026, 3, 25, 10, 30, tzinfo=UTC)
 
@@ -114,7 +123,7 @@ def test_falls_back_to_run_date_when_no_articles(tmp_path: Path) -> None:
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
     )
-    register_digest(tmp_path, pdir, digest)
+    _register(tmp_path, pdir, digest)
     result = _find_last_digest_cutoff(tmp_path)
     assert result == date(2026, 3, 25)
     assert isinstance(result, date) and not isinstance(result, datetime)
@@ -129,7 +138,7 @@ def test_returns_most_recent_completed_cutoff(tmp_path: Path) -> None:
         completed_phases=["classify", "oneshot_digest"],
         articles=[_article("2026-03-24T12:00:00+00:00")],
     )
-    register_digest(tmp_path, p1, d1)
+    _register(tmp_path, p1, d1)
     p2 = tmp_path / "pipeline-2026-03-26-080000"
     d2 = _make_digest(
         p2,
@@ -138,13 +147,11 @@ def test_returns_most_recent_completed_cutoff(tmp_path: Path) -> None:
         completed_phases=["classify", "oneshot_digest"],
         articles=[_article("2026-03-26T15:00:00+00:00")],
     )
-    register_digest(tmp_path, p2, d2)
-    _make_digest(
-        tmp_path / "pipeline-2026-03-27-080000",
-        "2026-03-27",
-        status="failed",
-        completed_phases=["classify"],
-    )
+    _register(tmp_path, p2, d2)
+    p3 = tmp_path / "pipeline-2026-03-27-080000"
+    d3 = _make_digest(p3, "2026-03-27", status="failed", completed_phases=["classify"])
+    create_digest_entry(tmp_path, p3.name, "2026-03-27", 0)
+    finalize_digest_entry(tmp_path, p3, d3)
     assert _find_last_digest_cutoff(tmp_path) == datetime(2026, 3, 26, 15, 0, tzinfo=UTC)
 
 
@@ -162,7 +169,7 @@ def test_skips_malformed_digest_files(tmp_path: Path) -> None:
         completed_phases=["classify", "oneshot_digest"],
         articles=[_article("2026-03-25T09:00:00+00:00")],
     )
-    register_digest(tmp_path, pdir, digest)
+    _register(tmp_path, pdir, digest)
     assert _find_last_digest_cutoff(tmp_path) == datetime(2026, 3, 25, 9, 0, tzinfo=UTC)
 
 
@@ -199,7 +206,7 @@ def test_compute_window_with_previous_digest(tmp_path: Path) -> None:
         completed_phases=["classify", "oneshot_digest"],
         articles=[_article(f"{yesterday}T14:30:00+00:00")],
     )
-    register_digest(tmp_path, pdir, digest)
+    _register(tmp_path, pdir, digest)
     settings = _make_settings(tmp_path, lookback_days=2)
     cap_days, since = _compute_article_window(settings, all_articles=False, max_days=None)
 
@@ -219,7 +226,7 @@ def test_compute_window_caps_old_digest(tmp_path: Path) -> None:
         completed_phases=["classify", "oneshot_digest"],
         articles=[_article(f"{old_date}T08:00:00+00:00")],
     )
-    register_digest(tmp_path, pdir, digest)
+    _register(tmp_path, pdir, digest)
     settings = _make_settings(tmp_path, lookback_days=2)
     cap_days, since = _compute_article_window(settings, all_articles=False, max_days=None)
     cap_dt = datetime(today.year, today.month, today.day, tzinfo=UTC) - timedelta(days=2)
@@ -240,7 +247,7 @@ def test_compute_window_all_articles(tmp_path: Path) -> None:
         completed_phases=["classify", "oneshot_digest"],
         articles=[_article(f"{yesterday}T08:00:00+00:00")],
     )
-    register_digest(tmp_path, pdir, digest)
+    _register(tmp_path, pdir, digest)
     settings = _make_settings(tmp_path, lookback_days=3)
     cap_days, since = _compute_article_window(settings, all_articles=True, max_days=None)
 
@@ -270,7 +277,7 @@ def test_compute_window_digest_without_articles_returns_date(tmp_path: Path) -> 
         status="completed",
         completed_phases=["classify", "oneshot_digest"],
     )
-    register_digest(tmp_path, pdir, digest)
+    _register(tmp_path, pdir, digest)
     settings = _make_settings(tmp_path, lookback_days=2)
     _, since = _compute_article_window(settings, all_articles=False, max_days=None)
     assert since == yesterday
@@ -291,13 +298,13 @@ def test_compute_window_same_day_digest_excludes_covered_articles(tmp_path: Path
             _article(f"{today}T09:30:00+00:00"),
         ],
     )
-    register_digest(tmp_path, pdir, digest)
+    _register(tmp_path, pdir, digest)
     settings = _make_settings(tmp_path, lookback_days=2)
     _, since = _compute_article_window(settings, all_articles=False, max_days=None)
     assert since == datetime(today.year, today.month, today.day, 9, 30, tzinfo=UTC)
 
 
-def test_register_digest_stores_coverage_from_digest(tmp_path: Path) -> None:
+def test_finalize_stores_coverage_from_digest(tmp_path: Path) -> None:
     """Coverage interval comes from digest.coverage_start/end, not from filtered articles."""
     from news_recap.recap.pipeline_setup import _load_digest_index
 
@@ -317,7 +324,7 @@ def test_register_digest_stores_coverage_from_digest(tmp_path: Path) -> None:
     )
     digest.coverage_end = "2026-04-01T10:00:00+00:00"
     digest.articles = kept
-    register_digest(tmp_path, pdir, digest)
+    _register(tmp_path, pdir, digest)
 
     entries = _load_digest_index(tmp_path)
     assert len(entries) == 1

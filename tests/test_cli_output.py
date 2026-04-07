@@ -453,7 +453,7 @@ def test_emit_run_summary_incomplete_digest(tmp_path: Path) -> None:
 
 
 def test_digest_detail_found(tmp_path: Path) -> None:
-    from news_recap.recap.pipeline_setup import register_digest
+    from news_recap.recap.pipeline_setup import create_digest_entry, finalize_digest_entry
 
     pdir = tmp_path / "pipeline-2026-03-01-100000"
     arts = [_article()]
@@ -469,7 +469,8 @@ def test_digest_detail_found(tmp_path: Path) -> None:
     )
     pdir.mkdir(parents=True, exist_ok=True)
     (pdir / "digest.json").write_bytes(msgspec.json.encode(digest))
-    register_digest(tmp_path, pdir, digest)
+    create_digest_entry(tmp_path, pdir.name, "2026-03-01", len(arts))
+    finalize_digest_entry(tmp_path, pdir, digest)
 
     settings = MagicMock()
     settings.orchestrator.workdir_root.resolve.return_value = tmp_path

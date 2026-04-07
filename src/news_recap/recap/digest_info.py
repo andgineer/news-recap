@@ -12,7 +12,8 @@ from news_recap.config import Settings
 from news_recap.ingestion.repository import IngestionStore
 from news_recap.recap.pipeline_setup import (
     DigestSummary,
-    _list_completed_digests,
+    _list_digests,
+    _load_digest_index,
     unregister_digest,
 )
 
@@ -83,11 +84,13 @@ def _fmt_tokens(tokens: int) -> str:
     return f"{tokens:,}"
 
 
-def _build_digest_table(summaries: list[DigestSummary]) -> Table:
+def _build_digest_table(summaries: list[DigestSummary], *, show_status: bool = False) -> Table:
     has_tokens = any(s.total_tokens > 0 for s in summaries)
 
     table = Table(title="Digests (newest first)", show_lines=False)
     table.add_column("#", justify="right", style="bold", no_wrap=True)
+    if show_status:
+        table.add_column("Status", no_wrap=True)
     table.add_column("Date", no_wrap=True)
     table.add_column("Articles", justify="right", no_wrap=True)
     table.add_column("Coverage", no_wrap=True)
@@ -100,8 +103,10 @@ def _build_digest_table(summaries: list[DigestSummary]) -> Table:
 
     for s in summaries:
         started = _local(s.started_at).strftime("%H:%M") if s.started_at else "—"
-        row = [
-            str(s.digest_id),
+        row: list[str] = [str(s.digest_id)]
+        if show_status:
+            row.append(s.status)
+        row += [
             str(s.run_date),
             str(s.article_count),
             _smart_period(s.coverage_start, s.coverage_end),
@@ -151,12 +156,15 @@ def _find_uncovered_periods(
 
 
 class DigestInfoController:
-    """Show completed digests and uncovered article periods."""
+    """Show/delete completed and unfinished digests."""
 
-    def digest_info(self, *, no_color: bool = False) -> None:
+    def digest_info(self, *, no_color: bool = False, show_all: bool = False) -> None:
         settings = Settings.from_env()
         workdir_root = settings.orchestrator.workdir_root.resolve()
-        summaries = _list_completed_digests(workdir_root)
+
+        summaries = _list_digests(workdir_root, completed_only=not show_all)
+
+        show_status = show_all and any(s.status != "completed" for s in summaries)
 
         console = Console(
             width=_MIN_CONSOLE_WIDTH,
@@ -167,13 +175,13 @@ class DigestInfoController:
 
         if not summaries:
             console.print("No digests found.")
-            return
+        else:
+            console.print(_build_digest_table(summaries, show_status=show_status))
 
-        console.print(_build_digest_table(summaries))
-
+        completed = [s for s in summaries if s.status == "completed"]
         ingestion_store = IngestionStore(settings.data_dir)
         latest_ingested = _last_successful_ingestion(ingestion_store)
-        gaps = _find_uncovered_periods(summaries, latest_ingested=latest_ingested)
+        gaps = _find_uncovered_periods(completed, latest_ingested=latest_ingested)
         gap_lines: list[str] = []
         for start, end in gaps:
             articles = ingestion_store.list_retrieval_articles(since=start)
@@ -192,15 +200,20 @@ class DigestInfoController:
         """Return summary for a single digest, or None if not found."""
         settings = Settings.from_env()
         workdir_root = settings.orchestrator.workdir_root.resolve()
-        for s in _list_completed_digests(workdir_root):
+        for s in _list_digests(workdir_root, completed_only=False):
             if s.digest_id == digest_id:
                 return s
         return None
 
     def delete_digest(self, digest_id: int) -> list[str]:
-        """Delete a completed digest, making its articles available for the next one."""
+        """Delete a digest (any status) by its numeric ID."""
         settings = Settings.from_env()
         workdir_root = settings.orchestrator.workdir_root.resolve()
+
+        was_completed = any(
+            e.digest_id == digest_id and e.status == "completed"
+            for e in _load_digest_index(workdir_root)
+        )
 
         dir_name = unregister_digest(workdir_root, digest_id)
         if dir_name is None:
@@ -209,7 +222,7 @@ class DigestInfoController:
         pdir = workdir_root / dir_name
         if pdir.is_dir():
             shutil.rmtree(pdir)
-        return [
-            f"Deleted digest #{digest_id} ({dir_name}).",
-            "Its articles are now available for the next digest.",
-        ]
+        lines = [f"Deleted digest #{digest_id} ({dir_name})."]
+        if was_completed:
+            lines.append("Its articles are now available for the next digest.")
+        return lines

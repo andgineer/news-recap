@@ -28,12 +28,13 @@ _DIGEST_INDEX_FILENAME = "digests.json"
 
 
 class DigestIndexEntry(msgspec.Struct):
-    """Pre-computed metadata for a completed digest, stored in the index."""
+    """Metadata for a digest run, stored in the index."""
 
     digest_id: int
     pipeline_dir_name: str
     run_date: str
     article_count: int
+    status: str = "completed"
     coverage_start: str | None = None
     coverage_end: str | None = None
     started_at: str | None = None
@@ -95,7 +96,7 @@ def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
 
 @dataclass(slots=True)
 class DigestSummary:
-    """Metadata for a single completed digest."""
+    """Metadata for a single digest."""
 
     digest_id: int
     run_date: date
@@ -103,6 +104,7 @@ class DigestSummary:
     coverage_start: datetime | None
     coverage_end: datetime | None
     pipeline_dir_name: str
+    status: str = "completed"
     started_at: datetime | None = None
     elapsed_seconds: float = 0.0
     total_tokens: int = 0
@@ -119,10 +121,10 @@ def _find_last_digest_cutoff(workdir_root: Path) -> date | datetime | None:
     so all articles from that day are included).
     Returns ``None`` when no completed digests exist.
     """
-    entries = _load_digest_index(workdir_root)
-    if not entries:
+    completed = [e for e in _load_digest_index(workdir_root) if e.status == "completed"]
+    if not completed:
         return None
-    newest = max(entries, key=lambda e: e.pipeline_dir_name)
+    newest = max(completed, key=lambda e: e.pipeline_dir_name)
     if newest.coverage_end:
         return datetime.fromisoformat(newest.coverage_end)
     return date.fromisoformat(newest.run_date)
@@ -179,39 +181,73 @@ def _aggregate_usage(pdir: Path) -> _UsageStats:
     return stats
 
 
-def register_digest(workdir_root: Path, pdir: Path, digest: Digest) -> None:
-    """Register a completed digest in the index.
+def create_digest_entry(
+    workdir_root: Path,
+    dir_name: str,
+    run_date: str,
+    article_count: int,
+    coverage_start: str | None = None,
+) -> int:
+    """Allocate a digest ID and write a ``running`` entry to the index.
 
-    No-op when the digest does not qualify (wrong status / missing phase)
-    or when it is already registered (idempotent).
+    Returns the assigned digest ID.
     """
-    if digest.status != "completed" or "oneshot_digest" not in digest.completed_phases:
-        return
-
     entries = _load_digest_index(workdir_root)
-    dir_name = pdir.name
-    if any(e.pipeline_dir_name == dir_name for e in entries):
-        return
-
-    usage = _aggregate_usage(pdir)
     started = _parse_pipeline_start(dir_name)
-
     entry = DigestIndexEntry(
         digest_id=_next_free_id(entries),
         pipeline_dir_name=dir_name,
-        run_date=digest.run_date,
-        article_count=len(digest.articles),
-        coverage_start=digest.coverage_start,
-        coverage_end=digest.coverage_end,
+        run_date=run_date,
+        article_count=article_count,
+        status="running",
+        coverage_start=coverage_start,
         started_at=started.isoformat() if started else None,
-        elapsed_seconds=usage.elapsed,
-        total_tokens=usage.tokens,
-        prompt_bytes=usage.prompt_bytes,
-        output_bytes=usage.output_bytes,
     )
     entries.append(entry)
     _save_digest_index(workdir_root, entries)
-    logger.info("Registered digest #%d (%s)", entry.digest_id, dir_name)
+    logger.info("Created digest #%d (%s)", entry.digest_id, dir_name)
+    return entry.digest_id
+
+
+def ensure_digest_entry(workdir_root: Path, pdir: Path, digest: Digest) -> None:
+    """Create an index entry for *pdir* if one doesn't already exist.
+
+    Used when resuming a legacy pipeline that was created before early-ID
+    assignment was introduced.
+    """
+    entries = _load_digest_index(workdir_root)
+    if any(e.pipeline_dir_name == pdir.name for e in entries):
+        return
+    create_digest_entry(
+        workdir_root,
+        pdir.name,
+        digest.run_date,
+        len(digest.articles),
+        coverage_start=digest.coverage_start,
+    )
+
+
+def finalize_digest_entry(workdir_root: Path, pdir: Path, digest: Digest) -> None:
+    """Update an existing index entry with final status and usage stats.
+
+    Sets status to ``digest.status``, fills ``coverage_end`` and usage
+    metrics.  No-op if no matching entry exists (legacy pipeline dirs).
+    """
+    entries = _load_digest_index(workdir_root)
+    dir_name = pdir.name
+    for e in entries:
+        if e.pipeline_dir_name == dir_name:
+            e.status = digest.status
+            e.coverage_end = digest.coverage_end
+            e.article_count = len(digest.articles)
+            usage = _aggregate_usage(pdir)
+            e.elapsed_seconds = usage.elapsed
+            e.total_tokens = usage.tokens
+            e.prompt_bytes = usage.prompt_bytes
+            e.output_bytes = usage.output_bytes
+            _save_digest_index(workdir_root, entries)
+            logger.info("Finalized digest (%s) → %s", dir_name, digest.status)
+            return
 
 
 def unregister_digest(workdir_root: Path, digest_id: int) -> str | None:
@@ -225,26 +261,34 @@ def unregister_digest(workdir_root: Path, digest_id: int) -> str | None:
     return None
 
 
-def _list_completed_digests(workdir_root: Path) -> list[DigestSummary]:
-    """Return metadata for all completed digests, newest-first."""
+def _entry_to_summary(e: DigestIndexEntry) -> DigestSummary:
+    return DigestSummary(
+        digest_id=e.digest_id,
+        run_date=date.fromisoformat(e.run_date),
+        article_count=e.article_count,
+        coverage_start=(datetime.fromisoformat(e.coverage_start) if e.coverage_start else None),
+        coverage_end=(datetime.fromisoformat(e.coverage_end) if e.coverage_end else None),
+        pipeline_dir_name=e.pipeline_dir_name,
+        status=e.status,
+        started_at=datetime.fromisoformat(e.started_at) if e.started_at else None,
+        elapsed_seconds=e.elapsed_seconds,
+        total_tokens=e.total_tokens,
+        prompt_bytes=e.prompt_bytes,
+        output_bytes=e.output_bytes,
+    )
+
+
+def _list_digests(
+    workdir_root: Path,
+    *,
+    completed_only: bool = True,
+) -> list[DigestSummary]:
+    """Return digest summaries newest-first, optionally filtered to completed."""
     entries = _load_digest_index(workdir_root)
+    if completed_only:
+        entries = [e for e in entries if e.status == "completed"]
     newest_first = sorted(entries, key=lambda e: e.pipeline_dir_name, reverse=True)
-    return [
-        DigestSummary(
-            digest_id=e.digest_id,
-            run_date=date.fromisoformat(e.run_date),
-            article_count=e.article_count,
-            coverage_start=(datetime.fromisoformat(e.coverage_start) if e.coverage_start else None),
-            coverage_end=(datetime.fromisoformat(e.coverage_end) if e.coverage_end else None),
-            pipeline_dir_name=e.pipeline_dir_name,
-            started_at=datetime.fromisoformat(e.started_at) if e.started_at else None,
-            elapsed_seconds=e.elapsed_seconds,
-            total_tokens=e.total_tokens,
-            prompt_bytes=e.prompt_bytes,
-            output_bytes=e.output_bytes,
-        )
-        for e in newest_first
-    ]
+    return [_entry_to_summary(e) for e in newest_first]
 
 
 def _find_digest_pipeline_dir(workdir_root: Path, digest_id: int) -> Path | None:
@@ -257,10 +301,10 @@ def _find_digest_pipeline_dir(workdir_root: Path, digest_id: int) -> Path | None
 
 def _find_latest_digest_pipeline_dir(workdir_root: Path) -> Path | None:
     """Return the pipeline directory of the newest completed digest."""
-    entries = _load_digest_index(workdir_root)
-    if not entries:
+    completed = [e for e in _load_digest_index(workdir_root) if e.status == "completed"]
+    if not completed:
         return None
-    newest = max(entries, key=lambda e: e.pipeline_dir_name)
+    newest = max(completed, key=lambda e: e.pipeline_dir_name)
     return workdir_root / newest.pipeline_dir_name
 
 

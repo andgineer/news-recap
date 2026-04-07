@@ -1,4 +1,4 @@
-"""Tests for digest index, _list_completed_digests, and DigestInfoController."""
+"""Tests for digest index, _list_digests, and DigestInfoController."""
 
 from __future__ import annotations
 
@@ -22,12 +22,14 @@ from news_recap.recap.pipeline_setup import (
     DigestIndexEntry,
     _find_digest_pipeline_dir,
     _find_latest_digest_pipeline_dir,
-    _list_completed_digests,
+    _list_digests,
     _load_digest_index,
     _next_free_id,
     _parse_pipeline_start,
+    create_digest_entry,
+    ensure_digest_entry,
+    finalize_digest_entry,
     gc_old_pipelines,
-    register_digest,
     unregister_digest,
 )
 
@@ -71,7 +73,7 @@ def _make_and_register(
     articles: list[DigestArticle] | None = None,
     coverage_start: str | None = None,
 ) -> Digest:
-    """Create a completed digest on disk and register it in the index."""
+    """Create a completed digest on disk, allocate an ID and finalize it."""
     pdir = workdir / dir_name
     digest = _make_digest(
         pdir,
@@ -81,7 +83,10 @@ def _make_and_register(
         articles=articles,
         coverage_start=coverage_start,
     )
-    register_digest(workdir, pdir, digest)
+    create_digest_entry(
+        workdir, dir_name, run_date, len(articles or []), coverage_start=coverage_start
+    )
+    finalize_digest_entry(workdir, pdir, digest)
     return digest
 
 
@@ -207,61 +212,52 @@ def test_next_free_id_with_gap() -> None:
 
 
 # ---------------------------------------------------------------------------
-# register_digest / unregister_digest
+# Backward compatibility — legacy index without status field
 # ---------------------------------------------------------------------------
 
 
-def test_register_digest_creates_index(tmp_path: Path) -> None:
-    pdir = tmp_path / "pipeline-2026-03-01-100000"
-    digest = _make_digest(
-        pdir,
-        "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
-        articles=[_article("2026-03-01T10:00:00+00:00")],
-    )
-    register_digest(tmp_path, pdir, digest)
+def test_legacy_index_without_status_defaults_to_completed(tmp_path: Path) -> None:
+    """An existing digests.json without a ``status`` field should default to 'completed'."""
+    import json
+
+    legacy_entry = {
+        "digest_id": 1,
+        "pipeline_dir_name": "pipeline-2026-03-01-100000",
+        "run_date": "2026-03-01",
+        "article_count": 10,
+    }
+    (tmp_path / "digests.json").write_text(json.dumps([legacy_entry]))
     entries = _load_digest_index(tmp_path)
     assert len(entries) == 1
-    assert entries[0].digest_id == 1
-    assert entries[0].pipeline_dir_name == "pipeline-2026-03-01-100000"
-    assert entries[0].article_count == 1
+    assert entries[0].status == "completed"
+
+    summaries = _list_digests(tmp_path)
+    assert len(summaries) == 1
+    assert summaries[0].status == "completed"
 
 
-def test_register_digest_skips_failed(tmp_path: Path) -> None:
-    pdir = tmp_path / "pipeline-2026-03-01-100000"
-    digest = _make_digest(pdir, "2026-03-01", status="failed", completed_phases=["classify"])
-    register_digest(tmp_path, pdir, digest)
-    assert _load_digest_index(tmp_path) == []
+# ---------------------------------------------------------------------------
+# create_digest_entry / finalize_digest_entry / unregister_digest
+# ---------------------------------------------------------------------------
 
 
-def test_register_digest_skips_incomplete_phases(tmp_path: Path) -> None:
-    pdir = tmp_path / "pipeline-2026-03-01-100000"
-    digest = _make_digest(
-        pdir,
-        "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "enrich"],
-    )
-    register_digest(tmp_path, pdir, digest)
-    assert _load_digest_index(tmp_path) == []
-
-
-def test_register_digest_idempotent(tmp_path: Path) -> None:
-    pdir = tmp_path / "pipeline-2026-03-01-100000"
-    digest = _make_digest(
-        pdir,
-        "2026-03-01",
-        status="completed",
-        completed_phases=["classify", "oneshot_digest"],
-    )
-    register_digest(tmp_path, pdir, digest)
-    register_digest(tmp_path, pdir, digest)
+def test_create_digest_entry_assigns_id(tmp_path: Path) -> None:
+    digest_id = create_digest_entry(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01", 5)
+    assert digest_id == 1
     entries = _load_digest_index(tmp_path)
     assert len(entries) == 1
+    assert entries[0].status == "running"
+    assert entries[0].article_count == 5
 
 
-def test_register_digest_reuses_freed_id(tmp_path: Path) -> None:
+def test_create_digest_entry_increments_ids(tmp_path: Path) -> None:
+    id1 = create_digest_entry(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01", 5)
+    id2 = create_digest_entry(tmp_path, "pipeline-2026-03-02-100000", "2026-03-02", 10)
+    assert id1 == 1
+    assert id2 == 2
+
+
+def test_create_digest_entry_reuses_freed_id(tmp_path: Path) -> None:
     _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01")
     _make_and_register(tmp_path, "pipeline-2026-03-02-100000", "2026-03-02")
     unregister_digest(tmp_path, 1)
@@ -271,7 +267,32 @@ def test_register_digest_reuses_freed_id(tmp_path: Path) -> None:
     assert ids == {1, 2}
 
 
-def test_register_digest_aggregates_usage(tmp_path: Path) -> None:
+def test_finalize_digest_entry_updates_status(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-01-100000"
+    digest = _make_digest(
+        pdir,
+        "2026-03-01",
+        status="completed",
+        completed_phases=["classify", "oneshot_digest"],
+        articles=[_article("2026-03-01T10:00:00+00:00")],
+    )
+    create_digest_entry(tmp_path, pdir.name, "2026-03-01", 1)
+    finalize_digest_entry(tmp_path, pdir, digest)
+    entries = _load_digest_index(tmp_path)
+    assert entries[0].status == "completed"
+    assert entries[0].article_count == 1
+
+
+def test_finalize_failed_digest(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-01-100000"
+    digest = _make_digest(pdir, "2026-03-01", status="failed", completed_phases=["classify"])
+    create_digest_entry(tmp_path, pdir.name, "2026-03-01", 5)
+    finalize_digest_entry(tmp_path, pdir, digest)
+    entries = _load_digest_index(tmp_path)
+    assert entries[0].status == "failed"
+
+
+def test_finalize_aggregates_usage(tmp_path: Path) -> None:
     import json
 
     pdir = tmp_path / "pipeline-2026-03-01-100000"
@@ -306,7 +327,8 @@ def test_register_digest_aggregates_usage(tmp_path: Path) -> None:
     task2_output.mkdir(parents=True)
     (task2_output / "agent_stdout.log").write_text("D" * 200)
 
-    register_digest(tmp_path, pdir, digest)
+    create_digest_entry(tmp_path, pdir.name, "2026-03-01", 1)
+    finalize_digest_entry(tmp_path, pdir, digest)
     entries = _load_digest_index(tmp_path)
     assert entries[0].elapsed_seconds == 15.5
     assert entries[0].total_tokens == 800
@@ -326,12 +348,59 @@ def test_unregister_digest_not_found(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _list_completed_digests
+# ensure_digest_entry
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_digest_entry_creates_for_legacy(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-01-100000"
+    digest = _make_digest(pdir, "2026-03-01", status="running", completed_phases=["classify"])
+    assert _load_digest_index(tmp_path) == []
+    ensure_digest_entry(tmp_path, pdir, digest)
+    entries = _load_digest_index(tmp_path)
+    assert len(entries) == 1
+    assert entries[0].status == "running"
+
+
+def test_ensure_digest_entry_noop_when_exists(tmp_path: Path) -> None:
+    _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01")
+    entries_before = _load_digest_index(tmp_path)
+    assert len(entries_before) == 1
+
+    pdir = tmp_path / "pipeline-2026-03-01-100000"
+    digest = _make_digest(pdir, "2026-03-01", status="running", completed_phases=["classify"])
+    ensure_digest_entry(tmp_path, pdir, digest)
+    entries_after = _load_digest_index(tmp_path)
+    assert len(entries_after) == 1
+    assert entries_after[0].status == entries_before[0].status
+
+
+# ---------------------------------------------------------------------------
+# _find_latest_digest_pipeline_dir — status filtering
+# ---------------------------------------------------------------------------
+
+
+def test_find_latest_digest_skips_non_completed(tmp_path: Path) -> None:
+    _make_and_register(
+        tmp_path,
+        "pipeline-2026-03-01-100000",
+        "2026-03-01",
+        articles=[_article("2026-03-01T10:00:00+00:00")],
+    )
+    pdir2 = tmp_path / "pipeline-2026-03-02-100000"
+    _make_digest(pdir2, "2026-03-02", status="running")
+    create_digest_entry(tmp_path, pdir2.name, "2026-03-02", 5)
+    result = _find_latest_digest_pipeline_dir(tmp_path)
+    assert result == tmp_path / "pipeline-2026-03-01-100000"
+
+
+# ---------------------------------------------------------------------------
+# _list_digests
 # ---------------------------------------------------------------------------
 
 
 def test_list_empty_workdir(tmp_path: Path) -> None:
-    assert _list_completed_digests(tmp_path / "nonexistent") == []
+    assert _list_digests(tmp_path / "nonexistent") == []
 
 
 def test_list_returns_completed_digests(tmp_path: Path) -> None:
@@ -344,7 +413,7 @@ def test_list_returns_completed_digests(tmp_path: Path) -> None:
             _article("2026-03-01T10:00:00+00:00"),
         ],
     )
-    result = _list_completed_digests(tmp_path)
+    result = _list_digests(tmp_path)
     assert len(result) == 1
     s = result[0]
     assert s.digest_id == 1
@@ -368,7 +437,7 @@ def test_list_newest_first(tmp_path: Path) -> None:
         "2026-03-02",
         articles=[_article("2026-03-02T10:00:00+00:00")],
     )
-    result = _list_completed_digests(tmp_path)
+    result = _list_digests(tmp_path)
     assert len(result) == 2
     assert result[0].run_date == date(2026, 3, 2)
     assert result[1].run_date == date(2026, 3, 1)
@@ -376,7 +445,7 @@ def test_list_newest_first(tmp_path: Path) -> None:
 
 def test_list_zero_article_digest(tmp_path: Path) -> None:
     _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01", articles=[])
-    result = _list_completed_digests(tmp_path)
+    result = _list_digests(tmp_path)
     assert len(result) == 1
     assert result[0].article_count == 0
     assert result[0].coverage_start is None
@@ -457,7 +526,7 @@ def test_digest_info_hides_gap_with_zero_articles(tmp_path: Path, capsys: object
     assert "2026-03-02" in out
     assert "2026-03-01" in out
 
-    summaries = _list_completed_digests(workdir)
+    summaries = _list_digests(workdir)
     gaps = _find_uncovered_periods(summaries)
     assert len(gaps) == 1
     assert gaps[0] == (
@@ -527,7 +596,7 @@ def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: obj
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
 
-    summaries = _list_completed_digests(workdir)
+    summaries = _list_digests(workdir)
     gaps = _find_uncovered_periods(summaries)
     assert len(gaps) == 1
     assert gaps[0] == (
@@ -590,7 +659,7 @@ def test_trailing_gap_shown_when_latest_ingested_after_coverage(tmp_path: Path) 
         articles=[_article("2026-04-01T12:00:00+00:00")],
         coverage_start="2026-04-01T00:00:00+00:00",
     )
-    summaries = _list_completed_digests(workdir)
+    summaries = _list_digests(workdir)
     latest_ingested = datetime(2026, 4, 2, 8, 0, tzinfo=UTC)
     gaps = _find_uncovered_periods(summaries, latest_ingested=latest_ingested)
     assert len(gaps) == 1
@@ -609,7 +678,7 @@ def test_no_trailing_gap_when_no_latest_ingested(tmp_path: Path) -> None:
         articles=[_article("2026-04-01T12:00:00+00:00")],
         coverage_start="2026-04-01T00:00:00+00:00",
     )
-    summaries = _list_completed_digests(workdir)
+    summaries = _list_digests(workdir)
     gaps = _find_uncovered_periods(summaries)
     assert gaps == []
 
@@ -723,3 +792,145 @@ def test_delete_removes_pipeline_dir_and_index_entry(tmp_path: Path) -> None:
     assert _load_digest_index(workdir) == []
     assert any("deleted" in l.lower() for l in lines)
     assert any("available" in l.lower() for l in lines)
+
+
+def test_delete_running_digest_by_id(tmp_path: Path) -> None:
+    workdir = tmp_path / "workdirs"
+    pdir = workdir / "pipeline-2026-03-02-100000"
+    _make_digest(pdir, "2026-03-02", status="running", completed_phases=["classify"])
+    create_digest_entry(workdir, pdir.name, "2026-03-02", 5)
+    assert pdir.exists()
+
+    settings = MagicMock()
+    settings.orchestrator.workdir_root = workdir
+    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+        lines = DigestInfoController().delete_digest(1)
+    assert not pdir.exists()
+    assert any("deleted" in l.lower() for l in lines)
+    assert not any("available" in l.lower() for l in lines)
+
+
+# ---------------------------------------------------------------------------
+# _list_digests
+# ---------------------------------------------------------------------------
+
+
+def test_list_all_includes_running_and_completed(tmp_path: Path) -> None:
+    _make_and_register(
+        tmp_path,
+        "pipeline-2026-03-01-100000",
+        "2026-03-01",
+        articles=[_article("2026-03-01T10:00:00+00:00")],
+    )
+    pdir2 = tmp_path / "pipeline-2026-03-02-100000"
+    _make_digest(pdir2, "2026-03-02", status="running", completed_phases=["classify"])
+    create_digest_entry(tmp_path, pdir2.name, "2026-03-02", 5)
+    result = _list_digests(tmp_path, completed_only=False)
+    assert len(result) == 2
+    statuses = {s.status for s in result}
+    assert statuses == {"completed", "running"}
+
+
+def test_list_all_sorted_newest_first(tmp_path: Path) -> None:
+    for d in ("01", "03", "02"):
+        name = f"pipeline-2026-03-{d}-100000"
+        pdir = tmp_path / name
+        _make_digest(pdir, f"2026-03-{d}", status="failed")
+        create_digest_entry(tmp_path, name, f"2026-03-{d}", 0)
+    result = _list_digests(tmp_path, completed_only=False)
+    assert [r.pipeline_dir_name for r in result] == [
+        "pipeline-2026-03-03-100000",
+        "pipeline-2026-03-02-100000",
+        "pipeline-2026-03-01-100000",
+    ]
+
+
+def test_list_completed_excludes_running(tmp_path: Path) -> None:
+    _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01")
+    pdir2 = tmp_path / "pipeline-2026-03-02-100000"
+    _make_digest(pdir2, "2026-03-02", status="running")
+    create_digest_entry(tmp_path, pdir2.name, "2026-03-02", 5)
+    result = _list_digests(tmp_path)
+    assert len(result) == 1
+    assert result[0].status == "completed"
+
+
+# ---------------------------------------------------------------------------
+# list --all (CLI)
+# ---------------------------------------------------------------------------
+
+
+def test_list_all_shows_running_and_failed(tmp_path: Path, capsys: object) -> None:
+    workdir = tmp_path / "workdirs"
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-01-100000",
+        "2026-03-01",
+        articles=[_article("2026-03-01T10:00:00+00:00")],
+    )
+    pdir2 = workdir / "pipeline-2026-03-02-100000"
+    _make_digest(pdir2, "2026-03-02", status="failed", completed_phases=["classify"])
+    create_digest_entry(workdir, pdir2.name, "2026-03-02", 5)
+    digest2 = Digest(
+        digest_id="d-2",
+        run_date="2026-03-02",
+        status="failed",
+        pipeline_dir=str(pdir2),
+        articles=[],
+        completed_phases=["classify"],
+    )
+    finalize_digest_entry(workdir, pdir2, digest2)
+
+    settings = MagicMock()
+    settings.orchestrator.workdir_root = workdir
+    settings.data_dir = tmp_path
+    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+        DigestInfoController().digest_info(show_all=True)
+    out = capsys.readouterr().out  # type: ignore[union-attr]
+    assert "failed" in out.lower()
+    assert "Status" in out
+
+
+def test_list_default_hides_non_completed(tmp_path: Path, capsys: object) -> None:
+    workdir = tmp_path / "workdirs"
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-01-100000",
+        "2026-03-01",
+        articles=[_article("2026-03-01T10:00:00+00:00")],
+    )
+    pdir2 = workdir / "pipeline-2026-03-02-100000"
+    _make_digest(pdir2, "2026-03-02", status="failed", completed_phases=["classify"])
+    create_digest_entry(workdir, pdir2.name, "2026-03-02", 5)
+    digest2 = Digest(
+        digest_id="d-2",
+        run_date="2026-03-02",
+        status="failed",
+        pipeline_dir=str(pdir2),
+        articles=[],
+        completed_phases=["classify"],
+    )
+    finalize_digest_entry(workdir, pdir2, digest2)
+
+    settings = MagicMock()
+    settings.orchestrator.workdir_root = workdir
+    settings.data_dir = tmp_path
+    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+        DigestInfoController().digest_info()
+    out = capsys.readouterr().out  # type: ignore[union-attr]
+    assert "Status" not in out
+
+
+def test_list_all_with_no_completed_digests(tmp_path: Path, capsys: object) -> None:
+    workdir = tmp_path / "workdirs"
+    pdir = workdir / "pipeline-2026-03-02-100000"
+    _make_digest(pdir, "2026-03-02", status="running", completed_phases=["classify"])
+    create_digest_entry(workdir, pdir.name, "2026-03-02", 5)
+
+    settings = MagicMock()
+    settings.orchestrator.workdir_root = workdir
+    settings.data_dir = tmp_path
+    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+        DigestInfoController().digest_info(show_all=True)
+    out = capsys.readouterr().out  # type: ignore[union-attr]
+    assert "running" in out.lower()

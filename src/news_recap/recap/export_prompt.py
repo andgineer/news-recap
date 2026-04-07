@@ -35,6 +35,8 @@ from news_recap.recap.pipeline_setup import (
     _find_digest_pipeline_dir,
     _resolve_article_window,
     _write_pipeline_input,
+    create_digest_entry,
+    ensure_digest_entry,
     since_display_date,
 )
 from news_recap.storage.io import load_msgspec
@@ -131,6 +133,8 @@ def _run_ai_pipeline(
     sel_params = _selection_params_for_prompt(command)
     pdir = None if command.fresh else _find_matching_resumable(workdir_root, cap_days, sel_params)
     if pdir is not None:
+        digest = load_msgspec(pdir / "digest.json", Digest)
+        ensure_digest_entry(workdir_root, pdir, digest)
         if command.agent:
             _patch_pipeline_input(pdir, agent_override=command.agent.strip().lower())
     else:
@@ -161,6 +165,12 @@ def _run_ai_pipeline(
             dedup_threshold=settings.dedup.threshold,
             dedup_model_name=settings.dedup.model_name,
             selection_params=sel_params,
+        )
+        create_digest_entry(
+            workdir_root,
+            pdir.name,
+            run_date.isoformat(),
+            len(articles),
         )
 
     recap_flow(
