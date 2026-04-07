@@ -43,6 +43,7 @@ class PipelineInput:
     dedup_threshold: float = 0.90
     dedup_model_name: str = "intfloat/multilingual-e5-small"
     coverage_start: str | None = None
+    coverage_end: str | None = None
     use_api_key: bool = False
     selection_params: dict[str, object] | None = None
 
@@ -93,6 +94,7 @@ def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
         dedup_threshold=float(raw.get("dedup_threshold", 0.90)),
         dedup_model_name=raw.get("dedup_model_name", "intfloat/multilingual-e5-small"),
         coverage_start=raw.get("coverage_start"),
+        coverage_end=raw.get("coverage_end"),
         use_api_key=bool(raw.get("use_api_key", False)),
         selection_params=raw.get("selection_params"),
     )

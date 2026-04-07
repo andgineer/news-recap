@@ -93,7 +93,7 @@ def _common_article_options(fn):  # type: ignore[no-untyped-def]
             default=None,
             help=(
                 "Only include articles on or after this date[time]"
-                " (YYYY-MM-DD or YYYY-MM-DDTHH:MM)."
+                " (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS, local time)."
             ),
         ),
         click.option(
@@ -102,7 +102,8 @@ def _common_article_options(fn):  # type: ignore[no-untyped-def]
             type=DateOrDateTime(),
             default=None,
             help=(
-                "Only include articles on or before this date[time]."
+                "Only include articles on or before this date[time]"
+                " (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS, local time)."
                 " Defaults to now when --from is set."
             ),
         ),
@@ -113,7 +114,11 @@ def _common_article_options(fn):  # type: ignore[no-untyped-def]
 
 
 class DateOrDateTime(click.ParamType):
-    """Parse ``YYYY-MM-DD`` as `date`, ``YYYY-MM-DDTHH:MM`` as `datetime` (UTC)."""
+    """Parse ``YYYY-MM-DD`` as `date`, ``YYYY-MM-DDTHH:MM:SS`` as `datetime`.
+
+    Datetime values are interpreted as **local time** and stored in UTC,
+    so what the user types matches what ``news-recap list`` displays.
+    """
 
     name = "date[time]"
 
@@ -129,13 +134,17 @@ class DateOrDateTime(click.ParamType):
             return value
         assert isinstance(value, str)
         try:
-            return datetime.strptime(value, "%Y-%m-%dT%H:%M").replace(tzinfo=UTC)
+            return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S").astimezone(UTC)
         except ValueError:
             pass
         try:
             return date.fromisoformat(value)
         except ValueError:
-            self.fail(f"Cannot parse '{value}' as YYYY-MM-DD or YYYY-MM-DDTHH:MM", param, ctx)
+            self.fail(
+                f"Cannot parse '{value}' as YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS",
+                param,
+                ctx,
+            )
 
 
 def _configure_logging() -> None:

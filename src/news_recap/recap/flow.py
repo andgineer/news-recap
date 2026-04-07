@@ -71,6 +71,22 @@ def _latest_published_at(articles: list[DigestArticle]) -> str | None:
     return max(timestamps).isoformat() if timestamps else None
 
 
+def _coverage_end_from_selection_params(
+    params: dict[str, object] | None,
+) -> str | None:
+    """Extract ``date_to`` from selection_params as an ISO string.
+
+    Backfills ``coverage_end`` for pipelines created before the field
+    was stored in ``pipeline_input.json``.
+    """
+    if not params:
+        return None
+    date_to = params.get("date_to")
+    if isinstance(date_to, dict) and date_to.get("value"):
+        return str(date_to["value"])
+    return None
+
+
 def _load_checkpoint(pdir: Path) -> Digest | None:
     path = pdir / _DIGEST_FILENAME
     if path.exists():
@@ -94,10 +110,18 @@ def recap_flow(  # noqa: PLR0915
 
     effective_stop = stop_after or os.getenv("NEWS_RECAP_STOP_AFTER") or None
 
+    coverage_end = (
+        inp.coverage_end
+        or _coverage_end_from_selection_params(inp.selection_params)
+        or _latest_published_at(inp.articles)
+    )
+
     existing = _load_checkpoint(pdir)
     if existing:
         digest = existing
         digest.status = "running"
+        if coverage_end:
+            digest.coverage_end = coverage_end
         logger.info(
             "Resuming from checkpoint: %d completed task(s)",
             len(digest.completed_phases),
@@ -110,7 +134,7 @@ def recap_flow(  # noqa: PLR0915
             pipeline_dir=str(pdir),
             articles=list(inp.articles),
             coverage_start=inp.coverage_start,
-            coverage_end=_latest_published_at(inp.articles),
+            coverage_end=coverage_end,
         )
 
     article_entries = to_article_index(inp.articles)

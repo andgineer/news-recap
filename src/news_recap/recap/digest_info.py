@@ -26,7 +26,7 @@ def _local(dt: datetime) -> datetime:
 def _fmt_dt(dt: datetime | None) -> str:
     if not dt:
         return "—"
-    return _local(dt).strftime("%Y-%m-%d %H:%M")
+    return _local(dt).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _smart_period(earliest: datetime | None, latest: datetime | None) -> str:
@@ -38,8 +38,8 @@ def _smart_period(earliest: datetime | None, latest: datetime | None) -> str:
     e_date = e.strftime("%Y-%m-%d")
     l_date = l.strftime("%Y-%m-%d")
     if e_date == l_date:
-        return f"{e_date} {e.strftime('%H:%M')} .. {l.strftime('%H:%M')}"
-    return f"{e_date} {e.strftime('%H:%M')} .. {l_date} {l.strftime('%H:%M')}"
+        return f"{e_date} {e.strftime('%H:%M:%S')} .. {l.strftime('%H:%M:%S')}"
+    return f"{e_date} {e.strftime('%H:%M:%S')} .. {l_date} {l.strftime('%H:%M:%S')}"
 
 
 _SECS_PER_HOUR = 3600
@@ -75,7 +75,7 @@ def _human_size(n_bytes: int) -> str:
     return f"{n_bytes} B"
 
 
-_MIN_CONSOLE_WIDTH = 120
+_MIN_CONSOLE_WIDTH = 130
 
 
 def _fmt_tokens(tokens: int) -> str:
@@ -88,7 +88,7 @@ def _build_digest_table(summaries: list[DigestSummary], *, show_status: bool = F
     has_tokens = any(s.total_tokens > 0 for s in summaries)
 
     table = Table(title="Digests (newest first)", show_lines=False)
-    table.add_column("#", justify="right", style="bold", no_wrap=True)
+    table.add_column("#", justify="right", style="bold", no_wrap=True, min_width=2)
     if show_status:
         table.add_column("Status", no_wrap=True)
     table.add_column("Date", no_wrap=True)
@@ -102,7 +102,7 @@ def _build_digest_table(summaries: list[DigestSummary], *, show_status: bool = F
         table.add_column("Tokens", justify="right", no_wrap=True)
 
     for s in summaries:
-        started = _local(s.started_at).strftime("%H:%M") if s.started_at else "—"
+        started = _local(s.started_at).strftime("%H:%M:%S") if s.started_at else "—"
         row: list[str] = [str(s.digest_id)]
         if show_status:
             row.append(s.status)

@@ -102,8 +102,8 @@ def _article(published_at: str) -> DigestArticle:
 
 
 def _local_str(iso: str) -> str:
-    """Format a UTC ISO timestamp as local ``YYYY-MM-DD HH:MM``."""
-    return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M")
+    """Format a UTC ISO timestamp as local ``YYYY-MM-DD HH:MM:SS``."""
+    return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +117,8 @@ def test_smart_period_same_day() -> None:
     el = e.astimezone()
     ll = l.astimezone()
     result = _smart_period(e, l)
-    assert el.strftime("%H:%M") in result
-    assert ll.strftime("%H:%M") in result
+    assert el.strftime("%H:%M:%S") in result
+    assert ll.strftime("%H:%M:%S") in result
     assert ".." in result
 
 

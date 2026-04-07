@@ -42,9 +42,18 @@ class TestDateOrDateTime:
         assert result == date(2026, 4, 1)
 
     def test_datetime_returns_datetime_utc(self) -> None:
-        result = self.param_type.convert("2026-04-01T14:30", None, None)
+        result = self.param_type.convert("2026-04-01T14:30:00", None, None)
         assert type(result) is datetime
-        assert result == datetime(2026, 4, 1, 14, 30, tzinfo=UTC)
+        assert result == datetime(2026, 4, 1, 14, 30).astimezone(UTC)
+
+    def test_datetime_with_seconds(self) -> None:
+        result = self.param_type.convert("2026-04-01T14:30:45", None, None)
+        assert type(result) is datetime
+        assert result == datetime(2026, 4, 1, 14, 30, 45).astimezone(UTC)
+
+    def test_datetime_without_seconds_rejected(self) -> None:
+        with pytest.raises(Exception):
+            self.param_type.convert("2026-04-01T14:30", None, None)
 
     def test_passthrough_date(self) -> None:
         d = date(2026, 1, 1)

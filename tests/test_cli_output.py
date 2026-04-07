@@ -234,7 +234,7 @@ def test_info_digest_shows_detail(tmp_path: Path) -> None:
     assert "1 KB" in result.output  # output
     assert "5,000" in result.output  # tokens
     started_local = summary.started_at.astimezone()
-    assert started_local.strftime("%Y-%m-%d %H:%M") in result.output
+    assert started_local.strftime("%Y-%m-%d %H:%M:%S") in result.output
 
 
 def test_info_digest_shows_task_table(tmp_path: Path) -> None:

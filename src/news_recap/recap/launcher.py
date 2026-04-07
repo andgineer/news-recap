@@ -264,11 +264,19 @@ def _find_matching_resumable(
     return None
 
 
+@dataclass(slots=True)
+class _FreshArticles:
+    articles: list[DigestArticle]
+    coverage_start: str | None
+    coverage_end: str | None
+    info: PipelineLine
+
+
 def _load_fresh_articles(
     command: RecapRunCommand,
     settings: Settings,
     store: IngestionStore,
-) -> tuple[list[DigestArticle], str | None, PipelineLine]:
+) -> _FreshArticles:
     """Load articles from ingestion store, applying ``--from``/``--to`` filters."""
     cap_days, since_date = _resolve_article_window(
         command.date_from,
@@ -291,8 +299,21 @@ def _load_fresh_articles(
     )
 
     upper = _effective_to(command.date_from, command.date_to)
+    coverage_end: str | None = None
     if upper is not None:
         articles = _filter_articles_before(articles, upper)
+        if type(upper) is datetime:
+            coverage_end = upper.isoformat()
+        elif type(upper) is date:
+            coverage_end = datetime(
+                upper.year,
+                upper.month,
+                upper.day,
+                23,
+                59,
+                59,
+                tzinfo=UTC,
+            ).isoformat()
 
     limit_note = f" (limited to {fetch_limit})" if command.article_limit else ""
     info: PipelineLine = (
@@ -301,13 +322,13 @@ def _load_fresh_articles(
         f" {since_display_date(since_date)}"
         f" (cap {cap_days}d){limit_note}",
     )
-    return articles, coverage_start, info
+    return _FreshArticles(articles, coverage_start, coverage_end, info)
 
 
 class RecapCliController:
     """Load articles, materialize pipeline inputs, and launch the recap flow."""
 
-    def run_pipeline(self, command: RecapRunCommand) -> Iterator[PipelineLine]:  # noqa: C901
+    def run_pipeline(self, command: RecapRunCommand) -> Iterator[PipelineLine]:  # noqa: C901, PLR0915
         """Fetch articles from store, write pipeline_input.json, and run recap_flow."""
         _validate_date_filters(
             command.date_from,
@@ -373,6 +394,7 @@ class RecapCliController:
 
             articles: list[DigestArticle]
             coverage_start: str | None = None
+            coverage_end: str | None = None
             if source_articles:
                 articles = source_articles[1]
                 yield (
@@ -380,15 +402,14 @@ class RecapCliController:
                     f"Reusing {len(articles)} from digest #{command.from_digest} ({run_date})",
                 )
             else:
-                articles, coverage_start, info_line = _load_fresh_articles(
-                    command,
-                    settings,
-                    store,
-                )
+                fresh = _load_fresh_articles(command, settings, store)
+                articles = fresh.articles
+                coverage_start = fresh.coverage_start
+                coverage_end = fresh.coverage_end
                 if not articles:
                     yield ("warn", "No articles found. Run ingestion first.")
                     return
-                yield info_line
+                yield fresh.info
 
             ts = datetime.now(tz=UTC).strftime("%H%M%S")
             pipeline_dir = (
@@ -403,6 +424,7 @@ class RecapCliController:
                 agent_override=command.agent_override,
                 data_dir=str(settings.data_dir),
                 coverage_start=coverage_start,
+                coverage_end=coverage_end,
                 min_resource_chars=settings.ingestion.min_resource_chars,
                 dedup_threshold=settings.dedup.threshold,
                 dedup_model_name=settings.dedup.model_name,

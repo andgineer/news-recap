@@ -145,8 +145,11 @@ def _run_ai_pipeline(
         )
 
         upper = _effective_to(command.date_from, command.date_to)
+        coverage_end: str | None = None
         if upper is not None:
             articles = _filter_articles_before(articles, upper)
+            if type(upper) is datetime:
+                coverage_end = upper.isoformat()
 
         if not articles:
             return []
@@ -161,6 +164,7 @@ def _run_ai_pipeline(
             routing_defaults=routing_defaults,
             agent_override=command.agent,
             data_dir=str(settings.data_dir),
+            coverage_end=coverage_end,
             min_resource_chars=settings.ingestion.min_resource_chars,
             dedup_threshold=settings.dedup.threshold,
             dedup_model_name=settings.dedup.model_name,
