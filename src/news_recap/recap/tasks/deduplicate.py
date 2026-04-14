@@ -253,7 +253,6 @@ class Deduplicate(TaskLauncher):
             logger.info("[cyan]dedup:[/cyan] No duplicates found by LLM")
 
         if n_failed > 0:
-            self.fully_completed = False
             logger.warning(
                 "[cyan]dedup:[/cyan] %d cluster(s) failed — partial results saved",
                 n_failed,

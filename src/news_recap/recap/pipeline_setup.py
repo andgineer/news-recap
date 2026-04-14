@@ -42,6 +42,7 @@ class DigestIndexEntry(msgspec.Struct):
     total_tokens: int = 0
     prompt_bytes: int = 0
     output_bytes: int = 0
+    input_article_count: int = 0
 
 
 def _load_digest_index(workdir_root: Path) -> list[DigestIndexEntry]:
@@ -110,6 +111,7 @@ class DigestSummary:
     total_tokens: int = 0
     prompt_bytes: int = 0
     output_bytes: int = 0
+    input_article_count: int = 0
 
 
 def _find_last_digest_cutoff(workdir_root: Path) -> date | datetime | None:
@@ -202,6 +204,7 @@ def create_digest_entry(
         status="running",
         coverage_start=coverage_start,
         started_at=started.isoformat() if started else None,
+        input_article_count=article_count,
     )
     entries.append(entry)
     _save_digest_index(workdir_root, entries)
@@ -275,6 +278,7 @@ def _entry_to_summary(e: DigestIndexEntry) -> DigestSummary:
         total_tokens=e.total_tokens,
         prompt_bytes=e.prompt_bytes,
         output_bytes=e.output_bytes,
+        input_article_count=e.input_article_count,
     )
 
 

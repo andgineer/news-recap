@@ -41,7 +41,7 @@ def _dummy_kwargs(template: PromptTemplate) -> dict[str, str]:
 def test_render_prompt_cli_injects_instruction():
     template = PromptTemplate(body="Intro\n{output_instruction}Data: {x}")
     result = render_prompt(template, PromptBackend.CLI, x="hello")
-    assert "Do NOT call any tools" in result
+    assert "Do NOT write any files" in result
     assert "plain text" in result
     assert "Data: hello" in result
 
@@ -57,7 +57,7 @@ def test_render_prompt_instruction_position():
     """Instruction appears between static text and the data placeholder."""
     template = PromptTemplate(body="Format:\nfoo\n\n{output_instruction}=== DATA ===\n{data}")
     result = render_prompt(template, PromptBackend.CLI, data="item1\nitem2")
-    instr_pos = result.index("Do NOT call")
+    instr_pos = result.index("Do NOT write any files")
     data_pos = result.index("=== DATA ===")
     format_pos = result.index("Format:")
     assert format_pos < instr_pos < data_pos
@@ -75,7 +75,7 @@ def test_cli_prompts_include_do_not_write_constraint():
     """All CLI prompts must contain the do-not-use-tools constraint."""
     for template in _ALL_PROMPTS:
         rendered = render_prompt(template, PromptBackend.CLI, **_dummy_kwargs(template))
-        assert "Do NOT call any tools" in rendered, f"CLI prompt missing constraint: {template!r}"
+        assert "Do NOT write any files" in rendered, f"CLI prompt missing constraint: {template!r}"
 
 
 def test_api_prompts_omit_do_not_write_constraint():

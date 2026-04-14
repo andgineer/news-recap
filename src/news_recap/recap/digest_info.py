@@ -103,12 +103,16 @@ def _build_digest_table(summaries: list[DigestSummary], *, show_status: bool = F
 
     for s in summaries:
         started = _local(s.started_at).strftime("%H:%M:%S") if s.started_at else "—"
+        if s.input_article_count and s.input_article_count != s.article_count:
+            articles_str = f"{s.article_count}/{s.input_article_count}"
+        else:
+            articles_str = str(s.article_count)
         row: list[str] = [str(s.digest_id)]
         if show_status:
             row.append(s.status)
         row += [
             str(s.run_date),
-            str(s.article_count),
+            articles_str,
             _smart_period(s.coverage_start, s.coverage_end),
             started,
             _human_elapsed(s.elapsed_seconds),

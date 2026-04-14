@@ -149,8 +149,8 @@ SINGLE: <number>
 `alt_urls`. Removed article IDs are also pruned from `ctx.state["kept_entries"]`.
 
 Up to 4 clusters run in parallel. Partial failures are tolerated:
-`fully_completed = False` is set and a warning logged, but the pipeline
-continues.
+a warning is logged, but the phase is marked complete and the pipeline
+continues (dedup is best-effort).
 
 ### OneshotDigest
 

@@ -11,6 +11,7 @@ merge call reconciles duplicate section names across batches.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,6 +21,7 @@ from news_recap.recap.article_ordering import build_article_lines, reorder_artic
 from news_recap.recap.dedup.cluster import group_similar
 from news_recap.recap.dedup.embedder import Embedder, SentenceTransformerEmbedder, Vector
 from news_recap.recap.models import DigestArticle, DigestBlock, DigestSection, language_display_name
+from news_recap.recap.storage.workdir import make_task_id
 from news_recap.recap.tasks.base import (
     FlowContext,
     RecapPipelineError,
@@ -38,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 _GROUP_THRESHOLD = 0.65  # embedding similarity threshold for pre-sort clustering
 _BATCH_SIZE = 200  # max articles per oneshot LLM call
+_ORDER_FILENAME = "oneshot_digest_order.json"
 
 # ---------------------------------------------------------------------------
 # oneshot_digest output parser regexes
@@ -293,16 +296,75 @@ def _parse_merge_output(text: str) -> list[_MergedSection]:
 # ---------------------------------------------------------------------------
 
 
+_BATCH_MAPPING_FILENAME = "batch_num_to_id.json"
+
+
+def _read_cached_batch(
+    ctx: FlowContext,
+    batch_num: int | None,
+) -> tuple[list[_ParsedSection], list[str], dict[str, str]] | None:
+    """Return ``(sections, excluded_nums, num_to_id)`` from a previous run, or ``None``.
+
+    Both the agent stdout and the stored ``num_to_id`` mapping are required;
+    the mapping ensures article numbers are interpreted correctly even when
+    ``reorder_articles`` produces a different ordering on resume.
+    """
+    task_id = make_task_id("recap_oneshot_digest", batch_num)
+    stdout_path = ctx.pdir / task_id / "output" / "agent_stdout.log"
+    mapping_path = ctx.pdir / task_id / "input" / _BATCH_MAPPING_FILENAME
+    if not stdout_path.exists() or not mapping_path.exists():
+        return None
+    try:
+        text = stdout_path.read_text("utf-8")
+        stored_num_to_id: dict[str, str] = json.loads(mapping_path.read_text("utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not text.strip():
+        return None
+    sections, excluded_nums = _parse_output(text)
+    if not sections:
+        return None
+    return sections, excluded_nums, stored_num_to_id
+
+
+def _save_batch_mapping(ctx: FlowContext, batch_num: int | None, num_to_id: dict[str, str]) -> None:
+    """Persist the article-number → article-ID mapping for cache reuse."""
+    task_id = make_task_id("recap_oneshot_digest", batch_num)
+    mapping_path = ctx.pdir / task_id / "input" / _BATCH_MAPPING_FILENAME
+    mapping_path.parent.mkdir(parents=True, exist_ok=True)
+    mapping_path.write_text(json.dumps(num_to_id), "utf-8")
+
+
 def _run_batch(
     ctx: FlowContext,
     batch_num: int | None,
     articles_batch: list[DigestArticle],
     language: str,
+    *,
+    use_cache: bool = True,
 ) -> tuple[list[_ParsedSection], list[str], dict[str, str]]:
     """Run one oneshot_digest LLM call for a slice of articles.
 
     Returns ``(parsed_sections, excluded_ids, num_to_id)``.
+
+    When *use_cache* is ``True`` and a previous (interrupted) run left
+    valid output with a stored ``num_to_id`` mapping, that output is
+    reused.  Set *use_cache* to ``False`` when the article ordering was
+    recomputed (cached results correspond to a different batch composition).
     """
+    cached = _read_cached_batch(ctx, batch_num) if use_cache else None
+    if cached is not None:
+        parsed_sections, excluded_nums, stored_num_to_id = cached
+        excluded_ids = [stored_num_to_id[n] for n in excluded_nums if n in stored_num_to_id]
+        logger.info(
+            "[cyan]oneshot_digest:[/cyan] batch %s → reusing cached result"
+            " (%d section(s), %d excluded)",
+            batch_num or 1,
+            len(parsed_sections),
+            len(excluded_ids),
+        )
+        return parsed_sections, excluded_ids, stored_num_to_id
+
     num_to_id = {str(i + 1): a.article_id for i, a in enumerate(articles_batch)}
     articles_block = build_article_lines(articles_batch)
     prompt = render_prompt(
@@ -313,6 +375,7 @@ def _run_batch(
     )
     label = f"recap_oneshot_digest (batch {batch_num})" if batch_num else "recap_oneshot_digest"
     stdout_path = run_single_agent(ctx, "recap_oneshot_digest", prompt, batch=batch_num)
+    _save_batch_mapping(ctx, batch_num, num_to_id)
     text = read_agent_stdout(stdout_path, label)
     parsed_sections, excluded_nums = _parse_output(text)
     if not parsed_sections:
@@ -627,6 +690,50 @@ def _fuzzy_merge_blocks(
 
 
 # ---------------------------------------------------------------------------
+# ordering persistence
+# ---------------------------------------------------------------------------
+
+
+def _load_or_restore_ordering(
+    ctx: FlowContext,
+    kept_articles: list[DigestArticle],
+) -> tuple[list[DigestArticle], Embedder | None]:
+    """Return the ordered article list and an optional embedder.
+
+    On first run the embedding model is loaded, articles are reordered by
+    similarity, and the resulting ID sequence is persisted to
+    ``_ORDER_FILENAME``.  On resume the stored ordering is restored
+    without loading the model (it is deferred until ``_fuzzy_merge_blocks``
+    actually needs it).
+    """
+    order_path = ctx.pdir / _ORDER_FILENAME
+    if order_path.exists():
+        try:
+            stored_ids: list[str] = json.loads(order_path.read_text("utf-8"))
+            id_to_article = {a.article_id: a for a in kept_articles}
+            restored = [id_to_article[aid] for aid in stored_ids if aid in id_to_article]
+            if len(restored) == len(kept_articles):
+                logger.info(
+                    "[cyan]oneshot_digest:[/cyan] Restored article ordering from previous run",
+                )
+                return restored, None
+        except (OSError, json.JSONDecodeError):
+            pass
+        logger.info(
+            "[cyan]oneshot_digest:[/cyan] Stored ordering stale, recomputing…",
+        )
+
+    logger.info("[cyan]oneshot_digest:[/cyan] Loading embedding model for pre-sort…")
+    embedder = SentenceTransformerEmbedder(model_name=ctx.inp.dedup_model_name)
+    ordered = reorder_articles(kept_articles, embedder, _GROUP_THRESHOLD)
+    order_path.write_text(
+        json.dumps([a.article_id for a in ordered]),
+        "utf-8",
+    )
+    return ordered, embedder
+
+
+# ---------------------------------------------------------------------------
 # Task launcher
 # ---------------------------------------------------------------------------
 
@@ -648,10 +755,11 @@ class OneshotDigest(TaskLauncher):
             logger.info("[cyan]oneshot_digest:[/cyan] No articles to process — skipping")
             return
 
-        logger.info("[cyan]oneshot_digest:[/cyan] Loading embedding model for pre-sort…")
-        embedder = SentenceTransformerEmbedder(model_name=ctx.inp.dedup_model_name)
-        ordered = reorder_articles(kept_articles, embedder, _GROUP_THRESHOLD)
+        ordered, embedder = _load_or_restore_ordering(ctx, kept_articles)
         language = language_display_name(ctx.inp.preferences.language)
+        # Cache is only safe when the ordering was restored (embedder is None);
+        # a recomputed ordering means different batch composition.
+        use_cache = embedder is None
 
         # Split into batches
         if len(ordered) <= _BATCH_SIZE:
@@ -669,12 +777,25 @@ class OneshotDigest(TaskLauncher):
         batch_results: dict[int, tuple[list[_ParsedSection], list[str], dict[str, str]]] = {}
 
         if len(batches) == 1:
-            sections, excluded_ids, num_to_id = _run_batch(ctx, None, batches[0], language)
+            sections, excluded_ids, num_to_id = _run_batch(
+                ctx,
+                None,
+                batches[0],
+                language,
+                use_cache=use_cache,
+            )
             batch_results[0] = (sections, excluded_ids, num_to_id)
         else:
             with ThreadPoolExecutor(max_workers=len(batches)) as executor:
                 futures = {
-                    executor.submit(_run_batch, ctx, i + 1, batch, language): i
+                    executor.submit(
+                        _run_batch,
+                        ctx,
+                        i + 1,
+                        batch,
+                        language,
+                        use_cache=use_cache,
+                    ): i
                     for i, batch in enumerate(batches)
                 }
                 for future in as_completed(futures):
@@ -701,6 +822,8 @@ class OneshotDigest(TaskLauncher):
             blocks, sections_out = _build_merged_digest_entries(merged, all_sections)
 
         blocks, sections_out = _dedup_blocks(blocks, sections_out)
+        if embedder is None:
+            embedder = SentenceTransformerEmbedder(model_name=ctx.inp.dedup_model_name)
         blocks, sections_out = _fuzzy_merge_blocks(blocks, sections_out, embedder)
 
         # Coverage check

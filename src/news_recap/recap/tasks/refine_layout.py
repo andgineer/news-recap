@@ -183,11 +183,18 @@ def _remap_sections(
     refined: list[DigestSection],
     prompt_num_to_block_idx: list[int],
 ) -> list[DigestSection]:
-    """Translate parser's prompt-based indices back to real block indices."""
+    """Translate parser's prompt-based indices back to real block indices.
+
+    Uses ``dict.fromkeys`` to collapse duplicates that appear when
+    dedup/fuzzy-merge made two prompt positions point to the same real
+    block and refine_layout later placed both into one section.
+    """
     return [
         DigestSection(
             title=sec.title,
-            block_indices=[prompt_num_to_block_idx[i] for i in sec.block_indices],
+            block_indices=list(
+                dict.fromkeys(prompt_num_to_block_idx[i] for i in sec.block_indices),
+            ),
             summary=sec.summary,
         )
         for sec in refined

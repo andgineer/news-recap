@@ -6,7 +6,7 @@ import enum
 from dataclasses import dataclass
 
 _CLI_OUTPUT_INSTRUCTION = (
-    "Do NOT call any tools. Do NOT use Write, Edit, Bash, or any file operations.\n"
+    "Do NOT write any files. Do NOT make any network or web requests.\n"
     "Type your answer as plain text directly in this response — your reply text IS the output.\n"
 )
 

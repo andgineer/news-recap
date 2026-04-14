@@ -284,6 +284,25 @@ class TestParseRefineOutput:
         assert remapped[0].block_indices == [10, 30]
         assert remapped[1].block_indices == [20, 40]
 
+    def test_remap_deduplicates_shared_block_indices(self) -> None:
+        """When dedup made two sections share a real block index, merging
+        those sections must not produce within-section duplicates."""
+        original_sections = [
+            DigestSection(title="A", block_indices=[0, 1, 2]),
+            DigestSection(title="B", block_indices=[3, 4, 1]),  # block 1 shared
+        ]
+        mapping = _build_prompt_mapping(original_sections)
+        # mapping = [0, 1, 2, 3, 4, 1]
+        # prompt 2 and prompt 6 both map to real block 1
+
+        # LLM merges both sections into one, placing all prompt numbers together
+        llm_output = "SECTION: Merged\nSECTION_SUMMARY: Combined.\nBLOCKS: 1, 2, 3, 4, 5, 6\n"
+        parsed = _parse_refine_output(llm_output, len(mapping))
+        assert parsed is not None
+        remapped = _remap_sections(parsed, mapping)
+        # Real block 1 must appear only once
+        assert remapped[0].block_indices == [0, 1, 2, 3, 4]
+
     def test_preamble_before_sections_ignored(self) -> None:
         text = (
             "Here is my analysis of the blocks:\n"
