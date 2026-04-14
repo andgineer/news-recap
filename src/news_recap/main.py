@@ -269,6 +269,11 @@ def ingest(feed_urls: tuple[str, ...]) -> None:
         "subprocess environment. By default they are unset so agents use their subscription."
     ),
 )
+@click.option(
+    "--language",
+    default=None,
+    help="BCP-47 language code for digest output (e.g. ru, en, hr). Default: ru.",
+)
 def recap_run(  # noqa: PLR0913
     agent: str | None,
     article_limit: int | None,
@@ -281,6 +286,7 @@ def recap_run(  # noqa: PLR0913
     all_articles: bool,
     date_from: date | datetime | None,
     date_to: date | datetime | None,
+    language: str | None,
 ) -> None:
     """Create a news digest from recent articles."""
 
@@ -298,6 +304,7 @@ def recap_run(  # noqa: PLR0913
                 all_articles=all_articles,
                 date_from=date_from,
                 date_to=date_to,
+                language=language,
             ),
         ),
     )

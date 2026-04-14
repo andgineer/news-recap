@@ -200,9 +200,11 @@ Your task:
 Every article number must appear exactly once — either in a BLOCK's ARTICLES list
 or in EXCLUDED. Do not skip any article.
 
-Write all summaries in {language}.
+Write ALL human-readable text — block descriptions, section labels, and section \
+summaries — in {language}. This applies even when the source articles are in a \
+different language.
 Use the exact keyword prefixes shown (SECTION:, SECTION_SUMMARY:, BLOCK:, SUMMARY:,
-ARTICLES:, EXCLUDED:) in English regardless of the summary language.
+ARTICLES:, EXCLUDED:) in English regardless of the content language.
 Work only from the articles provided. Do not search the web or invent information.
 Read all articles first, then organize: start with small topic blocks, then group
 blocks into sections.

@@ -58,6 +58,7 @@ class RecapRunCommand:
     all_articles: bool = False
     date_from: date | datetime | None = None
     date_to: date | datetime | None = None
+    language: str | None = None
 
 
 def _patch_pipeline_input(pipeline_dir: Path, **fields: object) -> dict:
@@ -343,6 +344,8 @@ class RecapCliController:
         )
         routing_defaults = _build_routing_defaults(settings)
         preferences = UserPreferences()
+        if command.language:
+            preferences = UserPreferences(language=command.language)
         cap_days, _ = _resolve_article_window(
             command.date_from,
             settings,
