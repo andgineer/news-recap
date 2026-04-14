@@ -33,28 +33,28 @@
 | src/news\_recap/recap/dedup/calibration.py               |       66 |       32 |     52% |71-95, 105-107, 113-143 |
 | src/news\_recap/recap/dedup/cluster.py                   |       51 |        2 |     96% |    62, 66 |
 | src/news\_recap/recap/dedup/embedder.py                  |       71 |       15 |     79% |27-30, 40, 58, 61, 83-86, 89-91, 110, 117 |
-| src/news\_recap/recap/digest\_info.py                    |      142 |       11 |     92% |28, 82-84, 102, 119, 190, 192-197 |
+| src/news\_recap/recap/digest\_info.py                    |      145 |       11 |     92% |28, 82-84, 102, 123, 194, 196-201 |
 | src/news\_recap/recap/export\_prompt.py                  |      116 |        4 |     97% |152, 264, 268-269 |
 | src/news\_recap/recap/flow.py                            |      109 |       68 |     38% |67-71, 82-87, 91-94, 107-217 |
 | src/news\_recap/recap/launcher.py                        |      211 |       15 |     93% |96, 209, 212-213, 241-242, 244, 248, 251-253, 359, 372, 410-411 |
 | src/news\_recap/recap/loaders/resource\_cache.py         |       51 |        0 |    100% |           |
 | src/news\_recap/recap/loaders/resource\_loader.py        |      138 |       18 |     87% |90, 121-127, 190-207, 211-213, 235, 257, 303, 312-313, 316, 319 |
 | src/news\_recap/recap/models.py                          |       61 |        8 |     87% |42-47, 50, 59 |
-| src/news\_recap/recap/pipeline\_setup.py                 |      226 |        9 |     96% |54-56, 145-146, 173-174, 329-330 |
+| src/news\_recap/recap/pipeline\_setup.py                 |      228 |        9 |     96% |55-57, 147-148, 175-176, 333-334 |
 | src/news\_recap/recap/storage/pipeline\_io.py            |      157 |       15 |     90% |74, 111-117, 140, 146-147, 161, 213, 224, 260 |
 | src/news\_recap/recap/storage/workdir.py                 |       48 |        4 |     92% |     90-93 |
 | src/news\_recap/recap/tasks/base.py                      |       73 |       22 |     70% |77-94, 124, 147-165, 168 |
 | src/news\_recap/recap/tasks/classify.py                  |      152 |       20 |     87% |140, 146, 222-232, 240, 247-248, 253, 297-299 |
-| src/news\_recap/recap/tasks/deduplicate.py               |      236 |       94 |     60% |60-64, 68-72, 109-114, 230-257, 265-285, 294-310, 323-390, 401-416, 464 |
+| src/news\_recap/recap/tasks/deduplicate.py               |      235 |       93 |     60% |60-64, 68-72, 109-114, 230-256, 264-284, 293-309, 322-389, 400-415, 463 |
 | src/news\_recap/recap/tasks/enrich.py                    |      188 |       15 |     92% |145, 212, 239-240, 303-308, 328-332, 342, 355-356, 398 |
 | src/news\_recap/recap/tasks/load\_resources.py           |       55 |        6 |     89% |42, 81-82, 88-90 |
-| src/news\_recap/recap/tasks/oneshot\_digest.py           |      361 |      132 |     63% |162, 169-172, 198, 252-288, 306-327, 336-354, 362-388, 396-428, 519, 644-720, 729 |
+| src/news\_recap/recap/tasks/oneshot\_digest.py           |      413 |      177 |     57% |165, 172-175, 201, 255-291, 312-327, 332-335, 355-390, 399-417, 425-451, 459-491, 582, 709-733, 751-843, 852 |
 | src/news\_recap/recap/tasks/parallel.py                  |       80 |       19 |     76% |37-38, 95-96, 102, 121-128, 150, 157-160, 180 |
 | src/news\_recap/recap/tasks/prompts.py                   |       21 |        0 |    100% |           |
-| src/news\_recap/recap/tasks/refine\_layout.py            |      115 |       24 |     79% |216-255, 262 |
+| src/news\_recap/recap/tasks/refine\_layout.py            |      115 |       24 |     79% |223-262, 269 |
 | src/news\_recap/storage/io.py                            |       50 |        5 |     90% | 35-38, 61 |
 | src/news\_recap/web/server.py                            |      129 |       31 |     76% |32-34, 60-62, 71-72, 90, 94-96, 142-143, 162, 182-206 |
-| **TOTAL**                                                | **5741** |  **873** | **85%** |           |
+| **TOTAL**                                                | **5797** |  **917** | **84%** |           |
 
 
 ## Setup coverage badge
