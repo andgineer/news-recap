@@ -16,7 +16,7 @@ from news_recap.config import Settings
 from news_recap.ingestion.repository import IngestionStore
 from news_recap.recap.digest_info import _human_elapsed, _human_size
 from news_recap.recap.flow import recap_flow
-from news_recap.recap.models import Digest, DigestArticle, UserPreferences
+from news_recap.recap.models import Digest, DigestArticle
 from news_recap.recap.pipeline_setup import (
     _DIGEST_FILENAME,
     _aggregate_usage,
@@ -32,6 +32,7 @@ from news_recap.recap.pipeline_setup import (
     since_display_date,
 )
 from news_recap.storage.io import load_msgspec
+from news_recap.user_config import UserConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -343,9 +344,8 @@ class RecapCliController:
             execution_backend="api" if command.api_mode else None,
         )
         routing_defaults = _build_routing_defaults(settings)
-        preferences = UserPreferences()
-        if command.language:
-            preferences = UserPreferences(language=command.language)
+        cfg_mgr = UserConfigManager(settings.data_dir)
+        preferences = cfg_mgr.build_preferences(language_override=command.language)
         cap_days, _ = _resolve_article_window(
             command.date_from,
             settings,

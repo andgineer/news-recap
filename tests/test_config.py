@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from os import environ
+from pathlib import Path
 
 import allure
 import pytest
@@ -109,9 +110,13 @@ def test_validate_rejects_zero_gc_retention_days() -> None:
         settings.validate()
 
 
-def test_from_env_uses_codex_as_default_llm_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_from_env_uses_codex_as_default_llm_agent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     monkeypatch.delenv("NEWS_RECAP_LLM_DEFAULT_AGENT", raising=False)
     monkeypatch.delenv("NEWS_RECAP_LLM_TASK_MODEL_MAP", raising=False)
+    monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(tmp_path))
     settings = Settings.from_env()
     assert settings.orchestrator.default_agent == "codex"
     task_map = settings.orchestrator.task_model_map

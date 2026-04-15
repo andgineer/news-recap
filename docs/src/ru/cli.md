@@ -11,6 +11,7 @@
 - `list`: показать завершённые дайджесты и непокрытые периоды.
 - `delete`: удалить дайджест, чтобы его статьи стали доступны для следующего.
 - `serve`: запуск веб-просмотрщика дайджестов.
+- `configure`: просмотр и редактирование пользовательских настроек.
 - `schedule set`: установить или обновить ежедневный автозапуск.
 - `schedule get`: показать текущую конфигурацию расписания.
 - `schedule delete`: удалить ежедневный автозапуск.
@@ -124,6 +125,38 @@ news-recap serve 2
 - `--host` — хост для привязки (по умолчанию `127.0.0.1`).
 - `--port` — порт для привязки (по умолчанию `8080`).
 
+### `configure`
+Просмотр и редактирование пользовательских настроек: язык, исключаемые темы,
+отслеживаемые темы и LLM-агент по умолчанию.
+
+Настройки хранятся в `config.json` в каталоге данных
+(показывается командой `news-recap info`). Они используются как значения по
+умолчанию для команд `create` и `prompt` — флаги CLI по-прежнему имеют
+приоритет.
+
+```bash
+news-recap configure
+```
+
+Команда показывает текущие значения (с пометкой `(default)` для полей, которые
+ещё не были заданы), затем предлагает выбрать поля для обновления:
+
+```
+Current settings:
+  1. Language:      ru (default)
+  2. Exclude:       horoscopes, medical advice, sports (except Russia), ... (default)
+  3. Follow:        Russia, Serbia, war in Ukraine (default)
+  4. Default Agent: codex (default)
+
+Select fields to update (comma-separated numbers, 'all', or Enter to skip):
+```
+
+Приоритет значений (от высшего к низшему):
+
+1. Флаги CLI (`--language`, `--agent`)
+2. Файл конфигурации (`config.json`)
+3. Значения по умолчанию в коде
+
 ## API-режим
 
 По умолчанию пайплайн дайджеста выполняет LLM-задачи через запуск CLI-агентов
@@ -216,6 +249,7 @@ news-recap info --help
 news-recap list --help
 news-recap delete --help
 news-recap serve --help
+news-recap configure --help
 news-recap schedule --help
 news-recap schedule set --help
 ```

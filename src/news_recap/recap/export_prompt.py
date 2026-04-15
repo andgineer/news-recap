@@ -40,9 +40,9 @@ from news_recap.recap.pipeline_setup import (
     since_display_date,
 )
 from news_recap.storage.io import load_msgspec
+from news_recap.user_config import UserConfigManager
 
 _DEFAULT_GROUP_THRESHOLD = 0.65
-_DEFAULT_LANGUAGE = "ru"
 
 _CLIPBOARD_CMDS = [
     ["pbcopy"],  # macOS
@@ -95,7 +95,7 @@ class PromptCommand:
     """CLI parameters for the ``prompt`` command."""
 
     group_threshold: float = _DEFAULT_GROUP_THRESHOLD
-    language: str = _DEFAULT_LANGUAGE
+    language: str | None = None
     out: str = "clipboard"
     ai: bool = True
     fresh: bool = False
@@ -118,12 +118,13 @@ def _selection_params_for_prompt(command: PromptCommand) -> dict[str, object]:
     )
 
 
-def _run_ai_pipeline(
+def _run_ai_pipeline(  # noqa: PLR0913
     command: PromptCommand,
     settings: Settings,
     store: IngestionStore,
     cap_days: int,
     since_date: datetime | date,
+    preferences: UserPreferences,
 ) -> list[DigestArticle]:
     """Run classify → load_resources → enrich → deduplicate, return post-dedup articles."""
     routing_defaults = _build_routing_defaults(settings)
@@ -160,7 +161,7 @@ def _run_ai_pipeline(
             pdir,
             run_date=run_date,
             articles=articles,
-            preferences=UserPreferences(),
+            preferences=preferences,
             routing_defaults=routing_defaults,
             agent_override=command.agent,
             data_dir=str(settings.data_dir),
@@ -208,6 +209,8 @@ class PromptCliController:
         )
 
         settings = Settings.from_env()
+        cfg_mgr = UserConfigManager(settings.data_dir)
+        preferences = cfg_mgr.build_preferences(language_override=command.language)
 
         if command.from_digest is not None:
             kept_articles, since_date = self._load_digest_articles(
@@ -239,6 +242,7 @@ class PromptCliController:
                     store,
                     cap_days,
                     since_date,
+                    preferences,
                 )
             else:
                 kept_articles = store.list_retrieval_articles(
@@ -258,7 +262,7 @@ class PromptCliController:
         embedder = SentenceTransformerEmbedder(model_name=settings.dedup.model_name)
         ordered = reorder_articles(kept_articles, embedder, command.group_threshold)
 
-        prompt = _render_prompt(ordered, since_date, command.language)
+        prompt = _render_prompt(ordered, since_date, preferences.language)
 
         if command.out == "console":
             yield ("text", prompt)

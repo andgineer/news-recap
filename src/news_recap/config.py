@@ -145,6 +145,15 @@ class Settings:
         data_dir = Path(os.getenv("NEWS_RECAP_DATA_DIR", default_data_dir))
         workdir_env = os.getenv("NEWS_RECAP_LLM_WORKDIR_ROOT")
         workdir_root = Path(workdir_env) if workdir_env else data_dir / "workdir"
+
+        env_agent = os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT")
+        if env_agent:
+            default_agent = env_agent
+        else:
+            from news_recap.user_config import DEFAULT_AGENT, UserConfigManager
+
+            default_agent = UserConfigManager(data_dir).load().get("default_agent", DEFAULT_AGENT)
+
         settings = cls(
             data_dir=data_dir,
             ingestion=IngestionSettings(
@@ -192,7 +201,7 @@ class Settings:
             ),
             orchestrator=OrchestratorSettings(
                 workdir_root=workdir_root,
-                default_agent=os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "codex"),
+                default_agent=default_agent,
                 execution_backend=os.getenv("NEWS_RECAP_EXECUTION_BACKEND", "cli").strip(),
                 codex_command_template=_DEFAULT_CODEX_CMD,
                 claude_command_template=_DEFAULT_CLAUDE_CMD,

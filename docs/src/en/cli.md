@@ -11,6 +11,7 @@
 - `list`: show completed digests and uncovered article periods.
 - `delete`: delete a digest so its articles become available for the next one.
 - `serve`: start the digest web viewer.
+- `configure`: view and edit persistent user preferences.
 - `schedule set`: install or update the daily scheduled digest job.
 - `schedule get`: show current schedule configuration.
 - `schedule delete`: remove the daily scheduled digest job.
@@ -123,6 +124,37 @@ Key options:
 - `--host` — host to bind to (default `127.0.0.1`).
 - `--port` — port to bind to (default `8080`).
 
+### `configure`
+View and edit persistent user preferences: language, exclude topics, follow
+topics, and default LLM agent.
+
+Preferences are stored in `config.json` inside the data directory
+(shown by `news-recap info`). They serve as defaults for `create` and `prompt`
+commands — CLI flags still override them.
+
+```bash
+news-recap configure
+```
+
+The command shows current values (with a `(default)` tag for fields that haven't
+been set yet), then lets you pick which ones to update:
+
+```
+Current settings:
+  1. Language:      ru (default)
+  2. Exclude:       horoscopes, medical advice, sports (except Russia), ... (default)
+  3. Follow:        Russia, Serbia, war in Ukraine (default)
+  4. Default Agent: codex (default)
+
+Select fields to update (comma-separated numbers, 'all', or Enter to skip):
+```
+
+Priority order (highest wins):
+
+1. CLI flags (`--language`, `--agent`)
+2. Config file (`config.json`)
+3. Code defaults
+
 ## API Mode
 
 By default the digest pipeline runs LLM tasks by spawning CLI agent subprocesses
@@ -214,6 +246,7 @@ news-recap info --help
 news-recap list --help
 news-recap delete --help
 news-recap serve --help
+news-recap configure --help
 news-recap schedule --help
 news-recap schedule set --help
 ```

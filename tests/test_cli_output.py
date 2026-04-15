@@ -511,6 +511,7 @@ def test_prompt_from_digest_loads_articles(tmp_path: Path) -> None:
 
     mock_settings = MagicMock()
     mock_settings.orchestrator.workdir_root.resolve.return_value = tmp_path
+    mock_settings.data_dir = tmp_path
     mock_settings.dedup.model_name = "test"
 
     mock_embedder = MagicMock()
@@ -553,6 +554,7 @@ def test_prompt_from_digest_not_found(tmp_path: Path) -> None:
 
     mock_settings = MagicMock()
     mock_settings.orchestrator.workdir_root.resolve.return_value = tmp_path
+    mock_settings.data_dir = tmp_path
 
     with (
         patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),

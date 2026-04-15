@@ -31,6 +31,7 @@ from news_recap.ingestion.controllers import (
     IngestionCliController,
     IngestionResult,
 )
+from news_recap.operation_configure import operation_configure
 from news_recap.recap.digest_info import (
     DigestInfoController,
     _fmt_dt,
@@ -330,9 +331,8 @@ def recap_run(  # noqa: PLR0913
 )
 @click.option(
     "--language",
-    default="ru",
-    show_default=True,
-    help="Language for task instruction.",
+    default=None,
+    help="BCP-47 language code for prompt output (e.g. ru, en, hr). Default: from config or ru.",
 )
 @click.option(
     "--out",
@@ -345,7 +345,7 @@ def recap_prompt(  # noqa: PLR0913
     ai: bool,
     fresh: bool,
     group_threshold: float,
-    language: str,
+    language: str | None,
     agent: str | None,
     out: str,
     max_days: int | None,
@@ -445,6 +445,13 @@ def serve(
             ),
         ),
     )
+
+
+@news_recap.command("configure")
+def configure_cmd() -> None:
+    """View and edit persistent user preferences (language, exclude, follow, default agent)."""
+    for severity, text in operation_configure():
+        _emit_styled(severity, text)
 
 
 @click.group("schedule")
@@ -578,6 +585,7 @@ def _print_info() -> None:
             "Data",
             [
                 ("Data dir", str(data_dir)),
+                ("Config", str(data_dir / "config.json")),
                 ("Feed cache", str(data_dir / "feeds.json")),
                 ("Run history", str(data_dir / "runs.json")),
                 ("Resource cache", str(data_dir / "resources")),
