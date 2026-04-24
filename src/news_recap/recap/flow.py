@@ -18,6 +18,8 @@ from typing import Any
 from uuid import uuid4
 
 from news_recap.recap.agents.ai_agent import read_agent_usage
+from news_recap.recap.agents.concurrency import ConcurrencyController
+from news_recap.recap.agents.transport_anthropic import DirectAnthropicTransport
 from news_recap.recap.models import Digest, DigestArticle, to_article_index
 from news_recap.recap.pipeline_setup import _DIGEST_FILENAME, finalize_digest_entry
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
@@ -147,9 +149,6 @@ def recap_flow(  # noqa: PLR0915
     transport = None
     cc = None
     if inp.routing_defaults.execution_backend == "api":
-        from news_recap.recap.agents.concurrency import ConcurrencyController
-        from news_recap.recap.agents.transport_anthropic import DirectAnthropicTransport
-
         rd = inp.routing_defaults
         transport = DirectAnthropicTransport()
         cc = ConcurrencyController(

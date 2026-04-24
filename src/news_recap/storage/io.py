@@ -9,11 +9,8 @@ import shutil
 import tempfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import TypeVar
 
 import msgspec
-
-T = TypeVar("T")
 
 
 def utc_now() -> datetime:
@@ -43,7 +40,7 @@ def save_msgspec(path: Path, obj: object) -> None:
     atomic_write(path, msgspec.json.encode(obj))
 
 
-def load_msgspec(path: Path, typ: type[T]) -> T:
+def load_msgspec[T](path: Path, typ: type[T]) -> T:
     """Load and decode a JSON file into *typ*."""
     return msgspec.json.decode(path.read_bytes(), type=typ)
 
@@ -54,7 +51,8 @@ def day_key(dt: datetime | None = None) -> str:
     Without *dt*, returns today in the machine's timezone.
     With *dt*, converts to local timezone first.
 
-    >>> day_key(datetime(2026, 2, 19, 12, 0, tzinfo=UTC))  # doctest: +SKIP
+    >>> import os, time; os.environ['TZ'] = 'UTC'; time.tzset()  # pin tz for deterministic doctest
+    >>> day_key(datetime(2026, 2, 19, 12, 0, tzinfo=UTC))
     '2026-02-19'
     """
     if dt is None:

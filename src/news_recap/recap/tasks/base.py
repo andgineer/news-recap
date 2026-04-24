@@ -13,11 +13,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from news_recap.recap.agents.ai_agent import run_ai_agent
 from news_recap.recap.contracts import ArticleIndexEntry
+from news_recap.recap.exceptions import RecapPipelineError, StopPipelineError
 from news_recap.recap.models import Digest
 from news_recap.recap.pipeline_setup import _DIGEST_FILENAME
 from news_recap.recap.storage.pipeline_io import PipelineInput
-from news_recap.recap.storage.workdir import TaskWorkdirManager
+from news_recap.recap.storage.workdir import TaskWorkdirManager, materialize_step
 from news_recap.storage.io import save_msgspec
 
 if TYPE_CHECKING:
@@ -29,14 +31,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Shared pipeline types
 # ---------------------------------------------------------------------------
-
-
-class RecapPipelineError(RuntimeError):
-    """Pipeline step failure."""
-
-    def __init__(self, step: str, message: str) -> None:
-        super().__init__(f"Step {step} failed: {message}")
-        self.step = step
 
 
 _STDOUT_SNIPPET_CHARS = 500
@@ -74,9 +68,6 @@ def run_single_agent(
     Encapsulates the materialize → invoke → locate stdout pattern used
     by single-call phases (oneshot_digest batches, merge_sections, refine_layout).
     """
-    from news_recap.recap.agents.ai_agent import run_ai_agent
-    from news_recap.recap.storage.workdir import materialize_step
-
     tid = materialize_step(
         ctx.workdir_mgr,
         ctx.inp,
@@ -92,13 +83,6 @@ def run_single_agent(
         concurrency_controller=ctx.cc,
     )
     return ctx.pdir / tid / "output" / "agent_stdout.log"
-
-
-class StopPipelineError(Exception):
-    """Sentinel raised when ``stop_after`` is reached.
-
-    Not an error — the flow catches this and marks the run as completed.
-    """
 
 
 # ---------------------------------------------------------------------------

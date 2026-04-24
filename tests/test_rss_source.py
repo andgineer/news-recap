@@ -108,8 +108,8 @@ class _InMemoryFeedStateStore:
 
 def test_rss_source_parses_description_only_item() -> None:
     source = RssSource(RssSourceConfig(feed_urls=("https://example.com/feed.xml",)))
-    source._request_feed = (
-        lambda *_args, **_kwargs: """<?xml version="1.0" encoding="UTF-8"?>
+    source._request_feed = lambda *_args, **_kwargs: (
+        """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>Example Feed</title>
@@ -141,8 +141,8 @@ def test_rss_source_parses_description_only_item() -> None:
 
 def test_rss_source_paginates_by_offset_cursor() -> None:
     source = RssSource(RssSourceConfig(feed_urls=("https://example.com/feed.xml",)))
-    source._request_feed = (
-        lambda *_args, **_kwargs: """<?xml version="1.0"?>
+    source._request_feed = lambda *_args, **_kwargs: (
+        """<?xml version="1.0"?>
 <rss version="2.0">
   <channel>
     <item>

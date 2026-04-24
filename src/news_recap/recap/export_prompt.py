@@ -128,7 +128,7 @@ def _run_ai_pipeline(  # noqa: PLR0913
 ) -> list[DigestArticle]:
     """Run classify → load_resources → enrich → deduplicate, return post-dedup articles."""
     routing_defaults = _build_routing_defaults(settings)
-    run_date = datetime.now(tz=UTC).date()
+    run_date = date.today()
     workdir_root = settings.orchestrator.workdir_root.resolve()
 
     sel_params = _selection_params_for_prompt(command)

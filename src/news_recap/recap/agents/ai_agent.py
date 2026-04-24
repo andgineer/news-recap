@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from news_recap.recap.agents.api_agent import run_api_agent
 from news_recap.recap.agents.routing import resolve_routing_for_enqueue
 from news_recap.recap.agents.subprocess import (
     SubprocessError,
@@ -29,8 +30,8 @@ from news_recap.recap.contracts import (
     read_manifest,
     read_task_input,
 )
+from news_recap.recap.exceptions import RecapPipelineError
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
-from news_recap.recap.tasks.base import RecapPipelineError
 
 if TYPE_CHECKING:
     from news_recap.recap.agents.concurrency import ConcurrencyController
@@ -85,8 +86,6 @@ def run_ai_agent(  # noqa: PLR0913
                 "transport and concurrency_controller are required for execution_backend=api "
                 "(programming error: they were not passed to run_ai_agent)",
             )
-        from news_recap.recap.agents.api_agent import run_api_agent
-
         return run_api_agent(
             pipeline_dir=pipeline_dir,
             step_name=step_name,

@@ -393,7 +393,7 @@ class RecapCliController:
             )
             yield from _apply_resume_patches(command, pipeline_dir)
         else:
-            run_date = source_articles[0] if source_articles else datetime.now(tz=UTC).date()
+            run_date = source_articles[0] if source_articles else date.today()
 
             articles: list[DigestArticle]
             coverage_start: str | None = None

@@ -21,7 +21,7 @@ from news_recap.recap.agents.transport import (
     TransportRateLimitError,
 )
 from news_recap.recap.contracts import read_task_input
-from news_recap.recap.tasks.base import RecapPipelineError
+from news_recap.recap.exceptions import RecapPipelineError
 
 logger = logging.getLogger(__name__)
 

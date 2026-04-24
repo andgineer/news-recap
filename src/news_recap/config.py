@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from news_recap.user_config import DEFAULT_AGENT, UserConfigManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -70,6 +72,65 @@ _DEFAULT_GEMINI_CMD = (
 )
 
 
+def _default_agent_max_parallel() -> dict[str, int]:
+    return {"codex": 3, "claude": 2, "gemini": 3}
+
+
+_NO_THINKING = {"MAX_THINKING_TOKENS": "0"}
+_MAX_OUTPUT = {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"}
+# Caps the hidden thinking scratchpad to a fixed token budget.
+# Do NOT add CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING here — that flag disables the
+# hidden scratchpad and forces the model to write its reasoning into stdout,
+# which contaminates the structured output the parser expects.
+_CAPPED_THINKING = {"CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1", "MAX_THINKING_TOKENS": "4000"}
+
+
+def _default_task_model_map() -> dict[str, dict[str, Any]]:
+    return {
+        "recap_classify": {
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
+            "gemini": {"model": "--model gemini-2.5-flash"},
+        },
+        "recap_enrich": {
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
+            "gemini": {"model": "--model gemini-2.5-flash"},
+        },
+        "recap_dedup": {
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
+            "gemini": {"model": "--model gemini-2.5-flash"},
+        },
+        "recap_oneshot_digest": {
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low", "env": _MAX_OUTPUT},
+            "gemini": {"model": "--model gemini-2.5-flash"},
+        },
+        "recap_merge_sections": {
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low"},
+            "gemini": {"model": "--model gemini-2.5-flash"},
+        },
+        "recap_refine_layout": {
+            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
+            "claude": {"model": "--model sonnet --effort low"},
+            "gemini": {"model": "--model gemini-2.5-flash"},
+        },
+    }
+
+
+def _default_api_model_map() -> dict[str, str]:
+    return {
+        "recap_classify": "claude-haiku-4-5-20251001",
+        "recap_enrich": "claude-haiku-4-5-20251001",
+        "recap_dedup": "claude-haiku-4-5-20251001",
+        "recap_oneshot_digest": "claude-haiku-4-5-20251001",
+        "recap_merge_sections": "claude-sonnet-4-6",
+        "recap_refine_layout": "claude-haiku-4-5-20251001",
+    }
+
+
 @dataclass(slots=True)
 class OrchestratorSettings:
     """CLI orchestrator settings."""
@@ -78,10 +139,10 @@ class OrchestratorSettings:
     default_agent: str = "codex"
     execution_backend: str = "cli"
     task_model_map: dict[str, dict[str, Any]] = field(
-        default_factory=lambda: _default_task_model_map(),
+        default_factory=_default_task_model_map,
     )
     api_model_map: dict[str, str] = field(
-        default_factory=lambda: _default_api_model_map(),
+        default_factory=_default_api_model_map,
     )
     task_type_timeout_map: dict[str, int] = field(
         default_factory=lambda: {
@@ -93,7 +154,7 @@ class OrchestratorSettings:
         },
     )
     agent_max_parallel: dict[str, int] = field(
-        default_factory=lambda: _default_agent_max_parallel(),
+        default_factory=_default_agent_max_parallel,
     )
     agent_launch_delay: dict[str, float] = field(
         default_factory=lambda: {"gemini": 3.0, "claude": 3.0, "codex": 3.0},
@@ -150,8 +211,6 @@ class Settings:
         if env_agent:
             default_agent = env_agent
         else:
-            from news_recap.user_config import DEFAULT_AGENT, UserConfigManager
-
             default_agent = UserConfigManager(data_dir).load().get("default_agent", DEFAULT_AGENT)
 
         settings = cls(
@@ -409,65 +468,6 @@ def _collect_feed_item_overrides() -> dict[str, int]:
             )
         overrides[feed_url] = items
     return overrides
-
-
-def _default_agent_max_parallel() -> dict[str, int]:
-    return {"codex": 3, "claude": 2, "gemini": 3}
-
-
-_NO_THINKING = {"MAX_THINKING_TOKENS": "0"}
-_MAX_OUTPUT = {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"}
-# Caps the hidden thinking scratchpad to a fixed token budget.
-# Do NOT add CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING here — that flag disables the
-# hidden scratchpad and forces the model to write its reasoning into stdout,
-# which contaminates the structured output the parser expects.
-_CAPPED_THINKING = {"CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1", "MAX_THINKING_TOKENS": "4000"}
-
-
-def _default_task_model_map() -> dict[str, dict[str, Any]]:
-    return {
-        "recap_classify": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
-        "recap_enrich": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
-        "recap_dedup": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
-        "recap_oneshot_digest": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _MAX_OUTPUT},
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
-        "recap_merge_sections": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low"},
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
-        "recap_refine_layout": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low"},
-            "gemini": {"model": "--model gemini-2.5-flash"},
-        },
-    }
-
-
-def _default_api_model_map() -> dict[str, str]:
-    return {
-        "recap_classify": "claude-haiku-4-5-20251001",
-        "recap_enrich": "claude-haiku-4-5-20251001",
-        "recap_dedup": "claude-haiku-4-5-20251001",
-        "recap_oneshot_digest": "claude-haiku-4-5-20251001",
-        "recap_merge_sections": "claude-sonnet-4-6",
-        "recap_refine_layout": "claude-haiku-4-5-20251001",
-    }
 
 
 def _collect_api_model_map() -> dict[str, str]:

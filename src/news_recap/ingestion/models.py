@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import msgspec
 
 
-class RunStatus(str, Enum):
+class RunStatus(StrEnum):
     """Lifecycle states for ingestion runs."""
 
     QUEUED = "queued"
@@ -21,7 +21,7 @@ class RunStatus(str, Enum):
     PARTIAL = "partial"
 
 
-class GapStatus(str, Enum):
+class GapStatus(StrEnum):
     """Lifecycle states for ingestion gaps."""
 
     OPEN = "open"
@@ -29,7 +29,7 @@ class GapStatus(str, Enum):
     EXPIRED = "expired"
 
 
-class UpsertAction(str, Enum):
+class UpsertAction(StrEnum):
     """Operation result for article upsert."""
 
     INSERTED = "inserted"

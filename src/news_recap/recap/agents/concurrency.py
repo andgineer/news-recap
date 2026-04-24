@@ -5,6 +5,8 @@ from __future__ import annotations
 import threading
 import time
 
+from news_recap.recap.exceptions import RecapPipelineError
+
 
 class ConcurrencyController:
     """Adaptive concurrency controller with rate-limit-driven downshift.
@@ -53,8 +55,6 @@ class ConcurrencyController:
         with self._cond:
             while self._active >= self._cap:
                 if stop_event is not None and stop_event.is_set():
-                    from news_recap.recap.tasks.base import RecapPipelineError
-
                     raise RecapPipelineError("interrupted", "Pipeline interrupted by user")
                 self._cond.wait(timeout=0.5)
             self._active += 1

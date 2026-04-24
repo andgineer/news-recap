@@ -81,7 +81,9 @@ class SentenceTransformerEmbedder:
 
     def __post_init__(self) -> None:
         _suppress_hf_hub_unauth_warning()
-        from sentence_transformers import SentenceTransformer  # type: ignore
+        # Lazy import: sentence_transformers pulls in torch/transformers at import time,
+        # adding several seconds to cold startup. Keep it deferred to __post_init__.
+        from sentence_transformers import SentenceTransformer  # type: ignore  # noqa: PLC0415
 
         self._model = SentenceTransformer(self.model_name)
 

@@ -13,6 +13,10 @@ from markupsafe import Markup, escape
 
 from news_recap.config import Settings
 from news_recap.recap.models import Digest
+from news_recap.recap.pipeline_setup import (
+    _find_digest_pipeline_dir,
+    _find_latest_digest_pipeline_dir,
+)
 from news_recap.storage.io import load_msgspec
 
 logger = logging.getLogger(__name__)
@@ -130,7 +134,7 @@ def create_app(
 
     @app.template_filter("nl2br")
     def nl2br(value: str) -> Markup:
-        return Markup(escape(value).replace("\n", Markup("<br>\n")))
+        return Markup(escape(value).replace("\n", Markup("<br>\n")))  # noqa: S704
 
     index = _DigestIndex(workdir_root)
     index.populate_from_disk(workdir_root)
@@ -179,11 +183,6 @@ class WebCliController:
     """Launch the Flask digest viewer."""
 
     def serve(self, command: WebServeCommand) -> Iterator[str]:
-        from news_recap.recap.pipeline_setup import (
-            _find_digest_pipeline_dir,
-            _find_latest_digest_pipeline_dir,
-        )
-
         settings = Settings.from_env()
         workdir_root = settings.orchestrator.workdir_root.resolve()
 
