@@ -1,0 +1,4 @@
+           INFO     Created digest #1 (pipeline-2026-04-14-100000)              
+           INFO     Finalized digest (pipeline-2026-04-14-100000) → completed   
+           INFO     Created digest #2 (pipeline-2026-04-23-100000)              
+           INFO     Finalized digest (pipeline-2026-04-23-100000) → completed   

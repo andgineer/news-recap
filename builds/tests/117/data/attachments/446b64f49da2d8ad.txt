@@ -1,1 +1,0 @@
-INFO     news_recap.recap.pipeline_setup:pipeline_setup.py:278 Registered digest #1 (pipeline-2026-03-25-080000)
