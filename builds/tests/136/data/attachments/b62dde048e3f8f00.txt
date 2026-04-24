@@ -1,0 +1,1 @@
+ERROR    news_recap.recap.tasks.classify:base.py:48 Classify parse failure — raw agent stdout (first 500 chars): BEGIN_VERDICTS\n1: ok\nEND_VERDICTS

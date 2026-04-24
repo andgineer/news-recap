@@ -1,0 +1,2 @@
+           INFO     Registered digest #1 (pipeline-2026-03-25-100000)           
+           INFO     Registered digest #2 (pipeline-2026-04-03-100000)           
