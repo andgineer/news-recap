@@ -9,7 +9,9 @@ The pipeline drives CLI agents such as ChatGPT Codex, Claude Code, and Google An
 it runs on flat-rate subscriptions.
 
 Running it daily for 7 days consumes roughly 20% of the weekly Claude subscription
-limit and less than that for ChatGPT / Google.
+limit and less than that for ChatGPT.
+
+Alternative it can run completely free with gemini on free tier, with slightly less quality than claude.
 
 For comparison, Inoreader charges an additional \$19.90/month **on top** of
 a Pro subscription for AI-powered aggregation.

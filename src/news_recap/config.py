@@ -73,7 +73,9 @@ _DEFAULT_GEMINI_CMD = (
 
 
 def _default_agent_max_parallel() -> dict[str, int]:
-    return {"codex": 3, "claude": 2, "gemini": 3}
+    # gemini: 1 — Gemini Code Assist free tier shares a low RPM/capacity pool
+    # across all sessions; concurrent agents reliably trigger 429s.
+    return {"codex": 3, "claude": 2, "gemini": 1}
 
 
 _NO_THINKING = {"MAX_THINKING_TOKENS": "0"}
@@ -157,7 +159,7 @@ class OrchestratorSettings:
         default_factory=_default_agent_max_parallel,
     )
     agent_launch_delay: dict[str, float] = field(
-        default_factory=lambda: {"gemini": 3.0, "claude": 3.0, "codex": 3.0},
+        default_factory=lambda: {"gemini": 10.0, "claude": 3.0, "codex": 3.0},
     )
     codex_command_template: str = _DEFAULT_CODEX_CMD
     claude_command_template: str = _DEFAULT_CLAUDE_CMD
