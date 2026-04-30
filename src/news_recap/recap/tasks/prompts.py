@@ -187,6 +187,15 @@ SINGLE: 2
 _SINGLE_SHOT_BODY = """\
 You are a news editor. Below is a list of articles.
 
+OUTPUT LANGUAGE: {language}.
+ALL human-readable text you produce — section labels, section summaries, and \
+block descriptions — MUST be written in {language}, even when the source \
+articles are in different languages. Translate the meaning into {language}; \
+do NOT transliterate, copy, or carry over phrases from the source language \
+(for example, do not turn Serbian/Croatian Latin into Cyrillic letter-by-letter — \
+write in proper {language}). Keywords (SECTION:, SECTION_SUMMARY:, BLOCK:, \
+ARTICLES:, EXCLUDED:) stay in English regardless of the content language.
+
 Your task:
 1. Group related articles into named thematic blocks.
 2. Organize the blocks into broader sections.
@@ -200,11 +209,6 @@ Your task:
 Every article number must appear exactly once — either in a BLOCK's ARTICLES list
 or in EXCLUDED. Do not skip any article.
 
-Write ALL human-readable text — block descriptions, section labels, and section \
-summaries — in {language}. This applies even when the source articles are in a \
-different language.
-Use the exact keyword prefixes shown (SECTION:, SECTION_SUMMARY:, BLOCK:, SUMMARY:,
-ARTICLES:, EXCLUDED:) in English regardless of the content language.
 Work only from the articles provided. Do not search the web or invent information.
 Read all articles first, then organize: start with small topic blocks, then group
 blocks into sections.
@@ -230,6 +234,16 @@ RECAP_MERGE_SECTIONS_PROMPT = PromptTemplate(
     body="""\
 You are a news editor. Articles were processed in batches, producing the sections below.
 Some sections from different batches may cover the same or closely related topic.
+Input sections may already be in {language} or in other languages — different batches
+were processed independently and some may have leaked the source language.
+
+OUTPUT LANGUAGE: {language}.
+The canonical section name AND the section summary you produce MUST be in \
+{language}, regardless of the language of the input section. Translate the \
+meaning into {language}; do NOT transliterate, copy, or carry over phrases \
+from the source language (for example, do not turn Serbian/Croatian Latin \
+into Cyrillic letter-by-letter — write in proper {language}). The SECTION:, \
+SECTION_SUMMARY:, INCLUDES: keywords stay in English.
 
 Your task:
 1. Identify sections that cover the same topic.
@@ -247,15 +261,19 @@ INCLUDES: <comma-separated input section numbers>
 
 Rules:
 - Every input section number must appear exactly once across all INCLUDES lines.
-- A section that stands alone has only its own number in INCLUDES.
-- Write SECTION_SUMMARY in {language}.
-- Write the SECTION: keyword in English; the section name itself in {language}.\
+- A section that stands alone has only its own number in INCLUDES.\
 """,
 )
 
 RECAP_REFINE_LAYOUT_PROMPT = PromptTemplate(
     body="""\
 You are a news editor reviewing small sections in today's digest.
+
+OUTPUT LANGUAGE: {language}.
+Every SECTION_SUMMARY you write MUST be in {language}. Translate the meaning \
+into {language}; do NOT transliterate or carry over phrases from another \
+language. Section titles in the input are already in {language} — copy them \
+exactly. Keywords (SECTION:, SECTION_SUMMARY:, BLOCKS:) stay in English.
 
 Sections marked [SMALL] have only 1-2 blocks. For each [SMALL] section, \
 decide whether its blocks can be absorbed into an existing larger section \
@@ -273,8 +291,6 @@ clear thematic match — do not force it into a catch-all.
 - Every block number (1 to {total_blocks}) must appear exactly once \
 in one BLOCKS line.
 - Do not skip, invent, or renumber blocks.
-- Write the SECTION: keyword in English; the section name itself in {language}.
-- Write summaries in {language}.
 
 Current layout:
 {layout_block}
