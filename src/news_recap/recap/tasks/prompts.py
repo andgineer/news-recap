@@ -197,14 +197,27 @@ write in proper {language}). Keywords (SECTION:, SECTION_SUMMARY:, BLOCK:, \
 ARTICLES:, EXCLUDED:) stay in English regardless of the content language.
 
 Your task:
-1. Group related articles into named thematic blocks.
+1. Group related articles into thematic blocks.
 2. Organize the blocks into broader sections.
-3. For each block write a 1-2 sentence description that tells the reader what happened —
-   specific facts, who, where, outcome. No clickbait, no vague teasers.
-   This IS the block title the reader sees;
-   make it informative enough that opening the block is optional.
-4. Write a single sentence label for each section (topic area, not a summary).
-5. Articles that do not fit any coherent narrative: list as EXCLUDED.
+3. For each BLOCK write 1-2 complete sentences that tell the reader what \
+actually happened: specific actors, specific places, specific events, \
+specific outcomes. This text IS the only thing the reader sees about that \
+block — it must let them skip opening the block and still know the substance.
+   - BAD (a topic / category label, not what we want): \
+"Incidents and law enforcement in Serbia"
+   - GOOD (describes the actual events): "Belgrade police arrested two \
+suspects after a fatal stabbing in Zemun and a 30-day investigative \
+detention was ordered for a murder in New Belgrade; in Niš a woman hit a \
+16-year-old with her car and fled the scene."
+   - Do NOT use Markdown formatting in the BLOCK line — no **bold**, no \
+headings, no bullets, no asterisks. Plain prose only.
+   - If many distinct events seem to fit one topic, split them into several \
+smaller blocks, each describing its own specific events.
+4. For each SECTION write a single short label naming the topic area \
+(this one IS a label, not a description of events).
+5. Articles that do not fit any coherent narrative: list as EXCLUDED. \
+Do NOT create a catch-all "miscellaneous" block — unrelated leftovers \
+belong in EXCLUDED, not in a junk-drawer block.
 
 Every article number must appear exactly once — either in a BLOCK's ARTICLES list
 or in EXCLUDED. Do not skip any article.
