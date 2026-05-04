@@ -9,7 +9,7 @@ from dataclasses import field as dataclass_field
 
 from news_recap.recap.dedup.cluster import group_similar
 from news_recap.recap.dedup.embedder import build_embedder
-from news_recap.recap.models import DigestArticle
+from news_recap.recap.models import DigestArticle, language_display_name
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
     FlowContext,
@@ -322,6 +322,8 @@ def _run_llm_dedup(
     batches = _batch_clusters(groups)
     logger.info("[cyan]dedup:[/cyan] %d cluster(s) → %d batch task(s)", len(groups), len(batches))
 
+    language = language_display_name(ctx.inp.preferences.language)
+
     def prepare(batch: ClusterBatch, batch_num: int) -> str:
         if len(batch) == 1:
             cluster = batch[0]
@@ -329,6 +331,7 @@ def _run_llm_dedup(
             prompt = render_prompt(
                 RECAP_DEDUP_PROMPT,
                 ctx.inp.prompt_backend,
+                language=language,
                 article_count=str(len(cluster)),
                 articles_block=_build_articles_block(articles),
             )
@@ -336,6 +339,7 @@ def _run_llm_dedup(
             prompt = render_prompt(
                 RECAP_DEDUP_MULTI_PROMPT,
                 ctx.inp.prompt_backend,
+                language=language,
                 clusters_block=_build_multi_clusters_block(batch, id_to_article),
             )
         task_id = materialize_step(

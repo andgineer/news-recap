@@ -115,9 +115,8 @@ Requirements for merged entries:
 - The merged text must not be significantly longer than the longest original
 - Be specific and factual — no clickbait, no vague teasers
 
-IMPORTANT: Write each entry in the same language as the original. \
-If a group contains news in different languages, use the language \
-of the majority.
+OUTPUT LANGUAGE: {language}.
+Write ALL text you produce — MERGED descriptions and any other output — in {language}.
 
 News that cannot be meaningfully merged with others remain as they are.
 
@@ -156,7 +155,7 @@ Only merge articles that a reader would consider the same piece of news.
 Requirements for merged entries:
 - Key facts from all merged articles must be preserved
 - Be specific and factual — no clickbait, no vague teasers
-- Write each entry in the language of the majority within that cluster
+- Write ALL entries in {language}
 
 Articles that cannot be meaningfully merged remain as SINGLE.
 
@@ -181,6 +180,7 @@ CLUSTER 2:
 SINGLE: 1
 SINGLE: 2
 
+REMINDER — ALL output MUST be in {language}.
 {output_instruction}{clusters_block}""",
 )
 
@@ -239,6 +239,7 @@ ARTICLES: <comma-separated numbers>
 
 EXCLUDED: <comma-separated numbers>  (omit if none)
 
+REMINDER — ALL output MUST be in {language}.
 {output_instruction}Articles:
 {articles_block}"""
 RECAP_ONESHOT_DIGEST_PROMPT = PromptTemplate(body=_SINGLE_SHOT_BODY)
