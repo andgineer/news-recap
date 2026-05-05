@@ -41,7 +41,7 @@
 | src/news\_recap/recap/launcher.py                        |      214 |       14 |     93% |98, 211, 214-215, 243-244, 246, 250, 253-255, 362, 413-414 |
 | src/news\_recap/recap/loaders/resource\_cache.py         |       51 |        0 |    100% |           |
 | src/news\_recap/recap/loaders/resource\_loader.py        |      138 |       18 |     87% |90, 121-127, 190-207, 211-213, 235, 257, 303, 312-313, 316, 319 |
-| src/news\_recap/recap/models.py                          |       61 |        8 |     87% |42-47, 50, 59 |
+| src/news\_recap/recap/models.py                          |       61 |        8 |     87% |45-50, 53, 62 |
 | src/news\_recap/recap/pipeline\_setup.py                 |      228 |        9 |     96% |55-57, 147-148, 175-176, 333-334 |
 | src/news\_recap/recap/storage/pipeline\_io.py            |      157 |       15 |     90% |74, 111-117, 140, 146-147, 161, 213, 224, 260 |
 | src/news\_recap/recap/storage/workdir.py                 |       48 |        4 |     92% |     90-93 |
@@ -50,10 +50,10 @@
 | src/news\_recap/recap/tasks/deduplicate.py               |      236 |       94 |     60% |60-64, 68-72, 109-114, 230-256, 264-284, 293-309, 322-393, 404-419, 467 |
 | src/news\_recap/recap/tasks/enrich.py                    |      188 |       15 |     92% |145, 212, 239-240, 303-308, 328-332, 342, 355-356, 398 |
 | src/news\_recap/recap/tasks/load\_resources.py           |       55 |        6 |     89% |42, 81-82, 88-90 |
-| src/news\_recap/recap/tasks/oneshot\_digest.py           |      413 |      177 |     57% |165, 172-175, 201, 255-291, 312-327, 332-335, 355-390, 399-417, 425-451, 459-491, 582, 709-733, 751-843, 852 |
+| src/news\_recap/recap/tasks/oneshot\_digest.py           |      413 |      177 |     57% |165, 172-175, 201, 255-291, 312-327, 332-335, 355-391, 400-419, 427-453, 461-493, 584, 711-735, 753-845, 854 |
 | src/news\_recap/recap/tasks/parallel.py                  |       80 |       19 |     76% |37-38, 95-96, 102, 121-128, 150, 157-160, 180 |
 | src/news\_recap/recap/tasks/prompts.py                   |       21 |        0 |    100% |           |
-| src/news\_recap/recap/tasks/refine\_layout.py            |      115 |       24 |     79% |223-262, 269 |
+| src/news\_recap/recap/tasks/refine\_layout.py            |      115 |       24 |     79% |223-263, 270 |
 | src/news\_recap/storage/io.py                            |       48 |        5 |     90% | 32-35, 59 |
 | src/news\_recap/user\_config.py                          |       42 |        0 |    100% |           |
 | src/news\_recap/web/server.py                            |      129 |       30 |     77% |36-38, 64-66, 75-76, 94, 98-100, 146-147, 166, 186-205 |
