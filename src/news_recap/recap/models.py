@@ -26,7 +26,10 @@ def language_display_name(code: str) -> str:
     return tag.display_name() if tag.is_valid() else code
 
 
-_DEFAULT_EXCLUDE = "horoscopes, medical advice, sports (except Russia), Epstein files"
+_DEFAULT_EXCLUDE = (
+    "horoscopes, medical advice, sports (except Russia), Epstein files, "
+    "Croatian news (unless it directly involves Serbia or is part of a major international event)"
+)
 _DEFAULT_FOLLOW = "Russia, Serbia, war in Ukraine"
 
 

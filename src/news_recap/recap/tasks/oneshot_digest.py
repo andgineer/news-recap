@@ -372,6 +372,7 @@ def _run_batch(
         ctx.inp.prompt_backend,
         articles_block=articles_block,
         language=language,
+        follow_policy=ctx.inp.preferences.follow or "none",
     )
     label = f"recap_oneshot_digest (batch {batch_num})" if batch_num else "recap_oneshot_digest"
     stdout_path = run_single_agent(ctx, "recap_oneshot_digest", prompt, batch=batch_num)
@@ -405,6 +406,7 @@ def _run_merge(
         sections_block=sections_block,
         total=str(len(all_sections)),
         language=language,
+        follow_policy=ctx.inp.preferences.follow or "none",
     )
     stdout_path = run_single_agent(ctx, "recap_merge_sections", prompt)
     text = read_agent_stdout(stdout_path, "recap_merge_sections")

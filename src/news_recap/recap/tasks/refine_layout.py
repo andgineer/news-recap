@@ -244,6 +244,7 @@ class RefineLayout(TaskLauncher):
             layout_block=layout_block,
             language=language,
             total_blocks=str(len(prompt_num_to_block_idx)),
+            follow_policy=ctx.inp.preferences.follow or "none",
         )
 
         stdout_path = run_single_agent(ctx, "recap_refine_layout", prompt)

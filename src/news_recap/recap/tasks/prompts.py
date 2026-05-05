@@ -196,6 +196,14 @@ do NOT transliterate, copy, or carry over phrases from the source language \
 write in proper {language}). Keywords (SECTION:, SECTION_SUMMARY:, BLOCK:, \
 ARTICLES:, EXCLUDED:) stay in English regardless of the content language.
 
+EDITORIAL FOCUS — KEEP SEPARATE:
+{follow_policy}
+
+Each topic listed above must have its own dedicated section. \
+Do NOT merge them with each other or with broader regional or thematic groups \
+(for example, do not fold a "Serbia" section into a "Balkans" section, \
+and do not mix Serbian and Ukrainian news in one section).
+
 Your task:
 1. Group related articles into thematic blocks.
 2. Organize the blocks into broader sections.
@@ -259,6 +267,13 @@ from the source language (for example, do not turn Serbian/Croatian Latin \
 into Cyrillic letter-by-letter — write in proper {language}). The SECTION:, \
 SECTION_SUMMARY:, INCLUDES: keywords stay in English.
 
+KEEP-SEPARATE TOPICS:
+{follow_policy}
+
+Never merge a section dedicated to one of these topics into a broader regional \
+or thematic section. Each listed topic must remain as its own standalone section \
+(e.g. a "Serbia" section must NOT be merged into a "Balkans" section).
+
 Your task:
 1. Identify sections that cover the same topic.
 2. Group them under one canonical name.
@@ -289,7 +304,14 @@ into {language}; do NOT transliterate or carry over phrases from another \
 language. Section titles in the input are already in {language} — copy them \
 exactly. Keywords (SECTION:, SECTION_SUMMARY:, BLOCKS:) stay in English.
 
-Sections marked [SMALL] have only 1-2 blocks. For each [SMALL] section, \
+KEEP-SEPARATE TOPICS:
+{follow_policy}
+
+Never absorb a [SMALL] section whose subject is one of these topics into \
+another section — keep it as its own section even with only 1-2 blocks.
+
+Sections marked [SMALL] have only 1-2 blocks. For each [SMALL] section \
+(that is NOT a keep-separate topic), \
 decide whether its blocks can be absorbed into an existing larger section \
 where they are a clear thematic fit. If no larger section fits, keep the \
 small section as-is.
