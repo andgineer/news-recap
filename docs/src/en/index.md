@@ -1,7 +1,8 @@
 # news-recap
 
-`news-recap` collects articles from RSS/Atom feeds and turns them into digest pages you
-can review locally or generate on a schedule.
+`news-recap` collects articles from RSS/Atom feeds and turns them into easy to read digest pages.
+
+You can generate digest on schedule, for example at night.
 
 The pipeline drives CLI agents such as ChatGPT Codex, Claude Code, and Gemini CLI, so
 it runs on flat-rate subscriptions.
@@ -29,7 +30,7 @@ Get an RSS URL.
 Inoreader example: open the context menu of the folder, choose `Properties`,
 and copy the RSS link shown there.
 
-Run a digest manually:
+Run a digest creation manually:
 
 ```bash
 news-recap ingest --rss "https://www.inoreader.com/stream/..."
@@ -37,11 +38,10 @@ news-recap create
 news-recap serve
 ```
 
-Or set up scheduling:
+Or set up scheduling (details in [Scheduled Runs](automation.md)):
 
 ```bash
 news-recap schedule set --rss "https://www.inoreader.com/stream/..."
 ```
 
-See [Scheduled Runs](automation.md) for setup details, logs, and troubleshooting.
 See [CLI](cli.md) for the full command reference.

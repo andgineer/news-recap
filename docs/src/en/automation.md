@@ -1,13 +1,5 @@
 # Scheduled Runs
 
-If you plan to use Claude as the agent (the default for automation), also check:
-
-```bash
-claude
-```
-
-`claude` must launch and already be logged in.
-
 ## Setup
 
 ```bash
