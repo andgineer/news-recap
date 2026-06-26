@@ -82,12 +82,12 @@ def test_patch_pipeline_input_when_previously_none(tmp_path: Path) -> None:
     """Patching works when the original value is None (default agent)."""
     _write_pipeline_input(tmp_path, agent_override=None)
 
-    previous = _patch_pipeline_input(tmp_path, agent_override="gemini")
+    previous = _patch_pipeline_input(tmp_path, agent_override="antigravity")
 
     assert previous["agent_override"] is None
 
     inp = read_pipeline_input(str(tmp_path))
-    assert inp.agent_override == "gemini"
+    assert inp.agent_override == "antigravity"
 
 
 def test_no_agent_flag_leaves_file_unchanged(tmp_path: Path) -> None:
@@ -121,7 +121,7 @@ def test_controller_resume_with_agent_override_normalizes(
     settings.orchestrator.task_model_map = {}
     settings.orchestrator.claude_command_template = ""
     settings.orchestrator.codex_command_template = ""
-    settings.orchestrator.gemini_command_template = ""
+    settings.orchestrator.antigravity_command_template = ""
     settings.orchestrator.task_type_timeout_map = {}
     settings.orchestrator.agent_max_parallel = {}
     settings.ingestion.gc_retention_days = 30
@@ -274,7 +274,7 @@ def test_from_digest_applies_new_options(
 
     command = RecapRunCommand(
         from_digest=_SOURCE_DIGEST_ID,
-        agent_override="gemini",
+        agent_override="antigravity",
         use_api_key=True,
     )
 
@@ -282,7 +282,7 @@ def test_from_digest_applies_new_options(
 
     new_pipeline_dir = Path(mock_flow.call_args[1]["pipeline_dir"])
     new_inp = read_pipeline_input(str(new_pipeline_dir))
-    assert new_inp.agent_override == "gemini"
+    assert new_inp.agent_override == "antigravity"
     assert new_inp.use_api_key is True
 
 

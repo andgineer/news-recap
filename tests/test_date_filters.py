@@ -840,11 +840,11 @@ def test_prompt_ai_resume_applies_agent_override(
     mock_flow.side_effect = fake_flow
     mock_embedder_cls.return_value.embed.side_effect = lambda texts: [[0.1] * 10 for _ in texts]
 
-    cmd_resume = PromptCommand(ai=True, date_from=date(2026, 4, 1), agent="gemini")
+    cmd_resume = PromptCommand(ai=True, date_from=date(2026, 4, 1), agent="antigravity")
     list(PromptCliController().prompt(cmd_resume))
 
     inp = read_pipeline_input(str(pdir))
-    assert inp.agent_override == "gemini"
+    assert inp.agent_override == "antigravity"
 
 
 # ---------------------------------------------------------------------------

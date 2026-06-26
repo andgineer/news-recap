@@ -26,12 +26,12 @@ def _defaults() -> RoutingDefaults:
             "highlights": {
                 "codex": {"model": "codex-highlights"},
                 "claude": {"model": "claude-highlights"},
-                "gemini": {"model": "gemini-highlights"},
+                "antigravity": {"model": "antigravity-highlights"},
             },
             "story": {
                 "codex": {"model": "codex-story"},
                 "claude": {"model": "claude-story"},
-                "gemini": {"model": "gemini-story"},
+                "antigravity": {"model": "antigravity-story"},
             },
         },
         task_type_timeout_map={
@@ -41,7 +41,7 @@ def _defaults() -> RoutingDefaults:
         command_templates={
             "claude": 'claude --model {model} -- "Read task from {prompt_file}"',
             "codex": 'codex exec --model {model} "Read task from {prompt_file}"',
-            "gemini": 'gemini --model {model} --prompt "Read task from {prompt_file}"',
+            "antigravity": 'agy {model} --dangerously-skip-permissions -p "Read task from {prompt_file}"',
         },
     )
 
@@ -74,12 +74,12 @@ def test_resolve_routing_respects_agent_and_model_overrides() -> None:
     routing = resolve_routing_for_enqueue(
         defaults=_defaults(),
         task_type="highlights",
-        agent_override="gemini",
-        model_override="gemini-custom",
+        agent_override="antigravity",
+        model_override="antigravity-custom",
     )
-    assert routing.agent == "gemini"
-    assert routing.model == "gemini-custom"
-    assert "gemini --model" in routing.command_template
+    assert routing.agent == "antigravity"
+    assert routing.model == "antigravity-custom"
+    assert "agy" in routing.command_template
 
 
 def test_resolve_routing_for_execution_uses_frozen_metadata() -> None:
@@ -117,14 +117,14 @@ def test_resolve_routing_for_execution_applies_fallback_on_missing_metadata() ->
     assert resolved.resolved_by == "worker_fallback"
 
 
-def test_routing_defaults_rejects_antigravity_as_default() -> None:
-    settings = OrchestratorSettings(default_agent="antigravity")
+def test_routing_defaults_rejects_unknown_agent_as_default() -> None:
+    settings = OrchestratorSettings(default_agent="unknown_agent")
     try:
         RoutingDefaults.from_settings(settings)
     except ValueError as error:
-        assert "antigravity" in str(error)
+        assert "unknown_agent" in str(error)
     else:  # pragma: no cover - defensive
-        raise AssertionError("Expected antigravity default to be rejected.")
+        raise AssertionError("Expected unknown_agent default to be rejected.")
 
 
 def test_resolve_routing_task_model_map_overrides_default_for_agent() -> None:
@@ -138,15 +138,15 @@ def test_resolve_routing_task_model_map_overrides_default_for_agent() -> None:
     assert routing.model == "claude-story"
 
 
-def test_resolve_routing_gemini_uses_task_model_map() -> None:
+def test_resolve_routing_antigravity_uses_task_model_map() -> None:
     """All agents are explicitly listed in task_model_map."""
     routing = resolve_routing_for_enqueue(
         defaults=_defaults(),
         task_type="story",
-        agent_override="gemini",
+        agent_override="antigravity",
         model_override=None,
     )
-    assert routing.model == "gemini-story"
+    assert routing.model == "antigravity-story"
 
 
 def test_resolve_routing_raises_on_missing_task_type() -> None:

@@ -12,7 +12,7 @@ from news_recap.user_config import DEFAULT_AGENT, UserConfigManager
 
 ConfigureLine = tuple[str, str]
 
-_SUPPORTED_AGENTS = ("codex", "claude", "gemini")
+_SUPPORTED_AGENTS = ("codex", "claude", "antigravity")
 
 _FIELDS: list[tuple[str, str]] = [
     ("language", "Language"),

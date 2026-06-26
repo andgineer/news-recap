@@ -39,7 +39,7 @@ def make_settings_mock(tmp_path: Path) -> MagicMock:
     settings.orchestrator.task_model_map = {}
     settings.orchestrator.claude_command_template = ""
     settings.orchestrator.codex_command_template = ""
-    settings.orchestrator.gemini_command_template = ""
+    settings.orchestrator.antigravity_command_template = ""
     settings.orchestrator.task_type_timeout_map = {}
     settings.orchestrator.agent_max_parallel = {}
     settings.orchestrator.agent_launch_delay = {}

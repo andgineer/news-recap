@@ -6,13 +6,13 @@ to stdout in the same format the real agent would use: ID<TAB>VERDICT.
 
 Distribution: ~80% ok, ~10% exclude, ~10% enrich (deterministic by article index).
 
-Usage — override the gemini command template in Settings, then run normally:
+Usage — override the antigravity command template in Settings, then run normally:
 
     # In conftest.py or test setup:
-    settings.orchestrator.gemini_command_template = (
+    settings.orchestrator.antigravity_command_template = (
         "python3 tests/fixtures/mock_agent.py --model {model} {prompt_file}"
     )
-    # Then: news-recap create --agent gemini --limit 20
+    # Then: news-recap create --agent antigravity --limit 20
 
 The script accepts (and ignores) any positional args so it fits any command template.
 cwd is set to the task workdir by task_ai_agent.py.

@@ -186,7 +186,7 @@ def test_configure_updates_all_fields(tmp_path: Path) -> None:
     mock_settings = MagicMock()
     mock_settings.data_dir = tmp_path
 
-    prompt_responses = iter(["all", "hr", "none", "AI", "gemini"])
+    prompt_responses = iter(["all", "hr", "none", "AI", "antigravity"])
 
     with (
         patch("news_recap.operation_configure.Settings.from_env", return_value=mock_settings),
@@ -199,7 +199,12 @@ def test_configure_updates_all_fields(tmp_path: Path) -> None:
 
     mgr = UserConfigManager(tmp_path)
     cfg = mgr.load()
-    assert cfg == {"language": "hr", "exclude": "none", "follow": "AI", "default_agent": "gemini"}
+    assert cfg == {
+        "language": "hr",
+        "exclude": "none",
+        "follow": "AI",
+        "default_agent": "antigravity",
+    }
 
 
 def test_configure_invalid_selection_warns(tmp_path: Path) -> None:
@@ -258,7 +263,7 @@ def test_settings_default_agent_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Env var NEWS_RECAP_LLM_DEFAULT_AGENT takes priority over config file."""
-    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "gemini")
+    monkeypatch.setenv("NEWS_RECAP_LLM_DEFAULT_AGENT", "antigravity")
     monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(tmp_path))
 
     mgr = UserConfigManager(tmp_path)
@@ -267,7 +272,7 @@ def test_settings_default_agent_from_env(
     from news_recap.config import Settings
 
     settings = Settings.from_env()
-    assert settings.orchestrator.default_agent == "gemini"
+    assert settings.orchestrator.default_agent == "antigravity"
 
 
 def test_settings_default_agent_from_config(

@@ -23,7 +23,7 @@ def _api_defaults(api_model_map: dict[str, str] | None = None) -> RoutingDefault
         command_templates={
             "claude": 'claude {model} -- "Read {prompt_file}"',
             "codex": 'codex {model} "Read {prompt_file}"',
-            "gemini": 'gemini {model} "Read {prompt_file}"',
+            "antigravity": 'agy {model} --dangerously-skip-permissions -p "Read {prompt_file}"',
         },
         execution_backend="api",
         api_model_map=api_model_map
@@ -41,14 +41,14 @@ def _cli_defaults() -> RoutingDefaults:
             "recap_classify": {
                 "codex": {"model": "--model gpt-5.2"},
                 "claude": {"model": "--model sonnet", "env": {"MAX_THINKING_TOKENS": "0"}},
-                "gemini": {"model": "--model gemini-2.5-flash"},
+                "antigravity": {"model": "--model gemini-3.5-flash"},
             },
         },
         task_type_timeout_map={"recap_classify": 120},
         command_templates={
             "claude": 'claude {model} -- "Read {prompt_file}"',
             "codex": 'codex {model} "Read {prompt_file}"',
-            "gemini": 'gemini {model} "Read {prompt_file}"',
+            "antigravity": 'agy {model} --dangerously-skip-permissions -p "Read {prompt_file}"',
         },
         execution_backend="cli",
     )
@@ -93,12 +93,12 @@ def test_resolve_routing_api_rejects_codex_agent_override():
         )
 
 
-def test_resolve_routing_api_rejects_gemini_agent_override():
-    with pytest.raises(ValueError, match="requires agent=claude.*got agent=gemini"):
+def test_resolve_routing_api_rejects_antigravity_agent_override():
+    with pytest.raises(ValueError, match="requires agent=claude.*got agent=antigravity"):
         resolve_routing_for_enqueue(
             defaults=_api_defaults(),
             task_type="recap_classify",
-            agent_override="gemini",
+            agent_override="antigravity",
             model_override=None,
         )
 

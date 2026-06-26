@@ -244,10 +244,10 @@ def test_schedule_set_with_agent_option(monkeypatch):
     runner = CliRunner()
     result = runner.invoke(
         news_recap,
-        ["schedule", "set", "--rss", "https://a.com/rss", "--agent", "gemini"],
+        ["schedule", "set", "--rss", "https://a.com/rss", "--agent", "antigravity"],
     )
     assert result.exit_code == 0
-    assert calls[0]["agent"] == "gemini"
+    assert calls[0]["agent"] == "antigravity"
 
 
 def test_schedule_set_with_time_option(monkeypatch):
@@ -515,13 +515,13 @@ def test_install_linux_creates_files(tmp_path: Path, monkeypatch):
 
     with patch("news_recap.automation.subprocess.run", return_value=_MOCK_CP):
         ctrl = ScheduleController()
-        output = list(ctrl.install(("https://example.com/feed.xml",), agent="gemini"))
+        output = list(ctrl.install(("https://example.com/feed.xml",), agent="antigravity"))
 
     run_script = tmp_path / ".local" / "share" / "news-recap" / "run.sh"
     assert run_script.exists()
     content = run_script.read_text()
     assert "--rss 'https://example.com/feed.xml'" in content
-    assert "--agent gemini" in content
+    assert "--agent antigravity" in content
     assert "{{AGENT_ARGS}}" not in content
     if sys.platform != "win32":
         assert run_script.stat().st_mode & stat.S_IXUSR

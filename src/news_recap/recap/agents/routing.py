@@ -10,7 +10,7 @@ from news_recap.config import OrchestratorSettings
 from news_recap.recap.contracts import TaskInputContract
 from news_recap.storage.io import utc_now
 
-SUPPORTED_AGENTS = ("claude", "codex", "gemini")
+SUPPORTED_AGENTS = ("claude", "codex", "antigravity")
 ROUTING_SCHEMA_VERSION = 4
 
 
@@ -65,7 +65,7 @@ class RoutingDefaults(msgspec.Struct):
         command_templates = {
             "claude": settings.claude_command_template,
             "codex": settings.codex_command_template,
-            "gemini": settings.gemini_command_template,
+            "antigravity": settings.antigravity_command_template,
         }
         if execution_backend == "cli":
             for agent, template in command_templates.items():
@@ -273,4 +273,4 @@ def _normalize_agent(value: str) -> str:
 def _validate_supported_agent(agent: str) -> None:
     if agent in SUPPORTED_AGENTS:
         return
-    raise ValueError(f"Unsupported LLM agent: {agent!r}. Use codex, claude, or gemini.")
+    raise ValueError(f"Unsupported LLM agent: {agent!r}. Use codex, claude, or antigravity.")

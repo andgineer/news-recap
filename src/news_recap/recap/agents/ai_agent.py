@@ -158,7 +158,7 @@ _KNOWN_ERRORS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"RetryableQuotaError:.*exhausted your capacity", re.IGNORECASE),
-        "Gemini API quota exhausted (rate limit) — reduce parallelism or wait",
+        "Antigravity API quota exhausted (rate limit) — reduce parallelism or wait",
     ),
     (
         re.compile(r"OverloadedError|overloaded_error", re.IGNORECASE),
@@ -294,7 +294,7 @@ def _run_agent_cli(  # noqa: PLR0913
     run_args, command_head = build_run_args(
         command_template,
         model=model,
-        prompt_file=Path("input") / "task_prompt.txt",
+        prompt_file=prompt_file,
     )
 
     if command_head == "codex":

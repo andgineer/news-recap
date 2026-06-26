@@ -52,7 +52,7 @@ class RssSettings:
 _DEFAULT_AGENT_API_KEY_VARS: dict[str, list[str]] = {
     "claude": ["ANTHROPIC_API_KEY"],
     "codex": ["OPENAI_API_KEY"],
-    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "antigravity": ["ANTIGRAVITY_API_KEY"],
 }
 
 _DEFAULT_CODEX_CMD = (
@@ -66,16 +66,16 @@ _DEFAULT_CLAUDE_CMD = (
     'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
     '-- "Read your task from {prompt_file} and execute it."'
 )
-_DEFAULT_GEMINI_CMD = (
-    "gemini {model} --approval-mode auto_edit "
-    '--prompt "Read your task from {prompt_file} and execute it."'
+_DEFAULT_ANTIGRAVITY_CMD = (
+    "agy {model} --dangerously-skip-permissions "
+    '-p "Read your task from {prompt_file} and execute it."'
 )
 
 
 def _default_agent_max_parallel() -> dict[str, int]:
-    # gemini: 1 — Gemini Code Assist free tier shares a low RPM/capacity pool
-    # across all sessions; concurrent agents reliably trigger 429s.
-    return {"codex": 3, "claude": 2, "gemini": 1}
+    # antigravity: 1 — free tier shares a low RPM/capacity pool across all
+    # sessions; concurrent agents reliably trigger 429s.
+    return {"codex": 3, "claude": 2, "antigravity": 1}
 
 
 _NO_THINKING = {"MAX_THINKING_TOKENS": "0"}
@@ -92,32 +92,32 @@ def _default_task_model_map() -> dict[str, dict[str, Any]]:
         "recap_classify": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "gemini": {"model": "--model gemini-2.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash"},
         },
         "recap_enrich": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "gemini": {"model": "--model gemini-2.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash"},
         },
         "recap_dedup": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "gemini": {"model": "--model gemini-2.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash"},
         },
         "recap_oneshot_digest": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low", "env": _MAX_OUTPUT},
-            "gemini": {"model": "--model gemini-2.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash"},
         },
         "recap_merge_sections": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low"},
-            "gemini": {"model": "--model gemini-2.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash"},
         },
         "recap_refine_layout": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low"},
-            "gemini": {"model": "--model gemini-2.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash"},
         },
     }
 
@@ -159,11 +159,11 @@ class OrchestratorSettings:
         default_factory=_default_agent_max_parallel,
     )
     agent_launch_delay: dict[str, float] = field(
-        default_factory=lambda: {"gemini": 10.0, "claude": 3.0, "codex": 3.0},
+        default_factory=lambda: {"antigravity": 10.0, "claude": 3.0, "codex": 3.0},
     )
     codex_command_template: str = _DEFAULT_CODEX_CMD
     claude_command_template: str = _DEFAULT_CLAUDE_CMD
-    gemini_command_template: str = _DEFAULT_GEMINI_CMD
+    antigravity_command_template: str = _DEFAULT_ANTIGRAVITY_CMD
     agent_api_key_vars: dict[str, list[str]] = field(
         default_factory=lambda: dict(_DEFAULT_AGENT_API_KEY_VARS),
     )
@@ -266,7 +266,7 @@ class Settings:
                 execution_backend=os.getenv("NEWS_RECAP_EXECUTION_BACKEND", "cli").strip(),
                 codex_command_template=_DEFAULT_CODEX_CMD,
                 claude_command_template=_DEFAULT_CLAUDE_CMD,
-                gemini_command_template=_DEFAULT_GEMINI_CMD,
+                antigravity_command_template=_DEFAULT_ANTIGRAVITY_CMD,
                 task_model_map=_collect_task_model_map(),
                 api_model_map=_collect_api_model_map(),
                 agent_max_parallel=_default_agent_max_parallel(),
@@ -325,11 +325,11 @@ class Settings:
             raise ValueError("NEWS_RECAP_DEDUP_THRESHOLD must be in (0, 1].")
 
     def _validate_orchestrator_routing(self) -> None:  # noqa: C901
-        supported_agents = {"codex", "claude", "gemini"}
+        supported_agents = {"codex", "claude", "antigravity"}
         default_agent = self.orchestrator.default_agent.strip().lower()
         if default_agent not in supported_agents:
             raise ValueError(
-                "NEWS_RECAP_LLM_DEFAULT_AGENT must be one of: codex, claude, gemini.",
+                "NEWS_RECAP_LLM_DEFAULT_AGENT must be one of: codex, claude, antigravity.",
             )
 
         execution_backend = self.orchestrator.execution_backend
@@ -359,7 +359,7 @@ class Settings:
             for name, template in (
                 ("codex_command_template", self.orchestrator.codex_command_template),
                 ("claude_command_template", self.orchestrator.claude_command_template),
-                ("gemini_command_template", self.orchestrator.gemini_command_template),
+                ("antigravity_command_template", self.orchestrator.antigravity_command_template),
             ):
                 _validate_command_template(name=name, template=template)
 

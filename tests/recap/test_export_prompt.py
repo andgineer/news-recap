@@ -231,7 +231,7 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     mock_settings.orchestrator.task_model_map = {}
     mock_settings.orchestrator.claude_command_template = "claude"
     mock_settings.orchestrator.codex_command_template = "codex"
-    mock_settings.orchestrator.gemini_command_template = "gemini"
+    mock_settings.orchestrator.antigravity_command_template = "agy"
     mock_settings.orchestrator.task_type_timeout_map = {}
     mock_settings.orchestrator.agent_max_parallel = 1
     mock_settings.orchestrator.agent_launch_delay = 0
@@ -362,7 +362,7 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
     mock_settings.orchestrator.task_model_map = {}
     mock_settings.orchestrator.claude_command_template = "claude"
     mock_settings.orchestrator.codex_command_template = "codex"
-    mock_settings.orchestrator.gemini_command_template = "gemini"
+    mock_settings.orchestrator.antigravity_command_template = "agy"
     mock_settings.orchestrator.task_type_timeout_map = {}
     mock_settings.orchestrator.agent_max_parallel = 1
     mock_settings.orchestrator.agent_launch_delay = 0

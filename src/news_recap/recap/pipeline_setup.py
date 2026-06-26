@@ -79,7 +79,7 @@ def _build_routing_defaults(settings: Settings) -> RoutingDefaults:
         command_templates={
             "claude": settings.orchestrator.claude_command_template,
             "codex": settings.orchestrator.codex_command_template,
-            "gemini": settings.orchestrator.gemini_command_template,
+            "antigravity": settings.orchestrator.antigravity_command_template,
         },
         task_type_timeout_map=settings.orchestrator.task_type_timeout_map,
         agent_max_parallel=settings.orchestrator.agent_max_parallel,

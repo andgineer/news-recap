@@ -79,12 +79,10 @@ def test_api_keys_removed_by_default(manifest, monkeypatch):
     assert "ANTHROPIC_API_KEY" not in env
 
 
-def test_multiple_api_keys_removed(manifest, monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "secret-gemini")
-    monkeypatch.setenv("GOOGLE_API_KEY", "secret-google")
-    env = _run_and_capture_env(manifest, api_key_vars=["GEMINI_API_KEY", "GOOGLE_API_KEY"])
-    assert "GEMINI_API_KEY" not in env
-    assert "GOOGLE_API_KEY" not in env
+def test_api_key_removed(manifest, monkeypatch):
+    monkeypatch.setenv("ANTIGRAVITY_API_KEY", "secret-antigravity")
+    env = _run_and_capture_env(manifest, api_key_vars=["ANTIGRAVITY_API_KEY"])
+    assert "ANTIGRAVITY_API_KEY" not in env
 
 
 def test_unset_key_missing_from_env_is_not_an_error(manifest):

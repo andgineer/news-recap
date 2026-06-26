@@ -53,7 +53,7 @@ def _common_article_options(fn):  # type: ignore[no-untyped-def]
     decorators = [
         click.option(
             "--agent",
-            type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
+            type=click.Choice(["codex", "claude", "antigravity"], case_sensitive=False),
             default=None,
             help="LLM agent to use for pipeline steps. Overrides default_agent from config.",
         ),
@@ -471,7 +471,7 @@ news_recap.add_command(schedule_group)
 )
 @click.option(
     "--agent",
-    type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False),
+    type=click.Choice(["codex", "claude", "antigravity"], case_sensitive=False),
     default=None,
     help="LLM agent for the digest step. Omit to use the config default.",
 )

@@ -29,7 +29,7 @@ def _write_pipeline_input(tmp_path: Path, extra: dict | None = None) -> Path:
             "command_templates": {
                 "codex": 'codex {model} "Read {prompt_file}"',
                 "claude": 'claude {model} -- "Read {prompt_file}"',
-                "gemini": 'gemini {model} "Read {prompt_file}"',
+                "antigravity": 'agy {model} --dangerously-skip-permissions -p "Read {prompt_file}"',
             },
         },
         "agent_override": None,
@@ -62,7 +62,7 @@ def test_read_pipeline_input_with_execution_backend_api(tmp_path):
                 "command_templates": {
                     "codex": 'codex {model} "Read {prompt_file}"',
                     "claude": 'claude {model} -- "Read {prompt_file}"',
-                    "gemini": 'gemini {model} "Read {prompt_file}"',
+                    "antigravity": 'agy {model} --dangerously-skip-permissions -p "Read {prompt_file}"',
                 },
                 "execution_backend": "api",
                 "api_model_map": {"recap_classify": "claude-haiku-4-5-20251001"},

@@ -138,9 +138,9 @@ def test_from_env_uses_codex_as_default_llm_agent(
         'Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" '
         '-- "Read your task from {prompt_file} and execute it."'
     )
-    assert settings.orchestrator.gemini_command_template == (
-        "gemini {model} --approval-mode auto_edit "
-        '--prompt "Read your task from {prompt_file} and execute it."'
+    assert settings.orchestrator.antigravity_command_template == (
+        "agy {model} --dangerously-skip-permissions "
+        '-p "Read your task from {prompt_file} and execute it."'
     )
 
 
@@ -290,7 +290,7 @@ def test_agent_api_key_vars_defaults() -> None:
     key_vars = settings.orchestrator.agent_api_key_vars
     assert key_vars["claude"] == ["ANTHROPIC_API_KEY"]
     assert key_vars["codex"] == ["OPENAI_API_KEY"]
-    assert set(key_vars["gemini"]) == {"GEMINI_API_KEY", "GOOGLE_API_KEY"}
+    assert key_vars["antigravity"] == ["ANTIGRAVITY_API_KEY"]
 
 
 def test_routing_defaults_carries_agent_api_key_vars() -> None:

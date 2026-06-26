@@ -57,7 +57,7 @@ news-recap create --from-digest 3
 ```
 
 Ключевые опции:
-- `--agent` (`codex`, `claude` или `gemini`)
+- `--agent` (`codex`, `claude` или `antigravity`)
 - `--limit` (ограничить число загружаемых статей)
 - `--max-days` (максимум дней для выборки статей; по умолчанию 2,
   переменная `NEWS_RECAP_DIGEST_LOOKBACK_DAYS`)
@@ -160,10 +160,10 @@ Select fields to update (comma-separated numbers, 'all', or Enter to skip):
 ## API-режим
 
 По умолчанию пайплайн дайджеста выполняет LLM-задачи через запуск CLI-агентов
-(`codex`, `claude`, `gemini`). **API-режим** заменяет вызовы подпроцессов прямыми
+(`codex`, `claude`, `antigravity`). **API-режим** заменяет вызовы подпроцессов прямыми
 вызовами через Anthropic SDK — CLI-агенты не нужны.
 
-> API-режим v1 поддерживает только Anthropic. Codex и Gemini работают только через CLI.
+> API-режим v1 поддерживает только Anthropic. Codex и Antigravity работают только через CLI.
 
 ### Быстрый старт
 
@@ -219,9 +219,9 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 
 ### LLM-агенты
 
-> **Подписка vs API-биллинг.** При запуске CLI-агентов (`claude`, `codex`, `gemini`)
+> **Подписка vs API-биллинг.** При запуске CLI-агентов (`claude`, `codex`, `antigravity`)
 > как подпроцессов `news-recap create` по умолчанию удаляет ключи API вендоров
-> (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
+> (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ANTIGRAVITY_API_KEY`)
 > из окружения подпроцесса — чтобы агент использовал лимиты подписки, а не
 > тарифицировал вызовы через API-аккаунт.
 >
@@ -234,7 +234,7 @@ export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_cl
 > news-recap create --use-api-key
 > ```
 
-- `NEWS_RECAP_LLM_DEFAULT_AGENT` — агент по умолчанию (`codex`, `claude` или `gemini`).
+- `NEWS_RECAP_LLM_DEFAULT_AGENT` — агент по умолчанию (`codex`, `claude` или `antigravity`).
 - `NEWS_RECAP_LLM_TASK_MODEL_MAP` — переопределения модели по типу задачи и агенту
   (`task_type:agent=model_flags,...`).
 

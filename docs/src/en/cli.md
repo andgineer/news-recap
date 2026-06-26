@@ -57,7 +57,7 @@ news-recap create --from-digest 3
 ```
 
 Key options:
-- `--agent` (`codex`, `claude`, or `gemini`)
+- `--agent` (`codex`, `claude`, or `antigravity`)
 - `--limit` (cap number of articles loaded)
 - `--max-days` (max days to look back for articles; default 2,
   env `NEWS_RECAP_DIGEST_LOOKBACK_DAYS`)
@@ -158,10 +158,10 @@ Priority order (highest wins):
 ## API Mode
 
 By default the digest pipeline runs LLM tasks by spawning CLI agent subprocesses
-(`codex`, `claude`, `gemini`). **API mode** replaces subprocess calls with direct
+(`codex`, `claude`, `antigravity`). **API mode** replaces subprocess calls with direct
 Anthropic SDK calls — no CLI agents required.
 
-> API mode v1 supports Anthropic only. Codex and Gemini are CLI-only for now.
+> API mode v1 supports Anthropic only. Codex and Antigravity are CLI-only for now.
 
 ### Quickstart
 
@@ -216,9 +216,9 @@ See [Scheduled Runs](automation.md) for setup, platform details, logs, and troub
 
 ### LLM Agents
 
-> **Subscription vs API billing.** When spawning CLI agents (`claude`, `codex`, `gemini`)
+> **Subscription vs API billing.** When spawning CLI agents (`claude`, `codex`, `antigravity`)
 > as subprocesses, `news-recap create` removes vendor API keys
-> (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`)
+> (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ANTIGRAVITY_API_KEY`)
 > from the subprocess environment by default — so the agent uses its subscription
 > quota rather than billing your API account per token.
 >
@@ -231,7 +231,7 @@ See [Scheduled Runs](automation.md) for setup, platform details, logs, and troub
 > news-recap create --use-api-key
 > ```
 
-- `NEWS_RECAP_LLM_DEFAULT_AGENT` — default agent (`codex`, `claude`, or `gemini`).
+- `NEWS_RECAP_LLM_DEFAULT_AGENT` — default agent (`codex`, `claude`, or `antigravity`).
 - `NEWS_RECAP_LLM_TASK_MODEL_MAP` — per-task-type model overrides by agent
   (`task_type:agent=model_flags,...`).
 

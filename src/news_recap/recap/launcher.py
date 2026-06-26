@@ -86,6 +86,30 @@ def _load_from_pipeline(pipeline_dir: Path) -> tuple[date, list[DigestArticle]]:
     return run_date, articles
 
 
+def _patch_routing_defaults_for_agent(raw: dict, agent: str, settings: Settings) -> None:
+    """Inject model map entries and command template for *agent* into stored routing_defaults.
+
+    Called during resume when the agent override changes — the stored
+    routing_defaults only knows about the agent that was active at pipeline
+    creation time and may not have an entry for the new agent.
+    """
+    rd = raw.get("routing_defaults")
+    if not isinstance(rd, dict):
+        return
+    task_model_map = rd.get("task_model_map")
+    if isinstance(task_model_map, dict):
+        current_map = settings.orchestrator.task_model_map
+        for task_type, agent_models in current_map.items():
+            if agent in agent_models:
+                rd["task_model_map"].setdefault(task_type, {})[agent] = agent_models[agent]
+    command_templates = rd.get("command_templates")
+    if isinstance(command_templates, dict):
+        template_attr = f"{agent}_command_template"
+        template = getattr(settings.orchestrator, template_attr, None)
+        if template:
+            rd["command_templates"][agent] = template
+
+
 def _apply_resume_patches(
     command: RecapRunCommand,
     pipeline_dir: Path,
@@ -100,7 +124,12 @@ def _apply_resume_patches(
         previous = _patch_pipeline_input(pipeline_dir, **patches)
         if "agent_override" in patches:
             prev = previous.get("agent_override") or "default"
-            yield ("info", f"Agent override changed: {prev} -> {patches['agent_override']}")
+            agent = patches["agent_override"]
+            yield ("info", f"Agent override changed: {prev} -> {agent}")
+            path = pipeline_dir / "pipeline_input.json"
+            raw = json.loads(path.read_text("utf-8"))
+            _patch_routing_defaults_for_agent(raw, str(agent), Settings.from_env())
+            path.write_text(json.dumps(raw, ensure_ascii=False, default=str), "utf-8")
 
 
 def _emit_run_summary(pipeline_dir: Path) -> Iterator[PipelineLine]:
