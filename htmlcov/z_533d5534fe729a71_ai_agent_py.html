@@ -4,14 +4,14 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Coverage for src/news_recap/recap/agents/ai_agent.py: 69%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
-    <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
+    <link rel="stylesheet" href="style_cb_4667309f.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
 </head>
 <body class="pyfile">
 <header>
     <div class="content">
         <h1>
-            <span class="text">Coverage for </span><b>src&#8201;/&#8201;news_recap&#8201;/&#8201;recap&#8201;/&#8201;agents&#8201;/&#8201;ai_agent.py</b>:
+            <span class="text">Coverage for </span><b>src<span class="sep">/</span>news_recap<span class="sep">/</span>recap<span class="sep">/</span>agents<span class="sep">/</span>ai_agent.py</b>:
             <span class="pc_cov">69%</span>
         </h1>
         <aside id="help_panel_wrapper">
@@ -64,8 +64,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_533d5534fe729a71_api_agent_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-05-14 07:03 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.14.2">coverage.py v7.14.2</a>,
+            created at 2026-06-26 13:41 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -240,7 +240,7 @@
     <p class="run run2"><span class="n"><a id="t158" href="#t158">158</a></span><span class="t">    <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t159" href="#t159">159</a></span><span class="t">    <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t160" href="#t160">160</a></span><span class="t">        <span class="nam">re</span><span class="op">.</span><span class="nam">compile</span><span class="op">(</span><span class="str">r"RetryableQuotaError:.*exhausted your capacity"</span><span class="op">,</span> <span class="nam">re</span><span class="op">.</span><span class="nam">IGNORECASE</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t161" href="#t161">161</a></span><span class="t">        <span class="str">"Gemini API quota exhausted (rate limit) &#8212; reduce parallelism or wait"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t161" href="#t161">161</a></span><span class="t">        <span class="str">"Antigravity API quota exhausted (rate limit) &#8212; reduce parallelism or wait"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t162" href="#t162">162</a></span><span class="t">    <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t163" href="#t163">163</a></span><span class="t">    <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t164" href="#t164">164</a></span><span class="t">        <span class="nam">re</span><span class="op">.</span><span class="nam">compile</span><span class="op">(</span><span class="str">r"OverloadedError|overloaded_error"</span><span class="op">,</span> <span class="nam">re</span><span class="op">.</span><span class="nam">IGNORECASE</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -376,7 +376,7 @@
     <p class="run"><span class="n"><a id="t294" href="#t294">294</a></span><span class="t">    <span class="nam">run_args</span><span class="op">,</span> <span class="nam">command_head</span> <span class="op">=</span> <span class="nam">build_run_args</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t295" href="#t295">295</a></span><span class="t">        <span class="nam">command_template</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t296" href="#t296">296</a></span><span class="t">        <span class="nam">model</span><span class="op">=</span><span class="nam">model</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t297" href="#t297">297</a></span><span class="t">        <span class="nam">prompt_file</span><span class="op">=</span><span class="nam">Path</span><span class="op">(</span><span class="str">"input"</span><span class="op">)</span> <span class="op">/</span> <span class="str">"task_prompt.txt"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t297" href="#t297">297</a></span><span class="t">        <span class="nam">prompt_file</span><span class="op">=</span><span class="nam">prompt_file</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t298" href="#t298">298</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t299" href="#t299">299</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t300" href="#t300">300</a></span><span class="t">    <span class="key">if</span> <span class="nam">command_head</span> <span class="op">==</span> <span class="str">"codex"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -448,8 +448,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_533d5534fe729a71_api_agent_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-05-14 07:03 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.14.2">coverage.py v7.14.2</a>,
+            created at 2026-06-26 13:41 +0000
         </p>
     </div>
 </footer>
