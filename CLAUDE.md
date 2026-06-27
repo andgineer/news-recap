@@ -57,6 +57,13 @@ All persistence uses `msgspec.Struct` models serialized to JSON files via `stora
 - **Routing** (`agents/routing.py`): `FrozenRouting` resolves agent + profile (fast/quality) → concrete model.
 - **All settings** via `Settings.from_env()` in `config.py` (dataclass + env vars, no config files).
 
+## Documentation
+
+All project documentation lives in `spec/`. The directory is flat — no subdirectory split by type. Current files:
+
+- `spec/pipeline.md` — recap pipeline architecture, per-step contracts, state/checkpointing, experiments.
+- `spec/agents.md` — LLM agent backends: available models, manifest contract, workdir layout, command templates, pricing, env vars.
+
 ## Coding Conventions
 
 - Python 3.13+, type hints on public functions, `msgspec.Struct` for domain models, `dataclasses` for mutable counters.
