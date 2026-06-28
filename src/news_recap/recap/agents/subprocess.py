@@ -170,7 +170,8 @@ _HEARTBEAT_INTERVAL = 60.0
 _NOTABLE_RE = re.compile(
     r"quota|rate.?limit|429|too many requests|overloaded|retrying|"
     r"Operation cancelled|exhausted.*capacity|"
-    r"credit balance|insufficient.{0,20}(funds|credits|balance)",
+    r"credit balance|insufficient.{0,20}(funds|credits|balance)|"
+    r"not logged in|upgrade your subscription",
     re.IGNORECASE,
 )
 
@@ -184,6 +185,7 @@ def run_subprocess(  # noqa: PLR0913
     stdout_path: Path,
     stderr_path: Path,
     log_label: str = "",
+    monitor_stderr: bool = True,
     stop_event: threading.Event | None = None,
 ) -> SubprocessResult:
     """Run a subprocess with timeout, capturing stdout/stderr to files."""
@@ -239,12 +241,13 @@ def run_subprocess(  # noqa: PLR0913
                     )
 
                 if now - last_output_check >= _STDERR_POLL_INTERVAL:
-                    stderr_offset = _check_output(
-                        stderr_path,
-                        stderr_offset,
-                        log_label,
-                        "stderr",
-                    )
+                    if monitor_stderr:
+                        stderr_offset = _check_output(
+                            stderr_path,
+                            stderr_offset,
+                            log_label,
+                            "stderr",
+                        )
                     stdout_offset = _check_output(
                         stdout_path,
                         stdout_offset,
@@ -299,6 +302,7 @@ def _check_output(path: Path, offset: int, label: str, stream: str) -> int:
         stripped = raw_line.strip()
         if stripped and _NOTABLE_RE.search(stripped):
             logger.warning("[cyan]%s:[/cyan] agent %s: %s", label, stream, stripped)
+            break  # one warning per poll interval to avoid log spam
     return size
 
 

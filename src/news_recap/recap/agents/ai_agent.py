@@ -127,6 +127,17 @@ def run_ai_agent(  # noqa: PLR0913
     _save_usage(Path(pipeline_dir) / task_id, elapsed=elapsed, tokens=tokens)
 
     if result.exit_code == 0:
+        try:
+            stdout_empty = not result.stdout_path.read_text("utf-8").strip()
+        except OSError:
+            stdout_empty = True
+        if stdout_empty:
+            _log_agent_output(logger, step_name, result)
+            summary = _summarise_output(result)
+            detail = (
+                f": {summary}" if summary else " — run the agent interactively to check quota/auth"
+            )
+            raise RecapPipelineError(step_name, f"{routing.agent}: no output produced{detail}")
         return task_id
 
     _log_agent_output(logger, step_name, result)
@@ -149,6 +160,14 @@ def _read_stderr_safe(path: Path) -> str:
 
 
 _KNOWN_ERRORS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"Individual quota reached|upgrade your subscription", re.IGNORECASE),
+        "Antigravity quota exhausted — upgrade plan or wait for reset",
+    ),
+    (
+        re.compile(r"not logged into Antigravity|You are not logged in", re.IGNORECASE),
+        "Not logged into Antigravity — run: agy login",
+    ),
     (
         re.compile(
             r"credit balance.{0,20}(too low|insufficient)|insufficient.{0,20}(funds|credits)",
@@ -299,6 +318,8 @@ def _run_agent_cli(  # noqa: PLR0913
 
     if command_head == "codex":
         run_args = _inject_skip_git_flag(run_args)
+    elif command_head == "agy":
+        run_args = _inject_agy_log_file(run_args, stderr_path)
 
     cmd_line = run_args if isinstance(run_args, str) else shlex.join(run_args)
     meta_dir = Path(manifest.workdir) / "meta"
@@ -330,6 +351,7 @@ def _run_agent_cli(  # noqa: PLR0913
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
                 log_label=log_label,
+                monitor_stderr=command_head != "agy",
                 stop_event=stop_event,
             )
     except FileNotFoundError as error:
@@ -342,6 +364,19 @@ def _run_agent_cli(  # noqa: PLR0913
             f"Agent failed to start: {error}",
             transient=True,
         ) from error
+
+
+def _inject_agy_log_file(run_args: str | list[str], log_path: Path) -> str | list[str]:
+    """Redirect agy's internal log to our stderr file so quota/auth errors are captured."""
+    flag = "--log-file"
+    if isinstance(run_args, list):
+        if flag not in run_args:
+            run_args = [run_args[0], flag, log_path.as_posix(), *run_args[1:]]
+        return run_args
+    if flag not in run_args:
+        head, _, tail = run_args.partition(" ")
+        run_args = f"{head} {flag} {shlex.quote(log_path.as_posix())} {tail}"
+    return run_args
 
 
 def _inject_skip_git_flag(run_args: str | list[str]) -> str | list[str]:

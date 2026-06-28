@@ -53,8 +53,20 @@ def read_agent_stdout(stdout_path: Path, step_name: str) -> str:
         raise RecapPipelineError(step_name, f"stdout not found: {stdout_path}")
     text = stdout_path.read_text("utf-8")
     if not text.strip():
+        _log_stderr_on_empty_stdout(stdout_path, step_name)
         raise RecapPipelineError(step_name, "stdout is empty")
     return text
+
+
+def _log_stderr_on_empty_stdout(stdout_path: Path, step_name: str) -> None:
+    """Log agent stderr when stdout is empty so the root cause is visible."""
+    stderr_path = stdout_path.parent / "agent_stderr.log"
+    try:
+        stderr = stderr_path.read_text("utf-8", errors="replace").strip()
+    except OSError:
+        return
+    if stderr:
+        logger.error("%s agent stderr:\n%s", step_name, stderr)
 
 
 def run_single_agent(
