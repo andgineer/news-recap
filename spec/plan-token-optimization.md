@@ -7,15 +7,27 @@ file-based prompt delivery — stdin proved unstable (see the Phase 1 finding); 
 launch is slimmed while it keeps its `Read` tool to read `{prompt_file}`, and results are
 still captured from stdout.**
 
-Billing model: the pipeline's **default backend is antigravity (`agy`), which runs free
-with no subscription** (per the companion plan's backend priority) — its "cost" is
-free-tier rate/capacity limits (RPM), not token spend. **claude** and **codex** are
-optional quality-tier backends; on those, "cost" = subscription **quota** consumption,
-measured in tokens with provider-side cache discounts. The API backend stays
-experiment-only. This plan's launch-overhead cut (Phase 1) targets the claude tier; the
-launch-count and caching work (Phases 3–4) also relieve the free agy default by cutting
-calls/retries against its rate limits. Goal: cut token consumption substantially without
-a measurable quality drop.
+Billing model — **every backend has a hard consumption budget; none is "cost-free," and
+consumption economy matters for _all_ of them.** The pipeline's default backend is
+antigravity (`agy`), which needs no paid subscription, but its free tier is capped by both
+**requests-per-day and a token budget**. Exhausting it does not merely throttle — it
+**locks the account out for a day, and up to 7 days on the weekly cap** (the free Gemini
+Flash allowance has been as low as ~20 requests/day; quotas reset on 5-hour / daily /
+weekly cycles — see Sources at the end). Because a single pipeline run already fires 10–40
+CLI launches, agy's budget is the *tightest* constraint of all, not a non-issue. **claude**
+and **codex** are optional quality-tier backends; there "cost" = subscription **quota**
+consumption, measured in tokens with provider-side cache discounts. The API backend stays
+experiment-only.
+
+There are two distinct levers, and every backend feels at least one:
+
+- **Per-launch overhead** (Phase 1) — token-weighted. Hits claude/codex token quota
+  directly, and any token-metered part of agy's budget. Slim it for agy too (Phase 1
+  item 5), not only for claude.
+- **Launch count + payload size** (Phases 3–5) — hits agy's per-day/per-week **request
+  cap** (the binding constraint there) and every backend's token spend.
+
+Goal: cut consumption substantially, across all backends, without a measurable quality drop.
 
 ## Measured baseline (research done 2026-07-13, claude CLI, live calls)
 
@@ -56,8 +68,12 @@ baseline is a cache-*write* number; if the system-prompt+tools prefix is byte-id
 across launches in a run, provider caching amortizes it as cache-*reads* at a steep
 discount, so the *billed* overhead may already be well below 0.25–1.0 M. Phase 2 telemetry
 (`cache_read_input_tokens`) settles this and, with it, the true size of the Phase 1 win.
-On the free agy default there is no token bill; the equivalent pressure is
-call count against its free-tier RPM, which Phases 3–4 address.
+On the free agy default the pressure is twofold: its **per-day/per-week request cap**
+(relieved by fewer launches — Phases 3–5) and, wherever the budget is token-metered, the
+same per-launch overhead (relieved by slimming agy's launch the way Phase 1 slims claude's
+— Phase 1 item 5). "Free" means no invoice, **not** no budget: hit the cap and the account
+is locked out for a day or more — with a run firing 10–40 launches against an allowance
+that has been as low as ~20/day, that lockout is a routine failure mode, not an edge case.
 
 ## Phase 1 — Slim claude launches, file delivery kept (~1–2 days)
 
@@ -345,7 +361,24 @@ measurement.** If the slimmed launch turns out only modestly cheaper than 24 k, 
 Phase 1 and pull Phases 3–5 forward, since the win then lives in fewer launches and
 smaller payloads rather than per-launch overhead. Phases 1–4 change no pipeline
 semantics; Phase 5 is the only structural change and is gated by both a clustering
-go/no-go pre-check (Phase 5 item 0) and a side-by-side quality week. Backend note: Phase
-1 pays off only on the opt-in claude tier; for the free agy default (the standard backend
-per the sandboxing plan) the wins are Phases 3–4 (fewer launches/retries against agy's
-free-tier RPM) and Phases 5–6 (smaller payloads).
+go/no-go pre-check (Phase 5 item 0) and a side-by-side quality week. Backend note — **all
+backends benefit; none is cost-free.** On the opt-in claude/codex tiers the win is token
+quota (Phase 1 overhead + Phases 3–5 payload). On the free agy default the binding
+constraint is its per-day/per-week **request cap**, so Phases 3–5 (fewer launches, smaller
+payloads) are the most valuable there — and where agy's budget is also token-metered,
+slimming its launch (Phase 1 item 5) helps too. Because a single run fires 10–40 launches
+against a free allowance that has been as low as ~20/day, cutting launch count on agy is
+closer to *existential* than to *nice-to-have*: it is the difference between the pipeline
+running daily and the account being locked out.
+
+## Sources (agy free-tier limits)
+
+Antigravity free-tier quotas are request- and token-capped with day/week lockouts, and the
+free allowance has been cut sharply since launch (≈250 → ≈20/day on Gemini Flash). Verify
+current numbers before tuning, they move:
+
+- Google Antigravity — changes to plans / rate limits: <https://antigravity.google/blog/changes-to-antigravity-plans>
+- Google blog — higher rate limits for Pro/Ultra (implies the free-tier floor):
+  <https://blog.google/feed/new-antigravity-rate-limits-pro-ultra-subsribers/>
+- Antigravity usage & rate limits overview (2026): <https://antigravity.im/limits>
+- Gemini API rate limits (RPD/TPM reset semantics): <https://ai.google.dev/gemini-api/docs/rate-limits>
