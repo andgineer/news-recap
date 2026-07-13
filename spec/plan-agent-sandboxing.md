@@ -34,6 +34,89 @@ all". Under the operating threat model (no network exfiltration, no host writes;
 reads are not a prioritized asset) a read-only claude with no network/write tools still
 satisfies the goals.
 
+## Defense options without stdin (menu)
+
+Dropping stdin removes exactly one lever: we can no longer starve claude of *all* tools
+(it must keep `Read` to open `{prompt_file}`). Everything else is still on the table, and
+none of it depends on how the prompt is delivered. The controls below are organized by the
+three assets the operator cares about — **secrets**, **network egress**, and **host
+writes** — and each is scored on *portability* (the pipeline also ships a
+`scripts/linux_run.sh`, so macOS-only controls can't be the whole story), *cost*, and
+*residual risk*. Phases 0–2 below already pick some of these; two levers (**minimal
+`$HOME`** and a **uniform egress proxy**) are new and are folded into the phases in the
+"Chosen stack" note at the end.
+
+The root cause almost everything traces back to is one line:
+`_run_agent_cli` does `env = os.environ.copy()` and passes the operator's **real
+`$HOME`** (`ai_agent.py:329`). Two of the strongest, most portable controls come from
+attacking that line directly, without any OS sandbox.
+
+### A. Secrets (env vars + on-disk secrets: `~/.ssh`, `~/.aws`, Keychain, browser profiles)
+
+| Option | Mechanism | Portable? | Cost | Residual |
+|---|---|---|---|---|
+| **A1. Env allowlist (default-deny)** | Replace `os.environ.copy()` with an explicit allowlist builder (`PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR`, the agent's own auth vars, `NEWS_RECAP_*`, `routing.extra_env`); CSV escape hatch `NEWS_RECAP_AGENT_ENV_PASSTHROUGH`. | ✅ any OS | ~2 h | Nothing in the shell env leaks; on-disk secrets untouched (see A2). |
+| **A2. Minimal throwaway `$HOME`** ⟵ *new* | Point `HOME` at a fresh per-run temp dir and link **only** the agent's own auth dir into it (`~/.claude` / `~/.codex` / `~/.gemini`). The Node/Rust CLIs resolve `~` via `$HOME` (`os.homedir()` / `dirs::home_dir()`), so `~/.ssh`, `~/.aws`, other projects, and stray dotfiles simply **do not resolve** — no path rules, no Seatbelt. | ✅ any OS | ~0.5 day | (a) macOS **Keychain** is not under `$HOME`, so auth stored there is still reachable — needs A3/write-confinement to gate `com.apple.securityd`. (b) A tool that calls `getpwuid()` instead of reading `$HOME` sees the real home — Seatbelt (A3) closes that, `$HOME` alone doesn't. |
+| **A3. Seatbelt read-deny of secret paths** | Even for claude/codex (which the plan leaves un-sandboxed), a tiny `sandbox-exec` profile that `(deny file-read* (subpath "~/.ssh") …)` for the known-sensitive set. Defense-in-depth for the "`Read` tool gets hijacked" case. | ❌ macOS only | ~0.5 day | Only denies the enumerated paths; unknown secret locations stay readable. Weaker than A2's "nothing but auth exists" model. |
+| **A4. Separate low-priv macOS user** | Run agents as a dedicated unix account with no read access to the operator's home. | ❌ macOS/Unix | high (launchd/sudo, auth re-setup) | Strongest, but re-provisions all three agents' subscription auth under the new user — high friction. Overkill given A1+A2. |
+
+### B. Network egress (exfiltration to attacker hosts)
+
+Hard constraint: **every** CLI agent must reach *its own* API endpoint (subscription
+billing), so a blanket `(deny network*)` is impossible. The goal is a *domain allowlist*,
+and Seatbelt can only filter by socket/port/IP — not hostname — so the real control is a
+proxy, not the sandbox.
+
+| Option | Mechanism | Portable? | Cost | Residual |
+|---|---|---|---|---|
+| **B1. Strip the network *tools*** | claude → `--allowed-tools "Read"` (drop `WebFetch`, `Bash(curl:*)`); codex → remove `sandbox_workspace_write.network_access=true`. Removes the agent's *first-class* way to fetch a URL. | ✅ any OS | ~1 h | The agent's model can still emit an HTTP call if it has *any* shell/network primitive; codex/agy retain runtime network for their API. Tool-stripping is necessary but not sufficient. |
+| **B2. Uniform allowlisting forward proxy** ⟵ *new / elevated* | Run one local `tinyproxy`/`squid` that only permits `api.anthropic.com`, `api.openai.com`, `*.googleapis.com` + the three auth-refresh hosts; inject `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` into the agent env (all three CLIs honor them). Confines egress for **every** agent regardless of OS or sandbox. | ✅ any OS | ~1 day (proxy + host allowlist burn-in) | Exfil only possible *through the allowed APIs themselves* (model echoing data into a response the attacker can't read) — irreducible. A too-tight list breaks the CLI, so probe each agent's real host set first. |
+| **B3. Seatbelt egress lockdown** | `(deny network*)` + allow only the proxy's local port (`(allow network-outbound (remote ip "localhost:8080"))`). Forces even a hijacked agy through B2's proxy. | ❌ macOS only | ~0.5 day | Belt-and-suspenders on top of B2; without B2 it can only pin to IPs (rotate constantly). |
+
+The current plan scopes the proxy (B2/B3) to **antigravity only, Phase 2, low priority**.
+Recommendation below is to *elevate B2 to all three agents* because it is the single
+portable control that actually enforces the domain allowlist the prompt-level "do not make
+network requests" text only *requests*.
+
+### C. Host writes ("changes on the laptop")
+
+| Option | Mechanism | Portable? | Cost | Residual |
+|---|---|---|---|---|
+| **C1. Strip the write *tools*** | claude → `Read` only (no `Write`/`Edit`/`Bash`); codex → keep its own `--sandbox workspace-write`, which already confines writes to the workspace + temp. | ✅ any OS | ~1 h | claude can't write at all; codex writes confined by its own Seatbelt. antigravity (`--dangerously-skip-permissions`) is unconfined → C2/C3. |
+| **C2. Writes land in throwaway `$HOME` (A2 reuse)** ⟵ *new* | With `HOME` = per-run temp dir, an agent that "writes to `~/.config/...`" writes into the disposable dir that is deleted after the run — the real home is never touched. Free once A2 exists. | ✅ any OS | shares A2 | Absolute-path writes (`/etc`, other project dirs) still land on the host — needs C3. |
+| **C3. Seatbelt write-confinement** | `(deny default)` + `(allow file-write* (subpath WORKDIR) (subpath SCRATCH) (subpath AUTH_DIR) (literal LOG_FILE))`. The plan applies this to **antigravity only**; the *option* is to apply the same profile to **all three** for uniform, mechanism-enforced write confinement. | ❌ macOS only | ~1.5–2 days (allow-set burn-in) | Mandatory for antigravity (no built-in isolation). For claude/codex it's redundant with C1/codex-sandbox — the "uniform vs targeted" trade-off is the real decision (see below). |
+
+### Cross-cutting decision: targeted vs uniform sandbox
+
+The plan deliberately sandboxes **only antigravity** (claude is read-only, codex
+self-sandboxes). The alternative is one **uniform `sandbox-exec` profile wrapping all
+three**: identical read/write/network rules for every agent, so posture doesn't depend on
+each CLI's own honesty. Trade-off: uniform = more burn-in (three allow-sets instead of
+one) and a hard macOS dependency for the whole pipeline; targeted = less work but relies on
+claude's tool-restriction and codex's own sandbox holding. Given A2 (minimal `$HOME`) and
+B2 (uniform proxy) already give portable, agent-independent coverage of secrets + egress +
+home-writes, the **targeted** sandbox stays the right call — Seatbelt is then only the
+macOS-native belt-and-suspenders for antigravity's absolute-path writes.
+
+### Chosen stack (folds the two new levers into the phases below)
+
+Layered so each control is independent and the weakest single failure still leaves two
+others standing — none of it uses stdin:
+
+1. **A1 env allowlist** — Phase 0 item 4 (already planned). Portable.
+2. **A2 minimal `$HOME`** — *add to Phase 0.* Portable, ~0.5 day, and the single highest-leverage
+   change: it neutralizes the secrets-read *and* home-write classes for **all three** agents
+   at once, before any OS sandbox. This is the biggest thing the current plan is missing.
+3. **B1/C1 tool + sandbox-flag stripping** — Phase 0 items 1–3 (already planned). Portable.
+4. **B2 uniform egress proxy** — *promote from Phase 2 antigravity-only to a Phase 0/1 control
+   for all three agents.* Portable; the only real enforcement of the domain allowlist.
+5. **C3 Seatbelt write-confinement for antigravity** — Phase 1 (already planned). macOS-only
+   belt-and-suspenders for the one agent with no built-in isolation.
+
+Portable core (A1+A2+B1/C1+B2) protects the Linux launcher too; Seatbelt (A3/B3/C3) is the
+macOS-only hardening on top. Residual after the stack is the irreducible one the plan
+already names: data echoed *through the model's own allowed API response*.
+
 ## Threat model
 
 The recap pipeline embeds **untrusted text** into agent prompts:
