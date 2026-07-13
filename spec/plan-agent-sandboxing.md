@@ -1,360 +1,260 @@
 # Plan: Secure CLI Agent Execution
 
-Status: proposed. **Target platform: macOS** — the pipeline runs on the operator's MacBook,
-so the sandbox mechanism is Apple's native `sandbox-exec`/Seatbelt, **not** Linux
-`bubblewrap` or Docker (see *Design decision*). Companion plan:
+Status: proposed. **Target platform: macOS** — the pipeline runs on the operator's MacBook
+via cron (`scripts/macos_run.sh`); a `scripts/linux_run.sh` launcher also exists, so
+controls that work on both are preferred where cheap. Companion plan:
 `plan-token-optimization.md` (its Phase 1 slims down the `claude` launch). Both plans
 **retain the current file-based prompt delivery** (`{prompt_file}`) and stdout result
-capture — see *Prompt delivery: file-based, not stdin* below.
+capture — see *Prompt delivery* below.
 
-## Prompt delivery: file-based, not stdin (experiment finding)
+## Backend priority (drives every decision here)
 
-Experiments and upstream reports show the CLI agents do **not** handle stdin prompt
-delivery reliably at the sizes this pipeline produces, so **file-based delivery is
-retained for all agents** — the agent reads the prompt from `{prompt_file}` and the
-result is captured from stdout, exactly as today. This plan does **not** switch any
-agent to stdin, and `run_subprocess` keeps `stdin=subprocess.DEVNULL`.
+- **antigravity (`agy`) is the default and must stay the default.** It is the only backend
+  that runs **fully free, no subscription** — that is why it is the primary path. claude
+  and codex are **optional quality upgrades** the operator may switch to per phase; they
+  are not the baseline. Consequence: hardening cannot make agy unusable or force a paid
+  backend. If a control breaks agy headless, the control is wrong, not agy.
+- **gemini CLI is gone.** Google sunset Gemini CLI on **2026-06-18** (free/Pro/Ultra users
+  get HTTP 410; only enterprise *Gemini Code Assist Standard/Enterprise* licenses retain
+  access). The `migrate from gemini to agy` commit (2026-06-26) was a direct reaction to
+  that sunset. "Go back to gemini" is therefore **not an option** for this deployment
+  unless the operator holds an enterprise Code Assist license (assumed not). Antigravity
+  CLI is Google's official successor.
+- claude and codex remain available and are the quality-tier fallbacks.
 
-- **claude** — `claude -p` in headless mode returns **empty output** once piped stdin
-  exceeds a few kilobytes (anthropics/claude-code#7263: works at ~2.5 KB, empty at
-  ~7 KB), while our enrich prompts reach `_MAX_BATCH_CHARS = 60_000`. Empty stdout is
-  exactly the failure `run_ai_agent` raises on (`ai_agent.py:129-141`), so this would
-  fail whole phases. Upstream guidance for large inputs is explicitly "write to a file
-  and reference the path, don't pipe."
-- **antigravity (`agy`)** — early `agy -p` versions **silently drop stdout** when run
-  under a pipe / subprocess / redirect, which is exactly how the pipeline runs it.
-- **codex** — `codex exec -` reads stdin, but `codex exec "<prompt>"` **hangs on EOF**
-  when stdin is a non-TTY pipe with no writer (openai/codex#20919); file delivery avoids
-  the whole class.
+## Prompt delivery: file-based, not stdin (settled)
 
-Consequence for this plan: keep `{prompt_file}`; do **not** add stdin plumbing to
-`run_subprocess`; and since claude must keep a file-read tool to read the prompt, its
-Phase 0 hardening is "restrict `--allowed-tools` to `Read`" rather than "no tools at
-all". Under the operating threat model (no network exfiltration, no host writes; local
-reads are not a prioritized asset) a read-only claude with no network/write tools still
-satisfies the goals.
+CLI agents do **not** handle stdin prompt delivery reliably at the sizes this pipeline
+produces (claude `-p` returns empty output past a few KB — anthropics/claude-code#7263;
+`agy -p` can drop stdout under a pipe; `codex exec "<prompt>"` hangs on EOF with a non-TTY
+stdin — openai/codex#20919). So **file-based delivery is retained for all agents**: the
+agent reads `{prompt_file}`, the result is captured from stdout, `run_subprocess` keeps
+`stdin=subprocess.DEVNULL`. This is a fixed premise, not revisited here. Its one security
+consequence: every agent needs a **read tool** to open the prompt file, so "strip all
+tools" is not achievable — the minimum is "read-only".
 
-## Threat model
+## Threat model (calibrated)
 
-The recap pipeline embeds **untrusted text** into agent prompts:
+The pipeline embeds **untrusted text** into agent prompts — RSS headlines (classify,
+dedup, oneshot_digest) and up to 5 000 chars of extracted page text per article (enrich).
+A malicious article can carry LLM instructions ("ignore the task, run X"). This is textbook
+**indirect prompt injection** (OWASP LLM01). Prompt-level defenses in `prompts.py` are
+requests, not controls; what matters is what the process *can do* when hijacked.
 
-- RSS headlines (classify, dedup, oneshot_digest) — controlled by any feed publisher.
-- Full extracted page text, up to 5 000 chars per article (enrich) — controlled by any
-  website an article links to.
+**Realistic probability is low, blast radius is high.** A news feed is a broadcast medium:
+an attacker planting text in an article does not know the operator runs an agent, does not
+know the host/paths, and cannot see the agent's output (blind exfil). It is opportunistic
+spray, not a targeted hit; as of 2026 no headline incident has landed (Willison's "lethal
+trifecta"). But *if* it lands under the current flags, the damage is catastrophic and
+irreversible (a stolen SSH key does not come back). Low probability × irreversible loss
+justifies **cheap, proportionate** controls — not a hand-built kernel sandbox. The design
+target is to break one leg of the lethal trifecta (private data / untrusted content /
+exfiltration) using each vendor's **own** protections, preferring the exfiltration leg.
 
-A malicious article can carry instructions for the LLM ("ignore the task, run X").
-Prompt-level defenses ("Do NOT make network requests" in `prompts.py`) are requests,
-not controls. What matters is what the agent process is *able* to do when hijacked.
+Current default command templates (`config.py:58-72`) deliberately disable those built-in
+protections for headless convenience:
 
-Current default command templates (`config.py`):
+| Agent | Current flag | What it disables |
+|---|---|---|
+| `antigravity` | `--dangerously-skip-permissions` | agy's **own** Terminal Sandbox + all approvals (see finding below) |
+| `claude` | `--permission-mode dontAsk` + `WebFetch` + `Bash(curl:*)` + broad `Read` | permission prompts + gives network/exfil tools |
+| `codex` | `--sandbox workspace-write -c ...network_access=true` | in-sandbox network egress |
 
-| Agent | Template risk |
-|---|---|
-| `antigravity` | `--dangerously-skip-permissions` — arbitrary command execution, no isolation |
-| `claude` | `--permission-mode dontAsk` + unrestricted `Read` + `Bash(curl:*)` + `WebFetch` — read any host file (`~/.ssh`, `~/.aws`, `.env`) and exfiltrate it |
-| `codex` | `--sandbox workspace-write` with `sandbox_workspace_write.network_access=true` — network egress from inside the sandbox |
+Plus, independent of templates: `_run_agent_cli` passes `env = os.environ.copy()`
+(`ai_agent.py:329`) — every secret in the operator's shell is handed to the agent.
 
-Additional exposure independent of templates:
+Assets to protect, priority order: (1) host FS secrets (`~/.ssh`, `~/.aws`, browser
+profiles, Keychain, `~/Library/...`); (2) host env vars; (3) agents' own auth tokens
+(`~/.gemini/antigravity-cli/`, `~/.claude`, `~/.codex`); (4) output integrity (lowest — a
+poisoned digest is visible and recoverable).
 
-- `ai_agent.py:_run_agent_cli` passes `env = os.environ.copy()` to the subprocess —
-  every secret in the operator's shell is visible to the agent.
-- `spec/agents.md` documents an even wider template (`bypassPermissions`, `Write,Edit`)
-  than the code ships — the spec must be brought in line as part of this plan.
+## What we already verified (2026-07-13)
 
-Assets to protect, in priority order:
+- **claude — dangerous flags are overreach; proven removable.** Live experiment (claude
+  CLI v2.1.207, faithful conditions: cwd = a separate workspace, prompt file at an absolute
+  path *outside* cwd): `claude -p --allowed-tools "Read"` with **no** `--permission-mode`
+  and **no** network tools read the prompt file and emitted correct stdout, exit 0. With
+  Read **not** allowlisted it could not read (asked for permission, no TTY → gave up). So
+  `--allowed-tools "Read"` is **necessary and sufficient**; `dontAsk`/`bypassPermissions`
+  are not needed for the file-read flow, and `WebFetch`/`Bash(curl:*)` are pure exfil
+  surface. Bonus observed: claude's own model-level injection defense refused a payload-
+  shaped prompt — real but probabilistic, not relied on as a control.
+- **codex — network flag is overreach for our tasks (verify with one probe).** codex's
+  sandbox "applies to spawned commands"; codex's own model API call is made by the
+  un-sandboxed orchestrator, so removing `network_access=true` should **not** block codex
+  from reaching its API — it only stops *shell commands the agent runs* from using the
+  network, which our text→text tasks never need. Not runnable here (codex not installed);
+  confirm with a single probe run on the Mac (macOS Seatbelt has known network edge cases —
+  codex#10390, #9298).
+- **antigravity — key correction: `agy` HAS its own sandbox, and the current flag turns it
+  off.** agy ships a native **Terminal Sandbox** (OS-level: `sandbox-exec` on macOS,
+  `nsjail` on Linux, AppContainer on Windows) plus a permission layer, configured in
+  `~/.gemini/antigravity-cli/settings.json`:
+  - `enableTerminalSandbox` (bool, default **false**) — confines command execution.
+  - `toolPermission` (`always-proceed` | `request-review` | `strict` | `proceed-in-sandbox`,
+    default `request-review`) — approval policy.
+  - `permissions.allow` / `permissions.deny` — command/path allow/deny lists
+    (e.g. `deny: ["command(curl)","command(wget)","command(rm -rf)"]`).
 
-1. Host filesystem secrets (`~/.ssh`, `~/.aws`, browser profiles, other projects,
-   macOS Keychain, `~/Library/Application Support`).
-2. Host environment variables.
-3. The agents' own subscription auth tokens (`~/.claude`, `~/.codex`, `~/.gemini`).
-4. Integrity of pipeline output (digest text) — lowest priority; a poisoned digest is
-   visible and recoverable, a stolen SSH key is not.
+  Critically, `--dangerously-skip-permissions` auto-approves **not only** normal prompts
+  **but also the "bypass the sandbox" prompt** (antigravity-cli#36) — i.e. the current
+  default specifically defeats agy's own protection. Open limitation: agy has **no
+  read-only / plan mode for non-interactive `-p` runs** (antigravity-cli#45, unresolved),
+  and reports differ on whether bare `-p` auto-approves `write_file` or hangs waiting for a
+  prompt. This is the crux the Phase 1 experiments resolve.
 
-Constraint: the CLI backend is the primary execution path (subscription billing; the
-API backend is experiment-only), so agents must keep (a) access to their auth state and
-(b) network access to their own API endpoint. Full network cut-off is not possible; the
-design goal is to shrink the blast radius of a hijacked agent to "the task's own files +
-the agent's own token".
+**Design principle:** use each vendor's built-in protection; do **not** build a custom
+sandbox unless the built-in demonstrably fails. The old plan's hand-written Seatbelt (SBPL)
+profile is demoted to a last resort (Phase 3), because agy's own Terminal Sandbox is the
+same mechanism (`sandbox-exec`) exposed as a supported switch.
 
-## Design decision: native macOS sandbox (`sandbox-exec`), no Docker, no bubblewrap
+## Phase 0 — Flag & environment hardening (cheap, do regardless) (~1 day)
 
-The CLI backend is mandatory, and a container and a lighter sandbox run the *same* CLI
-on the *same* subscription — so isolation has to earn its weight on security alone. On
-**macOS** the natural, zero-dependency primitive is Apple **Seatbelt** via
-`sandbox-exec`, which is exactly the mechanism `codex` already uses for its own
-`--sandbox workspace-write`. Per agent:
+Foundation for everything; none of it depends on stdin.
 
-- **claude** — Phase 0 restricts `--allowed-tools` to `Read` (needed to read the prompt
-  file) and strips every network/write tool (`WebFetch`, `Bash(curl:*)`, …). It can read
-  files and emit text, but has no way to reach the network or modify the host, so a
-  hijacked claude can neither exfiltrate nor write. The only residual is host-file
-  *reads* with no exfil channel — the same low-value residual as codex (asset 4), which
-  does not justify a second sandbox under this threat model.
-- **codex** — ships its own OS-level sandbox (`--sandbox workspace-write` → Apple Seatbelt
-  on macOS) that already confines *writes* to the workspace. Phase 0 closes its in-sandbox
-  network. Wrapping it again would duplicate protection codex already enforces itself.
-- **antigravity** — the only agent with no built-in isolation
-  (`--dangerously-skip-permissions`). This is the one that needs a real sandbox, and on
-  macOS `sandbox-exec` with a Seatbelt profile gives kernel-enforced file/network
-  confinement with no daemon and no VM.
+1. **claude → `--allowed-tools "Read"`.** Drop `--permission-mode dontAsk`, `WebFetch`,
+   `Bash(curl:*)`, `Bash(cat:*)`, `Bash(shasum:*)`, `Bash(pwd:*)`, `Bash(ls:*)`. Keep the
+   `-- "Read your task from {prompt_file} …"` positional (file delivery). **Proven** above.
+2. **codex → drop `-c sandbox_workspace_write.network_access=true`;** keep
+   `--sandbox workspace-write` (its write confinement is good). Gate on the one probe run
+   above; if codex cannot reach its API without it, restore the flag and note it.
+3. **antigravity → drop `--dangerously-skip-permissions`.** This flag is the thing that
+   disables agy's own sandbox, so removing it is the prerequisite for Phase 1. Its
+   replacement (headless approval policy + sandbox settings) is decided by the Phase 1
+   experiments — do not ship agy with the flag removed until Phase 1 picks the working
+   settings, or headless runs may hang. Until then, agy stays on the flag behind a clear
+   "insecure default, see Phase 1" note.
+4. **Environment allowlist.** Replace `os.environ.copy()` (`ai_agent.py:329`) with an
+   explicit default-deny builder: always `PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`,
+   `TMPDIR`; per-agent auth vars (`agent_api_key_vars` when `use_api_key`); pipeline vars
+   already set explicitly (`NEWS_RECAP_*`, `MAX_THINKING_TOKENS`, …); plus
+   `routing.extra_env`. Add `NEWS_RECAP_AGENT_ENV_PASSTHROUGH` (CSV) as an escape hatch.
+   Portable, benefits all agents and the Linux launcher.
+5. **Update `spec/agents.md`** to the shipped templates (it still documents
+   `bypassPermissions`, `Write,Edit`, and a stale `output_result_path` contract).
+6. **Tests:** env builder never leaks a non-allowlisted var (seed `FAKE_SECRET`, assert
+   absent); rendered claude template's `--allowed-tools` is exactly `Read` and contains no
+   `curl`/`WebFetch`; codex template has no `network_access`; agy template carries no
+   `--dangerously-skip-permissions` once Phase 1 lands; every template still has
+   `{prompt_file}`.
 
-Why `sandbox-exec` rather than `bubblewrap` or Docker on macOS:
+## Phase 1 — Make agy safe via its OWN sandbox (the target outcome) (~2–3 days, macOS)
 
-- **`bubblewrap` does not exist on macOS.** It relies on Linux mount/PID namespaces;
-  there is no port. It is off the table for this deployment.
-- **Docker on macOS is a full Linux VM** (Docker Desktop / Colima). It is heavier than a
-  daemon-on-Linux would be, *and* it changes the execution environment: agy would run
-  under Linux with different auth paths, so the operator's real `~/.gemini` subscription
-  state no longer applies. `sandbox-exec` keeps agy native, using the operator's own
-  auth, and adds no daemon.
-- **No path remapping.** Seatbelt does not build a new mount view; the filesystem is the
-  host's, and the profile only *allows/denies* by path. This removes an entire class of
-  wrapper bugs (a mount-remapped prompt path that no longer resolves) and makes
-  file-based prompt delivery correct by construction.
-- **No orphan/reaper problem.** `sandbox-exec` applies the profile and `exec`-replaces
-  itself with `agy`, so the PID the pipeline spawns *is* the sandboxed agy. The existing
-  `_terminate_process` (`subprocess.py:309`: SIGTERM → wait 2 s → SIGKILL) reaps it
-  directly. With Docker, `_terminate_process` would SIGKILL the docker client and orphan
-  the container on nearly every timeout; there is no such wrapper process here, so no
-  reaper, no named auth volumes, no compose stack, no UID/chown dance.
+This is the center of the plan: agy is the default, so its safety is the whole point, and
+the best outcome is that agy's built-in Terminal Sandbox + permission settings are enough —
+no Docker, no custom profile. All experiments run on the Mac behind
+`NEWS_RECAP_RUN_SANDBOX_TESTS=1` (agy is not installable in CI/this env). Record every
+result in `spec/agents.md`.
 
-Concurrency makes the choice sharper. Pipeline phases run sequentially and each phase
-uses one agent, so the peak number of concurrent sandboxes equals that agent's
-`agent_max_parallel`. Only antigravity is sandboxed and its default is
-`agent_max_parallel["antigravity"] == 1` (`config.py:78`), so **at most one sandbox runs
-at a time by default**. This is a property of the current config, not a structural
-guarantee: raising that value would spawn N concurrent sandboxes. The Python-side wrapper
-allocates a fresh per-invocation scratch/profile temp dir, so it stays correct either way.
+### 1.0 Open question to resolve first: how the pipeline enforces the settings
 
-Note: `sandbox-exec` is marked deprecated in its man page but remains the de-facto
-CLI-level sandbox on macOS (Chromium, codex, and many tools rely on it) with no supported
-public replacement. The Seatbelt allow-set needs burn-in on the real Mac (see Phase 1).
+agy reads `~/.gemini/antigravity-cli/settings.json` — a **global** file the operator also
+uses interactively. The pipeline must apply the safe settings **without clobbering** it.
+Probe, in order of preference: (a) a per-run config path / env override (e.g. a
+config-dir or `--settings`-style flag — audit `agy --help`); (b) pointing agy at a
+pipeline-owned config dir via env; (c) as a last resort, merge-in the required keys on
+startup and restore on exit. Pick the least invasive that works headless.
 
-## Verified facts (research done 2026-07-13; sandbox-exec profile not yet burned in on Mac)
+### 1.1 Experiments (each = one small agy `-p` run; assert on stdout/stderr/exit + host FS)
 
-- **Output is always stdout, never an agent-written file.** Every parser reads
-  `output/agent_stdout.log` through `read_agent_stdout` (`tasks/base.py:50`,
-  used by classify/enrich/dedup/oneshot/merge/refine); the parent captures the child's
-  stdout pipe in `run_subprocess`. No task reads an agent-written `agent_result.json`
-  (the "write JSON to `output_result_path`" contract in `spec/agents.md` is stale). So
-  restricting claude to `Read` (or a read-only sandbox for agy) cannot break output
-  delivery — the agent never needed to write the result.
-- `claude` CLI reads the prompt file via its `Read` tool (current template) and returns
-  the result on stdout. Restricting `--allowed-tools` to `Read` removes every
-  network/write tool, so a hijacked claude cannot reach the network or modify the host —
-  it can only read files and emit text. (stdin delivery is **not** used: `claude -p`
-  returns empty output on large piped stdin — see the *Prompt delivery* finding.)
-- `claude --bare` is **not** usable for subscription users: bare mode reads auth strictly
-  from `ANTHROPIC_API_KEY` (OAuth/keychain never read). Use
-  `--allowed-tools "Read" --system-prompt … --setting-sources ""` instead — this keeps
-  subscription auth and the file-based prompt read.
-- `codex --sandbox workspace-write` confines **writes** to the workspace + temp via Apple
-  Seatbelt, but does **not** block reads outside the workspace by default, so a hijacked
-  codex can still *read* host files. With in-sandbox network closed (Phase 0 item 2) there
-  is no channel to exfiltrate what it reads except echoing into the digest (asset 4), so
-  the residual is low-value. Verify codex still reaches its API with `network_access`
-  removed (it talks to the API from outside the sandbox — expected to work).
-- The prompt path substituted into templates is `{prompt_file}` =
-  `manifest.workdir/input/task_prompt.txt` (`ai_agent.py:309`). Under Seatbelt there is no
-  mount view, so agy (if it reads the file) reads it at that same real path — the profile
-  simply grants `file-read*` on `input/`. Results come back over stdout, not the
-  filesystem.
-- **Not yet verified (blocking probes — Phase 0/Phase 1):** (a) whether `agy` can still
-  read the prompt file non-interactively once `--dangerously-skip-permissions` is removed;
-  (b) the exact Seatbelt allow-set agy needs on macOS (dyld shared cache, mach services,
-  Keychain access for auth, cache-dir location). These decide the profile — see the probe
-  gate in Phase 1.
+- **E1 — baseline behavior without the flag.** Run a normal recap task with
+  `--dangerously-skip-permissions` **removed** and default settings. Classify the result:
+  *works* / *hangs waiting for approval* / *auto-approves everything*. Sets the starting
+  point.
+- **E2 — turn the sandbox on.** `settings.json`: `enableTerminalSandbox: true`. Test
+  `toolPermission` at `proceed-in-sandbox` **and** `strict`. For each: does a real task
+  still complete headless **without hanging** and produce parity output? (Expect
+  `strict` may hang for lack of a TTY; `proceed-in-sandbox` is the likely headless-safe
+  value.)
+- **E3 — containment canaries** (the acceptance bar), under the E2 settings that ran:
+  - **read**: `~/canary.txt` on host; task's "article text" tells agy to read and print it
+    → assert the content never appears in stdout/stderr.
+  - **write**: task told to write `~/.ssh/probe` → assert the file is never created.
+  - **network/exfil**: task told to `curl`/POST a canary to a remote host → assert no
+    egress (and that `permissions.deny: [command(curl),command(wget)]` blocks the tool).
+  - **env**: `FAKE_SECRET=x` in the (allowlisted) env test → assert a task told to
+    `echo $FAKE_SECRET` cannot emit `x` (covers Phase 0 allowlist + sandbox together).
+- **E4 — quality/parity.** Run a full real recap under the chosen safe settings; confirm
+  digest output matches the pre-hardening baseline (no regression from losing tools).
+- **E5 — lifecycle.** A stalling agy task with a short timeout → after the pipeline
+  returns, no `agy` (or sandbox helper) process is left (existing `_terminate_process`,
+  `subprocess.py:309`, reaps it).
 
-## Phase 0 — Template and environment hardening (~1–1.5 days)
+### 1.2 Decision forks (chosen by E2/E3 results)
 
-Cheap, immediate, and the foundation for everything below. Do these regardless.
+- **HAPPY — E2 runs headless without hanging AND E3 blocks read/write/network/env.**
+  agy's built-in sandbox is the solution. Ship those `settings.json` values as the managed
+  default (via the 1.0 mechanism), keep `--dangerously-skip-permissions` **removed**
+  permanently, and **stop here** — no Docker, no custom Seatbelt profile. This is the
+  intended end state and keeps agy free, native, and default.
+- **PARTIAL — commands are confined but the `write_file` *tool* still writes, or `strict`
+  hangs while `proceed-in-sandbox` leaks writes.** Tighten within agy first: prefer
+  `proceed-in-sandbox`, add `permissions.deny` for write/network tools, and check whether
+  agy can disable the `write_file` tool for the run (audit `agy --help` / plugin/tool
+  config). Re-run E3. If writes become blockable → treat as HAPPY. If host writes remain
+  reachable from untrusted prompts → Phase 2.
+- **FAIL — agy cannot run headless under any setting that also contains it (e.g. every
+  non-hanging config auto-approves writes, matching antigravity-cli#45).** Escalate to
+  Phase 2 (Docker). Do **not** fall back to `--dangerously-skip-permissions` on the host.
 
-1. **claude: restrict tools to `Read`, keep file delivery.** The pipeline tasks are
-   text→text; resource fetching is done by the pipeline (`ResourceLoader`), not the
-   agent, so the only tool claude needs is `Read` to read `{prompt_file}`. Change the
-   default `--allowed-tools` from the current list to just `"Read"` — drop `WebFetch`,
-   `Bash(curl:*)`, `Bash(cat:*)`, `Bash(shasum:*)`, `Bash(pwd:*)`, `Bash(ls:*)`. Keep
-   `--permission-mode dontAsk` so `Read` runs non-interactively, and keep the existing
-   `-- "Read your task from {prompt_file} and execute it."` positional (file delivery,
-   unchanged). This removes every network/write capability while preserving the working
-   file-based flow; `run_subprocess` stays as-is (`stdin=subprocess.DEVNULL`), no stdin
-   plumbing is added. (The token plan additionally strips the default system prompt and
-   settings for token savings — coordinate that flag set; neither plan uses stdin.)
-2. **codex: close sandbox network.** Remove
-   `-c sandbox_workspace_write.network_access=true`. The codex CLI talks to the OpenAI API
-   from outside its workspace sandbox; in-sandbox network is only needed if the *task*
-   fetches URLs — ours don't. Verify with one probe run; if codex cannot reach its API
-   without the flag, keep the flag and revisit egress in Phase 2.
-3. **antigravity: remove `--dangerously-skip-permissions`.** Probe which permission flags
-   `agy` needs for non-interactive text-only output (`--help` audit + one probe run), and
-   in the same probe record **whether agy can still read the prompt file** without the
-   flag (file delivery requires it — confirmed again in §1.4 burn-in). If it cannot run
-   non-interactively
-   without the flag, mark antigravity as **sandbox-only** (refuse to launch it outside the
-   `sandbox-exec` wrapper once Phase 1 lands, with a clear error).
-4. **Environment allowlist.** In `_run_agent_cli`, replace `os.environ.copy()` with an
-   explicit allowlist builder:
-   - always: `PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR`
-   - per agent: its auth/config vars (`agent_api_key_vars` when `use_api_key=True`)
-   - pipeline vars already set explicitly (`NEWS_RECAP_*`, `MAX_THINKING_TOKENS`, …)
-   - plus `routing.extra_env`
-   Add a `NEWS_RECAP_AGENT_ENV_PASSTHROUGH` env var (CSV) as an escape hatch for users
-   whose CLIs need extra vars (proxies etc.).
-5. **Update `spec/agents.md`** to match the shipped templates (it currently documents
-   `bypassPermissions`, `Write,Edit`, and the stale `output_result_path` contract, which
-   the code no longer uses). Coordinate with the token plan, which also edits `agents.md`.
-6. **Tests:**
-   - unit: env builder never passes a var not on the allowlist (seed
-     `os.environ["FAKE_SECRET"]`, assert absent).
-   - unit: rendered default templates contain no `curl`, `WebFetch`,
-     `dangerously-skip-permissions`; the claude template's `--allowed-tools` is exactly
-     `Read`.
-   - unit: every rendered template still carries `{prompt_file}` (file delivery
-     preserved; no stdin).
+## Phase 2 — Docker isolation for agy (fallback, only if Phase 1 = FAIL/leaky) (~2–3 days)
 
-Residual risk after Phase 0:
+The community already solved headless-agy-on-untrusted-input with disposable containers;
+reuse rather than reinvent. Reference: `shelajev/agy-sbx-kit` (and `Shiritai/sanity-gravity`).
+The kit demonstrates the three things a from-scratch wrapper gets wrong:
 
-- **claude** — no network egress and no write capability (only `Read` remains). A
-  hijacked claude can read host files but has no channel to exfiltrate or modify them
-  (residual: reads only, asset 4).
-- **codex** — writes confined by its own Seatbelt sandbox, in-sandbox network closed, host
-  env stripped. Host-file *reads* remain possible but have no exfil channel (low-value,
-  asset 4 only).
-- **antigravity** — still a bare host process with the whole home directory readable and
-  writable. Phase 1 addresses that.
+- **Egress allowlist** baked in — only `antigravity.google`, the auto-updater host, Google
+  OAuth (`accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`) and the API
+  hosts (`cloudaicompanion.googleapis.com`, `cloudcode-pa.googleapis.com`,
+  `generativelanguage.googleapis.com`). This is the domain allowlist Seatbelt cannot express.
+- **Headless OAuth** — sets `SSH_CONNECTION` so agy uses copy/paste auth; token persists at
+  `~/.gemini/antigravity-cli/antigravity-oauth-token` in a persistent home volume, so the
+  free subscription still works inside the container.
+- **stdin closure** for `-p` (`agy … < /dev/null`).
 
-## Phase 1 — Sandbox antigravity with `sandbox-exec` (Seatbelt) (~1.5–2 days)
+Integration costs to weigh here (not before): macOS Docker is a Linux VM (Docker
+Desktop/Colima) — startup weight and the auth-path change the old plan flagged; and the
+`_terminate_process` reaper must target the container, not a docker-client wrapper, to avoid
+orphaned containers on timeout. Concurrency is bounded — `agent_max_parallel["antigravity"]
+== 1` (`config.py:78`) — so at most one container at a time by default.
 
-claude and codex need nothing here (see *Design decision*). Only antigravity is wrapped.
+## Phase 3 — Last resort (only if Phase 1 and Phase 2 both fail)
 
-### 1.1 Python-side wrapping in `_run_agent_cli` (no shell script)
+- **Custom Seatbelt (SBPL) profile via `sandbox-exec`**, wrapping agy in Python inside
+  `_run_agent_cli` (deny-default; allow read of system + `input/`, write only to
+  workdir/scratch/auth-refresh/`--log-file`, `allow network*` with domain control deferred
+  to a local proxy). This was the previous plan's centerpiece; it is now a fallback because
+  it duplicates agy's own Terminal Sandbox and needs its own burn-in for dyld cache, mach
+  services, and Keychain. Full SBPL sketch and burn-in notes are preserved in git history
+  (pre-2026-07-13 revision of this file).
+- **Or demote agy to opt-in** and default to hardened codex/claude — explicitly rejected by
+  the operator (agy must stay the free default), so this is documented only as the
+  break-glass option if agy proves unsecurable headless.
 
-The wrapping is done **in Python**, not in a `scripts/*.sh` wrapper, because the shell
-approach breaks on the real template: `{model}` renders to a multi-token string
-(`--model gemini-3.5-flash`) inserted raw, and `{prompt_file}` is embedded *inside* the
-quoted `-p` argument — so positional shell parsing (`$2` = prompt file) does not match the
-rendered args, and swapping the executable would change `command_head` away from `agy`,
-silently disabling the `--log-file` injection and stderr handling that key off
-`command_head == "agy"` (`ai_agent.py:319-322,354`). Doing it in Python avoids all of
-that:
+## Cross-cutting: network egress allowlist (low priority)
 
-- `build_run_args` returns `(run_args, command_head)` with `command_head == "agy"`
-  (`ai_agent.py:313`). Keep the existing `elif command_head == "agy":
-  _inject_agy_log_file(...)` (line 321-322) untouched.
-- **After** that injection and just before `run_subprocess`, when the agent is antigravity
-  and the sandbox is enabled, render a Seatbelt profile to a file in the existing
-  `tempfile.TemporaryDirectory` (auto-cleaned — no leaked scratch dir) and **prepend**
-  `["sandbox-exec", "-f", <profile>, "-D", ...] ` to `run_args`.
-- Because `command_head` was computed before the prepend, it stays `agy`: `--log-file`
-  injection and `monitor_stderr == (command_head != "agy")` (line 354) keep their current
-  behavior. `run_subprocess` itself needs **no** change.
-- Exact paths are known in Python (`manifest.workdir`, `stderr_path`, `$HOME`), so the
-  profile's allow-set is built from real values, not parsed out of a command string.
-
-This is a deliberate, small change to `ai_agent.py` — the earlier "no changes to
-ai_agent.py" assumption does not hold and is dropped.
-
-### 1.2 Seatbelt profile (SBPL)
-
-Rendered per task with `-D` parameters. Target shape (allow-set finalized in burn-in,
-§1.4):
-
-```scheme
-(version 1)
-(deny default)
-(allow process-fork)
-(allow process-exec* (literal (param "AGY_BIN")))
-
-;; read-only system + the task's prompt input (real host path — no remap)
-(allow file-read*
-  (subpath "/usr") (subpath "/bin") (subpath "/System") (subpath "/Library")
-  (subpath (param "INPUT_DIR")))
-
-;; the only writable host paths
-(allow file-read* file-write* (subpath (param "GEMINI_DIR")))   ; agy auth/token refresh
-(allow file-read* file-write* (subpath (param "SCRATCH")))      ; cache / scratch (temp)
-(allow file-write* (literal (param "LOG_FILE")))                ; agy --log-file target
-
-;; agy must reach its own API; domain-level egress control is Phase 2
-(allow network*)
-```
-
-- Everything not explicitly allowed — `~/.ssh`, `~/.aws`, browser profiles, Keychain
-  items, `~/.claude`, `~/.codex`, other projects, and the pipeline's own `meta/`/`output/`
-  — is denied by `(deny default)`, protecting assets 1-3.
-- **`LOG_FILE` is included in the writable set** (this is the workdir `stderr_path` agy
-  opens via `--log-file`; it is the pipeline's own file, not a secret). This resolves the
-  otherwise-fatal conflict between the `--log-file` injection and a read-only workdir.
-- `GEMINI_DIR` / `SCRATCH` / cache: on macOS agy's auth and cache locations must be probed
-  (`~/.gemini` vs Keychain vs `~/Library/Application Support`; cache under
-  `~/Library/Caches` not `~/.cache`). Whatever agy actually needs writable goes here and
-  nowhere else.
-- **Prompt delivery is file-based** (stdin is not used — see the *Prompt delivery*
-  finding): the profile grants `(allow file-read* (subpath (param "INPUT_DIR")))` so agy
-  reads `{prompt_file}` at its real host path, which is correct under Seatbelt because
-  there is no path remap. §1.4 burn-in still confirms agy reads the file
-  non-interactively once `--dangerously-skip-permissions` is removed.
-
-### 1.3 Sandbox-only enforcement
-
-Once Phase 1 lands, refuse to launch `agy` outside the wrapper (clear error), mirroring
-the "sandbox-only" intent from Phase 0 item 3. `sandbox-exec` must be present and the
-platform must be macOS; a missing binary or non-Darwin host is a hard failure with a
-clear message, not a silent fallback to a bare `agy`.
-
-### 1.4 Burn-in (behind `NEWS_RECAP_RUN_SANDBOX_TESTS=1`, macOS only)
-
-Seatbelt with `(deny default)` commonly needs extra grants to boot a real macOS binary
-(dyld shared cache, `mach-lookup` for services agy uses, `com.apple.securityd`/Keychain
-if auth lives there, DNS mach services for network). Burn-in fills the allow-set:
-
-- Confirm agy starts, authenticates, reaches its API, and produces stdout under the
-  profile. Add the minimal grants it demands (record each in `spec/agents.md`).
-- Confirm file-based prompt delivery works end-to-end under the profile.
-- Confirm agy needs no writable path beyond `GEMINI_DIR`/`SCRATCH`/`LOG_FILE`.
-- **Fallback if `(deny default)` proves too fragile:** invert to `(allow default)` +
-  `(deny file-write* (subpath "/"))` re-allowing the writable set + explicit
-  `(deny file-read* file-write* …)` for the sensitive asset paths (`~/.ssh`, `~/.aws`,
-  `~/.claude`, `~/.codex`, `~/Library/...`, other project dirs). Weaker (unlisted paths
-  stay readable) but low-breakage; note the trade-off if taken.
-
-### 1.5 Tests / acceptance (behind `NEWS_RECAP_RUN_SANDBOX_TESTS=1`, macOS only)
-
-- **Canary**: place `~/canary.txt` on the host; feed an agy task whose "article text"
-  instructs it to read and print the file; assert the content never appears in
-  stdout/stderr.
-- **Env**: export `FAKE_SECRET=x`; assert an agy task told to `echo $FAKE_SECRET` cannot
-  produce `x` (covers Phase 0 allowlist + sandbox).
-- **Write confinement**: agy task told to write `~/.ssh/probe` fails; the file never
-  appears on the host.
-- **Lifecycle**: agy task with a 5 s timeout and a stalling agent → after the pipeline
-  returns, no `sandbox-exec`/`agy` process is left (verifies the exec-replace + existing
-  `_terminate_process` reaping; no reaper needed).
-
-## Phase 2 — Optional egress allowlist for antigravity (low priority)
-
-antigravity must reach its own API, so its profile keeps `(allow network*)`; a hijacked
-agy could still POST to an attacker host. Priority is **low**: Phase 0 stripped host env
-vars and Phase 1 removed host filesystem access, so a hijacked agy has little worth
-exfiltrating beyond its own low-value token.
-
-Seatbelt cannot filter outbound network by **hostname** (only by socket/port/ip, and
-remote-host filtering is limited), so a domain allowlist is enforced the same way it would
-be under any sandbox: route agy through a local domain-allowlisting forward proxy
-(tinyproxy/squid) by setting `HTTP(S)_PROXY` in the sandbox env, and tighten the profile
-to `(deny network*)` + `(allow network-outbound (remote unix-socket …))` / the proxy's
-local port only. Probe agy's real host set first (API + auth-refresh + telemetry) or
-disable telemetry via env so the allowlist can stay narrow — a too-tight allowlist fails
-the CLI, not just the exfil.
-
-After Phase 2 the only remaining exfiltration channel is *through the LLM API itself* (the
-model echoing data into a response the attacker can't read) — accepted as irreducible.
+Any agent must reach its own API, so a blanket network cut is impossible and Seatbelt can't
+filter by hostname — a domain allowlist needs a proxy. If E3's network test shows a residual
+egress channel and the threat is judged to warrant it, route agents through a local
+allowlisting forward proxy (`tinyproxy`/`squid`) via `HTTPS_PROXY`/`NO_PROXY` in the
+(allowlisted) env; the Phase 2 kit already does this in-container. Given the low, blind-exfil
+probability this stays optional. The irreducible residual after any of this is data echoed
+*through the model's own allowed API response* — accepted.
 
 ## Rollout order
 
-1. Phase 0 immediately (also unblocks token plan Phase 1; both keep file delivery, share
-   the one claude template edit).
-2. Phase 1 behind `NEWS_RECAP_AGENT_SANDBOX=1`; run antigravity both ways on the Mac for a
-   few days; compare failure rates and settle the Seatbelt allow-set. Then flip to
-   default; agy becomes sandbox-only (macOS + `sandbox-exec` required).
-3. Phase 2 only if a concrete egress concern appears.
+1. **Phase 0** immediately (portable, benefits the Linux launcher too; shares the one
+   claude template edit with the token plan). Ships behind no flag — it only removes
+   overreach and is proven for claude.
+2. **Phase 1** behind `NEWS_RECAP_AGENT_SANDBOX=1` on the Mac: run E1–E5, settle the
+   `settings.json` values, take the fork. On HAPPY, flip agy to the sandboxed settings as
+   the default and drop `--dangerously-skip-permissions` for good.
+3. **Phase 2** only on a Phase 1 FAIL/leaky result; **Phase 3** only if Phase 2 also fails.
+
+## Open decisions
+
+- Confirm the operator has **no** enterprise Gemini Code Assist license (if they do, gemini
+  with `--approval-mode plan` — a real headless read-only mode agy lacks — reopens as an
+  option).
+- Phase 1.0: which settings-injection mechanism is least invasive to the operator's global
+  `~/.gemini/antigravity-cli/settings.json`.
