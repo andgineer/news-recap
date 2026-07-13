@@ -203,32 +203,47 @@ the finer splits (input/output/`cache_read_input_tokens`), not just `total_token
 Expected ranking (to be confirmed): launch overhead (fixed by Phase 1) >
 oneshot_digest > enrich > classify > dedup > merge/refine.
 
-## Phase 3 — Fewer, fatter launches + cache-friendly prompts (~1 day)
+## Phase 3 — Fewer launches *without enlarging prompts* + cache-friendly prompts (~1 day)
 
 Even at 167 tokens/launch, fewer calls mean less latency and fewer retry rounds; for
 codex/antigravity (overhead not eliminated) this is the main lever.
 
-Items 1–3 are unconditional wins (fewer launches, fewer retry re-splits). Item 4
-(prompt-prefix caching) is **speculative and should be attempted last, if at all** — its
-two caveats below very likely reduce it to near-zero in the common path.
+> **HARD CONSTRAINT — do NOT enlarge per-prompt batch sizes.** The current batch caps
+> (`classify._MAX_BATCH = 300`, `enrich._MAX_BATCH = 20` + `_MAX_BATCH_CHARS = 60_000`)
+> are **experimentally-tuned ceilings**, not arbitrary defaults. Past a model's working
+> point, packing more headlines/articles into one prompt makes the model **silently drop
+> or miscount items** — which is exactly what the `_MIN_RECOGNITION_RATE` guards
+> (0.8 classify / 0.50 enrich) were added to catch. Cross that point and the batch fails
+> its guard and re-runs *whole*, so "fewer, fatter launches" does not save work — it
+> **breaks the pipeline or makes it slower**. Therefore: **the ceilings do not go up in
+> this plan.** The legitimate way to cut launch count is to send the model *less*
+> (Phase 4 cache; Phase 5 local clustering), not to cram *more* per call. Any change to a
+> cap is an opt-in, guard-watched live experiment behind an env override — never a blind
+> default bump, and never above the point where recognition starts to slip.
 
-1. classify: raise `_MIN_BATCH` 50 → 300 (`classify.py`). The model already handles
-   `_MAX_BATCH = 300` headlines; today a 350-article day produces 2–7 launches where
-   1–2 suffice. **Trade-off — bigger batches enlarge the failure blast radius.** The
-   classify recognition guard is strict (`_MIN_RECOGNITION_RATE = 0.8`, higher than
-   enrich's 0.50) and the model must print EXACTLY `{expected_count}` lines; one
-   miscount or truncation in a 300-headline batch fails the whole batch's guard and
-   re-runs 300 articles instead of 50. Net launches still drop, but wasted work per
-   failed batch rises — watch the guard on a live 300-batch before flipping.
-2. enrich: raise `_MAX_BATCH` 20 → 40 and keep `_MAX_BATCH_CHARS = 60_000` as the
-   real limiter. The `===ARTICLE===` separator parsing is count-agnostic; verify the
-   recognition-rate guard (`_MIN_RECOGNITION_RATE = 0.50`) still holds on a live
-   batch before flipping. **Also check output headroom, not just the input char cap:**
-   40 full headline rewrites must fit under `CLAUDE_CODE_MAX_OUTPUT_TOKENS = 64000`
-   (`config.py:82`) — confirm 40× worst-case rewrite length clears it before doubling.
-3. Retry rounds (enrich `_run_enrich`, up to 3 rounds): retry only the *unparsed*
-   articles (already the case) but batch them into a single launch per round rather
-   than re-splitting.
+1. ~~classify: raise `_MIN_BATCH` 50 → 300.~~ **Rejected as a default change.** Raising
+   `_MIN_BATCH` pushes the *typical* batch size up toward the 300 ceiling
+   (e.g. a 350-article day goes from 3×~117 to 2×175), i.e. it enlarges prompts — the very
+   thing this phase forbids. The classify guard is strict (`_MIN_RECOGNITION_RATE = 0.8`)
+   and the model must print EXACTLY `{expected_count}` lines; one miscount in a larger
+   batch fails the whole batch and re-runs it. If a bigger operating point is ever wanted,
+   prove it first: sweep batch size on historical days under the live guard
+   (`NEWS_RECAP_CLASSIFY_MAX_BATCHES` already exists for this), find the size where
+   recognition first drops below 0.8, and set the default *below* it — do not assume the
+   coded 300 max is a safe operating point just because it is the hard limit. Default
+   stays as tuned; Phase 5 is the real launch-count win for classify.
+2. ~~enrich: raise `_MAX_BATCH` 20 → 40.~~ **Rejected.** This directly raises the tuned
+   article-count ceiling and is precisely the "more articles per prompt → model stops
+   processing them" failure the constraint above describes. `_MAX_BATCH = 20`,
+   `_MAX_ARTICLE_CHARS = 5_000`, and `_MAX_BATCH_CHARS = 60_000` stay as tuned. (There is
+   also no headroom argument for it: 40 full rewrites risk the
+   `CLAUDE_CODE_MAX_OUTPUT_TOKENS = 64000` output cap too.)
+3. Retry rounds (enrich `_run_enrich`, up to 3 rounds) — **the one safe launch-count win
+   here.** Retry only the *unparsed* articles (already the case) but coalesce them into a
+   single launch per round rather than re-splitting — **subject to the same
+   `split_into_enrich_batches` caps**, so if the leftovers still exceed `_MAX_BATCH` /
+   `_MAX_BATCH_CHARS` they split as usual. This reduces launches without enlarging any
+   single prompt.
 4. **(Speculative, do last.)** Provider-side prompt caching (subscription quota counts
    cache reads at a steep discount): make every batch of the same step share a
    byte-identical prompt *prefix*. Concretely: in `prompts.py` move all per-batch
@@ -351,7 +366,7 @@ ok/exclude triage.
 |---|---|---|---|
 | 1. Slim claude (file delivery) | 1–2 d | strips system prompt/settings + all tools but `Read`; saving smaller than the rejected tool-less path, and **currently unmeasured** — re-measure first (Phase 1 item 1) as a go/no-go | none (keeps file delivery) |
 | 2. Telemetry | 0.5 d | enables measurement; **hard prerequisite** for ranking phases 3–6 | none |
-| 3. Batching (+ speculative cache prefixes) | 1 d | fewer launches; cache-read discount on repeats is speculative (item 4, likely ~0) | low |
+| 3. Retry-coalescing (+ speculative cache prefixes) | 1 d | fewer launches **without enlarging any prompt** — batch-cap raises are rejected (they break recognition); win is retry-coalescing only, cache-read discount speculative (item 4, likely ~0) | low |
 | 4. Cross-pipeline cache | 1 d | −~100% on re-runs/experiments | none |
 | 5. Local clustering digest | 3–5 d | ~3–5× on digest phases; kills 2 phases | medium — gated by A/B week |
 | 6. Classify cascade | experiment | −20–40% of classify | medium — gated by shadow mode |
