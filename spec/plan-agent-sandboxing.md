@@ -3,10 +3,36 @@
 Status: proposed. **Target platform: macOS** — the pipeline runs on the operator's MacBook,
 so the sandbox mechanism is Apple's native `sandbox-exec`/Seatbelt, **not** Linux
 `bubblewrap` or Docker (see *Design decision*). Companion plan:
-`plan-token-optimization.md` (its Phase 1 turns the `claude` agent into a tool-less thin
-client). The `--tools ""` + stdin change serves both plans; to keep this plan
-self-contained, Phase 0 here pulls in the small `run_subprocess` stdin plumbing itself
-(Phase 0 item 1a) and coordinates with the token plan so the edit is not duplicated.
+`plan-token-optimization.md` (its Phase 1 slims down the `claude` launch). Both plans
+**retain the current file-based prompt delivery** (`{prompt_file}`) and stdout result
+capture — see *Prompt delivery: file-based, not stdin* below.
+
+## Prompt delivery: file-based, not stdin (experiment finding)
+
+Experiments and upstream reports show the CLI agents do **not** handle stdin prompt
+delivery reliably at the sizes this pipeline produces, so **file-based delivery is
+retained for all agents** — the agent reads the prompt from `{prompt_file}` and the
+result is captured from stdout, exactly as today. This plan does **not** switch any
+agent to stdin, and `run_subprocess` keeps `stdin=subprocess.DEVNULL`.
+
+- **claude** — `claude -p` in headless mode returns **empty output** once piped stdin
+  exceeds a few kilobytes (anthropics/claude-code#7263: works at ~2.5 KB, empty at
+  ~7 KB), while our enrich prompts reach `_MAX_BATCH_CHARS = 60_000`. Empty stdout is
+  exactly the failure `run_ai_agent` raises on (`ai_agent.py:129-141`), so this would
+  fail whole phases. Upstream guidance for large inputs is explicitly "write to a file
+  and reference the path, don't pipe."
+- **antigravity (`agy`)** — early `agy -p` versions **silently drop stdout** when run
+  under a pipe / subprocess / redirect, which is exactly how the pipeline runs it.
+- **codex** — `codex exec -` reads stdin, but `codex exec "<prompt>"` **hangs on EOF**
+  when stdin is a non-TTY pipe with no writer (openai/codex#20919); file delivery avoids
+  the whole class.
+
+Consequence for this plan: keep `{prompt_file}`; do **not** add stdin plumbing to
+`run_subprocess`; and since claude must keep a file-read tool to read the prompt, its
+Phase 0 hardening is "restrict `--allowed-tools` to `Read`" rather than "no tools at
+all". Under the operating threat model (no network exfiltration, no host writes; local
+reads are not a prioritized asset) a read-only claude with no network/write tools still
+satisfies the goals.
 
 ## Threat model
 
@@ -58,8 +84,12 @@ on the *same* subscription — so isolation has to earn its weight on security a
 `sandbox-exec`, which is exactly the mechanism `codex` already uses for its own
 `--sandbox workspace-write`. Per agent:
 
-- **claude** — with `--tools ""` (Phase 0) it has no tools at all; it can only emit text
-  on stdout. There is nothing to isolate. A sandbox adds nothing.
+- **claude** — Phase 0 restricts `--allowed-tools` to `Read` (needed to read the prompt
+  file) and strips every network/write tool (`WebFetch`, `Bash(curl:*)`, …). It can read
+  files and emit text, but has no way to reach the network or modify the host, so a
+  hijacked claude can neither exfiltrate nor write. The only residual is host-file
+  *reads* with no exfil channel — the same low-value residual as codex (asset 4), which
+  does not justify a second sandbox under this threat model.
 - **codex** — ships its own OS-level sandbox (`--sandbox workspace-write` → Apple Seatbelt
   on macOS) that already confines *writes* to the workspace. Phase 0 closes its in-sandbox
   network. Wrapping it again would duplicate protection codex already enforces itself.
@@ -107,17 +137,17 @@ public replacement. The Seatbelt allow-set needs burn-in on the real Mac (see Ph
   used by classify/enrich/dedup/oneshot/merge/refine); the parent captures the child's
   stdout pipe in `run_subprocess`. No task reads an agent-written `agent_result.json`
   (the "write JSON to `output_result_path`" contract in `spec/agents.md` is stale). So
-  removing an agent's write ability (claude `--tools ""`, or a read-only sandbox) cannot
-  break output delivery — the agent never needed to write the result.
-- `claude` CLI supports `--tools ""` (disables ALL built-in tools — no tool schemas in
-  context) and accepts the prompt on **stdin** in `-p` mode. Verified live: a
-  classify-style task ran correctly with `--tools ""` and stdin delivery. With no tools a
-  hijacked claude agent cannot touch the filesystem or network at all — the model can
-  only emit text.
+  restricting claude to `Read` (or a read-only sandbox for agy) cannot break output
+  delivery — the agent never needed to write the result.
+- `claude` CLI reads the prompt file via its `Read` tool (current template) and returns
+  the result on stdout. Restricting `--allowed-tools` to `Read` removes every
+  network/write tool, so a hijacked claude cannot reach the network or modify the host —
+  it can only read files and emit text. (stdin delivery is **not** used: `claude -p`
+  returns empty output on large piped stdin — see the *Prompt delivery* finding.)
 - `claude --bare` is **not** usable for subscription users: bare mode reads auth strictly
   from `ANTHROPIC_API_KEY` (OAuth/keychain never read). Use
-  `--tools "" --system-prompt … --setting-sources ""` instead — this keeps subscription
-  auth.
+  `--allowed-tools "Read" --system-prompt … --setting-sources ""` instead — this keeps
+  subscription auth and the file-based prompt read.
 - `codex --sandbox workspace-write` confines **writes** to the workspace + temp via Apple
   Seatbelt, but does **not** block reads outside the workspace by default, so a hijacked
   codex can still *read* host files. With in-sandbox network closed (Phase 0 item 2) there
@@ -129,31 +159,27 @@ public replacement. The Seatbelt allow-set needs burn-in on the real Mac (see Ph
   mount view, so agy (if it reads the file) reads it at that same real path — the profile
   simply grants `file-read*` on `input/`. Results come back over stdout, not the
   filesystem.
-- **Not yet verified (blocking probes — Phase 0/Phase 1):** (a) whether `agy` accepts the
-  prompt on stdin; (b) whether `agy` can still read the prompt file non-interactively once
-  `--dangerously-skip-permissions` is removed; (c) the exact Seatbelt allow-set agy needs
-  on macOS (dyld shared cache, mach services, Keychain access for auth, cache-dir
-  location). These decide prompt delivery and the profile — see the probe gate in
-  Phase 1.
+- **Not yet verified (blocking probes — Phase 0/Phase 1):** (a) whether `agy` can still
+  read the prompt file non-interactively once `--dangerously-skip-permissions` is removed;
+  (b) the exact Seatbelt allow-set agy needs on macOS (dyld shared cache, mach services,
+  Keychain access for auth, cache-dir location). These decide the profile — see the probe
+  gate in Phase 1.
 
 ## Phase 0 — Template and environment hardening (~1–1.5 days)
 
 Cheap, immediate, and the foundation for everything below. Do these regardless.
 
-1. **claude: drop all tools, deliver prompt on stdin.** The pipeline tasks are
+1. **claude: restrict tools to `Read`, keep file delivery.** The pipeline tasks are
    text→text; resource fetching is done by the pipeline (`ResourceLoader`), not the
-   agent. Change the default template to `--tools ""` with stdin delivery (see token plan
-   Phase 1 for the exact flag set — same change, coordinate the edit).
-   - **1a. `run_subprocess` stdin plumbing (pulled into this plan).** `run_subprocess`
-     currently hardcodes `stdin=subprocess.DEVNULL` (`subprocess.py:200`); stdin delivery
-     is impossible without changing it. Add an optional `stdin_path: Path | None`;
-     `_run_agent_cli` passes the prompt file when the template is stdin-mode (a per-agent
-     `prompt_delivery: "stdin" | "file"` flag, or the token plan's `{prompt_stdin}`
-     pseudo-placeholder — pick one and share it with the token plan). This is the same
-     edit token-plan Phase 1 item 2 needs; land it once.
-   - If file-based delivery must be kept for claude for some reason, the minimum is:
-     remove `Bash(curl:*)`, `Bash(cat:*)`, `WebFetch` from `--allowed-tools`, keeping only
-     `Read`.
+   agent, so the only tool claude needs is `Read` to read `{prompt_file}`. Change the
+   default `--allowed-tools` from the current list to just `"Read"` — drop `WebFetch`,
+   `Bash(curl:*)`, `Bash(cat:*)`, `Bash(shasum:*)`, `Bash(pwd:*)`, `Bash(ls:*)`. Keep
+   `--permission-mode dontAsk` so `Read` runs non-interactively, and keep the existing
+   `-- "Read your task from {prompt_file} and execute it."` positional (file delivery,
+   unchanged). This removes every network/write capability while preserving the working
+   file-based flow; `run_subprocess` stays as-is (`stdin=subprocess.DEVNULL`), no stdin
+   plumbing is added. (The token plan additionally strips the default system prompt and
+   settings for token savings — coordinate that flag set; neither plan uses stdin.)
 2. **codex: close sandbox network.** Remove
    `-c sandbox_workspace_write.network_access=true`. The codex CLI talks to the OpenAI API
    from outside its workspace sandbox; in-sandbox network is only needed if the *task*
@@ -162,7 +188,8 @@ Cheap, immediate, and the foundation for everything below. Do these regardless.
 3. **antigravity: remove `--dangerously-skip-permissions`.** Probe which permission flags
    `agy` needs for non-interactive text-only output (`--help` audit + one probe run), and
    in the same probe record **whether agy can still read the prompt file** without the
-   flag (feeds the Phase 1 prompt-delivery gate). If it cannot run non-interactively
+   flag (file delivery requires it — confirmed again in §1.4 burn-in). If it cannot run
+   non-interactively
    without the flag, mark antigravity as **sandbox-only** (refuse to launch it outside the
    `sandbox-exec` wrapper once Phase 1 lands, with a clear error).
 4. **Environment allowlist.** In `_run_agent_cli`, replace `os.environ.copy()` with an
@@ -180,13 +207,16 @@ Cheap, immediate, and the foundation for everything below. Do these regardless.
    - unit: env builder never passes a var not on the allowlist (seed
      `os.environ["FAKE_SECRET"]`, assert absent).
    - unit: rendered default templates contain no `curl`, `WebFetch`,
-     `dangerously-skip-permissions`.
-   - unit: `run_subprocess` feeds `stdin_path` to the child (echo mock agent round-trips
-     the prompt from stdin).
+     `dangerously-skip-permissions`; the claude template's `--allowed-tools` is exactly
+     `Read`.
+   - unit: every rendered template still carries `{prompt_file}` (file delivery
+     preserved; no stdin).
 
 Residual risk after Phase 0:
 
-- **claude** — closed. No tools, no filesystem, no network.
+- **claude** — no network egress and no write capability (only `Read` remains). A
+  hijacked claude can read host files but has no channel to exfiltrate or modify them
+  (residual: reads only, asset 4).
 - **codex** — writes confined by its own Seatbelt sandbox, in-sandbox network closed, host
   env stripped. Host-file *reads* remain possible but have no exfil channel (low-value,
   asset 4 only).
@@ -259,14 +289,11 @@ Rendered per task with `-D` parameters. Target shape (allow-set finalized in bur
   (`~/.gemini` vs Keychain vs `~/Library/Application Support`; cache under
   `~/Library/Caches` not `~/.cache`). Whatever agy actually needs writable goes here and
   nowhere else.
-- **Prompt delivery is decided by the Phase 0/§1.4 probe gate**, not assumed:
-  - if agy accepts the prompt on **stdin** (preferred — narrower: agy needs no file-read
-    of the prompt at all), drop the `INPUT_DIR` read grant and deliver via the Phase 0
-    stdin plumbing;
-  - else use **file delivery** with `(allow file-read* (subpath (param "INPUT_DIR")))`,
-    which is correct under Seatbelt because there is no path remap.
-  The probe is a **blocking gate**: the final wrapper design is not frozen until it runs
-  on the Mac.
+- **Prompt delivery is file-based** (stdin is not used — see the *Prompt delivery*
+  finding): the profile grants `(allow file-read* (subpath (param "INPUT_DIR")))` so agy
+  reads `{prompt_file}` at its real host path, which is correct under Seatbelt because
+  there is no path remap. §1.4 burn-in still confirms agy reads the file
+  non-interactively once `--dangerously-skip-permissions` is removed.
 
 ### 1.3 Sandbox-only enforcement
 
@@ -283,7 +310,7 @@ if auth lives there, DNS mach services for network). Burn-in fills the allow-set
 
 - Confirm agy starts, authenticates, reaches its API, and produces stdout under the
   profile. Add the minimal grants it demands (record each in `spec/agents.md`).
-- Confirm the prompt-delivery choice (stdin vs file) end-to-end.
+- Confirm file-based prompt delivery works end-to-end under the profile.
 - Confirm agy needs no writable path beyond `GEMINI_DIR`/`SCRATCH`/`LOG_FILE`.
 - **Fallback if `(deny default)` proves too fragile:** invert to `(allow default)` +
   `(deny file-write* (subpath "/"))` re-allowing the writable set + explicit
@@ -325,7 +352,8 @@ model echoing data into a response the attacker can't read) — accepted as irre
 
 ## Rollout order
 
-1. Phase 0 immediately (also unblocks token plan Phase 1; shares the stdin plumbing).
+1. Phase 0 immediately (also unblocks token plan Phase 1; both keep file delivery, share
+   the one claude template edit).
 2. Phase 1 behind `NEWS_RECAP_AGENT_SANDBOX=1`; run antigravity both ways on the Mac for a
    few days; compare failure rates and settle the Seatbelt allow-set. Then flip to
    default; agy becomes sandbox-only (macOS + `sandbox-exec` required).

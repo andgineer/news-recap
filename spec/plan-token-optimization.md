@@ -1,7 +1,10 @@
 # Plan: Token Usage Reduction (CLI Backend)
 
 Status: proposed. Companion plan: `plan-agent-sandboxing.md` (its Phase 0 overlaps
-with Phase 1 here — the thin-client claude template serves both goals).
+with Phase 1 here — the slimmed claude template serves both goals). **Both plans retain
+file-based prompt delivery — stdin proved unstable (see the Phase 1 finding); the claude
+launch is slimmed while it keeps its `Read` tool to read `{prompt_file}`, and results are
+still captured from stdout.**
 
 Billing model: subscription (CLI agents), so "cost" = subscription **quota**
 consumption, measured in tokens with provider-side cache discounts. The API backend
@@ -14,15 +17,27 @@ measurable quality drop.
 |---|---|
 | Default `claude -p` | **24 378** (24 368 system prompt + tool schemas, cached-write) |
 | `claude -p --tools "" --system-prompt "…" --setting-sources ""`, prompt on stdin | **167** |
+| Slimmed **file-delivery** mode (`--allowed-tools "Read" --system-prompt "…" --setting-sources ""`, prompt read from `{prompt_file}`) | **to be measured** — above 167 (keeps the `Read` tool schema + agentic harness), still well under 24 378 |
+
+**Finding — stdin is not viable; file delivery is retained.** The 167-token row above
+used stdin + `--tools ""`. Experiments and upstream reports show stdin delivery is
+unreliable at production sizes: `claude -p` returns **empty output** once piped stdin
+exceeds a few KB (anthropics/claude-code#7263) while our prompts reach 60 KB (enrich);
+`agy -p` silently drops stdout under a subprocess; `codex exec` hangs on EOF with a
+non-TTY pipe. So this plan **keeps file-based delivery** and slims the launch *without*
+going tool-less: strip the default system prompt and settings, and narrow tools to the
+single `Read` needed to read `{prompt_file}`. The saving is therefore smaller than the
+tool-less 167 and **must be re-measured** — the `Read` tool schema and the agentic
+system prompt stay in context.
 
 Two further verified facts:
 
-- A classify-style task (numbered headlines → verdict per line) works correctly in
-  the stripped mode with stdin delivery — no `Read` tool needed.
 - `--output-format json` returns a single-object envelope with
   `result` (the text) and `usage` (`input_tokens`, `cache_creation_input_tokens`,
   `cache_read_input_tokens`, `output_tokens`) plus `modelUsage` and
-  `total_cost_usd` — full per-call telemetry that text mode does not provide.
+  `total_cost_usd` — full per-call telemetry that text mode does not provide. This is
+  **optional and independent of prompt delivery**; it does not change the file-based
+  flow and is used only for telemetry (Phase 2).
 - Caveat: `--bare` mode must NOT be used — it restricts auth to `ANTHROPIC_API_KEY`
   (OAuth subscription auth is never read), which defeats the subscription model.
 
@@ -31,80 +46,84 @@ classify batches + enrich batches × up to 3 retry rounds + dedup batches +
 oneshot batches + merge + refine), **launch overhead alone is ~0.25–1.0 M input
 tokens per day** — very likely the single largest line item, ahead of any payload.
 
-## Phase 1 — Thin-client claude launches (~1–2 days, ~99% overhead cut per launch)
+## Phase 1 — Slim claude launches, file delivery kept (~1–2 days)
 
-Turn the claude CLI into a near-zero-overhead API client that bills to the
-subscription.
+Cut the ~24 k-token launch overhead as far as possible **without** giving up the
+working file-based prompt delivery. The tool-less + stdin path (measured at 167 tokens)
+is **rejected**: stdin is unreliable at our sizes (see the finding above). We keep
+`{prompt_file}` and narrow everything else.
 
-1. New default claude template (config.py):
+1. New default claude template (config.py) — file delivery, minimal tools:
 
    ```
-   claude -p {model} --output-format json --no-session-persistence \
-     --setting-sources "" --tools "" \
-     --system-prompt "You are a text-processing engine. Follow the task instructions exactly. Reply with plain text only."
+   claude -p {model} --permission-mode dontAsk --setting-sources "" \
+     --allowed-tools "Read" \
+     --system-prompt "You are a text-processing engine. Follow the task instructions exactly. Reply with plain text only." \
+     -- "Read your task from {prompt_file} and execute it."
    ```
 
-   Prompt delivered on **stdin** instead of `"Read your task from {prompt_file}"`.
+   - `--allowed-tools "Read"` keeps the one tool needed to read the prompt file and drops
+     every network/write tool (this is exactly Phase 0 of the sandboxing plan).
+   - `--setting-sources ""` and a short `--system-prompt` strip the settings load and the
+     default system prompt — the bulk of the 24 k overhead.
+   - Prompt is **read from the file**, not piped. `run_subprocess` is unchanged
+     (`stdin=subprocess.DEVNULL` stays); no stdin plumbing is added.
+   - **Re-measure** input tokens for this template against a trivial prompt to record the
+     real saving (expected: far below 24 k, above the tool-less 167).
 
-2. `run_subprocess` gains an optional `stdin_path: Path | None` (currently hardcoded
-   `stdin=subprocess.DEVNULL`); `_run_agent_cli` passes the prompt file when the
-   template is marked stdin-mode. Template marking: a new `{prompt_stdin}` pseudo-
-   placeholder, or simplest — a per-agent `prompt_delivery: "stdin" | "file"` field
-   in `RoutingDefaults` (schema_version bump).
+2. Result retrieval is **unchanged**: the agent writes to stdout, the parent captures
+   `output/agent_stdout.log`, and every parser in `tasks/` reads it via
+   `read_agent_stdout`. No `--output-format json` rewrite is required for the default
+   path.
 
-3. JSON envelope handling in `ai_agent.py`: when the template requested JSON output,
-   parse the envelope from the captured stdout file, write `result` back as the
-   plain-text stdout the rest of the pipeline expects (keeps every parser in
-   `tasks/` untouched), and persist `usage` into `meta/usage.json` (real
-   input/output/cache splits instead of the current codex-only stderr regex).
-   Malformed envelope → treat as agent failure with the raw tail logged (existing
-   `_log_agent_output` path).
+3. **Optional telemetry (decoupled, off by default):** if per-call usage splits are
+   wanted for Phase 2, add `--output-format json`, parse the envelope from the captured
+   stdout, write `result` back as the plain-text stdout the pipeline expects (keeps every
+   parser in `tasks/` untouched), and persist `usage` into `meta/usage.json`.
    **Ordering matters:** `run_ai_agent` checks "exit 0 but stdout empty"
-   (`ai_agent.py:129-141`) against the *raw* stdout. The envelope must be parsed and
-   `result` written back **before** that check — otherwise a valid JSON envelope
-   (non-empty stdout) whose `result` is empty passes the check wrongly, and any
-   parse/rewrite must set the emptiness signal from `result`, not from the JSON
-   blob. Do the parse right after `run_subprocess` returns and before the
-   `stdout_empty` test.
+   (`ai_agent.py:129-141`) against the *raw* stdout, so parse and rewrite `result`
+   **before** that check and derive the emptiness signal from `result`, not the JSON blob.
+   Gate this behind a flag so the default stays plain text and delivery is untouched.
 
-4. Prompt-side change: the `_CLI_OUTPUT_INSTRUCTION` block ("Do NOT write any
-   files…") stays — it is now enforced structurally (no tools) but still guides the
-   model away from narrating.
+4. Prompt-side change: the `_CLI_OUTPUT_INSTRUCTION` block ("Do NOT write any files…")
+   stays — with only `Read` available it is largely enforced structurally, but it still
+   guides the model away from narrating.
 
-5. Probe the same trick for the other agents (30-minute experiments each, results
-   go into `spec/agents.md`):
-   - codex: measure baseline `codex exec` overhead via its `tokens used` stderr
-     line; try `--skip-git-repo-check` + minimal config (`-c` overrides) — codex has
-     no known `--tools ""` equivalent, so expect a smaller win; stdin delivery via
-     `codex exec -` if supported.
-   - antigravity: check `agy --help` for tool/system-prompt controls.
+5. Probe the same slimming for the other agents (30-minute experiments each, results go
+   into `spec/agents.md`) — **all keep file delivery**:
+   - codex: measure baseline `codex exec` overhead via its `tokens used` stderr line; try
+     `--skip-git-repo-check` + minimal config (`-c` overrides). codex has no `--tools ""`
+     equivalent, so expect a smaller win; **do not** switch to `codex exec -` stdin (it
+     hangs on EOF under a non-TTY pipe).
+   - antigravity: check `agy --help` for tool/system-prompt controls, but keep `agy -p`
+     with file delivery — `agy -p` has silently dropped stdout under a subprocess before.
 
-6. **Pin the CLI and preflight the flags.** The whole phase rests on
-   `--tools ""`, `--no-session-persistence`, `--setting-sources ""`, and
-   `--output-format json`. These exist in the claude CLI verified for this plan
-   (2.1.207), but flag semantics churn between releases and an unknown flag makes the
-   CLI exit non-zero — failing *every* task in the run, not degrading gracefully.
-   Defenses: pin the CLI version (free once the sandbox image from the companion plan
-   ships — bake the exact version into the Dockerfile), and add a cheap one-shot
-   preflight at pipeline start (run the template against a trivial prompt; if it
-   errors, abort with a clear "CLI flags rejected — check version" message instead of
-   failing task-by-task).
-7. **Update `spec/agents.md`.** It currently documents `--output-format text` and
-   warns that "JSON mode can include usage metadata that breaks the stdout recovery
-   path" (`agents.md:104`) — this phase deliberately switches to JSON and solves that
-   by rewriting stdout to `result` (item 3). Bring the spec in line: document the
-   thin-client template, the JSON envelope, and stdin delivery. (The sandboxing plan
-   also touches `agents.md`; coordinate so one edit doesn't clobber the other.)
-8. Tests: unit test for envelope parsing (fixture JSON, including the empty-`result`
-   case from item 3), stdin plumbing test with the echo mock agent, regression run of
-   one full pipeline on a small article set.
+6. **Pin the CLI and preflight the flags.** The phase rests on `--allowed-tools`,
+   `--setting-sources ""`, `--system-prompt`, and `--permission-mode`. These exist in the
+   claude CLI verified for this plan (2.1.207), but flag semantics churn between releases
+   and an unknown flag makes the CLI exit non-zero — failing *every* task in the run, not
+   degrading gracefully. Defenses: pin the CLI version, and add a cheap one-shot preflight
+   at pipeline start (run the template against a trivial prompt; if it errors, abort with a
+   clear "CLI flags rejected — check version" message instead of failing task-by-task).
+7. **Update `spec/agents.md`.** It currently documents `--output-format text` and a wide
+   tool list; bring it in line with the slimmed **file-delivery** template
+   (`--allowed-tools "Read"`, stripped system prompt/settings, prompt still read from
+   `{prompt_file}`). If item 3 is taken, also document the optional JSON envelope. (The
+   sandboxing plan also touches `agents.md`; coordinate so one edit doesn't clobber the
+   other.)
+8. Tests: unit test that the rendered claude template carries `{prompt_file}` (file
+   delivery) and `--allowed-tools "Read"` only; regression run of one full pipeline on a
+   small article set. If item 3 is taken, add an envelope-parsing unit test (fixture
+   JSON, including the empty-`result` case).
 
-Side benefit: with `--tools ""` the claude agent physically cannot touch files or
-network — this is Phase 0 of the sandboxing plan for free.
+Side benefit: narrowing `--allowed-tools` to `Read` removes every network/write tool, so
+a hijacked claude cannot exfiltrate or modify the host (only read). This *is* Phase 0 of
+the sandboxing plan; the two plans share the one template edit.
 
 ## Phase 2 — Real telemetry before structural surgery (~0.5 day)
 
-Phase 1 makes accurate per-call usage available. Extend the existing
+With Phase 1 item 3 (optional JSON telemetry) enabled, accurate per-call usage becomes
+available. Extend the existing
 `_log_pipeline_token_summary` (flow.py) to report input/output/cache-read splits per
 phase and per launch count, and persist the summary into the digest index entry
 (`_aggregate_usage` already exists in pipeline_setup.py). Run ~1 week of daily
@@ -228,7 +247,7 @@ ok/exclude triage.
 
 | Phase | Effort | Token effect | Quality risk |
 |---|---|---|---|
-| 1. Thin-client claude | 1–2 d | −24 k/launch → often −50–80% of total | none (verified) |
+| 1. Slim claude (file delivery) | 1–2 d | strips system prompt/settings + all tools but `Read`; saving smaller than the rejected tool-less path, re-measure | none (keeps file delivery) |
 | 2. Telemetry | 0.5 d | enables measurement | none |
 | 3. Batching + cache-friendly prefixes | 1 d | fewer launches; cache-read discount on repeats | low |
 | 4. Cross-pipeline cache | 1 d | −~100% on re-runs/experiments | none |
