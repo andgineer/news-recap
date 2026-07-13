@@ -51,7 +51,12 @@ Implication (claude tier): with the current pipeline shape (typically 10–40 CL
 per run: classify batches + enrich batches × up to 3 retry rounds + dedup batches +
 oneshot batches + merge + refine), **claude launch overhead alone is ~0.25–1.0 M input
 tokens per day** — very likely the single largest line item on the claude quota, ahead of
-any payload. On the free agy default there is no token bill; the equivalent pressure is
+any payload. **Caveat — this is a raw upper bound, not the billed figure.** The 24 378
+baseline is a cache-*write* number; if the system-prompt+tools prefix is byte-identical
+across launches in a run, provider caching amortizes it as cache-*reads* at a steep
+discount, so the *billed* overhead may already be well below 0.25–1.0 M. Phase 2 telemetry
+(`cache_read_input_tokens`) settles this and, with it, the true size of the Phase 1 win.
+On the free agy default there is no token bill; the equivalent pressure is
 call count against its free-tier RPM, which Phases 3–4 address.
 
 ## Phase 1 — Slim claude launches, file delivery kept (~1–2 days)
@@ -60,6 +65,14 @@ Cut the ~24 k-token launch overhead as far as possible **without** giving up the
 working file-based prompt delivery. The tool-less + stdin path (measured at 167 tokens)
 is **rejected**: stdin is unreliable at our sizes (see the finding above). We keep
 `{prompt_file}` and narrow everything else.
+
+**Do item 1's re-measurement first, as a go/no-go — before writing any other Phase 1
+code.** The whole plan is ordered on the assumption that the slimmed launch is *much*
+cheaper than 24 k. That number is currently unmeasured, and two unknowns (below) could
+make it far closer to 24 k than to 167. If the slimmed template comes back at, say,
+8–12 k, Phase 1's ROI collapses and the fewer-launches / smaller-payload work (Phases
+3–5) should move ahead of it. Measure, then commit to the order — it is a 30-minute
+experiment that gates the rest.
 
 1. New default claude template (config.py) — file delivery, minimal tools:
 
@@ -82,21 +95,45 @@ is **rejected**: stdin is unreliable at our sizes (see the finding above). We ke
    - Prompt is **read from the file**, not piped. `run_subprocess` is unchanged
      (`stdin=subprocess.DEVNULL` stays); no stdin plumbing is added.
    - **Re-measure** input tokens for this template against a trivial prompt to record the
-     real saving (expected: far below 24 k, above the tool-less 167).
+     real saving (expected: far below 24 k, above the tool-less 167). Two semantics decide
+     whether the win is ~200 tokens or ~10 k — verify both explicitly, they are the crux:
+     - **Does `--allowed-tools "Read"` drop the other tool *schemas* from context, or only
+       auto-approve `Read` while every schema stays loaded?** The token saving from
+       tool-narrowing is real only in the first case. Sandbox semantics (what is
+       auto-approved) and context-cost semantics (which schemas load) are not necessarily
+       the same thing; the baseline's "24 368 = system prompt + tool schemas" implies
+       schemas are a large share, so confirm they actually leave.
+     - **Does `--system-prompt` replace the whole system prompt, or does Claude Code keep a
+       non-overridable harness preamble underneath it?** If a base preamble survives, the
+       floor is much higher than the tool-less 167. This is the single largest driver of
+       the final number.
 
 2. Result retrieval is **unchanged**: the agent writes to stdout, the parent captures
    `output/agent_stdout.log`, and every parser in `tasks/` reads it via
    `read_agent_stdout`. No `--output-format json` rewrite is required for the default
    path.
 
-3. **Optional telemetry (decoupled, off by default):** if per-call usage splits are
-   wanted for Phase 2, add `--output-format json`, parse the envelope from the captured
-   stdout, write `result` back as the plain-text stdout the pipeline expects (keeps every
-   parser in `tasks/` untouched), and persist `usage` into `meta/usage.json`.
+3. **JSON telemetry (decoupled from delivery, but a hard prerequisite for Phase 2 —
+   not truly optional).** Delivery stays file-based either way; what this item gates is
+   *measurement*. It is labelled "optional" only in the sense that the default text path
+   runs without it — but **Phase 2 cannot rank any later phase without it**, because
+   today claude tasks carry *no* token telemetry at all: `_parse_tokens_used`
+   (`ai_agent.py:241`) only matches codex's `tokens used` stderr line, so a claude run
+   writes `tokens_used: null` into `meta/usage.json` (see `test_claude_empty_stderr`).
+   So treat this as required-before-Phase-2, gated behind a flag only so the *default*
+   stays plain text.
+   Mechanism: add `--output-format json`, parse the envelope from the captured stdout,
+   write `result` back as the plain-text stdout the pipeline expects (keeps every parser
+   in `tasks/` untouched), and persist the `usage` splits into `meta/usage.json`.
+   **Schema change, not just parsing:** `_save_usage` (`ai_agent.py:256`) currently
+   writes only `tokens_used`/`total_tokens`, and `_UsageStats`/`_aggregate_usage` carry
+   nothing finer. Persisting input/output/`cache_read_input_tokens` means extending the
+   `usage.json` schema *and* `_aggregate_usage`, keeping field names in sync across
+   `_save_usage` / `read_agent_usage` / `api_agent.py` — the sync the
+   `_aggregate_usage` docstring (`pipeline_setup.py:162-163`) explicitly warns about.
    **Ordering matters:** `run_ai_agent` checks "exit 0 but stdout empty"
    (`ai_agent.py:129-141`) against the *raw* stdout, so parse and rewrite `result`
    **before** that check and derive the emptiness signal from `result`, not the JSON blob.
-   Gate this behind a flag so the default stays plain text and delivery is untouched.
 
 4. Prompt-side change: the `_CLI_OUTPUT_INSTRUCTION` block ("Do NOT write any files…")
    stays — with only `Read` available it is largely enforced structurally, but it still
@@ -121,9 +158,13 @@ is **rejected**: stdin is unreliable at our sizes (see the finding above). We ke
 7. **Update `spec/agents.md`.** It currently documents `--output-format text` and a wide
    tool list; bring it in line with the slimmed **file-delivery** template
    (`--allowed-tools "Read"`, stripped system prompt/settings, prompt still read from
-   `{prompt_file}`). If item 3 is taken, also document the optional JSON envelope. (The
-   sandboxing plan also touches `agents.md`; coordinate so one edit doesn't clobber the
-   other.)
+   `{prompt_file}`). If item 3 is taken, also document the optional JSON envelope.
+   **Collision resolution (not just "coordinate"):** both this plan and the sandboxing
+   plan edit the *same* `config.py` template and `spec/agents.md`, and the template edit
+   is byte-identical between them. So whichever plan lands first owns the change; in the
+   other plan that same edit becomes a no-op verified by its template test. Land the
+   `config.py`/`agents.md` change once, under whichever plan reaches it first, and drop
+   the duplicate rather than re-applying it.
 8. Tests: unit test that the rendered claude template carries `{prompt_file}` (file
    delivery) and `--allowed-tools "Read"` only; regression run of one full pipeline on a
    small article set. If item 3 is taken, add an envelope-parsing unit test (fixture
@@ -135,12 +176,14 @@ the sandboxing plan; the two plans share the one template edit.
 
 ## Phase 2 — Real telemetry before structural surgery (~0.5 day)
 
-With Phase 1 item 3 (optional JSON telemetry) enabled, accurate per-call usage becomes
+Phase 1 item 3 (JSON telemetry) is a **hard prerequisite** for this phase — enable it
+first (it is a no-op for delivery; see item 3). With it, accurate per-call usage becomes
 available. Extend the existing
 `_log_pipeline_token_summary` (flow.py) to report input/output/cache-read splits per
-phase and per launch count, and persist the summary into the digest index entry
-(`_aggregate_usage` already exists in pipeline_setup.py). Run ~1 week of daily
-pipelines. All later phases are ranked by these numbers, not by guesses.
+phase and per launch count, and persist the summary into the digest index entry via
+`_aggregate_usage` (pipeline_setup.py) — which item 3 must already have taught to carry
+the finer splits (input/output/`cache_read_input_tokens`), not just `total_tokens`. Run
+~1 week of daily pipelines. All later phases are ranked by these numbers, not by guesses.
 Expected ranking (to be confirmed): launch overhead (fixed by Phase 1) >
 oneshot_digest > enrich > classify > dedup > merge/refine.
 
@@ -149,22 +192,34 @@ oneshot_digest > enrich > classify > dedup > merge/refine.
 Even at 167 tokens/launch, fewer calls mean less latency and fewer retry rounds; for
 codex/antigravity (overhead not eliminated) this is the main lever.
 
+Items 1–3 are unconditional wins (fewer launches, fewer retry re-splits). Item 4
+(prompt-prefix caching) is **speculative and should be attempted last, if at all** — its
+two caveats below very likely reduce it to near-zero in the common path.
+
 1. classify: raise `_MIN_BATCH` 50 → 300 (`classify.py`). The model already handles
    `_MAX_BATCH = 300` headlines; today a 350-article day produces 2–7 launches where
-   1–2 suffice.
+   1–2 suffice. **Trade-off — bigger batches enlarge the failure blast radius.** The
+   classify recognition guard is strict (`_MIN_RECOGNITION_RATE = 0.8`, higher than
+   enrich's 0.50) and the model must print EXACTLY `{expected_count}` lines; one
+   miscount or truncation in a 300-headline batch fails the whole batch's guard and
+   re-runs 300 articles instead of 50. Net launches still drop, but wasted work per
+   failed batch rises — watch the guard on a live 300-batch before flipping.
 2. enrich: raise `_MAX_BATCH` 20 → 40 and keep `_MAX_BATCH_CHARS = 60_000` as the
    real limiter. The `===ARTICLE===` separator parsing is count-agnostic; verify the
    recognition-rate guard (`_MIN_RECOGNITION_RATE = 0.50`) still holds on a live
-   batch before flipping.
+   batch before flipping. **Also check output headroom, not just the input char cap:**
+   40 full headline rewrites must fit under `CLAUDE_CODE_MAX_OUTPUT_TOKENS = 64000`
+   (`config.py:82`) — confirm 40× worst-case rewrite length clears it before doubling.
 3. Retry rounds (enrich `_run_enrich`, up to 3 rounds): retry only the *unparsed*
    articles (already the case) but batch them into a single launch per round rather
    than re-splitting.
-4. Provider-side prompt caching (subscription quota counts cache reads at a steep
-   discount): make every batch of the same step share a byte-identical prompt
-   *prefix*. Concretely: in `prompts.py` move all per-batch variables
-   (`expected_count`, `article_count`, `total`) from the middle of the templates to
-   the end, after the static instructions. **Gate this on Phase 2 telemetry — do not
-   reorder prompts blind.** Two things limit the payoff and must be checked first:
+4. **(Speculative, do last.)** Provider-side prompt caching (subscription quota counts
+   cache reads at a steep discount): make every batch of the same step share a
+   byte-identical prompt *prefix*. Concretely: in `prompts.py` move all per-batch
+   variables (`expected_count`, `article_count`, `total`) from the middle of the
+   templates to the end, after the static instructions. **Gate this on Phase 2
+   telemetry — do not reorder prompts blind.** Two things limit the payoff and must be
+   checked first; if either holds, skip this item entirely:
    - **1024-token minimum.** Anthropic prompt caching has a minimum cacheable prefix
      (~1024 tokens for Sonnet/Opus). The static part of the classify/enrich templates
      (`prompts.py:42-98`) is only a few hundred tokens unless `{exclude_policy}` /
@@ -187,17 +242,19 @@ experiment iterations over the same window (the checkpoint only helps *within* o
 pipeline dir).
 
 1. New `VerdictCache` next to `ResourceCache` (`{data_dir}/verdicts/`, one JSON per
-   `article_id`): `{verdict, enriched_title, model, created_at}`.
+   `article_id`): `{verdict, enriched_title, created_at}`. (`model` and the other key
+   inputs live in the *key*, not the value — see item 3.)
 2. classify: before batching, pull cached verdicts; send only cache misses to the
    LLM. enrich: same for `enriched_title`.
 3. Invalidation: the cache key must include **everything that changes the verdict** —
    a hash of the exclude-policy text (policy edit → re-classify), the article title
-   (feed edit → re-classify), **the model** (`model` is stored in the value but
-   nothing invalidates on it — a model swap would otherwise serve stale verdicts),
-   **the digest language** (enriched titles are language-specific), and **a
-   prompt-template version tag** (bump it whenever the classify/enrich prompt changes
-   so old verdicts don't leak across a prompt edit). GC with the same retention as
-   article partitions.
+   (feed edit → re-classify), **the model** (a model swap must not serve stale
+   verdicts), **the digest language** (enriched titles are language-specific), and **a
+   hash of the prompt-template body itself**. Prefer the template-body hash over a
+   manually-bumped version tag: a manual tag is the *same class of footgun* this item
+   otherwise fixes for `model` — easy to forget on a prompt edit, silently serving stale
+   verdicts. Hashing `prompts.py`'s template string makes any prompt change invalidate
+   automatically. GC with the same retention as article partitions.
 4. Expected effect: near-zero cost for repeated experiment runs — which is exactly
    when quota pressure is highest today.
 
@@ -212,6 +269,15 @@ split. Embeddings for every article are already computed twice per run (dedup, a
 
 New shape:
 
+0. **Go/no-go pre-check before committing the 3–5 days (½ day).** The entire payoff
+   rests on the local clustering being *good enough* — but the dedup embeddings
+   (e5/sentence-transformers) are tuned for **near-duplicate** detection at a high
+   threshold. **Topic** grouping is a looser, different task; at a low threshold these
+   embeddings can drift or collapse into one giant catch-all cluster. Before writing the
+   new pipeline, run the low-threshold `group_similar` over a few historical days and
+   eyeball cluster coherence. If topics don't separate cleanly, stop here — the rest of
+   Phase 5 is not worth it, and the A/B week (below) would only discover this after the
+   build.
 1. **Local topic clustering** over the existing embeddings (extend
    `dedup/cluster.py:group_similar` with a lower threshold tier, or agglomerative
    clustering; singletons allowed, unlike dedup). Output: topic blocks.
@@ -224,7 +290,14 @@ New shape:
    O(blocks) ≈ 30–60 lines instead of O(articles).
 4. Delete the `merge_sections` sub-step and the `refine_layout` phase (their job no
    longer exists), plus the coverage-repair machinery driven by batch splits.
-   Keep-separate topics (`follow_policy`) move into the sections call.
+   Keep-separate topics (`follow_policy`) move into the sections call. **This is more
+   than a code deletion — it edits the pipeline's phase graph**, so budget for the whole
+   surface: the `--stop-after` phase list (`main.py:249`, `docs/{en,ru}/cli.md`), the
+   `completed_phases` schema in `digest.json` (`test_pipeline_setup.py`), the
+   oneshot resume path (`oneshot_digest.py:310`, where `reorder_articles` yields a
+   different order on resume), and the `refine_layout`/`merge_sections` tests
+   (`test_refine_layout.py`, `test_fuzzy_merge.py`). The ~3–5 day estimate is on the
+   light side once these are counted; treat it as build-only, exclusive of the A/B week.
 5. **Quality guardrail — hybrid review pass** (cheap, optional flag): the LLM sees
    only the final block descriptions and may propose merges of semantically
    duplicate blocks — mirrors `_fuzzy_merge_blocks` which already exists.
@@ -260,15 +333,19 @@ ok/exclude triage.
 
 | Phase | Effort | Token effect | Quality risk |
 |---|---|---|---|
-| 1. Slim claude (file delivery) | 1–2 d | strips system prompt/settings + all tools but `Read`; saving smaller than the rejected tool-less path, re-measure | none (keeps file delivery) |
-| 2. Telemetry | 0.5 d | enables measurement | none |
-| 3. Batching + cache-friendly prefixes | 1 d | fewer launches; cache-read discount on repeats | low |
+| 1. Slim claude (file delivery) | 1–2 d | strips system prompt/settings + all tools but `Read`; saving smaller than the rejected tool-less path, and **currently unmeasured** — re-measure first (Phase 1 item 1) as a go/no-go | none (keeps file delivery) |
+| 2. Telemetry | 0.5 d | enables measurement; **hard prerequisite** for ranking phases 3–6 | none |
+| 3. Batching (+ speculative cache prefixes) | 1 d | fewer launches; cache-read discount on repeats is speculative (item 4, likely ~0) | low |
 | 4. Cross-pipeline cache | 1 d | −~100% on re-runs/experiments | none |
 | 5. Local clustering digest | 3–5 d | ~3–5× on digest phases; kills 2 phases | medium — gated by A/B week |
 | 6. Classify cascade | experiment | −20–40% of classify | medium — gated by shadow mode |
 
-Recommended order: 1 → 2 → 3+4 (parallel) → 5 → 6. Phases 1–4 change no pipeline
-semantics; Phase 5 is the only structural change and is gated by a side-by-side
-quality week. Backend note: Phase 1 pays off only on the opt-in claude tier; for the free
-agy default (the standard backend per the sandboxing plan) the wins are Phases 3–4 (fewer
-launches/retries against agy's free-tier RPM) and Phases 5–6 (smaller payloads).
+Recommended order: 1 → 2 → 3+4 (parallel) → 5 → 6 — **conditional on Phase 1 item 1's
+measurement.** If the slimmed launch turns out only modestly cheaper than 24 k, demote
+Phase 1 and pull Phases 3–5 forward, since the win then lives in fewer launches and
+smaller payloads rather than per-launch overhead. Phases 1–4 change no pipeline
+semantics; Phase 5 is the only structural change and is gated by both a clustering
+go/no-go pre-check (Phase 5 item 0) and a side-by-side quality week. Backend note: Phase
+1 pays off only on the opt-in claude tier; for the free agy default (the standard backend
+per the sandboxing plan) the wins are Phases 3–4 (fewer launches/retries against agy's
+free-tier RPM) and Phases 5–6 (smaller payloads).
