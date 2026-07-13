@@ -1,15 +1,21 @@
 # Plan: Token Usage Reduction (CLI Backend)
 
 Status: proposed. Companion plan: `plan-agent-sandboxing.md` (its Phase 0 overlaps
-with Phase 1 here — the slimmed claude template serves both goals). **Both plans retain
+with Phase 1 here — the slimmed claude template serves both goals; see that plan's
+*Backend priority* for which backend is the default). **Both plans retain
 file-based prompt delivery — stdin proved unstable (see the Phase 1 finding); the claude
 launch is slimmed while it keeps its `Read` tool to read `{prompt_file}`, and results are
 still captured from stdout.**
 
-Billing model: subscription (CLI agents), so "cost" = subscription **quota**
-consumption, measured in tokens with provider-side cache discounts. The API backend
-stays experiment-only. Goal: cut token consumption substantially without a
-measurable quality drop.
+Billing model: the pipeline's **default backend is antigravity (`agy`), which runs free
+with no subscription** (per the companion plan's backend priority) — its "cost" is
+free-tier rate/capacity limits (RPM), not token spend. **claude** and **codex** are
+optional quality-tier backends; on those, "cost" = subscription **quota** consumption,
+measured in tokens with provider-side cache discounts. The API backend stays
+experiment-only. This plan's launch-overhead cut (Phase 1) targets the claude tier; the
+launch-count and caching work (Phases 3–4) also relieve the free agy default by cutting
+calls/retries against its rate limits. Goal: cut token consumption substantially without
+a measurable quality drop.
 
 ## Measured baseline (research done 2026-07-13, claude CLI, live calls)
 
@@ -41,10 +47,12 @@ Two further verified facts:
 - Caveat: `--bare` mode must NOT be used — it restricts auth to `ANTHROPIC_API_KEY`
   (OAuth subscription auth is never read), which defeats the subscription model.
 
-Implication: with the current pipeline shape (typically 10–40 CLI launches per run:
-classify batches + enrich batches × up to 3 retry rounds + dedup batches +
-oneshot batches + merge + refine), **launch overhead alone is ~0.25–1.0 M input
-tokens per day** — very likely the single largest line item, ahead of any payload.
+Implication (claude tier): with the current pipeline shape (typically 10–40 CLI launches
+per run: classify batches + enrich batches × up to 3 retry rounds + dedup batches +
+oneshot batches + merge + refine), **claude launch overhead alone is ~0.25–1.0 M input
+tokens per day** — very likely the single largest line item on the claude quota, ahead of
+any payload. On the free agy default there is no token bill; the equivalent pressure is
+call count against its free-tier RPM, which Phases 3–4 address.
 
 ## Phase 1 — Slim claude launches, file delivery kept (~1–2 days)
 
@@ -56,7 +64,7 @@ is **rejected**: stdin is unreliable at our sizes (see the finding above). We ke
 1. New default claude template (config.py) — file delivery, minimal tools:
 
    ```
-   claude -p {model} --permission-mode dontAsk --setting-sources "" \
+   claude -p {model} --setting-sources "" \
      --allowed-tools "Read" \
      --system-prompt "You are a text-processing engine. Follow the task instructions exactly. Reply with plain text only." \
      -- "Read your task from {prompt_file} and execute it."
@@ -64,6 +72,11 @@ is **rejected**: stdin is unreliable at our sizes (see the finding above). We ke
 
    - `--allowed-tools "Read"` keeps the one tool needed to read the prompt file and drops
      every network/write tool (this is exactly Phase 0 of the sandboxing plan).
+   - **No `--permission-mode`.** The sandboxing plan's live experiment proved
+     `--allowed-tools "Read"` alone is *necessary and sufficient* headless — an
+     allowlisted `Read` runs without a prompt, so `dontAsk`/`bypassPermissions` are
+     unneeded (and are exfil/permission surface). Dropped here to keep the two plans'
+     shared template byte-identical.
    - `--setting-sources ""` and a short `--system-prompt` strip the settings load and the
      default system prompt — the bulk of the 24 k overhead.
    - Prompt is **read from the file**, not piped. `run_subprocess` is unchanged
@@ -99,7 +112,7 @@ is **rejected**: stdin is unreliable at our sizes (see the finding above). We ke
      with file delivery — `agy -p` has silently dropped stdout under a subprocess before.
 
 6. **Pin the CLI and preflight the flags.** The phase rests on `--allowed-tools`,
-   `--setting-sources ""`, `--system-prompt`, and `--permission-mode`. These exist in the
+   `--setting-sources ""`, and `--system-prompt`. These exist in the
    claude CLI verified for this plan (2.1.207), but flag semantics churn between releases
    and an unknown flag makes the CLI exit non-zero — failing *every* task in the run, not
    degrading gracefully. Defenses: pin the CLI version, and add a cheap one-shot preflight
@@ -256,4 +269,6 @@ ok/exclude triage.
 
 Recommended order: 1 → 2 → 3+4 (parallel) → 5 → 6. Phases 1–4 change no pipeline
 semantics; Phase 5 is the only structural change and is gated by a side-by-side
-quality week.
+quality week. Backend note: Phase 1 pays off only on the opt-in claude tier; for the free
+agy default (the standard backend per the sandboxing plan) the wins are Phases 3–4 (fewer
+launches/retries against agy's free-tier RPM) and Phases 5–6 (smaller payloads).
