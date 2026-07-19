@@ -1,0 +1,2 @@
+WARNING  trafilatura.core:core.py:344 discarding data: https://example.com/2
+WARNING  trafilatura.core:core.py:344 discarding data: https://other.com/3
