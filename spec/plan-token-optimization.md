@@ -1,15 +1,21 @@
 # Plan: Token Usage Reduction (CLI Backend)
 
 Status: proposed. Companion plan: `plan-agent-sandboxing.md` (its Phase 0 overlaps
-with Phase 1 here — the slimmed claude template serves both goals; see that plan's
-*Backend priority* for which backend is the default). **Both plans retain
+with Phase 1 here — the slimmed claude template serves both goals). That plan's
+*Backend priority* asserts agy "is the default and must stay the default" — today that is
+aspirational: the **code** default is codex. **Phase 0 here performs the actual switch**,
+making the assertion true. **Both plans retain
 file-based prompt delivery — stdin proved unstable (see the Phase 1 finding); the claude
 launch is slimmed while it keeps its `Read` tool to read `{prompt_file}`, and results are
 still captured from stdout.**
 
 Billing model — **every backend has a hard consumption budget; none is "cost-free," and
-consumption economy matters for _all_ of them.** The pipeline's default backend is
-antigravity (`agy`), which needs no paid subscription, but its free tier is capped by both
+consumption economy matters for _all_ of them.** The pipeline's *intended* default backend
+is antigravity (`agy`), which needs no paid subscription — but **today the code default is
+still codex** (`config.py:141`, `default_agent = "codex"`; `spec/agents.md` documents the
+same), so "agy is the default" holds only for deployments that set
+`NEWS_RECAP_LLM_DEFAULT_AGENT=antigravity` by hand. Phase 0 makes agy the real code
+default. agy's free tier is capped by both
 **requests-per-day and a token budget**. Exhausting it does not merely throttle — it
 **locks the account out for a day, and up to 7 days on the weekly cap** (the free Gemini
 Flash allowance has been as low as ~20 requests/day; quotas reset on 5-hour / daily /
@@ -24,8 +30,9 @@ There are two distinct levers, and every backend feels at least one:
 - **Per-launch overhead** (Phase 1) — token-weighted. Hits claude/codex token quota
   directly, and any token-metered part of agy's budget. Slim it for agy too (Phase 1
   item 5), not only for claude.
-- **Launch count + payload size** (Phases 3–5) — hits agy's per-day/per-week **request
-  cap** (the binding constraint there) and every backend's token spend.
+- **Launch count + payload size** (Phases 4–5) — hits agy's per-day/per-week **request
+  cap** (the binding constraint there) and every backend's token spend. (Phase 3's audit
+  found the retry-coalescing lever already implemented — see that phase.)
 
 Goal: cut consumption substantially, across all backends, without a measurable quality drop.
 
@@ -68,12 +75,33 @@ baseline is a cache-*write* number; if the system-prompt+tools prefix is byte-id
 across launches in a run, provider caching amortizes it as cache-*reads* at a steep
 discount, so the *billed* overhead may already be well below 0.25–1.0 M. Phase 2 telemetry
 (`cache_read_input_tokens`) settles this and, with it, the true size of the Phase 1 win.
-On the free agy default the pressure is twofold: its **per-day/per-week request cap**
-(relieved by fewer launches — Phases 3–5) and, wherever the budget is token-metered, the
+Once agy is the code default (Phase 0), the pressure on it is twofold: its
+**per-day/per-week request cap**
+(relieved by fewer launches — Phases 4–5) and, wherever the budget is token-metered, the
 same per-launch overhead (relieved by slimming agy's launch the way Phase 1 slims claude's
 — Phase 1 item 5). "Free" means no invoice, **not** no budget: hit the cap and the account
 is locked out for a day or more — with a run firing 10–40 launches against an allowance
 that has been as low as ~20/day, that lockout is a routine failure mode, not an edge case.
+
+## Phase 0 — Make antigravity the code default (~0.5 day)
+
+The whole prioritization below assumes the free agy backend is what the pipeline runs on
+by default. Today that is only an intention: the code default is codex (`config.py:141`,
+`default_agent: str = "codex"`), and `spec/agents.md` documents codex too. The sandboxing
+plan's *Backend priority* already *states* agy is the default — this phase makes the
+statement true instead of aspirational. (Not to be confused with "Phase 0 of the
+sandboxing plan", which is the slimmed claude template = Phase 1 item 1 here.)
+
+1. `config.py`: `default_agent` `"codex"` → `"antigravity"`. The supporting maps already
+   carry antigravity entries (`_default_task_model_map`, `_default_agent_max_parallel`
+   with its parallelism-1 note, `agent_launch_delay`, `_DEFAULT_AGENT_API_KEY_VARS`), so
+   the swap is one line plus tests.
+2. `NEWS_RECAP_LLM_DEFAULT_AGENT` stays the opt-out: operators on codex/claude
+   subscriptions set it explicitly; nothing else changes for them.
+3. Tests: update the settings-default assertions; one smoke run with the echo/mock agent
+   to confirm routing resolves antigravity end-to-end.
+4. Docs: fix the `NEWS_RECAP_LLM_DEFAULT_AGENT` row in `spec/agents.md` (part of the
+   larger agents.md rewrite — Phase 1 item 7) and the README if it names the default.
 
 ## Phase 1 — Slim claude launches, file delivery kept (~1–2 days)
 
@@ -87,7 +115,7 @@ code.** The whole plan is ordered on the assumption that the slimmed launch is *
 cheaper than 24 k. That number is currently unmeasured, and two unknowns (below) could
 make it far closer to 24 k than to 167. If the slimmed template comes back at, say,
 8–12 k, Phase 1's ROI collapses and the fewer-launches / smaller-payload work (Phases
-3–5) should move ahead of it. Measure, then commit to the order — it is a 30-minute
+4–5) should move ahead of it. Measure, then commit to the order — it is a 30-minute
 experiment that gates the rest.
 
 1. New default claude template (config.py) — file delivery, minimal tools:
@@ -147,9 +175,17 @@ experiment that gates the rest.
    `usage.json` schema *and* `_aggregate_usage`, keeping field names in sync across
    `_save_usage` / `read_agent_usage` / `api_agent.py` — the sync the
    `_aggregate_usage` docstring (`pipeline_setup.py:162-163`) explicitly warns about.
-   **Ordering matters:** `run_ai_agent` checks "exit 0 but stdout empty"
-   (`ai_agent.py:129-141`) against the *raw* stdout, so parse and rewrite `result`
-   **before** that check and derive the emptiness signal from `result`, not the JSON blob.
+   **Ordering matters — and the restructuring reaches further back than the emptiness
+   check.** `run_ai_agent` consumes usage *before* that check: `_parse_tokens_used` reads
+   codex's stderr at `ai_agent.py:115` and `_save_usage` writes `usage.json` at
+   `ai_agent.py:127`, both ahead of the "exit 0 but stdout empty" check
+   (`ai_agent.py:129-141`). With the JSON envelope, usage comes from **stdout**, so the
+   whole 115–141 span is restructured: parse the envelope first, rewrite `result` as the
+   plain-text stdout, save usage from the envelope, and derive the emptiness signal from
+   `result`, not the JSON blob. One more consumer of raw stdout: `_summarise_output`
+   (`ai_agent.py:201`) scans it for error patterns ("429", "rate limit") on failures —
+   after this change it must scan the extracted `result` text, or news copy that happens
+   to mention those words inside the JSON blob yields a false error summary.
 
 4. Prompt-side change: the `_CLI_OUTPUT_INSTRUCTION` block ("Do NOT write any files…")
    stays — with only `Read` available it is largely enforced structurally, but it still
@@ -171,10 +207,17 @@ experiment that gates the rest.
    degrading gracefully. Defenses: pin the CLI version, and add a cheap one-shot preflight
    at pipeline start (run the template against a trivial prompt; if it errors, abort with a
    clear "CLI flags rejected — check version" message instead of failing task-by-task).
-7. **Update `spec/agents.md`.** It currently documents `--output-format text` and a wide
-   tool list; bring it in line with the slimmed **file-delivery** template
+7. **Rewrite `spec/agents.md` — it is stale far beyond the template section.** Besides
+   `--output-format text` and the wide tool list, it still documents a manifest-native
+   contract, a **gemini** backend (not antigravity), a `{prompt}` placeholder (the code
+   uses `{prompt_file}`), env vars that no longer exist (`NEWS_RECAP_LLM_GEMINI_*`, the
+   model-profile set), and CLI commands gone from `src/` (`llm enqueue-test`,
+   `llm worker`). Budget a full rewrite against the current code — backends
+   codex/claude/antigravity, the slimmed **file-delivery** template
    (`--allowed-tools "Read"`, stripped system prompt/settings, prompt still read from
-   `{prompt_file}`). If item 3 is taken, also document the optional JSON envelope.
+   `{prompt_file}`), the real env-var set from `config.py`, the Phase 0 default agent —
+   not a one-section touch-up. If item 3 is taken, also document the optional JSON
+   envelope.
    **Collision resolution (not just "coordinate"):** both this plan and the sandboxing
    plan edit the *same* `config.py` template and `spec/agents.md`, and the template edit
    is byte-identical between them. So whichever plan lands first owns the change; in the
@@ -203,10 +246,13 @@ the finer splits (input/output/`cache_read_input_tokens`), not just `total_token
 Expected ranking (to be confirmed): launch overhead (fixed by Phase 1) >
 oneshot_digest > enrich > classify > dedup > merge/refine.
 
-## Phase 3 — Fewer launches *without enlarging prompts* + cache-friendly prompts (~1 day)
+## Phase 3 — Launch-count audit (~0.5 day, verification only — both proposed wins fell through)
 
-Even at 167 tokens/launch, fewer calls mean less latency and fewer retry rounds; for
-codex/antigravity (overhead not eliminated) this is the main lever.
+Audit outcome: of the two mechanisms this phase originally proposed, retry-coalescing
+turned out to be **already implemented** (item 3) and prompt-prefix caching is
+**structurally impossible on the CLI backend** (item 4). What remains here is pinning
+the existing behavior with a test; the real launch-count and payload wins live in
+Phases 4–5. The batching constraint below still stands and governs those phases too.
 
 > **HARD CONSTRAINT — do NOT enlarge per-prompt batch sizes.** The current batch caps
 > (`classify._MAX_BATCH = 300`, `enrich._MAX_BATCH = 20` + `_MAX_BATCH_CHARS = 60_000`)
@@ -238,31 +284,35 @@ codex/antigravity (overhead not eliminated) this is the main lever.
    `_MAX_ARTICLE_CHARS = 5_000`, and `_MAX_BATCH_CHARS = 60_000` stay as tuned. (There is
    also no headroom argument for it: 40 full rewrites risk the
    `CLAUDE_CODE_MAX_OUTPUT_TOKENS = 64000` output cap too.)
-3. Retry rounds (enrich `_run_enrich`, up to 3 rounds) — **the one safe launch-count win
-   here.** Retry only the *unparsed* articles (already the case) but coalesce them into a
-   single launch per round rather than re-splitting — **subject to the same
-   `split_into_enrich_batches` caps**, so if the leftovers still exceed `_MAX_BATCH` /
-   `_MAX_BATCH_CHARS` they split as usual. This reduces launches without enlarging any
-   single prompt.
-4. **(Speculative, do last.)** Provider-side prompt caching (subscription quota counts
-   cache reads at a steep discount): make every batch of the same step share a
-   byte-identical prompt *prefix*. Concretely: in `prompts.py` move all per-batch
-   variables (`expected_count`, `article_count`, `total`) from the middle of the
-   templates to the end, after the static instructions. **Gate this on Phase 2
-   telemetry — do not reorder prompts blind.** Two things limit the payoff and must be
-   checked first; if either holds, skip this item entirely:
+3. ~~Retry rounds: coalesce unparsed leftovers into one launch per round.~~ **Already
+   implemented — this is the current behavior, not a change.** `_run_enrich` pools the
+   leftovers from *all* batches of a round into a single `remaining` list and re-packs it
+   greedily through `split_into_enrich_batches`, which only opens a new batch when
+   `_MAX_BATCH` / `_MAX_BATCH_CHARS` would be exceeded (`enrich.py:266-300`); there is no
+   re-splitting along the original batch boundaries. Remaining work is a **pinning
+   test**: assert that leftovers from several batches coalesce into the minimal number of
+   cap-respecting batches on the next round, so a refactor cannot silently regress it.
+4. ~~Cache-friendly prompt prefixes (move per-batch variables to the end of the
+   templates).~~ **Rejected for the CLI backend — structurally impossible, not merely
+   low-payoff.** With file delivery the template text never enters the request *prefix*:
+   a CLI launch's context is system prompt + tool schemas + the fixed "Read your task
+   from {prompt_file}" message, then a `Read` tool_use whose input contains the
+   **per-task workdir path** (`ai_agent.py:309` — the path embeds the task id), and only
+   then the prompt text as a tool result. The prefix diverges at that tool_use block
+   *before* the first template byte, so no reordering inside `prompts.py` can create a
+   shared cacheable prefix across batches. Meanwhile the part that *is* shared — system
+   prompt + tools + the fixed user message — is already byte-identical across launches
+   with no prompt work (that is exactly the caching caveat in the baseline section).
+   The idea stays relevant **only for the API backend** (prompts sent directly as
+   messages), which this plan keeps experiment-only. If the API path ever becomes real,
+   revisit under the original caveats:
    - **1024-token minimum.** Anthropic prompt caching has a minimum cacheable prefix
      (~1024 tokens for Sonnet/Opus). The static part of the classify/enrich templates
      (`prompts.py:42-98`) is only a few hundred tokens unless `{exclude_policy}` /
-     `{follow_policy}` is large — below the floor there is simply nothing to cache, so
-     the reorder buys nothing. Confirm the static prefix clears 1024 tokens before
-     investing.
-   - **Parallel batches race the cache write.** Batches of one step launch
-     concurrently via the `ThreadPoolExecutor`, so same-prefix requests fire at once
-     and all miss the not-yet-written cache. The discount only materializes for
-     *sequential* reuse (retries, back-to-back runs, or deliberately launching the
-     first batch alone to warm the cache before the rest). Decide whether that
-     sequencing is worth it using `cache_read_input_tokens` from Phase 1 telemetry.
+     `{follow_policy}` is large — below the floor there is nothing to cache.
+   - **Parallel batches race the cache write.** Batches of one step launch concurrently
+     via the `ThreadPoolExecutor`, so same-prefix requests fire at once and all miss the
+     not-yet-written cache; the discount only materializes for *sequential* reuse.
 
 ## Phase 4 — Cross-pipeline result cache (~1 day)
 
@@ -272,20 +322,30 @@ the other frequent modes: re-runs after failures, `--from`/`--all` runs, and
 experiment iterations over the same window (the checkpoint only helps *within* one
 pipeline dir).
 
-1. New `VerdictCache` next to `ResourceCache` (`{data_dir}/verdicts/`, one JSON per
-   `article_id`): `{verdict, enriched_title, created_at}`. (`model` and the other key
-   inputs live in the *key*, not the value — see item 3.)
+1. **Two caches, not one** — verdicts and enriched titles have *different* key inputs,
+   and a single combined key over-invalidates (an exclude-policy edit would needlessly
+   wipe every enriched title). Next to `ResourceCache`:
+   - `{data_dir}/verdicts/` — value `{verdict, created_at}`;
+   - `{data_dir}/enriched/` — value `{enriched_title, created_at}`.
+   The key inputs live in the **key**, so the filename must encode them:
+   `{article_id}-{key_hash}.json`, not bare `{article_id}.json` (a bare id cannot carry
+   the key; entries under superseded keys are just unreferenced files the GC collects).
 2. classify: before batching, pull cached verdicts; send only cache misses to the
    LLM. enrich: same for `enriched_title`.
-3. Invalidation: the cache key must include **everything that changes the verdict** —
-   a hash of the exclude-policy text (policy edit → re-classify), the article title
-   (feed edit → re-classify), **the model** (a model swap must not serve stale
-   verdicts), **the digest language** (enriched titles are language-specific), and **a
-   hash of the prompt-template body itself**. Prefer the template-body hash over a
-   manually-bumped version tag: a manual tag is the *same class of footgun* this item
-   otherwise fixes for `model` — easy to forget on a prompt edit, silently serving stale
-   verdicts. Hashing `prompts.py`'s template string makes any prompt change invalidate
-   automatically. GC with the same retention as article partitions.
+3. Invalidation — per-cache key hash over **everything that changes the output**:
+   - **verdict key**: exclude-policy text (policy edit → re-classify) + article title
+     (feed edit → re-classify) + model (a swap must not serve stale verdicts) + the
+     `RECAP_CLASSIFY_BATCH_PROMPT` template body;
+   - **enriched-title key**: digest language (titles are language-specific) + article
+     title + **the resource text** — the title is rewritten from the fetched article
+     body (`_build_enrich_entries` reads it from `ResourceCache`), so a re-fetched or
+     updated body must not serve a stale title — + model + the
+     `RECAP_ENRICH_BATCH_PROMPT` template body.
+   Prefer template-body hashes over a manually-bumped version tag: a manual tag is the
+   *same class of footgun* this item otherwise fixes for `model` — easy to forget on a
+   prompt edit, silently serving stale results. Hashing the template string makes any
+   prompt change invalidate automatically. GC with the same retention as article
+   partitions.
 4. Expected effect: near-zero cost for repeated experiment runs — which is exactly
    when quota pressure is highest today.
 
@@ -308,10 +368,16 @@ New shape:
    new pipeline, run the low-threshold `group_similar` over a few historical days and
    eyeball cluster coherence. If topics don't separate cleanly, stop here — the rest of
    Phase 5 is not worth it, and the A/B week (below) would only discover this after the
-   build.
-1. **Local topic clustering** over the existing embeddings (extend
-   `dedup/cluster.py:group_similar` with a lower threshold tier, or agglomerative
-   clustering; singletons allowed, unlike dedup). Output: topic blocks.
+   build. One more precondition to check explicitly: `build_embedder`
+   (`recap/dedup/embedder.py:96-112`) **silently falls back to `HashingEmbedder`** when
+   sentence-transformers cannot load — on the hash embedder both this pre-check and
+   production clustering produce garbage behind a green pipeline. Run the pre-check with
+   the fallback disabled (`allow_fallback=False`) and assert the real
+   `intfloat/multilingual-e5*` model is in use before trusting any clustering result.
+1. **Local topic clustering** over the existing embeddings (extend `group_similar` in
+   `src/news_recap/recap/dedup/cluster.py` — the *recap* dedup, not the ingestion dedup
+   service — with a lower threshold tier, or agglomerative clustering; singletons
+   allowed, unlike dedup). Output: topic blocks.
 2. **Per-cluster LLM call** (tiny): "here are 3–8 related headlines — write the 1–2
    sentence BLOCK description in {language}". Pack many clusters per launch exactly
    like `RECAP_DEDUP_MULTI_PROMPT` packs clusters today (`CLUSTER N:` framing —
@@ -323,7 +389,7 @@ New shape:
    longer exists), plus the coverage-repair machinery driven by batch splits.
    Keep-separate topics (`follow_policy`) move into the sections call. **This is more
    than a code deletion — it edits the pipeline's phase graph**, so budget for the whole
-   surface: the `--stop-after` phase list (`main.py:249`, `docs/{en,ru}/cli.md`), the
+   surface: the `--stop-after` phase list (`main.py:240`, `docs/src/{en,ru}/cli.md`), the
    `completed_phases` schema in `digest.json` (`test_pipeline_setup.py`), the
    oneshot resume path (`oneshot_digest.py:310`, where `reorder_articles` yields a
    different order on resume), and the `refine_layout`/`merge_sections` tests
@@ -364,22 +430,24 @@ ok/exclude triage.
 
 | Phase | Effort | Token effect | Quality risk |
 |---|---|---|---|
+| 0. agy as code default | 0.5 d | none directly — grounds the ranking: makes the free, request-capped backend the one the defaults actually exercise | none (env opt-out unchanged for codex/claude users) |
 | 1. Slim claude (file delivery) | 1–2 d | strips system prompt/settings + all tools but `Read`; saving smaller than the rejected tool-less path, and **currently unmeasured** — re-measure first (Phase 1 item 1) as a go/no-go | none (keeps file delivery) |
-| 2. Telemetry | 0.5 d | enables measurement; **hard prerequisite** for ranking phases 3–6 | none |
-| 3. Retry-coalescing (+ speculative cache prefixes) | 1 d | fewer launches **without enlarging any prompt** — batch-cap raises are rejected (they break recognition); win is retry-coalescing only, cache-read discount speculative (item 4, likely ~0) | low |
+| 2. Telemetry | 0.5 d | enables measurement; **hard prerequisite** for ranking phases 4–6 | none |
+| 3. Launch-count audit | 0.5 d | ~0 new savings — retry-coalescing already implemented (pin with a test); prefix caching rejected for CLI (file delivery keeps template text out of the request prefix), API-only if ever | none |
 | 4. Cross-pipeline cache | 1 d | −~100% on re-runs/experiments | none |
 | 5. Local clustering digest | 3–5 d | ~3–5× on digest phases; kills 2 phases | medium — gated by A/B week |
 | 6. Classify cascade | experiment | −20–40% of classify | medium — gated by shadow mode |
 
-Recommended order: 1 → 2 → 3+4 (parallel) → 5 → 6 — **conditional on Phase 1 item 1's
+Recommended order: 0 → 1 → 2 → 4 → 5 → 6, with Phase 3's pinning test folded into
+Phase 2's telemetry week — **conditional on Phase 1 item 1's
 measurement.** If the slimmed launch turns out only modestly cheaper than 24 k, demote
-Phase 1 and pull Phases 3–5 forward, since the win then lives in fewer launches and
-smaller payloads rather than per-launch overhead. Phases 1–4 change no pipeline
+Phase 1 and pull Phases 4–5 forward, since the win then lives in fewer launches and
+smaller payloads rather than per-launch overhead. Phases 0–4 change no pipeline
 semantics; Phase 5 is the only structural change and is gated by both a clustering
 go/no-go pre-check (Phase 5 item 0) and a side-by-side quality week. Backend note — **all
 backends benefit; none is cost-free.** On the opt-in claude/codex tiers the win is token
-quota (Phase 1 overhead + Phases 3–5 payload). On the free agy default the binding
-constraint is its per-day/per-week **request cap**, so Phases 3–5 (fewer launches, smaller
+quota (Phase 1 overhead + Phases 4–5 payload). On the agy default (Phase 0) the binding
+constraint is its per-day/per-week **request cap**, so Phases 4–5 (fewer launches, smaller
 payloads) are the most valuable there — and where agy's budget is also token-metered,
 slimming its launch (Phase 1 item 5) helps too. Because a single run fires 10–40 launches
 against a free allowance that has been as low as ~20/day, cutting launch count on agy is
