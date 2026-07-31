@@ -159,14 +159,29 @@ def _read_stderr_safe(path: Path) -> str:
         return ""
 
 
-_KNOWN_ERRORS: list[tuple[re.Pattern[str], str]] = [
+# agy logs "You are not logged into Antigravity" on every start, before it
+# refreshes the keyring token — the message only means anything if the run never
+# went on to report a successful auth.
+_AUTH_SUCCEEDED = re.compile(
+    r"silent auth succeeded|authenticated successfully|authenticated via keyring",
+    re.IGNORECASE,
+)
+
+_KNOWN_ERRORS: list[tuple[re.Pattern[str], str, re.Pattern[str] | None]] = [
     (
         re.compile(r"Individual quota reached|upgrade your subscription", re.IGNORECASE),
         "Antigravity quota exhausted — upgrade plan or wait for reset",
+        None,
     ),
     (
         re.compile(r"not logged into Antigravity|You are not logged in", re.IGNORECASE),
         "Not logged into Antigravity — run: agy login",
+        _AUTH_SUCCEEDED,
+    ),
+    (
+        re.compile(r"invalid model selection|requires --effort", re.IGNORECASE),
+        "Invalid model/effort selection — check the agent's --model flags",
+        None,
     ),
     (
         re.compile(
@@ -174,26 +189,34 @@ _KNOWN_ERRORS: list[tuple[re.Pattern[str], str]] = [
             re.IGNORECASE,
         ),
         "Credit balance too low — add credits to continue",
+        None,
     ),
     (
         re.compile(r"RetryableQuotaError:.*exhausted your capacity", re.IGNORECASE),
         "Antigravity API quota exhausted (rate limit) — reduce parallelism or wait",
+        None,
     ),
     (
         re.compile(r"OverloadedError|overloaded_error", re.IGNORECASE),
         "Claude API overloaded — reduce parallelism or retry later",
+        None,
     ),
     (
-        re.compile(r"rate.?limit|too many requests|429", re.IGNORECASE),
+        # A bare 429 also matches PIDs and trace ids in agent logs.
+        re.compile(
+            r"rate.?limit|too many requests|\b(status|code|http)\b\W{0,10}429",
+            re.IGNORECASE,
+        ),
         "API rate limit hit — reduce parallelism or wait",
+        None,
     ),
 ]
 
 
 def _summarise_stderr(text: str) -> str | None:
     """Return a one-line summary if *text* matches a known error pattern."""
-    for pattern, summary in _KNOWN_ERRORS:
-        if pattern.search(text):
+    for pattern, summary, negated_by in _KNOWN_ERRORS:
+        if pattern.search(text) and not (negated_by and negated_by.search(text)):
             return summary
     return None
 

@@ -28,6 +28,7 @@ def _write_pipeline_input(
     agent_override: str | None = "codex",
     run_date: date | None = None,
     selection_params: dict | None = None,
+    task_model_map: dict | None = None,
 ) -> None:
     bdate = run_date or _TODAY
     payload: dict = {
@@ -36,7 +37,7 @@ def _write_pipeline_input(
         "preferences": {"max_headline_chars": 120, "language": "ru"},
         "routing_defaults": {
             "default_agent": "codex",
-            "task_model_map": {},
+            "task_model_map": task_model_map or {},
             "command_templates": {},
             "task_type_timeout_map": {},
         },
@@ -135,6 +136,51 @@ def test_controller_resume_with_agent_override_normalizes(
 
     inp = read_pipeline_input(str(pipeline_dir))
     assert inp.agent_override == "claude"
+
+
+@patch("news_recap.recap.launcher.recap_flow")
+@patch("news_recap.recap.launcher.Settings.from_env")
+def test_controller_resume_refreshes_model_flags_without_agent_override(
+    mock_from_env: MagicMock,
+    mock_flow: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Resume re-reads model flags from settings even when no --agent is passed."""
+    workdir_root = tmp_path / "workdirs"
+    pipeline_dir = workdir_root / f"pipeline-{_TODAY}-120000"
+    pipeline_dir.mkdir(parents=True)
+    command = RecapRunCommand()
+    sel_params = _selection_params_for_create(command)
+    _write_pipeline_input(
+        pipeline_dir,
+        agent_override="antigravity",
+        selection_params=sel_params,
+        task_model_map={"recap_classify": {"antigravity": {"model": "--model stale"}}},
+    )
+    _write_digest(pipeline_dir, completed_phases=["triage"])
+
+    settings = MagicMock()
+    settings.data_dir = tmp_path / "data"
+    settings.orchestrator.workdir_root = workdir_root
+    settings.orchestrator.default_agent = "codex"
+    settings.orchestrator.task_model_map = {
+        "recap_classify": {"antigravity": {"model": "--model current --effort low"}}
+    }
+    settings.orchestrator.claude_command_template = ""
+    settings.orchestrator.codex_command_template = ""
+    settings.orchestrator.antigravity_command_template = "agy {model}"
+    settings.orchestrator.task_type_timeout_map = {}
+    settings.orchestrator.agent_max_parallel = {}
+    settings.ingestion.gc_retention_days = 30
+    settings.ingestion.digest_lookback_days = 7
+    mock_from_env.return_value = settings
+
+    list(RecapCliController().run_pipeline(command))
+
+    inp = read_pipeline_input(str(pipeline_dir))
+    entry = inp.routing_defaults.task_model_map["recap_classify"]["antigravity"]
+    assert entry["model"] == "--model current --effort low"
+    assert inp.routing_defaults.command_templates["antigravity"] == "agy {model}"
 
 
 # ---------------------------------------------------------------------------

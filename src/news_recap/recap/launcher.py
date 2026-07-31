@@ -87,11 +87,12 @@ def _load_from_pipeline(pipeline_dir: Path) -> tuple[date, list[DigestArticle]]:
 
 
 def _patch_routing_defaults_for_agent(raw: dict, agent: str, settings: Settings) -> None:
-    """Inject model map entries and command template for *agent* into stored routing_defaults.
+    """Refresh model map entries and command template for *agent* in stored routing_defaults.
 
-    Called during resume when the agent override changes — the stored
-    routing_defaults only knows about the agent that was active at pipeline
-    creation time and may not have an entry for the new agent.
+    How to invoke an agent is environment config, not pipeline data, so it is
+    re-read from settings on every resume: the stored snapshot was written at
+    pipeline creation and may name a model or flag the installed CLI no longer
+    accepts, or may not know the agent at all if the override just changed.
     """
     rd = raw.get("routing_defaults")
     if not isinstance(rd, dict):
@@ -101,13 +102,13 @@ def _patch_routing_defaults_for_agent(raw: dict, agent: str, settings: Settings)
         current_map = settings.orchestrator.task_model_map
         for task_type, agent_models in current_map.items():
             if agent in agent_models:
-                rd["task_model_map"].setdefault(task_type, {})[agent] = agent_models[agent]
+                task_model_map.setdefault(task_type.lower(), {})[agent] = agent_models[agent]
     command_templates = rd.get("command_templates")
     if isinstance(command_templates, dict):
         template_attr = f"{agent}_command_template"
         template = getattr(settings.orchestrator, template_attr, None)
         if template:
-            rd["command_templates"][agent] = template
+            command_templates[agent] = template
 
 
 def _apply_resume_patches(
@@ -115,21 +116,28 @@ def _apply_resume_patches(
     pipeline_dir: Path,
 ) -> Iterator[PipelineLine]:
     """Patch overridable fields on a resumed pipeline and yield status messages."""
-    patches: dict[str, object] = {}
+    path = pipeline_dir / "pipeline_input.json"
+    raw = json.loads(path.read_text("utf-8"))
+
+    previous_agent = raw.get("agent_override")
     if command.agent_override:
-        patches["agent_override"] = command.agent_override.strip().lower()
+        raw["agent_override"] = command.agent_override.strip().lower()
     if command.use_api_key:
-        patches["use_api_key"] = True
-    if patches:
-        previous = _patch_pipeline_input(pipeline_dir, **patches)
-        if "agent_override" in patches:
-            prev = previous.get("agent_override") or "default"
-            agent = patches["agent_override"]
-            yield ("info", f"Agent override changed: {prev} -> {agent}")
-            path = pipeline_dir / "pipeline_input.json"
-            raw = json.loads(path.read_text("utf-8"))
-            _patch_routing_defaults_for_agent(raw, str(agent), Settings.from_env())
-            path.write_text(json.dumps(raw, ensure_ascii=False, default=str), "utf-8")
+        raw["use_api_key"] = True
+
+    routing = raw.get("routing_defaults")
+    default_agent = routing.get("default_agent") if isinstance(routing, dict) else None
+    agent = str(raw.get("agent_override") or default_agent or "").strip().lower()
+    if agent:
+        _patch_routing_defaults_for_agent(raw, agent, Settings.from_env())
+
+    path.write_text(json.dumps(raw, ensure_ascii=False, default=str), "utf-8")
+
+    if command.agent_override:
+        yield (
+            "info",
+            f"Agent override changed: {previous_agent or 'default'} -> {raw['agent_override']}",
+        )
 
 
 def _emit_run_summary(pipeline_dir: Path) -> Iterator[PipelineLine]:

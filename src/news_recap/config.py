@@ -92,32 +92,32 @@ def _default_task_model_map() -> dict[str, dict[str, Any]]:
         "recap_classify": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "antigravity": {"model": "--model gemini-3.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
         },
         "recap_enrich": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "antigravity": {"model": "--model gemini-3.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
         },
         "recap_dedup": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "antigravity": {"model": "--model gemini-3.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
         },
         "recap_oneshot_digest": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low", "env": _MAX_OUTPUT},
-            "antigravity": {"model": "--model gemini-3.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
         },
         "recap_merge_sections": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low"},
-            "antigravity": {"model": "--model gemini-3.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
         },
         "recap_refine_layout": {
             "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
             "claude": {"model": "--model sonnet --effort low"},
-            "antigravity": {"model": "--model gemini-3.5-flash"},
+            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
         },
     }
 
