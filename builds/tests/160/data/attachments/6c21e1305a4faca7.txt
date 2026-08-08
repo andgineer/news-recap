@@ -1,0 +1,3 @@
+WARNING  news_recap.recap.tasks.oneshot_digest:oneshot_digest.py:142 [cyan]oneshot_digest:[/cyan] BLOCK before SECTION — discarding
+WARNING  news_recap.recap.tasks.oneshot_digest:oneshot_digest.py:121 [cyan]oneshot_digest:[/cyan] SECTION_SUMMARY before SECTION — discarding
+WARNING  news_recap.recap.tasks.oneshot_digest:oneshot_digest.py:149 [cyan]oneshot_digest:[/cyan] ARTICLES before BLOCK — discarding
