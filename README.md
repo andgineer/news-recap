@@ -42,7 +42,7 @@
 | src/news\_recap/recap/loaders/resource\_cache.py         |       51 |        0 |    100% |           |
 | src/news\_recap/recap/loaders/resource\_loader.py        |      138 |       18 |     87% |90, 121-127, 190-207, 211-213, 235, 257, 303, 312-313, 316, 319 |
 | src/news\_recap/recap/models.py                          |       61 |        8 |     87% |45-50, 53, 62 |
-| src/news\_recap/recap/pipeline\_setup.py                 |      241 |       13 |     95% |55-57, 147-148, 175-176, 310, 313-315, 356-357 |
+| src/news\_recap/recap/pipeline\_setup.py                 |      244 |        9 |     96% |55-57, 172-173, 200-201, 363-364 |
 | src/news\_recap/recap/storage/pipeline\_io.py            |      157 |       15 |     90% |74, 111-117, 140, 146-147, 161, 213, 224, 260 |
 | src/news\_recap/recap/storage/workdir.py                 |       48 |        4 |     92% |     90-93 |
 | src/news\_recap/recap/tasks/base.py                      |       77 |       22 |     71% |68-69, 83-97, 120, 143-161, 164 |
@@ -57,7 +57,7 @@
 | src/news\_recap/storage/io.py                            |       48 |        5 |     90% | 32-35, 59 |
 | src/news\_recap/user\_config.py                          |       42 |        0 |    100% |           |
 | src/news\_recap/web/server.py                            |      131 |       30 |     77% |37-39, 65-67, 76-77, 95, 99-101, 147-148, 169, 189-208 |
-| **TOTAL**                                                | **5990** |  **939** | **84%** |           |
+| **TOTAL**                                                | **5993** |  **935** | **84%** |           |
 
 
 ## Setup coverage badge
