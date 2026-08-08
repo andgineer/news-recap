@@ -16,6 +16,7 @@ from news_recap.recap.models import Digest
 from news_recap.recap.pipeline_setup import (
     _find_digest_pipeline_dir,
     _find_latest_digest_pipeline_dir,
+    is_viewable_digest,
 )
 from news_recap.storage.io import load_msgspec
 
@@ -36,7 +37,7 @@ def find_latest_digest(workdir_root: Path, date_str: str) -> tuple[Digest, Path]
         except Exception:  # noqa: BLE001
             logger.debug("Skipping unreadable digest at %s", path, exc_info=True)
             continue
-        if digest.status == "completed" and "oneshot_digest" in digest.completed_phases:
+        if is_viewable_digest(digest):
             return digest, path
     return None
 
@@ -70,7 +71,7 @@ class _DigestIndex:
         for path in workdir_root.glob("pipeline-*/digest.json"):
             try:
                 d = load_msgspec(path, Digest)
-                if d.status == "completed" and "oneshot_digest" in d.completed_phases:
+                if is_viewable_digest(d):
                     self.add(d, path)
             except Exception:  # noqa: BLE001
                 logger.debug("Skipping unreadable digest at %s", path, exc_info=True)
@@ -149,6 +150,8 @@ def create_app(
     @app.route("/pipeline/<pipeline_name>")
     def pipeline_digest(pipeline_name: str):  # type: ignore[return]
         digest, digest_path = _load_pipeline_digest(workdir_root, pipeline_name)
+        if not is_viewable_digest(digest):
+            return render_template("no_digest.html", date=digest.run_date), 404
         return _render_digest(digest, digest_path, index)
 
     @app.route("/digest/<date_str>")

@@ -303,13 +303,36 @@ def _find_digest_pipeline_dir(workdir_root: Path, digest_id: int) -> Path | None
     return None
 
 
-def _find_latest_digest_pipeline_dir(workdir_root: Path) -> Path | None:
-    """Return the pipeline directory of the newest completed digest."""
-    completed = [e for e in _load_digest_index(workdir_root) if e.status == "completed"]
-    if not completed:
+def load_pipeline_digest(pipeline_dir: Path) -> Digest | None:
+    """Return the digest stored in *pipeline_dir*, or ``None`` if missing/unreadable."""
+    path = pipeline_dir / _DIGEST_FILENAME
+    if not path.exists():
         return None
-    newest = max(completed, key=lambda e: e.pipeline_dir_name)
-    return workdir_root / newest.pipeline_dir_name
+    try:
+        return load_msgspec(path, Digest)
+    except Exception:  # noqa: BLE001
+        logger.debug("Skipping unreadable digest at %s", path, exc_info=True)
+        return None
+
+
+def is_viewable_digest(digest: Digest) -> bool:
+    """Whether *digest* holds rendered content a viewer can display.
+
+    A run stopped early (``--stop-after classify``) is also marked ``completed``
+    but carries no blocks or recaps.
+    """
+    return digest.status == "completed" and "oneshot_digest" in digest.completed_phases
+
+
+def _find_latest_digest_pipeline_dir(workdir_root: Path) -> Path | None:
+    """Return the pipeline directory of the newest viewable digest."""
+    completed = [e for e in _load_digest_index(workdir_root) if e.status == "completed"]
+    for entry in sorted(completed, key=lambda e: e.pipeline_dir_name, reverse=True):
+        pdir = workdir_root / entry.pipeline_dir_name
+        digest = load_pipeline_digest(pdir)
+        if digest is not None and is_viewable_digest(digest):
+            return pdir
+    return None
 
 
 def gc_old_pipelines(workdir_root: Path, *, keep_days: int = 7) -> list[Path]:

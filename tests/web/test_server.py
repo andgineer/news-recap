@@ -183,6 +183,23 @@ def test_pipeline_route_serves_exact_digest(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_pipeline_route_returns_404_for_stopped_early_digest(tmp_path: Path) -> None:
+    workdir = tmp_path / "workdir"
+    pipeline_dir = workdir / "pipeline-2026-03-06-120000"
+    digest = _make_digest(pipeline_dir)
+    digest.completed_phases = ["classify"]
+    digest.blocks = []
+    digest.recaps = []
+    _write_digest(pipeline_dir, digest)
+
+    app = create_app(workdir)
+    client = app.test_client()
+
+    resp = client.get("/pipeline/pipeline-2026-03-06-120000")
+    assert resp.status_code == 404
+    assert "No completed digest" in resp.data.decode()
+
+
 def test_pipeline_route_returns_404_for_missing_pipeline(tmp_path: Path) -> None:
     workdir = tmp_path / "workdir"
     workdir.mkdir()

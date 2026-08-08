@@ -476,6 +476,24 @@ def test_find_latest_digest_empty(tmp_path: Path) -> None:
     assert _find_latest_digest_pipeline_dir(tmp_path) is None
 
 
+def test_find_latest_digest_skips_stopped_early_run(tmp_path: Path) -> None:
+    _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01")
+    pdir2 = tmp_path / "pipeline-2026-03-02-100000"
+    digest2 = _make_digest(pdir2, "2026-03-02", completed_phases=["classify"])
+    create_digest_entry(tmp_path, pdir2.name, "2026-03-02", 1)
+    finalize_digest_entry(tmp_path, pdir2, digest2)
+    assert _find_latest_digest_pipeline_dir(tmp_path) == tmp_path / "pipeline-2026-03-01-100000"
+
+
+def test_find_latest_digest_skips_unreadable_digest(tmp_path: Path) -> None:
+    _make_and_register(tmp_path, "pipeline-2026-03-01-100000", "2026-03-01")
+    pdir2 = tmp_path / "pipeline-2026-03-02-100000"
+    pdir2.mkdir()
+    (pdir2 / _DIGEST_FILENAME).write_text("{not json")
+    create_digest_entry(tmp_path, pdir2.name, "2026-03-02", 1)
+    assert _find_latest_digest_pipeline_dir(tmp_path) == tmp_path / "pipeline-2026-03-01-100000"
+
+
 # ---------------------------------------------------------------------------
 # DigestInfoController.digest_info
 # ---------------------------------------------------------------------------
