@@ -12,6 +12,7 @@ from news_recap.recap.models import Digest, DigestArticle
 from news_recap.recap.pipeline_setup import (
     _compute_article_window,
     _find_last_digest_cutoff,
+    _load_digest_index,
     create_digest_entry,
     finalize_digest_entry,
 )
@@ -113,6 +114,57 @@ def test_returns_coverage_end_datetime(tmp_path: Path) -> None:
     _register(tmp_path, pdir, digest)
     result = _find_last_digest_cutoff(tmp_path)
     assert result == datetime(2026, 3, 25, 10, 30, tzinfo=UTC)
+
+
+def test_stopped_early_digest_ignored_by_cutoff(tmp_path: Path) -> None:
+    """A --stop-after run is 'completed' but must not advance the cutoff."""
+    full_dir = tmp_path / "pipeline-2026-03-25-080000"
+    full = _make_digest(
+        full_dir,
+        "2026-03-25",
+        completed_phases=["classify", "oneshot_digest"],
+        articles=[_article("2026-03-25T10:30:00+00:00")],
+    )
+    _register(tmp_path, full_dir, full)
+
+    stopped_dir = tmp_path / "pipeline-2026-03-25-090000"
+    stopped = _make_digest(
+        stopped_dir,
+        "2026-03-25",
+        completed_phases=["classify"],
+        articles=[_article("2026-03-25T14:00:00+00:00")],
+    )
+    _register(tmp_path, stopped_dir, stopped)
+
+    assert _find_last_digest_cutoff(tmp_path) == datetime(2026, 3, 25, 10, 30, tzinfo=UTC)
+
+
+def test_stopped_early_digest_records_no_coverage(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-25-090000"
+    digest = _make_digest(
+        pdir,
+        "2026-03-25",
+        completed_phases=["classify"],
+        articles=[_article("2026-03-25T14:00:00+00:00")],
+        coverage_start="2026-03-25T10:30:00+00:00",
+    )
+    _register(tmp_path, pdir, digest)
+    entry = _load_digest_index(tmp_path)[0]
+    assert entry.status == "completed"
+    assert entry.coverage_end is None
+
+
+def test_cutoff_trusts_index_when_digest_unreadable(tmp_path: Path) -> None:
+    pdir = tmp_path / "pipeline-2026-03-25-080000"
+    digest = _make_digest(
+        pdir,
+        "2026-03-25",
+        completed_phases=["classify", "oneshot_digest"],
+        articles=[_article("2026-03-25T10:30:00+00:00")],
+    )
+    _register(tmp_path, pdir, digest)
+    (pdir / _DIGEST_FILENAME).write_text("{not json")
+    assert _find_last_digest_cutoff(tmp_path) == datetime(2026, 3, 25, 10, 30, tzinfo=UTC)
 
 
 def test_falls_back_to_run_date_when_no_articles(tmp_path: Path) -> None:

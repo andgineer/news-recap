@@ -114,22 +114,47 @@ class DigestSummary:
     input_article_count: int = 0
 
 
+def load_pipeline_digest(pipeline_dir: Path) -> Digest | None:
+    """Return the digest stored in *pipeline_dir*, or ``None`` if missing/unreadable."""
+    path = pipeline_dir / _DIGEST_FILENAME
+    if not path.exists():
+        return None
+    try:
+        return load_msgspec(path, Digest)
+    except Exception:  # noqa: BLE001
+        logger.debug("Skipping unreadable digest at %s", path, exc_info=True)
+        return None
+
+
+def is_viewable_digest(digest: Digest) -> bool:
+    """Whether *digest* holds rendered content a viewer can display.
+
+    A run stopped early (``--stop-after classify``) is also marked ``completed``
+    but carries no blocks or recaps.
+    """
+    return digest.status == "completed" and "oneshot_digest" in digest.completed_phases
+
+
 def _find_last_digest_cutoff(workdir_root: Path) -> date | datetime | None:
-    """Return the cutoff from the most recent completed digest.
+    """Return the cutoff from the most recent digest that produced content.
 
     When ``coverage_end`` is recorded, returns its ``datetime`` (callers
     apply strict ``>`` so the boundary article is excluded).  Otherwise falls
     back to ``run_date`` as a plain ``date`` (callers apply ``>=`` midnight
     so all articles from that day are included).
-    Returns ``None`` when no completed digests exist.
+    Returns ``None`` when no such digest exists.
     """
     completed = [e for e in _load_digest_index(workdir_root) if e.status == "completed"]
-    if not completed:
-        return None
-    newest = max(completed, key=lambda e: e.pipeline_dir_name)
-    if newest.coverage_end:
-        return datetime.fromisoformat(newest.coverage_end)
-    return date.fromisoformat(newest.run_date)
+    for entry in sorted(completed, key=lambda e: e.pipeline_dir_name, reverse=True):
+        digest = load_pipeline_digest(workdir_root / entry.pipeline_dir_name)
+        # A digest.json that cannot be read still had its coverage recorded in the
+        # index, so only a run proven to have stopped early is skipped.
+        if digest is not None and not is_viewable_digest(digest):
+            continue
+        if entry.coverage_end:
+            return datetime.fromisoformat(entry.coverage_end)
+        return date.fromisoformat(entry.run_date)
+    return None
 
 
 _PIPELINE_NAME_PARTS = 5
@@ -234,14 +259,17 @@ def finalize_digest_entry(workdir_root: Path, pdir: Path, digest: Digest) -> Non
     """Update an existing index entry with final status and usage stats.
 
     Sets status to ``digest.status``, fills ``coverage_end`` and usage
-    metrics.  No-op if no matching entry exists (legacy pipeline dirs).
+    metrics.  A run that stopped before producing a digest claims no
+    coverage, so gap detection keeps reporting its period as uncovered.
+    No-op if no matching entry exists (legacy pipeline dirs).
     """
     entries = _load_digest_index(workdir_root)
     dir_name = pdir.name
+    stopped_early = digest.status == "completed" and not is_viewable_digest(digest)
     for e in entries:
         if e.pipeline_dir_name == dir_name:
             e.status = digest.status
-            e.coverage_end = digest.coverage_end
+            e.coverage_end = None if stopped_early else digest.coverage_end
             e.article_count = len(digest.articles)
             usage = _aggregate_usage(pdir)
             e.elapsed_seconds = usage.elapsed
@@ -301,27 +329,6 @@ def _find_digest_pipeline_dir(workdir_root: Path, digest_id: int) -> Path | None
         if e.digest_id == digest_id:
             return workdir_root / e.pipeline_dir_name
     return None
-
-
-def load_pipeline_digest(pipeline_dir: Path) -> Digest | None:
-    """Return the digest stored in *pipeline_dir*, or ``None`` if missing/unreadable."""
-    path = pipeline_dir / _DIGEST_FILENAME
-    if not path.exists():
-        return None
-    try:
-        return load_msgspec(path, Digest)
-    except Exception:  # noqa: BLE001
-        logger.debug("Skipping unreadable digest at %s", path, exc_info=True)
-        return None
-
-
-def is_viewable_digest(digest: Digest) -> bool:
-    """Whether *digest* holds rendered content a viewer can display.
-
-    A run stopped early (``--stop-after classify``) is also marked ``completed``
-    but carries no blocks or recaps.
-    """
-    return digest.status == "completed" and "oneshot_digest" in digest.completed_phases
 
 
 def _find_latest_digest_pipeline_dir(workdir_root: Path) -> Path | None:
