@@ -156,8 +156,9 @@ def test_log_agent_output_points_at_full_log(tmp_path: Path) -> None:
     result = SimpleNamespace(stderr_path=stderr_path, stdout_path=stdout_path)
     log = MagicMock()
     _log_agent_output(log, "recap_classify", result)
-    logged = " ".join(str(call) for call in log.error.call_args_list)
-    assert str(stderr_path) in logged
+    fmt, *args = log.error.call_args_list[0].args
+    assert "Full agent log: %s" in fmt
+    assert stderr_path in args
 
 
 def test_log_agent_output_skips_empty_files(tmp_path: Path) -> None:
