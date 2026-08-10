@@ -22,7 +22,7 @@
 | src/news\_recap/ingestion/sources/rss.py                 |      437 |       41 |     91% |47, 58, 72, 83, 93, 102, 201, 326, 340, 353, 377-382, 403, 405, 439, 449, 453, 457, 550-551, 557-558, 566-579, 761, 766, 770, 789-790, 800, 808 |
 | src/news\_recap/main.py                                  |      333 |       18 |     95% |294, 359, 404, 411, 439, 453-454, 541-542, 628-631, 648-653, 681, 717, 820, 822 |
 | src/news\_recap/operation\_configure.py                  |       66 |        2 |     97% |    48, 57 |
-| src/news\_recap/recap/agents/ai\_agent.py                |      183 |       66 |     64% |61-152, 156-159, 226-232, 343, 345, 360, 380-386, 394-402 |
+| src/news\_recap/recap/agents/ai\_agent.py                |      207 |       66 |     68% |64-155, 159-162, 275-281, 398, 400, 415, 435-441, 449-457 |
 | src/news\_recap/recap/agents/api\_agent.py               |       58 |        1 |     98% |        79 |
 | src/news\_recap/recap/agents/concurrency.py              |       41 |        0 |    100% |           |
 | src/news\_recap/recap/agents/routing.py                  |      131 |       14 |     89% |52, 73, 111, 117, 161, 166, 193, 228, 231, 233, 235, 237, 241, 248 |
@@ -57,7 +57,7 @@
 | src/news\_recap/storage/io.py                            |       48 |        5 |     90% | 32-35, 59 |
 | src/news\_recap/user\_config.py                          |       42 |        0 |    100% |           |
 | src/news\_recap/web/server.py                            |      131 |       30 |     77% |37-39, 65-67, 76-77, 95, 99-101, 147-148, 169, 189-208 |
-| **TOTAL**                                                | **5993** |  **935** | **84%** |           |
+| **TOTAL**                                                | **6017** |  **935** | **84%** |           |
 
 
 ## Setup coverage badge
