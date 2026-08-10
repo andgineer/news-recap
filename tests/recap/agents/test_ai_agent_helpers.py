@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 
 from news_recap.recap.agents.ai_agent import (
+    _format_duration,
     _inject_skip_git_flag,
     _log_agent_output,
+    _parse_reset_in,
     _summarise_stderr,
 )
 
@@ -104,6 +107,57 @@ def test_log_agent_output_does_not_blame_login_for_startup_noise(tmp_path: Path)
     logged = " ".join(str(call) for call in log.error.call_args_list)
     assert "agy login" not in logged
     assert "Invalid model/effort selection" in logged
+
+
+def test_parse_reset_in_agy_format() -> None:
+    assert _parse_reset_in("Resets in 103h45m22s.") == timedelta(hours=103, minutes=45, seconds=22)
+    assert _parse_reset_in("Resets in 2d3h.") == timedelta(days=2, hours=3)
+    assert _parse_reset_in("no reset here") is None
+
+
+def test_format_duration() -> None:
+    assert _format_duration(timedelta(hours=103, minutes=45)) == "4d 7h 45m"
+    assert _format_duration(timedelta(minutes=45)) == "45m"
+    assert _format_duration(timedelta(seconds=20)) == "less than a minute"
+
+
+def test_summarise_quota_reports_weekly_window_and_reset_time() -> None:
+    text = (
+        "Error: Individual quota reached. Please upgrade your subscription "
+        "to increase your limits. Resets in 103h45m22s.\n"
+    )
+    reset_at = datetime.now().astimezone() + timedelta(hours=103, minutes=45, seconds=22)
+    summary = _summarise_stderr(text)
+    assert summary is not None
+    assert "weekly quota exhausted" in summary
+    assert "4d 7h 45m" in summary
+    assert reset_at.strftime("%Y-%m-%d %H:%M") in summary
+    assert "retrying today will not help" in summary
+
+
+def test_summarise_quota_treats_short_window_as_daily() -> None:
+    summary = _summarise_stderr("Individual quota reached. Resets in 3h20m.")
+    assert summary is not None
+    assert "daily quota exhausted" in summary
+    assert "3h 20m" in summary
+
+
+def test_summarise_quota_without_reset_time() -> None:
+    summary = _summarise_stderr("Please upgrade your subscription to increase your limits.")
+    assert summary is not None
+    assert "no reset time reported" in summary
+
+
+def test_log_agent_output_points_at_full_log(tmp_path: Path) -> None:
+    stderr_path = tmp_path / "e.log"
+    stdout_path = tmp_path / "o.log"
+    stderr_path.write_text("Individual quota reached. Resets in 3h20m.\n", "utf-8")
+    stdout_path.write_text("", "utf-8")
+    result = SimpleNamespace(stderr_path=stderr_path, stdout_path=stdout_path)
+    log = MagicMock()
+    _log_agent_output(log, "recap_classify", result)
+    logged = " ".join(str(call) for call in log.error.call_args_list)
+    assert str(stderr_path) in logged
 
 
 def test_log_agent_output_skips_empty_files(tmp_path: Path) -> None:

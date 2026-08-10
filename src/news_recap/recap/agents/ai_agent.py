@@ -15,6 +15,7 @@ import shlex
 import tempfile
 import threading
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,6 +35,8 @@ from news_recap.recap.exceptions import RecapPipelineError
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from news_recap.recap.agents.concurrency import ConcurrencyController
     from news_recap.recap.agents.transport import LLMTransport
 
@@ -167,10 +170,56 @@ _AUTH_SUCCEEDED = re.compile(
     re.IGNORECASE,
 )
 
-_KNOWN_ERRORS: list[tuple[re.Pattern[str], str, re.Pattern[str] | None]] = [
+# agy reports the remaining quota window as "Resets in 103h45m22s".
+_RESET_IN_RE = re.compile(
+    r"Resets? in\s+(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?",
+    re.IGNORECASE,
+)
+_DAILY_WINDOW = timedelta(hours=24)
+
+
+def _parse_reset_in(text: str) -> timedelta | None:
+    match = _RESET_IN_RE.search(text)
+    if match is None or not any(match.groups()):
+        return None
+    days, hours, minutes, seconds = (int(g or 0) for g in match.groups())
+    return timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
+
+
+def _format_duration(delta: timedelta) -> str:
+    total = int(delta.total_seconds())
+    days, rest = divmod(total, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes = rest // 60
+    parts = [f"{days}d", f"{hours}h", f"{minutes}m"] if days else [f"{hours}h", f"{minutes}m"]
+    return " ".join(p for p in parts if not p.startswith("0")) or "less than a minute"
+
+
+def _quota_summary(text: str) -> str:
+    delta = _parse_reset_in(text)
+    if delta is None:
+        return (
+            "Antigravity quota exhausted, no reset time reported — "
+            "switch agent (--agent claude|codex) or upgrade the plan"
+        )
+    reset_at = datetime.now().astimezone() + delta
+    window = "weekly" if delta > _DAILY_WINDOW else "daily"
+    advice = (
+        "retrying today will not help"
+        if delta > _DAILY_WINDOW
+        else "retry after the reset or reduce the workload"
+    )
+    return (
+        f"Antigravity {window} quota exhausted — resets in {_format_duration(delta)}, "
+        f"around {reset_at:%Y-%m-%d %H:%M %Z}; {advice}. "
+        "Switch agent (--agent claude|codex) or upgrade the Antigravity plan"
+    )
+
+
+_KNOWN_ERRORS: list[tuple[re.Pattern[str], str | Callable[[str], str], re.Pattern[str] | None]] = [
     (
         re.compile(r"Individual quota reached|upgrade your subscription", re.IGNORECASE),
-        "Antigravity quota exhausted — upgrade plan or wait for reset",
+        _quota_summary,
         None,
     ),
     (
@@ -217,7 +266,7 @@ def _summarise_stderr(text: str) -> str | None:
     """Return a one-line summary if *text* matches a known error pattern."""
     for pattern, summary, negated_by in _KNOWN_ERRORS:
         if pattern.search(text) and not (negated_by and negated_by.search(text)):
-            return summary
+            return summary(text) if callable(summary) else summary
     return None
 
 
@@ -244,7 +293,13 @@ def _log_agent_output(logger, step_name: str, result) -> None:
         if label == "stderr":
             summary = _summarise_stderr(text)
             if summary:
-                logger.error("[cyan]%s:[/cyan] agent %s: %s", step_name, label, summary)
+                logger.error(
+                    "[cyan]%s:[/cyan] agent %s: %s\nFull agent log: %s",
+                    step_name,
+                    label,
+                    summary,
+                    path,
+                )
                 continue
         lines = text.splitlines()
         tail = lines[-_TAIL_LINES:]
