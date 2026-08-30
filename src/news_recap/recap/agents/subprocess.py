@@ -54,7 +54,7 @@ def build_run_args(
     All keyword arguments (except *os_name*) are substituted into the
     template.  ``Path`` values are shell-quoted on Unix (using POSIX
     notation); ``str`` values are inserted raw because they may contain
-    multi-word CLI argument fragments (e.g. ``--model gpt-5.2 -c effort=low``).
+    multi-word CLI argument fragments (e.g. ``--model gpt-5.6-terra -c effort=low``).
     On Windows the existing ``list2cmdline`` quoting applies to all values.
     """
     stripped = command_template.strip()

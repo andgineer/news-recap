@@ -125,8 +125,30 @@ def test_from_env_uses_codex_as_default_llm_agent(
     assert "recap_oneshot_digest" in task_map
     assert (
         task_map["recap_classify"]["codex"]["model"]
-        == "--model gpt-5.2 -c model_reasoning_effort=low"
+        == "--model gpt-5.6-luna -c model_reasoning_effort=low"
     )
+    assert (
+        task_map["recap_oneshot_digest"]["codex"]["model"]
+        == "--model gpt-5.6-terra -c model_reasoning_effort=low"
+    )
+    assert (
+        task_map["recap_merge_sections"]["codex"]["model"]
+        == "--model gpt-5.6-sol -c model_reasoning_effort=low"
+    )
+    assert task_map["recap_classify"]["claude"]["model"] == "--model haiku"
+    assert (
+        task_map["recap_merge_sections"]["claude"]["model"]
+        == "--model claude-sonnet-5 --effort low"
+    )
+    assert (
+        task_map["recap_classify"]["antigravity"]["model"]
+        == "--model gemini-3.7-flash --effort low"
+    )
+    assert (
+        task_map["recap_merge_sections"]["antigravity"]["model"]
+        == "--model gemini-3.7-flash --effort low"
+    )
+    assert settings.orchestrator.api_model_map["recap_merge_sections"] == "claude-sonnet-5"
     assert settings.orchestrator.codex_command_template == (
         "codex exec --sandbox workspace-write "
         "-c sandbox_workspace_write.network_access=true "
@@ -304,8 +326,8 @@ def test_routing_defaults_carries_agent_api_key_vars() -> None:
 def test_api_model_map_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "NEWS_RECAP_API_MODEL_MAP",
-        "recap_oneshot_digest=claude-opus-4-6,recap_classify=claude-haiku-4-5-20251001",
+        "recap_oneshot_digest=claude-opus-5,recap_classify=claude-haiku-4-5-20251001",
     )
     settings = Settings.from_env()
-    assert settings.orchestrator.api_model_map["recap_oneshot_digest"] == "claude-opus-4-6"
+    assert settings.orchestrator.api_model_map["recap_oneshot_digest"] == "claude-opus-5"
     assert settings.orchestrator.api_model_map["recap_classify"] == "claude-haiku-4-5-20251001"

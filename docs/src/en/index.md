@@ -8,9 +8,10 @@ The pipeline drives CLI agents such as ChatGPT Codex, Claude Code, and Antigravi
 it runs on flat-rate subscriptions.
 
 Running it daily for 7 days consumes roughly 20% of the weekly Claude subscription
-limit and less than that for ChatGPT.
+limit and about 10% for ChatGPT.
 
-Alternatively it can run completely free with Antigravity CLI on the free tier, with slightly less quality than Claude.
+Alternatively it can run completely free with Antigravity CLI on the free tier.
+With slightly less quality and from time to time hitting the limit so some days will be left without news recap.
 
 For comparison, Inoreader charges an additional \$19.90/month **on top** of
 a Pro subscription for AI-powered aggregation.

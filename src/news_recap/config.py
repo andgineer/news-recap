@@ -85,39 +85,45 @@ _MAX_OUTPUT = {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"}
 # hidden scratchpad and forces the model to write its reasoning into stdout,
 # which contaminates the structured output the parser expects.
 _CAPPED_THINKING = {"CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1", "MAX_THINKING_TOKENS": "4000"}
+_CODEX_LUNA_FLAGS = "--model gpt-5.6-luna -c model_reasoning_effort=low"
+_CODEX_TERRA_FLAGS = "--model gpt-5.6-terra -c model_reasoning_effort=low"
+_CODEX_SOL_FLAGS = "--model gpt-5.6-sol -c model_reasoning_effort=low"
+_CLAUDE_HAIKU_FLAGS = "--model haiku"
+_CLAUDE_SONNET_FLAGS = "--model claude-sonnet-5 --effort low"
+_ANTIGRAVITY_FLASH_LOW_FLAGS = "--model gemini-3.7-flash --effort low"
 
 
 def _default_task_model_map() -> dict[str, dict[str, Any]]:
     return {
         "recap_classify": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
+            "codex": {"model": _CODEX_LUNA_FLAGS},
+            "claude": {"model": _CLAUDE_HAIKU_FLAGS, "env": _NO_THINKING},
+            "antigravity": {"model": _ANTIGRAVITY_FLASH_LOW_FLAGS},
         },
         "recap_enrich": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
+            "codex": {"model": _CODEX_TERRA_FLAGS},
+            "claude": {"model": _CLAUDE_HAIKU_FLAGS, "env": _NO_THINKING},
+            "antigravity": {"model": _ANTIGRAVITY_FLASH_LOW_FLAGS},
         },
         "recap_dedup": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _NO_THINKING},
-            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
+            "codex": {"model": _CODEX_TERRA_FLAGS},
+            "claude": {"model": _CLAUDE_HAIKU_FLAGS, "env": _NO_THINKING},
+            "antigravity": {"model": _ANTIGRAVITY_FLASH_LOW_FLAGS},
         },
         "recap_oneshot_digest": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low", "env": _MAX_OUTPUT},
-            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
+            "codex": {"model": _CODEX_TERRA_FLAGS},
+            "claude": {"model": _CLAUDE_HAIKU_FLAGS, "env": _MAX_OUTPUT},
+            "antigravity": {"model": _ANTIGRAVITY_FLASH_LOW_FLAGS},
         },
         "recap_merge_sections": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low"},
-            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
+            "codex": {"model": _CODEX_SOL_FLAGS},
+            "claude": {"model": _CLAUDE_SONNET_FLAGS},
+            "antigravity": {"model": _ANTIGRAVITY_FLASH_LOW_FLAGS},
         },
         "recap_refine_layout": {
-            "codex": {"model": "--model gpt-5.2 -c model_reasoning_effort=low"},
-            "claude": {"model": "--model sonnet --effort low"},
-            "antigravity": {"model": "--model gemini-3.5-flash --effort low"},
+            "codex": {"model": _CODEX_LUNA_FLAGS},
+            "claude": {"model": _CLAUDE_HAIKU_FLAGS},
+            "antigravity": {"model": _ANTIGRAVITY_FLASH_LOW_FLAGS},
         },
     }
 
@@ -128,7 +134,7 @@ def _default_api_model_map() -> dict[str, str]:
         "recap_enrich": "claude-haiku-4-5-20251001",
         "recap_dedup": "claude-haiku-4-5-20251001",
         "recap_oneshot_digest": "claude-haiku-4-5-20251001",
-        "recap_merge_sections": "claude-sonnet-4-6",
+        "recap_merge_sections": "claude-sonnet-5",
         "recap_refine_layout": "claude-haiku-4-5-20251001",
     }
 
@@ -476,7 +482,7 @@ def _collect_api_model_map() -> dict[str, str]:
     """Build task → API model ID map from env or defaults.
 
     Env format (CSV of ``task_type=model_id``):
-        ``NEWS_RECAP_API_MODEL_MAP=recap_oneshot_digest=claude-sonnet-4-6,recap_classify=claude-haiku-4-5-20251001``
+        ``NEWS_RECAP_API_MODEL_MAP=recap_merge_sections=claude-sonnet-5,recap_classify=claude-haiku-4-5-20251001``
     """
     raw = os.getenv("NEWS_RECAP_API_MODEL_MAP", "").strip()
     if not raw:
@@ -505,7 +511,7 @@ def _collect_task_model_map() -> dict[str, dict[str, Any]]:
     """Build task → agent → model overrides from env or defaults.
 
     Env format (CSV of ``task_type:agent=model_flags``):
-        ``NEWS_RECAP_LLM_TASK_MODEL_MAP=recap_oneshot_digest:codex=--model gpt-5.2 ...``
+        ``NEWS_RECAP_LLM_TASK_MODEL_MAP=recap_merge_sections:codex=--model gpt-5.6-sol ...``
     """
     raw = os.getenv("NEWS_RECAP_LLM_TASK_MODEL_MAP", "").strip()
     if not raw:

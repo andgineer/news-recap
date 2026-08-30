@@ -201,7 +201,7 @@ run_refresh() {
 
   case "${agent}" in
     codex)
-      local model="${NEWS_RECAP_LLM_CODEX_MODEL_QUALITY:-gpt-5-codex}"
+      local model="${NEWS_RECAP_LLM_CODEX_MODEL_QUALITY:-gpt-5.6-sol}"
       set +e
       codex exec \
         --sandbox workspace-write \
@@ -213,7 +213,7 @@ run_refresh() {
       set -e
       ;;
     claude)
-      local model="${NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY:-opus}"
+      local model="${NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY:-claude-opus-5}"
       set +e
       claude -p \
         --model "${model}" \
@@ -224,7 +224,7 @@ run_refresh() {
       set -e
       ;;
     gemini)
-      local model="${NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY:-gemini-2.5-pro}"
+      local model="${NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY:-gemini-3.7-flash}"
       set +e
       gemini \
         --model "${model}" \

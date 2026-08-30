@@ -23,7 +23,7 @@ def _write_pipeline_input(tmp_path: Path, extra: dict | None = None) -> Path:
         "routing_defaults": {
             "default_agent": "codex",
             "task_model_map": {
-                "recap_classify": {"codex": "--model gpt-5.2"},
+                "recap_classify": {"codex": "--model gpt-5.6-luna"},
             },
             "task_type_timeout_map": {"recap_classify": 600},
             "command_templates": {

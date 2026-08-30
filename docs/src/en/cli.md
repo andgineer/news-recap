@@ -174,11 +174,12 @@ news-recap create --api
 
 ### Per-task model map
 
-By default all tasks use `claude-haiku-4-5-20251001`. Override individual tasks
-with `NEWS_RECAP_API_MODEL_MAP` (comma-separated `task_type=model_id` pairs):
+By default, cost-sensitive tasks use `claude-haiku-4-5-20251001`, while
+`recap_merge_sections` uses `claude-sonnet-5`. Override individual tasks with
+`NEWS_RECAP_API_MODEL_MAP` (comma-separated `task_type=model_id` pairs):
 
 ```bash
-export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_classify=claude-haiku-4-5-20251001"
+export NEWS_RECAP_API_MODEL_MAP="recap_merge_sections=claude-sonnet-5,recap_classify=claude-haiku-4-5-20251001"
 ```
 
 ### API mode environment variables

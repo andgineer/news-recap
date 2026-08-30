@@ -176,12 +176,12 @@ news-recap create --api
 
 ### Таблица моделей по задачам
 
-По умолчанию все задачи используют `claude-haiku-4-5-20251001`. Для переопределения
-отдельных задач используйте `NEWS_RECAP_API_MODEL_MAP` (пары `task_type=model_id`
-через запятую):
+По умолчанию экономичные этапы используют `claude-haiku-4-5-20251001`, а
+`recap_merge_sections` — `claude-sonnet-5`. Для переопределения отдельных задач
+используйте `NEWS_RECAP_API_MODEL_MAP` (пары `task_type=model_id` через запятую):
 
 ```bash
-export NEWS_RECAP_API_MODEL_MAP="recap_oneshot_digest=claude-sonnet-4-6,recap_classify=claude-haiku-4-5-20251001"
+export NEWS_RECAP_API_MODEL_MAP="recap_merge_sections=claude-sonnet-5,recap_classify=claude-haiku-4-5-20251001"
 ```
 
 ### Переменные окружения API-режима

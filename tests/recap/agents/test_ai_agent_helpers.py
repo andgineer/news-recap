@@ -22,7 +22,7 @@ I0731 16:08:48.150031 keyring.go:81] keyringAuth: loaded token, expired=false
 I0731 16:08:49.527954 auth.go:137] ChainedAuth: authenticated via keyring (effective: keyring)
 I0731 16:08:50.858103 printmode.go:346] Print mode: silent auth succeeded
 E0731 16:08:52.211741 printmode.go:221] Print mode: invalid model selection (--model \
-"gemini-3.5-flash" --effort ""): --model gemini-3.5-flash requires --effort (available: low, medium, high)
+"gemini-3.7-flash" --effort ""): --model gemini-3.7-flash requires --effort (available: low, medium, high)
 """
 
 

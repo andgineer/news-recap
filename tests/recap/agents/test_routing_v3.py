@@ -39,9 +39,9 @@ def _cli_defaults() -> RoutingDefaults:
         default_agent="codex",
         task_model_map={
             "recap_classify": {
-                "codex": {"model": "--model gpt-5.2"},
-                "claude": {"model": "--model sonnet", "env": {"MAX_THINKING_TOKENS": "0"}},
-                "antigravity": {"model": "--model gemini-3.5-flash"},
+                "codex": {"model": "--model gpt-5.6-luna"},
+                "claude": {"model": "--model haiku", "env": {"MAX_THINKING_TOKENS": "0"}},
+                "antigravity": {"model": "--model gemini-3.7-flash"},
             },
         },
         task_type_timeout_map={"recap_classify": 120},
@@ -123,7 +123,7 @@ def _base_raw(**extra) -> dict:
     return {
         "schema_version": ROUTING_SCHEMA_VERSION,
         "agent": "codex",
-        "model": "--model gpt-5.2",
+        "model": "--model gpt-5.6-luna",
         "command_template": 'codex {model} "Read {prompt_file}"',
         "execution_backend": "cli",
         "resolved_at": "2026-01-01T00:00:00+00:00",

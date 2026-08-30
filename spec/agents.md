@@ -4,43 +4,38 @@ Reference for all external CLI agent backends — available models, the manifest
 
 ## Available Models
 
-Verified by probe on 2026-02-25.
+Verified from current provider documentation and local CLI model discovery on 2026-08-30.
 
 ### Gemini
 
 | Model | Type | Notes |
 |-------|------|-------|
-| `gemini-3-flash-preview` | next-gen fast | New, untested |
-| `gemini-2.5-flash` | fast | Large context, tested for grouping |
-| `gemini-2.5-flash-lite` | ultra-cheap | Default fast profile |
+| `gemini-3.7-flash` | current Flash | Default CLI quality profile; GA |
+| `gemini-3.5-flash-lite` | current Flash-Lite | Cheapest current API/Gemini CLI profile |
+| `gemini-3.1-pro-preview` | current Pro | Experimental quality comparison only |
+
+Antigravity CLI exposes Gemini 3.7 Flash but not Flash-Lite. Production pipeline routing uses
+Gemini 3.7 Flash with low effort for every task to preserve the constrained free-tier quota.
+Higher effort levels belong in explicit experiments, not in the default pipeline.
 
 ### Codex
 
-Only `gpt-5.2` available with ChatGPT account. `o3`, `o4-mini`, `gpt-4.1`, `gpt-4.1-mini`, `codex-mini` — all rejected.
+| Model | Role | API input/output per MTok | Notes |
+|-------|------|---------------------------|-------|
+| `gpt-5.6-luna` | high-volume | $0.20 / $1.20 | Classification and constrained layout cleanup |
+| `gpt-5.6-terra` | balanced | $2.00 / $12.00 | Enrichment, deduplication, and digest generation |
+| `gpt-5.6-sol` | flagship | $4.00 / $20.00 | Global section merge and watchdog quality profile |
 
-| Model | Effort | Tokens on "OK" | Notes |
-|-------|--------|----------------|-------|
-| `gpt-5.2` | low | 146 | Minimal reasoning, cheapest |
-| `gpt-5.2` | medium | 6,290 | Default balance |
-| `gpt-5.2` | high | 1,682 | Max reasoning |
+All pipeline defaults preserve `model_reasoning_effort=low`; model tier, rather than uniformly
+higher reasoning effort, supplies the required quality difference between stages.
 
 ### Claude
 
-| Model | Type | Notes |
-|-------|------|-------|
-| `sonnet` | fast | Best grouping quality in experiments |
-| `opus` | quality | Marginal improvement over sonnet, 3× slower |
-
-### Not Available
-
-| Agent | Model | Error |
-|-------|-------|-------|
-| gemini | `gemini-2.0-flash-lite` | 404 |
-| codex | `o3` | Not supported with ChatGPT account |
-| codex | `o4-mini` | Not supported with ChatGPT account |
-| codex | `gpt-4.1` | Not supported with ChatGPT account |
-| codex | `gpt-4.1-mini` | Not supported with ChatGPT account |
-| codex | `codex-mini` | Not supported with ChatGPT account |
+| Model | Type | API input/output per MTok | Notes |
+|-------|------|---------------------------|-------|
+| `claude-haiku-4-5-20251001` / `haiku` | fast | $1.00 / $5.00 | Default for cost-sensitive pipeline stages |
+| `claude-sonnet-5` | balanced | $2.00 / $10.00 | Global section merge |
+| `claude-opus-5` | quality | $5.00 / $25.00 | Watchdog and explicit quality experiments only |
 
 ## Manifest-Native Contract
 
@@ -125,7 +120,7 @@ Token usage: Gemini CLI does not print token counts. Usage data is not captured.
 Set `NEWS_RECAP_LLM_PRICING` env var. Format: `agent:model:input_per_1m_usd:output_per_1m_usd`, comma-separated.
 
 ```bash
-export NEWS_RECAP_LLM_PRICING="codex:gpt-5-codex-mini:1.50:6.00,gemini:gemini-2.5-flash-lite:0.075:0.30,claude:sonnet:3.00:15.00"
+export NEWS_RECAP_LLM_PRICING="codex:gpt-5.6-luna:0.20:1.20,codex:gpt-5.6-terra:2.00:12.00,codex:gpt-5.6-sol:4.00:20.00,gemini:gemini-3.7-flash:0.75:3.75,gemini:gemini-3.5-flash-lite:0.30:2.50,claude:claude-haiku-4-5-20251001:1.00:5.00,claude:claude-sonnet-5:2.00:10.00"
 ```
 
 Wildcards supported: `codex:*:1.50:6.00` or `*:*:2.00:8.00`.
@@ -140,12 +135,12 @@ When only `total_tokens` is available (no input/output split), cost is estimated
 | `NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE` | see above | Codex CLI template |
 | `NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE` | see above | Claude CLI template |
 | `NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE` | see above | Gemini CLI template |
-| `NEWS_RECAP_LLM_CODEX_MODEL_FAST` | `gpt-5-codex-mini` | Codex fast profile model |
-| `NEWS_RECAP_LLM_CODEX_MODEL_QUALITY` | `gpt-5-codex` | Codex quality profile model |
-| `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` | `sonnet` | Claude fast profile model |
-| `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY` | `opus` | Claude quality profile model |
-| `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` | `gemini-2.5-flash-lite` | Gemini fast profile model |
-| `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY` | `gemini-2.5-flash` | Gemini quality profile model |
+| `NEWS_RECAP_LLM_CODEX_MODEL_FAST` | `gpt-5.6-luna` | Codex fast profile model |
+| `NEWS_RECAP_LLM_CODEX_MODEL_QUALITY` | `gpt-5.6-sol` | Codex quality profile model |
+| `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` | `haiku` | Claude fast profile model |
+| `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY` | `claude-opus-5` | Claude quality profile model |
+| `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` | `gemini-3.5-flash-lite` | Gemini fast profile model |
+| `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY` | `gemini-3.7-flash` | Gemini quality profile model |
 | `NEWS_RECAP_BACKEND_CAPABILITY_MODE` | `manifest_native` | `manifest_native` or `stdout_parser_fallback` |
 | `NEWS_RECAP_LLM_PRICING` | (empty) | Token pricing map |
 
