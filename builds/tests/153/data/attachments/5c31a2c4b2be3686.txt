@@ -1,0 +1,3 @@
+           WARNING  oneshot_digest: BLOCK before SECTION — discarding           
+           WARNING  oneshot_digest: SECTION_SUMMARY before SECTION — discarding 
+           WARNING  oneshot_digest: ARTICLES before BLOCK — discarding          
