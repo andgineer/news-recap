@@ -2,61 +2,86 @@
 [![Coverage](https://raw.githubusercontent.com/andgineer/news-recap/python-coverage-comment-action-data/badge.svg)](https://htmlpreview.github.io/?https://github.com/andgineer/news-recap/blob/python-coverage-comment-action-data/htmlcov/index.html)
 # news-recap
 
-`news-recap` is a CLI-first pipeline for collecting, cleaning, deduplicating news
-and producing daily recaps with LLM agents.
+**Your feeds. Fewer repeats. A clearer picture.**
 
-The pipeline drives CLI agents such as ChatGPT Codex, Claude Code, and Google Antigravity, so
-it runs on flat-rate subscriptions.
+Turn RSS feeds into a daily digest: related reports grouped together, vague
+headlines clarified, and links back to the original sources. Choose the topics
+to follow, the noise to exclude, and the language to read in.
 
-Running it daily for 7 days consumes roughly 20% of the weekly Claude subscription
-limit and about 10% for ChatGPT.
+* **Read stories, not a wall of headlines.** Related reports come together in
+  topic sections, with summaries and links to their sources.
+* **Get past the clickbait.** When a headline hides the news, the pipeline fetches
+  the article and rewrites the headline from its content.
+* **Have it ready when you are.** Schedule digest creation and read it in the
+  browser. Interrupted runs resume from saved progress.
 
-Alternatively it can run completely free with Antigravity CLI on the free tier.
-With slightly less quality and from time to time hitting the limit so some days will be left without news recap.
+## Quick start
 
-For comparison, Inoreader charges an additional \$19.90/month **on top** of
-a Pro subscription for AI-powered aggregation.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and set up
+one of the supported [CLI agents](spec/agents.md), then run:
 
-> Start with the [Quick start](https://andgineer.github.io/news-recap/#quick-start).
+```bash
+uv tool install news-recap --upgrade --python 3.13
+news-recap ingest --rss "YOUR_RSS_URL"
+news-recap create --agent codex
+news-recap serve
+```
 
-### Docs
+Use `--agent claude` or `--agent antigravity` to choose another backend.
+For scheduled runs, feed setup, and preferences, see the
+[manual](https://andgineer.github.io/news-recap/).
 
-- [Manual](https://andgineer.github.io/news-recap/)
-- [Pipeline spec](spec/pipeline.md)
+## Under the hood
 
-# Developers
+**Storage that fits the workflow.** I started with SQLite, SQLModel, and Alembic,
+then found that the database added more machinery than this batch-processing
+workflow needed. Typed `msgspec` structures now carry data through processing
+and JSON storage, with daily article partitions and resumable checkpoints.
+The [database prototype](https://github.com/andgineer/news-recap/tree/sql-poc)
+remains available for comparison.
 
-For development you need [uv](https://github.com/astral-sh/uv) installed.
+**Spend model calls where judgment matters.** Embeddings narrow down candidate
+duplicates; LLMs decide which reports belong together and write the digest.
+Code removes duplicate and overlapping blocks after generation. Full articles
+are fetched selectively, when their headlines need clarification.
 
-Bootstrap the environment and install pre-commit hooks:
+**Coding agents as pipeline workers.** The pipeline invokes Codex, Claude Code,
+or Antigravity through their CLI interfaces, with task-specific model selection
+and saved intermediate results. The [agent integration guide](spec/agents.md)
+describes the launch commands and task contracts for adapting this approach to
+another batch-processing application.
 
-    source ./activate.sh
-    pre-commit install
+### Development process
 
-Run all checks:
+In this project, I experimented with an iterative development workflow using
+Codex and Claude Code: written plans, implementation, and separate review passes,
+followed by trials on real news feeds.
 
-    uv run inv pre
+Those trials also shaped the architecture. The
+[pipeline experiments](spec/pipeline.md#experiments) compare digest strategies
+on the same article corpus, including processing time, article coverage, and
+the resulting section structure.
 
-## Allure test report
+<details>
+<summary><b>Contributing</b></summary>
 
-* [Allure report](https://andgineer.github.io/news-recap/builds/tests/)
+Bootstrap the development environment and install pre-commit hooks:
 
-# Scripts
+```bash
+source ./activate.sh
+pre-commit install
+```
 
-Install [uv](https://github.com/astral-sh/uv) first. It is used both for package
-installation and for development automation.
+Run the checks and test suite:
 
-For a list of available scripts run:
+```bash
+uv run inv pre
+uv run pytest --cov=src tests/
+```
 
-    uv run invoke --list
+See the [contributor guide](AGENTS.md) for repository conventions and
+`uv run invoke --list` for available development tasks.
 
-For more information about a script run:
+[Allure test report](https://andgineer.github.io/news-recap/builds/tests/)
 
-    uv run invoke <script> --help
-
-## Coverage report
-
-* [Codecov](https://app.codecov.io/gh/andgineer/news-recap/tree/main/src%2Fnews_recap)
-* [Coveralls](https://coveralls.io/github/andgineer/news-recap)
-
-> Created with cookiecutter using [template](https://github.com/andgineer/cookiecutter-python-package)
+</details>
