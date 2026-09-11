@@ -1,0 +1,1 @@
+INFO     news_recap.recap.tasks.load_resources:load_resources.py:102 load_resources: 3/4 loaded, 1 failed (25%)
