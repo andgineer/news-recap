@@ -8,8 +8,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import msgspec
+from click.testing import CliRunner
 
 from conftest import make_settings_mock
+from news_recap.main import news_recap
 from news_recap.recap.launcher import (
     RecapCliController,
     RecapRunCommand,
@@ -181,6 +183,29 @@ def test_controller_resume_refreshes_model_flags_without_agent_override(
     entry = inp.routing_defaults.task_model_map["recap_classify"]["antigravity"]
     assert entry["model"] == "--model current --effort low"
     assert inp.routing_defaults.command_templates["antigravity"] == "agy {model}"
+
+
+@patch("news_recap.recap.launcher.recap_flow")
+@patch("news_recap.recap.launcher.Settings.from_env")
+def test_create_exits_1_when_pipeline_failed(
+    mock_from_env: MagicMock,
+    mock_flow: MagicMock,
+    tmp_path: Path,
+) -> None:
+    settings = make_settings_mock(tmp_path)
+    mock_from_env.return_value = settings
+    pipeline_dir = settings.orchestrator.workdir_root / f"pipeline-{_TODAY}-120000"
+    pipeline_dir.mkdir(parents=True)
+    sel_params = _selection_params_for_create(RecapRunCommand())
+    _write_pipeline_input(pipeline_dir, selection_params=sel_params)
+    _write_digest(pipeline_dir, completed_phases=["classify"], status="failed")
+
+    result = CliRunner().invoke(news_recap, ["--no-color", "create"])
+
+    mock_flow.assert_called_once()
+    assert result.exit_code == 1
+    assert "Pipeline failed" in result.output
+    assert f"Workdir: {pipeline_dir.resolve()}" in result.output
 
 
 # ---------------------------------------------------------------------------

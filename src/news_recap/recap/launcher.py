@@ -40,7 +40,7 @@ PipelineLine = tuple[str, str]
 """(severity, message) pair emitted during pipeline setup.
 
 Severity values follow the same vocabulary as ``ScheduleLine``:
-``"ok"`` | ``"info"`` | ``"warn"`` | ``"log"``.
+``"ok"`` | ``"info"`` | ``"warn"`` | ``"error"`` | ``"log"``.
 """
 
 
@@ -140,13 +140,19 @@ def _apply_resume_patches(
         )
 
 
+class RecapRunFailedError(click.ClickException):
+    """The pipeline ran but ended without a digest; makes ``create`` exit 1."""
+
+
 def _emit_run_summary(pipeline_dir: Path) -> Iterator[PipelineLine]:
-    """Yield a few summary lines after pipeline completion."""
+    """Yield a few summary lines after the pipeline run."""
     digest_path = pipeline_dir / _DIGEST_FILENAME
     if not digest_path.exists():
         return
     digest = load_msgspec(digest_path, Digest)
     if digest.status != "completed":
+        yield ("error", "Pipeline failed — no digest produced")
+        yield ("log", f"Workdir: {pipeline_dir}")
         return
 
     usage = _aggregate_usage(pipeline_dir)
@@ -489,3 +495,10 @@ class RecapCliController:
         )
 
         yield from _emit_run_summary(pipeline_dir)
+
+        digest_path = pipeline_dir / _DIGEST_FILENAME
+        if digest_path.exists() and load_msgspec(digest_path, Digest).status == "failed":
+            raise RecapRunFailedError(
+                f"{pipeline_dir.name} failed; the next `create` resumes it"
+                " from the last completed step",
+            )

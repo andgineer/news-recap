@@ -10,7 +10,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import allure
+import click
 import msgspec
+import pytest
 from click.testing import CliRunner
 
 from news_recap.main import (
@@ -441,10 +443,26 @@ def test_emit_run_summary_no_digest_file(tmp_path: Path) -> None:
     assert list(_emit_run_summary(pipeline_dir)) == []
 
 
-def test_emit_run_summary_incomplete_digest(tmp_path: Path) -> None:
-    pipeline_dir = tmp_path / "incomplete"
-    _make_digest_on_disk(pipeline_dir, status="in_progress")
-    assert list(_emit_run_summary(pipeline_dir)) == []
+def test_emit_run_summary_failed_digest(tmp_path: Path) -> None:
+    pipeline_dir = tmp_path / "failed"
+    _make_digest_on_disk(pipeline_dir, status="failed")
+    assert list(_emit_run_summary(pipeline_dir)) == [
+        ("error", "Pipeline failed — no digest produced"),
+        ("log", f"Workdir: {pipeline_dir}"),
+    ]
+
+
+def test_emit_pipeline_prints_stage_table_when_lines_raise(tmp_path: Path, capsys) -> None:
+    pipeline_dir = tmp_path / "pipeline-2026-03-01-100000"
+    _make_task_dir(pipeline_dir, "classify-1", elapsed=10.5, tokens=500, prompt_text="A" * 1000)
+
+    def lines():
+        yield ("log", f"Workdir: {pipeline_dir}")
+        raise click.ClickException("boom")
+
+    with pytest.raises(click.ClickException):
+        _emit_pipeline(lines())
+    assert "classify-1" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------

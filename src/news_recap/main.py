@@ -554,12 +554,14 @@ def _emit_styled(severity: str, text: str) -> None:
 
 def _emit_pipeline(lines: Iterator[PipelineLine]) -> None:
     workdir: Path | None = None
-    for severity, text in lines:
-        _emit_styled(severity, text)
-        if text.startswith("Workdir: "):
-            workdir = Path(text.removeprefix("Workdir: "))
-    if workdir and workdir.is_dir():
-        _print_stage_table(workdir)
+    try:
+        for severity, text in lines:
+            _emit_styled(severity, text)
+            if text.startswith("Workdir: "):
+                workdir = Path(text.removeprefix("Workdir: "))
+    finally:
+        if workdir and workdir.is_dir():
+            _print_stage_table(workdir)
 
 
 def _emit_prompt(lines: Iterator[PromptLine]) -> None:
