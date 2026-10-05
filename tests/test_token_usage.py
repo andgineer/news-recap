@@ -80,3 +80,11 @@ class TestSaveAndReadUsage:
         assert data["tokens_used"] == 999
         assert data["total_tokens"] == 999
         assert data["backend"] == "cli"
+
+    def test_breakdown_saved_alongside_total(self, tmp_path: Path) -> None:
+        breakdown = {"input_tokens": 12921, "output_tokens": 22, "total_tokens": 12943}
+        _save_usage(tmp_path, elapsed=4.7, tokens=12943, breakdown=breakdown)
+        data = json.loads((tmp_path / "meta" / "usage.json").read_text())
+        assert data["input_tokens"] == 12921
+        assert data["output_tokens"] == 22
+        assert read_agent_usage(tmp_path) == (4.7, 12943)

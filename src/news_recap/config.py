@@ -67,7 +67,7 @@ _DEFAULT_CLAUDE_CMD = (
     '-- "Read your task from {prompt_file} and execute it."'
 )
 _DEFAULT_ANTIGRAVITY_CMD = (
-    "agy {model} --dangerously-skip-permissions "
+    "agy {model} --dangerously-skip-permissions --output-format json "
     '-p "Read your task from {prompt_file} and execute it."'
 )
 

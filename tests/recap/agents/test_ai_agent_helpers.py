@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ from news_recap.recap.agents.ai_agent import (
     _log_agent_output,
     _parse_reset_in,
     _summarise_stderr,
+    _unwrap_agy_envelope,
 )
 
 # Trimmed from a real agy run: the not-logged-in lines are startup noise, the
@@ -170,3 +172,48 @@ def test_log_agent_output_skips_empty_files(tmp_path: Path) -> None:
     log = MagicMock()
     _log_agent_output(log, "step_x", result)
     log.error.assert_not_called()
+
+
+def _agy_result(tmp_path: Path, stdout: str) -> SimpleNamespace:
+    stdout_path = tmp_path / "agent_stdout.log"
+    stderr_path = tmp_path / "agent_stderr.log"
+    stdout_path.write_text(stdout, "utf-8")
+    stderr_path.write_text("agy log\n", "utf-8")
+    return SimpleNamespace(stdout_path=stdout_path, stderr_path=stderr_path)
+
+
+def test_unwrap_agy_envelope_success(tmp_path: Path) -> None:
+    usage = {
+        "input_tokens": 12921,
+        "output_tokens": 22,
+        "thinking_tokens": 21,
+        "cache_read_tokens": 0,
+        "total_tokens": 12943,
+    }
+    envelope = {"conversation_id": "c1", "status": "SUCCESS", "response": "1: ok\n", "usage": usage}
+    result = _agy_result(tmp_path, json.dumps(envelope))
+
+    assert _unwrap_agy_envelope(result) == usage
+    assert result.stdout_path.read_text("utf-8") == "1: ok\n"
+    assert result.stderr_path.read_text("utf-8") == "agy log\n"
+
+
+def test_unwrap_agy_envelope_error_goes_to_stderr(tmp_path: Path) -> None:
+    envelope = {
+        "status": "ERROR",
+        "response": "",
+        "error": "Individual quota reached",
+        "usage": {"input_tokens": 0, "total_tokens": 0},
+    }
+    result = _agy_result(tmp_path, json.dumps(envelope))
+
+    assert _unwrap_agy_envelope(result) == {"input_tokens": 0, "total_tokens": 0}
+    assert result.stdout_path.read_text("utf-8") == ""
+    assert "Individual quota reached" in result.stderr_path.read_text("utf-8")
+
+
+def test_unwrap_agy_envelope_plain_text_untouched(tmp_path: Path) -> None:
+    result = _agy_result(tmp_path, "1: ok\n2: vague\n")
+
+    assert _unwrap_agy_envelope(result) is None
+    assert result.stdout_path.read_text("utf-8") == "1: ok\n2: vague\n"

@@ -115,7 +115,12 @@ def run_ai_agent(  # noqa: PLR0913
         stop_event=stop_event,
     )
     elapsed = time.monotonic() - step_start
-    tokens = _parse_tokens_used(result.stderr_path)
+    envelope_usage = _unwrap_agy_envelope(result) if routing.agent == "antigravity" else None
+    tokens = (
+        envelope_usage.get("total_tokens")
+        if envelope_usage
+        else _parse_tokens_used(result.stderr_path)
+    )
 
     m, s = divmod(int(elapsed), 60)
     t = f"{m}m {s}s" if m else f"{elapsed:.1f}s"
@@ -127,7 +132,12 @@ def run_ai_agent(  # noqa: PLR0913
         tokens_str,
     )
 
-    _save_usage(Path(pipeline_dir) / task_id, elapsed=elapsed, tokens=tokens)
+    _save_usage(
+        Path(pipeline_dir) / task_id,
+        elapsed=elapsed,
+        tokens=tokens,
+        breakdown=envelope_usage,
+    )
 
     if result.exit_code == 0:
         try:
@@ -328,12 +338,50 @@ def _parse_tokens_used(stderr_path: Path) -> int | None:
     return None
 
 
+_USAGE_BREAKDOWN_KEYS = (
+    "input_tokens",
+    "output_tokens",
+    "thinking_tokens",
+    "cache_read_tokens",
+    "total_tokens",
+)
+
+
+def _unwrap_agy_envelope(result) -> dict[str, int] | None:
+    """Replace agy's ``--output-format json`` envelope in stdout with its response text.
+
+    The envelope's error goes to stderr, where quota/auth detection looks.
+    Returns the envelope's usage, or ``None`` when stdout is not an envelope.
+    """
+    try:
+        envelope = json.loads(result.stdout_path.read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(envelope, dict) or "response" not in envelope:
+        return None
+    result.stdout_path.write_text(envelope.get("response") or "", "utf-8")
+    if error := envelope.get("error"):
+        with result.stderr_path.open("a", encoding="utf-8") as f:
+            f.write(f"\n{error}\n")
+    usage = envelope.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    return {k: v for k, v in usage.items() if k in _USAGE_BREAKDOWN_KEYS and isinstance(v, int)}
+
+
 _USAGE_FILENAME = "meta/usage.json"
 
 
-def _save_usage(task_dir: Path, *, elapsed: float, tokens: int | None) -> None:
+def _save_usage(
+    task_dir: Path,
+    *,
+    elapsed: float,
+    tokens: int | None,
+    breakdown: dict[str, int] | None = None,
+) -> None:
     """Persist CLI agent usage metrics for later aggregation."""
     usage = {
+        **(breakdown or {}),
         "elapsed_seconds": round(elapsed, 1),
         "tokens_used": tokens,
         "total_tokens": tokens,

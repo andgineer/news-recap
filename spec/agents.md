@@ -115,6 +115,18 @@ gemini --model {model} --approval-mode auto_edit --prompt {prompt}
 
 Token usage: Gemini CLI does not print token counts. Usage data is not captured.
 
+### Antigravity
+
+```
+agy {model} --dangerously-skip-permissions --output-format json -p "Read your task from {prompt_file} and execute it."
+```
+
+- `-p` must come last: agy takes the token right after `-p` as the prompt.
+- agy's internal log is redirected to the task's stderr log, so quota and auth errors land where error detection looks.
+- `--output-format json` wraps the answer in an envelope with `response`, `error` and `usage`. The pipeline unwraps it: `response` becomes the captured stdout the parsers read, and `error` is appended to the stderr log.
+
+Token usage: the envelope's input, output, thinking, cache-read and total tokens are saved per task. Measured 2026-10-05 with `gemini-3.7-flash --effort low`: a "Reply OK" launch used 12,921 input tokens, which is the per-launch agent overhead, and a 20-headline classify launch used 25,117 input and 2,245 output tokens.
+
 ## Pricing Configuration
 
 Set `NEWS_RECAP_LLM_PRICING` env var. Format: `agent:model:input_per_1m_usd:output_per_1m_usd`, comma-separated.

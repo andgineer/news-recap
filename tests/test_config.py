@@ -161,7 +161,7 @@ def test_from_env_uses_codex_as_default_llm_agent(
         '-- "Read your task from {prompt_file} and execute it."'
     )
     assert settings.orchestrator.antigravity_command_template == (
-        "agy {model} --dangerously-skip-permissions "
+        "agy {model} --dangerously-skip-permissions --output-format json "
         '-p "Read your task from {prompt_file} and execute it."'
     )
 

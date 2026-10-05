@@ -161,7 +161,8 @@ output language changes (title translation, cached).
 
 ## Stage 0 — Reliability and telemetry (~0.5 day, independent of Jev)
 
-0.1 **`load_resources` stops failing the pipeline** (issue #18).
+0.1 **`load_resources` stops failing the pipeline** (issue #18). **Done 2026-10-05** (319440b,
+#18 closed).
 `recap/tasks/load_resources.py`: replace the `raise RecapPipelineError(...)` at the
 `_MAX_FAILURE_RATE` check (line 117) with `logger.warning(...)` naming the rate; keep the
 constant as the warning threshold. Failed articles are already reset to `verdict = "ok"` above
@@ -170,7 +171,10 @@ it. Tests (`tests/test_load_resources.py`): `test_high_failure_rate_raises` beco
 ids); `test_high_failure_persists_loaded_before_raise` becomes a check that loaded ids are
 persisted and the step completes.
 
-0.2 **Honest User-Agent**, gated by a probe.
+0.2 **Honest User-Agent**, gated by a probe. **Done 2026-10-05:** the honest UA loses tanjug.rs
+(nginx 403 for any non-browser UA), so the default is `... Chrome/129.0 Safari/537.36`, the only
+probed UA that passes engadget, tanjug.rs and slashdot (Chrome/141 and Firefox/143 get 403 from
+slashdot). Probe table in 319440b.
 `http/fetcher.py:14` `DEFAULT_USER_AGENT` currently is `... Chrome/131.0.0.0 Safari/537.36`,
 which engadget.com's CloudFront answers with 403 (60 of the 80 failed downloads); the same
 URL returns 200 for `news-recap/1.9 (+https://github.com/andgineer/news-recap)` and for
@@ -183,7 +187,7 @@ domains from the archived `pipeline_input.json` files with both UAs.
 
 Either way, record the probe table in the commit message.
 
-0.3 **`create` exits 1 when the pipeline failed.**
+0.3 **`create` exits 1 when the pipeline failed.** **Done 2026-10-05.**
 `recap/launcher.py` `_emit_run_summary` (line 143) returns silently for non-completed digests,
 so no `Workdir:` line is emitted. Change it to yield
 `("error", "Pipeline failed — no digest produced")` and the `Workdir:` line for any status
@@ -200,7 +204,11 @@ with a flow that fails returns `exit_code == 1`, and the output contains "Pipeli
 (`gc_retention_days`), so until Stage 6 ends run `bench_jev.py snapshot` (Stage 1) at least
 every 5 days.
 
-0.5 **agy consumption telemetry.** One probe launch: `agy -p --output-format json "Reply OK"`.
+0.5 **agy consumption telemetry.** One probe launch: `agy --output-format json -p "Reply OK"`
+(`-p` must come last). **Done 2026-10-05:** the envelope carries input, output, thinking,
+cache-read and total tokens; the first branch below is implemented and documented in
+`spec/agents.md`. "Reply OK" costs 12,921 input tokens (per-launch agent overhead); a
+20-headline classify launch costs 25,117 input + 2,245 output.
 
 - If the JSON carries token usage: for antigravity, add `--output-format json` to the command
   template, parse the envelope in `recap/agents/ai_agent.py`, write the result text back as the
