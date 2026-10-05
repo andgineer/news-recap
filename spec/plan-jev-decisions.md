@@ -224,6 +224,24 @@ cache-read and total tokens; the first branch below is implemented and documente
 `snapshot | label | judge-check | classify | route | ab | report` (+ `dedup` in Fallback B).
 It reads `TYPESAFE_API_KEY` the same way as the pipeline (Decision 2). This stage implements:
 
+**Done 2026-10-05** (`scripts/bench_jev.py`, `tests/test_bench_jev.py`). Differences from the
+bullets below:
+
+- `snapshot` also re-copies an archived pipeline whose `digest.json` is not `completed`, so a
+  night that resumes after a failure does not stay archived half-done. Copies go through a temp
+  dir and a rename.
+- `label`: `s` records `skip`; skipped items are not shown again and count as unlabelled for
+  every gate. `q` (or Ctrl-C) quits. `u` undoes labels from the current session only. Without
+  `--items` it presents the 1.2 batch; `--items` takes a JSONL file of `{pipeline, headline}`.
+- `judge-check --task classify`: `claude -p --model claude-sonnet-5-5 --tools ""
+  --no-session-persistence`, prompt on stdin from `prompt.txt` (no tools, so injected text in
+  the news cannot act), with `ANTHROPIC_API_KEY` (would bill the API, not the subscription) and
+  `TYPESAFE_API_KEY` stripped. Answers are cached in `bench/judge/classify.jsonl` keyed by
+  model + prompt hash, so a rerun only judges new labels. Run logs are kept in
+  `bench/judge/runs/`.
+- Reading `TYPESAFE_API_KEY` waits for `classify` (Stage 3): no Stage 1 subcommand calls Jev,
+  and Stage 2's `make_jev_client` will provide the lookup.
+
 - `snapshot`: copy `<data_dir>/workdir/pipeline-*` into `<data_dir>/bench/pipelines/`,
   skipping existing ones.
 - `label`: present items blind and in random order — headline, source, first 300 chars of
@@ -237,9 +255,34 @@ It reads `TYPESAFE_API_KEY` the same way as the pipeline (Decision 2). This stag
 design above, plus 60 random agreements (fixed seed). Jev and Gemini differ only on
 disagreements, so labelling all of them gives an exact comparison; the 60 agreements estimate
 how often both are wrong together.
+**Done 2026-10-05, labelled by Claude (Opus 5.5) at the user's request**, not by the user:
+rows carry `labeler: claude-opus-5-5`. 222 items (seed 20261005): 184 from the tuning nights,
+38 from the holdout. Labels: ok 142, vague 54, exclude 26. Rules (the user confirmed the
+medical, sports and vague boundaries on 2026-10-05; later labels follow them): exclude = the
+story's subject (not the outlet's language) is Croatian domestic affairs, non-Russian sports,
+health/wellness advice to the reader (symptoms, diet, sleep, anxiety tips), horoscopes or the
+Epstein files; health *research news* and local notices caused by a sports event are not
+excluded. vague = the headline withholds the fact it is about (an unnamed entity: "a famous
+singer", "this setting", "two countries", "33 things"; a teaser question; a puzzle or show
+title); guide questions ("Is X worth buying?") and deal posts are ok.
+
+Results against these labels (experiment design, exclude ≥ 0.6, vague ≥ 0.7):
+
+- 162 disagreements: Gemini right on 83, Jev on 70, neither on 9. Of the 60 agreements,
+  59 are right.
+- Wrong excludes: Gemini 7, Jev 50 (44 Croatian-language stories not about Croatia, 6
+  sports-adjacent). Missed excludes: Gemini 18 (14 of them Croatian domestic stories Gemini
+  called vague), Jev 1.
+- Jev exclude threshold, on the 222 labelled items only: 0.7 → 8 wrong / 3 missed; 0.8 → 3 / 8;
+  0.85 → 0 / 14. Other thresholds create disagreements outside the labelled set (e.g. 9 of
+  the 293 joint excludes have Jev max p < 0.7), so Stage 3 labels those before the gate.
+- `judge-check` (Sonnet): 74.3% agreement, **not calibrated** for classify. 36 of the 57
+  disagreements are labelled vague, judge ok (the judge reads vague narrowly); 12 are on the
+  exclude boundary (Croatian stories whose country appears only in the text, wellness
+  advice). Classify gates use labels directly, so Stage 3 does not depend on the judge.
 
 1.3 Night 2026-10-04 (277 headlines) is the holdout: thresholds and state variants are tuned
-on the other three nights only.
+on the other three nights only (`HOLDOUT_PIPELINE` in `bench_jev.py`).
 
 ## Stage 2 — Jev foundation (~1 day, no behaviour change)
 
