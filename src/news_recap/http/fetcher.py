@@ -11,9 +11,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_RETRIES = 3
+# Sites block specific UA strings: engadget 403s Chrome/131.0.0.0, tanjug.rs any
+# non-browser UA, slashdot Chrome/141 and Firefox/143. Re-probe with
+# scripts/probe_sources.py before changing.
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
 )
 
 

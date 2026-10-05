@@ -12,10 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from news_recap.recap.storage.pipeline_io import load_resource_texts, resource_cache_dir
-from news_recap.recap.tasks.base import (
-    RecapPipelineError,
-    TaskLauncher,
-)
+from news_recap.recap.tasks.base import TaskLauncher
 
 if TYPE_CHECKING:
     from news_recap.recap.flow import FlowContext
@@ -115,10 +112,13 @@ class LoadResources(TaskLauncher):
                 by_id[sid].verdict = "ok"
 
         if failure_rate > _MAX_FAILURE_RATE:
-            raise RecapPipelineError(
-                "load_resources",
-                f"Too many resource loading failures: {len(failed_ids)}/{len(eligible)}"
-                f" ({failure_rate:.0%} > {_MAX_FAILURE_RATE:.0%})",
+            logger.warning(
+                "[cyan]load_resources:[/cyan] high failure rate %d/%d (%.0f%% > %.0f%%)"
+                " — failed articles keep their original headlines",
+                len(failed_ids),
+                len(eligible),
+                failure_rate * 100,
+                _MAX_FAILURE_RATE * 100,
             )
 
         enrich_set = set(enrich_ids)

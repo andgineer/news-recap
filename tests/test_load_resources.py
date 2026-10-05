@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
+import logging
 
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.models import DigestArticle
@@ -133,11 +133,10 @@ class TestLoadResources:
         assert "a2" not in ctx.state["enrich_ids"]
         assert "a1" in ctx.state["enrich_ids"]
 
-    def test_high_failure_rate_raises(self, tmp_path):
+    def test_high_failure_rate_warns(self, tmp_path, caplog):
         from unittest.mock import patch
 
         from news_recap.recap.tasks import load_resources as lr_mod
-        from news_recap.recap.tasks.base import RecapPipelineError
 
         articles = [self._make_digest_article(f"a{i}") for i in range(10)]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=[f"a{i}" for i in range(10)])
@@ -148,8 +147,11 @@ class TestLoadResources:
             from news_recap.recap.tasks.load_resources import LoadResources
 
             lr = LoadResources(ctx)
-            with pytest.raises(RecapPipelineError):
+            with caplog.at_level(logging.WARNING, logger=lr_mod.__name__):
                 lr.execute()
+
+        assert any("high failure rate 5/10" in r.getMessage() for r in caplog.records)
+        assert ctx.state["enrich_ids"] == [f"a{i}" for i in range(5)]
 
     def test_already_loaded_skipped(self, tmp_path):
         from unittest.mock import patch
@@ -190,12 +192,10 @@ class TestLoadResources:
         # only vague articles with successfully loaded resources go to enrich
         assert ctx.state["enrich_ids"] == ["a1"]
 
-    def test_high_failure_persists_loaded_before_raise(self, tmp_path):
-        """Successful loads are persisted even when failure rate exceeds threshold."""
+    def test_high_failure_persists_loaded_and_completes(self, tmp_path):
         from unittest.mock import patch
 
         from news_recap.recap.tasks import load_resources as lr_mod
-        from news_recap.recap.tasks.base import RecapPipelineError
 
         articles = [self._make_digest_article(f"a{i}") for i in range(10)]
         ctx = self._make_ctx(tmp_path, articles, enrich_ids=[f"a{i}" for i in range(10)])
@@ -206,9 +206,9 @@ class TestLoadResources:
             from news_recap.recap.tasks.load_resources import LoadResources
 
             lr = LoadResources(ctx)
-            with pytest.raises(RecapPipelineError):
-                lr.execute()
+            lr.execute()
 
+        assert lr.fully_completed is True
         for i in range(5):
             assert ctx.digest.articles[i].resource_loaded is True
         for i in range(5, 10):
