@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 SAME_EVENT_THRESHOLD = 0.40
 # Pairs below the embedding pre-filter are far more often different stories, so the wider net
 # asks Jev for more confidence.
-WIDE_SIMILARITY = 0.85
+WIDE_SIMILARITY = 0.87
 WIDE_THRESHOLD = 0.70
 # The wider net grows with the square of the night's size; this bounds a catch-up night after
 # missed runs (~80 s, ~$0.10) and keeps its most similar pairs.
@@ -95,18 +95,6 @@ def star_groups(ids: Sequence[str], same: Callable[[str, str], bool]) -> list[li
         else:
             groups.append([item])
     return [g for g in groups if len(g) > 1]
-
-
-def display_title(group: Sequence[DigestArticle]) -> str:
-    """The keeper's enriched title, else the first enriched title in the group, else its title.
-
-    *group* starts with the keeper.
-    """
-    keeper = group[0]
-    if keeper.enriched_title:
-        return keeper.enriched_title
-    enriched = next((a.enriched_title for a in group if a.enriched_title), None)
-    return enriched or keeper.title
 
 
 def pair_key(a: DigestArticle, b: DigestArticle) -> tuple[str, str]:

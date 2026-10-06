@@ -13,7 +13,7 @@ from news_recap.recap.agents.subprocess import SubprocessError
 from news_recap.recap.dedup.cluster import group_similar
 from news_recap.recap.dedup.embedder import Vector, build_embedder
 from news_recap.recap.jev.client import JevUnavailableError, make_jev_client
-from news_recap.recap.jev.dedup import display_title, find_duplicates, wide_pairs
+from news_recap.recap.jev.dedup import find_duplicates, wide_pairs
 from news_recap.recap.jev.usage import jev_task_dir, save_answers, save_jev_usage
 from news_recap.recap.models import DigestArticle, language_display_name
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
@@ -352,6 +352,19 @@ class Deduplicate(TaskLauncher):
                 for x in answers
             ],
         )
+        titled = [
+            (group, title)
+            for group, title in zip(merges, write_merged_titles(ctx, merges), strict=True)
+            if title is not None
+        ]
+        if len(titled) < len(merges):
+            # A merge without a written headline would show one member's title and hide the
+            # others' stories; a duplicate left visible is the lesser harm (Decision 8).
+            logger.warning(
+                "dedup: %d of %d merge group(s) without a headline — left unmerged",
+                len(merges) - len(titled),
+                len(merges),
+            )
         batch_results = [
             (
                 [a.article_id for a in group],
@@ -360,21 +373,16 @@ class Deduplicate(TaskLauncher):
                     singles=[],
                 ),
             )
-            for group, title in zip(merges, write_merged_titles(ctx, merges), strict=True)
+            for group, title in titled
         ]
         self._apply(batch_results, id_to_article, source="Jev")
         return True
 
 
-def write_merged_titles(ctx: FlowContext, groups: list[list[DigestArticle]]) -> list[str]:
-    """One LLM launch writes each merge group's headline from all its members.
-
-    A Jev merge alone would show one member's title and hide a wrongly merged story; a group
-    the launch leaves without a headline keeps its ``display_title``.
-    """
-    fallback = [display_title(group) for group in groups]
+def write_merged_titles(ctx: FlowContext, groups: list[list[DigestArticle]]) -> list[str | None]:
+    """One LLM launch writes each merge group's headline; ``None`` where it wrote none."""
     if not groups:
-        return fallback
+        return []
     prompt = render_prompt(
         RECAP_DEDUP_TITLES_PROMPT,
         ctx.inp.prompt_backend,
@@ -391,14 +399,14 @@ def write_merged_titles(ctx: FlowContext, groups: list[list[DigestArticle]]) -> 
         )
         written = parse_merged_titles(read_agent_stdout(stdout_path, "recap_dedup"), len(groups))
     except (RecapPipelineError, SubprocessError) as exc:
-        logger.warning("dedup: merged headlines failed (%s) — keeping existing titles", exc)
-        return fallback
+        logger.warning("dedup: merged headlines failed (%s)", exc)
+        return [None] * len(groups)
     logger.info(
         "[cyan]dedup:[/cyan] merged headlines written for %d of %d group(s)",
         len(written),
         len(groups),
     )
-    return [written.get(i, title) for i, title in enumerate(fallback, 1)]
+    return [written.get(i) for i in range(1, len(groups) + 1)]
 
 
 def _compute_groups(
@@ -591,10 +599,7 @@ def _apply_merge(
         return
 
     keeper = max(merged_articles, key=lambda a: len(a.clean_text))
-    # Jev keeps the original title when no member was enriched; marking it enriched would make a
-    # resumed enrich skip the keeper.
-    if merge.merged_text != keeper.title:
-        keeper.enriched_title = merge.merged_text
+    keeper.enriched_title = merge.merged_text
 
     for other in merged_articles:
         if other.article_id == keeper.article_id:

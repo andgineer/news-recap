@@ -35,6 +35,7 @@ import msgspec
 from typesafe_sdk import Choice, Noul, SystemOneResponse
 
 from news_recap.config import DEFAULT_JEV_MODEL, Settings
+from news_recap.recap.agents.ai_agent import read_agent_usage
 from news_recap.recap.jev.classify import (
     EXCLUDE_THRESHOLD,
     STATE_VARIANTS,
@@ -50,7 +51,7 @@ from news_recap.recap.jev.dedup import (
     PAIR_QUESTION,
     PAIR_STATE,
     SAME_EVENT_THRESHOLD,
-    display_title,
+    WIDE_SIMILARITY,
     merge_groups,
     merges_from,
     pair_key,
@@ -1798,7 +1799,7 @@ def dedup_night_tokens(
     return dict(totals)
 
 
-WIDE_LOW = 0.85
+WIDE_LOW = WIDE_SIMILARITY
 WIDE_MIN_PRECISION = 0.90
 WIDE_THRESHOLD = 0.70
 
@@ -1938,7 +1939,7 @@ def _headline_context(bench: Bench, settings: Settings, night: str, agent: str) 
 def title_row(
     night: str,
     group: list[DigestArticle],
-    written: str,
+    written: str | None,
     labels: Mapping[Pair, str],
 ) -> dict[str, Any]:
     keeper, *others = group
@@ -1946,7 +1947,6 @@ def title_row(
     return {
         "pipeline": night,
         "written": written,
-        "fallback": written == display_title(group),
         "members": [
             {"title": a.title, "source": a.source, "label": label}
             for a, label in zip(group, [None, *against_keeper], strict=True)
@@ -1956,8 +1956,8 @@ def title_row(
 
 def dedup_titles_report(rows: Sequence[Mapping[str, Any]]) -> list[str]:
     """Every group with a member labelled ``different`` from its keeper, to read by hand."""
-    fallback = sum(r["fallback"] for r in rows)
-    lines = [f"{len(rows)} merge groups, {fallback} kept an existing title"]
+    unwritten = sum(r["written"] is None for r in rows)
+    lines = [f"{len(rows)} merge groups, {unwritten} without a headline (left unmerged)"]
     for row in rows:
         hidden = [m["title"] for m in row["members"][1:] if m["label"] == DIFFERENT]
         if hidden:
@@ -1980,8 +1980,14 @@ def _cmd_dedup_titles(bench: Bench, args: argparse.Namespace) -> None:
         print(f"{night}: {len(groups)} merge groups -> one {args.agent} launch")
         context = _headline_context(bench, settings, night, args.agent)
         titles = write_merged_titles(context, groups)
-        rows += [title_row(night, g, t, labels) for g, t in zip(groups, titles, strict=True)]
-    out = bench.new_run("dedup-titles", args.agent)
+        launches = sorted(context.pdir.glob("dedup-*"), key=lambda d: d.stat().st_mtime)
+        elapsed, tokens = read_agent_usage(launches[-1]) if launches else (0.0, 0)
+        print(f"  {tokens:,} tokens, {elapsed:.0f} s")
+        rows += [
+            {**title_row(night, g, t, labels), "launch_tokens": tokens, "launch_seconds": elapsed}
+            for g, t in zip(groups, titles, strict=True)
+        ]
+    out = bench.new_run("dedup-titles", f"{args.agent}-holdout" if args.holdout else args.agent)
     out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), "utf-8")
     print(f"\n{len(rows)} groups -> {out}\n")
     for line in dedup_titles_report(rows):

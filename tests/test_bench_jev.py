@@ -858,7 +858,7 @@ def test_wide_pairs_skips_pairs_inside_one_candidate_group(tmp_path):
             [0.86, 0.5, 0.89, 1.0],
         ],
     )
-    pairs = bench_jev.wide_pairs("p", articles, sims, [cluster], high=0.90)
+    pairs = bench_jev.wide_pairs("p", articles, sims, [cluster], high=0.90, low=0.85)
     assert [(a.title, b.title) for _, a, b in pairs] == [("Alpha", "Delta"), ("Gamma", "Delta")]
 
 
@@ -887,14 +887,13 @@ def test_dedup_titles_report_lists_groups_with_a_different_member():
     labels = {bench_jev.make_pair(night, "A", "C"): "different"}
     group = [bench_jev._dedup_article(None, "s.com", h) for h in ("A", "B", "C")]
     rows = [
-        bench_jev.title_row(night, group, "A", {}),
+        bench_jev.title_row(night, group, None, {}),
         bench_jev.title_row(night, group, "A and C", labels),
     ]
 
     assert [m["label"] for m in rows[1]["members"]] == [None, None, "different"]
-    assert rows[0]["fallback"]
     assert bench_jev.dedup_titles_report(rows) == [
-        "2 merge groups, 1 kept an existing title",
+        "2 merge groups, 1 without a headline (left unmerged)",
         "[2026-10-01] A and C",
         "    different: C",
     ]

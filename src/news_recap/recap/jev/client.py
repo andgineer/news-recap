@@ -49,10 +49,10 @@ class JevClient:
             return []
         try:
             return asyncio.run(self._decide_all(requests))
-        except* JevUnavailableError as group:
-            raise group.exceptions[0] from None
-        except* TypeSafeError as group:
+        except* (JevUnavailableError, TypeSafeError) as group:
             error = group.exceptions[0]
+            if isinstance(error, JevUnavailableError):
+                raise error from None
             raise JevUnavailableError(f"{type(error).__name__}: {error}") from error
 
     async def _decide_all(self, requests: Sequence[JevRequest]) -> list[SystemOneResponse]:

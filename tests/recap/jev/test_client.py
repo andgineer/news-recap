@@ -146,6 +146,17 @@ def test_missing_answer_maps_to_jev_unavailable(fake_sdk) -> None:
     assert client.input_tokens >= 7
 
 
+def test_missing_answer_and_sdk_error_together_still_map(fake_sdk) -> None:
+    unanswered = SystemOneResponse.model_validate(
+        {"model": "jev-1.13.0", "usage": {"input_tokens": 7}, "answers": {}},
+    )
+    # States 0 and 3 answer without delay, so both fail before the task group cancels either.
+    fake_sdk(lambda state: unanswered if state == 0 else TypeSafeError("boom"))
+
+    with pytest.raises(JevUnavailableError):
+        JevClient("key", "jev-1.13.0").decide([(0, _QUESTIONS), (3, _QUESTIONS)])
+
+
 def test_other_errors_are_not_mapped(fake_sdk) -> None:
     fake_sdk(lambda state: ValueError("bug"))
     with pytest.raises(ExceptionGroup):

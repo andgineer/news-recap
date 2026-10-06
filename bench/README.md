@@ -54,14 +54,18 @@ split (54): the block's headlines, `same_story` (the split separates reports of 
 **Claim** (`spec/plan-jev-decisions.md`, Stage 5): with the "news" question, headline-only state,
 merging at ≥ 0.40 inside today's candidate groups, Jev makes fewer wrong pair merges than today's
 LLM dedup (13 vs 31 on the tuning nights, 1 vs 2 on the holdout; in-sample) with as many correct
-pair decisions; the wider net (similarity 0.85–0.90, merging at ≥ 0.70) adds merges that are 92%
-right (43 of 46 tuning, 4 of 5 holdout).
+pair decisions; the shipped wider net (similarity 0.87–0.90, merging at ≥ 0.70) adds merges that
+are 93% right (22 of 24 tuning, 3 of 3 holdout); at 0.85–0.90, 43 of 46 and 4 of 5.
 
 One row per pair (1 763):
 
 - `candidate`: `group` = a pair inside one of today's candidate groups (all 1 654 of the five
-  nights); `wide` = a wider-net pair Jev scored ≥ 0.40 (the rest of the ~9 600 wider pairs scored
-  lower and are left out).
+  nights); `wide` = a pair at similarity 0.85–0.90 outside them that Jev scored ≥ 0.40 (the rest
+  of the ~9 600 such pairs scored lower and are left out). Production asks only `wide` pairs with
+  `similarity` ≥ 0.87.
+- `similarity`: cosine similarity of the two articles with the pipeline's embedder over the
+  archived original titles and text; `null` for 22 `group` rows whose headline is not in the
+  night's input.
 - `gemini_merged`: today's agy `gemini-3.7-flash` put both articles in one `MERGED` group (always
   false for `wide`: today's pipeline never sees those pairs).
 - `jev_p`: `jev-1.13.0` probability of "same piece of news", headline-only state.
@@ -78,16 +82,19 @@ Scoring: a pair's truth is its label; an unlabelled pair counts only when `jev_m
 ## `dedup-titles-2026-10-06.jsonl`
 
 **Claim** (`spec/plan-jev-decisions.md`, Stage 5b): when one agy launch per night writes the
-headline of every Jev merge group, the headlines state the merged-in story as often as today's
-LLM dedup does (8 of 9 wrongly merged members stated; today 15 of 16 groups), in the output
+headline of every Jev merge group, the headlines lose as many merged-in stories as today's LLM
+dedup (1 vs 1: 8 of 9 wrongly merged members stated; today 15 of 16 groups), in the output
 language, for every group.
 
 One row per merge group of the four tuning nights (123), as `bench_jev.py dedup-titles` makes
-them: the groups the pipeline builds from the stored Stage 5 probabilities, headlines from
-`write_merged_titles` with agy `gemini-3.7-flash --effort low`. An agent's output is not
-deterministic, so a rerun writes different headlines and costs one launch per night.
+them with the wider net at 0.85–0.90 (the run predates the 0.87 band): the groups the pipeline
+builds from the stored Stage 5 probabilities, headlines from `write_merged_titles` with agy
+`gemini-3.7-flash --effort low`. An agent's output is not deterministic, so a rerun writes
+different headlines and costs one launch per night.
 
-- `written`: the headline; `fallback`: the group kept its Decision 6 title instead (none did).
+- `written`: the headline; `null` when the launch wrote none (the group then stays unmerged;
+  none here).
+- `launch_tokens`, `launch_seconds`: that night's launch (the same on every row of a night).
 - `members`: keeper first; `title`, `source`, `label` (the Stage 5 label against the keeper,
   `null` when unlabelled).
 - `in_headline`, `read_by`: for members labelled `different`, whether the written headline states

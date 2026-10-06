@@ -13,7 +13,6 @@ from typesafe_sdk import SystemOneResponse
 from news_recap.recap.jev.client import JevUnavailableError
 from news_recap.recap.jev.dedup import (
     PAIR_KEY,
-    display_title,
     find_duplicates,
     merge_groups,
     pair_key,
@@ -96,12 +95,6 @@ def test_merge_groups_puts_the_longest_text_first_without_chaining() -> None:
     same = {pair_key(a, b), pair_key(a, c)}
     groups = merge_groups([a, b, c], lambda x, y: pair_key(x, y) in same)
     assert [[x.article_id for x in g] for g in groups] == [["b", "a"]]
-
-
-def test_display_title_prefers_enriched_titles() -> None:
-    assert display_title([_article("k", enriched="K!"), _article("m", enriched="M!")]) == "K!"
-    assert display_title([_article("k"), _article("m"), _article("n", enriched="N!")]) == "N!"
-    assert display_title([_article("k"), _article("m")]) == "Title k"
 
 
 def test_wide_pairs_takes_the_band_outside_candidate_groups() -> None:
@@ -198,6 +191,7 @@ class _HeadlineAgent:
         self.prompts: list[str] = []
 
     def __call__(self, ctx: FlowContext, step_name: str, prompt: str, batch: int) -> Path:
+        assert step_name == "recap_dedup"
         self.prompts.append(prompt)
         if isinstance(self.stdout, BaseException):
             raise self.stdout
@@ -239,7 +233,7 @@ def test_jev_backend_merges_and_writes_the_headline_in_one_launch(tmp_path: Path
     ]
 
 
-def test_failed_headline_launch_keeps_existing_titles(tmp_path: Path) -> None:
+def test_failed_headline_launch_leaves_the_groups_unmerged(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path, [_article("a", 50), _article("b", 40), _article("d", 20)])
     vectors = {**_VECTORS, "Title b": _VECTORS["Enriched b"]}
     client = _FakeJev(_same("a", "b", p=0.9))
@@ -252,11 +246,11 @@ def test_failed_headline_launch_keeps_existing_titles(tmp_path: Path) -> None:
         Deduplicate(ctx).execute()
 
     assert len(agent.prompts) == 1
-    assert [a.article_id for a in ctx.digest.articles] == ["a", "d"]
-    assert ctx.digest.articles[0].enriched_title is None  # a resumed enrich still sees it
+    assert [a.article_id for a in ctx.digest.articles] == ["a", "b", "d"]
+    assert all(a.enriched_title is None and not a.alt_urls for a in ctx.digest.articles)
 
 
-def test_group_left_without_a_headline_keeps_its_title(tmp_path: Path) -> None:
+def test_group_left_without_a_headline_stays_unmerged(tmp_path: Path) -> None:
     articles = [_article("a", 50), _article("b", 40, enriched="Enriched b"), _article("c", 30)]
     ctx = _ctx(tmp_path, [*articles, _article("d", 20), _article("e", 10)])
     vectors = {**_VECTORS, "Title e": _VECTORS["Title d"]}
@@ -270,7 +264,7 @@ def test_group_left_without_a_headline_keeps_its_title(tmp_path: Path) -> None:
         Deduplicate(ctx).execute()
 
     titles = {a.article_id: a.enriched_title for a in ctx.digest.articles}
-    assert titles == {"a": "Enriched b", "c": None, "d": "Merged d and e"}
+    assert titles == {"a": None, "b": "Enriched b", "c": None, "d": "Merged d and e"}
 
 
 def test_no_merges_means_no_headline_launch(tmp_path: Path) -> None:
