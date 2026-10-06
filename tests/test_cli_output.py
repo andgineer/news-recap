@@ -467,6 +467,24 @@ def test_emit_run_summary_completed(tmp_path: Path) -> None:
     assert str(pipeline_dir) in log_line
 
 
+def test_emit_run_summary_reports_jev_apart_from_agent_tokens(tmp_path: Path) -> None:
+    from news_recap.recap.jev.usage import save_jev_usage
+
+    pipeline_dir = tmp_path / "pipeline-2026-03-01-100000"
+    _make_digest_on_disk(pipeline_dir, n_articles=5)
+    _make_task_dir(pipeline_dir, "enrich-1", elapsed=10.5, tokens=500)
+    save_jev_usage(
+        pipeline_dir / "dedup-jev",
+        elapsed=30.0,
+        input_tokens=350_000,
+        requests=400,
+        model="jev-1.13.0",
+    )
+
+    ok_line = next(text for sev, text in _emit_run_summary(pipeline_dir) if sev == "ok")
+    assert ok_line.endswith("tokens=500  jev=350,000 ($0.0147)")
+
+
 def test_emit_pipeline_prints_stage_table(tmp_path: Path, capsys) -> None:
     """After pipeline lines, _emit_pipeline prints the per-stage table."""
     pipeline_dir = tmp_path / "pipeline-2026-03-01-100000"

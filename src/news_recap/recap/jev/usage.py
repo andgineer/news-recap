@@ -10,9 +10,16 @@ _USAGE_FILENAME = "meta/usage.json"
 _ANSWERS_FILENAME = "output/jev_answers.json"
 
 
+_DIR_SUFFIX = "-jev"
+
+
 def jev_task_dir(pipeline_dir: Path, step: str) -> Path:
-    """Return the workdir of a Jev step; the stage table and token summary list it as *step*."""
-    return pipeline_dir / f"{step}-jev"
+    """Return the workdir of a Jev step, listed in the stage table as ``<step>-jev``."""
+    return pipeline_dir / f"{step}{_DIR_SUFFIX}"
+
+
+def is_jev_task_dir(task_dir: Path) -> bool:
+    return task_dir.name.endswith(_DIR_SUFFIX)
 
 
 def save_jev_usage(

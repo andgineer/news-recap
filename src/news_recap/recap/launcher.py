@@ -160,6 +160,8 @@ def _emit_run_summary(pipeline_dir: Path) -> Iterator[PipelineLine]:
     prompts = _human_size(usage.prompt_bytes)
     output = _human_size(usage.output_bytes)
     tokens = f"  tokens={usage.tokens:,}" if usage.tokens else ""
+    if usage.jev_tokens:
+        tokens += f"  jev={usage.jev_tokens:,} (${usage.jev_cost_usd:.4f})"
     yield (
         "ok",
         f"Done: {len(digest.articles)} articles, "

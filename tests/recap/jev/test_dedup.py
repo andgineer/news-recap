@@ -110,6 +110,13 @@ def test_wide_pairs_takes_the_band_outside_candidate_groups() -> None:
     assert wide_pairs([a, b, c, d], embeddings, groups=[], high=0.96, low=0.85) == [(a, b), (a, c)]
 
 
+def test_wide_pairs_keeps_the_most_similar_pairs_over_the_limit() -> None:
+    a, b, c = (_article(x) for x in "abc")
+    embeddings = {"a": [1.0, 0.0], "b": [0.88, 0.475], "c": [0.95, 0.312]}
+    pairs = wide_pairs([a, b, c], embeddings, groups=[], high=0.96, low=0.85, limit=1)
+    assert pairs == [(a, c)]
+
+
 def test_find_duplicates_uses_a_stricter_threshold_for_the_wider_net() -> None:
     a, b, c, d, e = (_article(x, n) for x, n in zip("abcde", (50, 40, 30, 20, 10), strict=True))
     client = _FakeJev(
@@ -203,6 +210,20 @@ def test_jev_backend_merges_without_llm(tmp_path: Path) -> None:
         ("a", "b", False, True),
         ("a", "c", True, True),
     ]
+
+
+def test_jev_merge_without_enriched_titles_leaves_keeper_unenriched(tmp_path: Path) -> None:
+    ctx = _ctx(tmp_path, [_article("a", 50), _article("b", 40), _article("d", 20)])
+    vectors = {**_VECTORS, "Title b": _VECTORS["Enriched b"]}
+    client = _FakeJev(_same("a", "b", p=0.9))
+    with (
+        patch.object(dedup_mod, "build_embedder", return_value=_VectorEmbedder(vectors)),
+        patch.object(dedup_mod, "make_jev_client", return_value=client),
+    ):
+        Deduplicate(ctx).execute()
+
+    assert [a.article_id for a in ctx.digest.articles] == ["a", "d"]
+    assert ctx.digest.articles[0].enriched_title is None
 
 
 def test_jev_unavailable_falls_back_to_llm(tmp_path: Path) -> None:

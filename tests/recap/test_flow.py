@@ -29,7 +29,16 @@ def test_log_token_summary_aggregates_phases(tmp_path: Path) -> None:
     _log_pipeline_token_summary(mock_logger, tmp_path)
     mock_logger.info.assert_called_once()
     args = mock_logger.info.call_args[0]
-    assert args[-1] == "1,000"
+    assert (args[0] % args[1:]).endswith("classify=1,000 | total=1,000")
+
+
+def test_log_token_summary_lists_jev_apart_from_the_total(tmp_path: Path) -> None:
+    _write_usage(tmp_path / "enrich-1", tokens=300)
+    _write_usage(tmp_path / "dedup-jev", tokens=5_000)
+    mock_logger = MagicMock()
+    _log_pipeline_token_summary(mock_logger, tmp_path)
+    args = mock_logger.info.call_args[0]
+    assert (args[0] % args[1:]).endswith("enrich=300 | total=300 | dedup-jev=5,000")
 
 
 def test_log_token_summary_skips_zero_tokens(tmp_path: Path) -> None:

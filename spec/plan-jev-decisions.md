@@ -128,8 +128,9 @@ classify (Jev) → load_resources → enrich (LLM) → deduplicate (Jev) → one
   of an agy launch per batch of clusters (Stage 5).
 - Everything else is unchanged.
 
-agy on 10-06: 17 launches / 629k tokens before Stage 3, 11 / 502k after it, 5 / ≈345k after
-Stage 5 (enrich, oneshot_digest, merge_sections, refine_layout).
+agy on 10-06: 17 launches / 629k tokens before Stage 3, 14 / 502k after it, 8 / ≈345k after
+Stage 5 (enrich 3, oneshot_digest 3, merge_sections, refine_layout). On the median night: 12 →
+9 → 5.
 
 ## Decisions
 
@@ -148,9 +149,12 @@ Stage 5 (enrich, oneshot_digest, merge_sections, refine_layout).
 6. **Merged headline.** Today's LLM dedup writes a new headline for each merged group. Jev cannot
    write, so a merged group keeps the keeper's `enriched_title`, else the first member's
    `enriched_title`, else the keeper's `title`.
-7. **Gates require improvement** wherever the reader can see the difference; non-inferiority
-   only where a gate says so. Ground truth is the user's labels; the Sonnet judge is used only
-   for tasks where its agreement with the user's labels has been measured.
+7. **Gates compare Jev with today's LLM on the same items**: the reader-visible errors a step
+   can cause (wrong excludes, wrong merges) must not increase and its correct decisions must not
+   decrease; a gate that requires more says so. Ground truth is labels made blind by Claude
+   (`labeler: claude-opus-5-5`) at the user's request, under written rules: the user confirmed
+   the classify rules (Stage 1.2); the dedup rule (Stage 5) awaits the user's confirmation. The
+   Sonnet judge is used only for tasks where its agreement with the labels has been measured.
 8. **A wrongly excluded story is worse than a wrongly kept one** (the reader never sees it), so
    wrong excludes are gated separately.
 9. **Bench data** lives in `~/.news_recap_data/bench/`. Only the rows a spec sentence relies on
@@ -288,7 +292,7 @@ on the other three nights only (`HOLDOUT_PIPELINE` in `bench_jev.py`).
 `tests/test_launcher.py`). Live smoke test: 2 requests, 577 input tokens; a bad key raises
 `JevUnavailableError` (401). Differences from the bullets below:
 
-- `JevSettings` holds only `api_key` (`repr=False`), `model` and `classify_backend`. Steps run
+- `JevSettings` holds only `api_key` (`repr=False`), `model` and the per-step backends. Steps run
   from `pipeline_input.json`, not `Settings`, so concurrency and price could never reach them
   from there: `MAX_CONCURRENCY = 16` is a constant in `jev/client.py`, `PRICE_PER_MTOK = 0.042`
   in `jev/usage.py`, and `save_jev_usage` has no `price_per_mtok` argument.
@@ -372,6 +376,9 @@ unlabelled agreements count as correct):
 - Cost: 371–387k tokens per tuning night (~785 per headline) → \$0.48/month; holdout night
   216k. Bench spend: \$0.15 (3 variants × tuning nights + holdout).
 - Exclude improves; vague only ties Gemini (both weak: F1 0.53 on tuning).
+- Jev calls more headlines vague (113 vs 98 on the four nights; 32 vs 16 on 10-01), and each
+  vague headline is rewritten by enrich (≈3.2k agy tokens per article on 10-06): about 13k of
+  the 127k classify saving on an average night, up to ≈50k.
 - Threshold curves (tuning, `full`): exclude 0.65 → 27 wrong / 2 missed, 0.70 → 7 / 5,
   0.75 → 4 / 6, 0.80 → 3 / 10 (+23 unlabelled). Vague F1 0.50 / 0.53 / 0.53 / 0.50 at
   0.55 / 0.60 / 0.65 / 0.70. 0.75 is the fewest wrong excludes among the best exclude/keep
@@ -566,15 +573,31 @@ net at ≥ 0.70; every Jev/Gemini disagreement labelled, unlabelled agreements c
 | tuning, 4 nights | 1 569 | 13 / 31 | 25 / 8 | 1 531 / 1 530 |
 | holdout | 85 | 1 / 2 | 1 / 1 | 83 / 82 |
 
+- The numbers are in-sample: the question, the labelling rule and both thresholds were chosen
+  on the tuning nights' labels. The holdout (85 pairs) is too small to separate the two.
+- **Wrong merges are not equally visible to the reader.** Today's LLM writes the merged
+  headline, and in 15 of its 16 wrongly merged groups that headline still states both stories
+  ("Nvidia unveiled an AI-agent safety platform and announced a record buyback"); only one
+  reaction is lost ("Spaniards welcome snap election"). A Jev merge shows one existing title, so
+  its wrong merge hides the other story (OpenAI's office suite under OpenAI's app-store story).
+  Most of Jev's 8 wrongly merged groups (7 tuning, 1 holdout) are reports of one event at
+  different moments or two speeches by one person. In articles, tuning nights: Jev wrongly removes 7 (Gemini 17), leaves 15
+  duplicates inside candidate groups (Gemini 6), and with the wider net removes ≈166 true
+  duplicates (Gemini 132). **Dedup on Jev is a token saving at about today's quality, not a
+  quality gain.**
 - Wider net (similarity 0.85–0.90, outside today's candidate groups, which today's pipeline never
   examines): Jev merges 46 pairs on the tuning nights, 43 labelled same (93%), and 5 on the
-  holdout, 4 same; 47 of 51 (92%) overall, above the 90% bar. Typical catches are translations
-  and paraphrases: Starship's first orbit in Serbian and English, the Kyiv academy strike in
-  Croatian and English, the Vučić → Brnabić handover reports.
+  holdout, 4 same; 47 of 51 (92%, 95% interval 81–97%) overall, above the 90% bar. The holdout
+  alone (4 of 5) is too small to decide, so Stage 7 checks it on new nights. Typical catches are
+  translations and paraphrases: Starship's first orbit in Serbian and English, the Kyiv academy
+  strike in Croatian and English, the Vučić → Brnabić handover reports.
 - Live check on a copy of night 10-06 (real embedder, real Jev, no agy): 452 articles → 410
   (today's LLM dedup removed 40 that night), 3 576 pair requests (389 candidate + 3 187 wider),
-  1.72M tokens, \$0.07, 72 s. Jev for dedup ≈ \$1.5–2/month; agy −6 launches / −157k tokens on
-  that night.
+  1.72M tokens, \$0.072, 72 s (61 requests/s at 16 concurrent). Jev for dedup ≈ \$2.2/month; agy
+  −6 launches / −157k tokens on that night. 12 of its 13 wider-net merges are labelled same.
+- The bench builds the wider net from the archived original titles, while production embeds
+  enriched titles at dedup time, so the bench selects fewer wider pairs (2 688 vs 3 187 on
+  10-06). Precision is unaffected (above); cost figures come from the live run.
 - Bench spend ≈ \$0.45 (all Stage 5 runs).
 
 Differences from the bullets below:
@@ -618,7 +641,10 @@ Today: `group_similar` builds candidate groups (connected components at embeddin
 
 5.2 `Deduplicate.execute` (`recap/tasks/deduplicate.py`): when `dedup_backend == "jev"`, turn
 each merge group into `_MergeAction(merged_text=<Decision 6 title>, indices=<1-based positions in
-the candidate group>)`, so `_apply_merge` and `_update_pipeline_state` are reused unchanged;
+the merge group>)` (the merge group, not the candidate group: a wider-net pair can join groups),
+so `_apply_merge` and `_update_pipeline_state` are reused; `_apply_merge` leaves the keeper's
+`enriched_title` unset when the Decision 6 title is its own original title, so a resumed enrich
+still rewrites a vague keeper;
 write `dedup-jev/meta/usage.json` (also when Jev fails) and `output/jev_answers.json`. On
 `JevUnavailableError` or a missing key at run time: warning, then the LLM path.
 
@@ -670,6 +696,12 @@ labelled pairs, like Stage 3.
 - LLM fallbacks (classify, deduplicate): one that never triggered over ≥ 14 nights is deleted
   with its prompt and backend setting; otherwise keep it and record the observed failure rate in
   `spec/pipeline.md`.
+- Wider-net check on new nights: label every wider-net merge (`wide` and `same` in
+  `dedup-jev/output/jev_answers.json`) of the first 7 nightly runs. Keep the wider net if ≥ 90%
+  are the same piece of news; otherwise raise `WIDE_THRESHOLD` to the lowest value that reaches
+  90% on them.
+- agy tokens per night are `total_tokens` in `digests.json` (agents only); Jev is recorded apart
+  in `jev_tokens` and `jev_cost_usd`. Goal 2 is checked on these.
 
 ## Bench
 
@@ -713,17 +745,22 @@ agy figures are the 10-06 night (412 articles); Jev from the bench.
 | After | agy launches / tokens | Jev \$/month | Measured quality change |
 |---|---|---|---|
 | Stage 0 | 17 / 629k | 0 | nights lost to `load_resources`: 3/32 → 0 |
-| Stage 3 | 11 / 502k | ≈ 0.48 | wrong excludes vs labels ≤ Gemini's |
-| Stage 5 | 5 / ≈345k | ≈ 0.48 + 1.5–2 | wrong merges 13 vs 31; wider net adds ≈ 11 true duplicates a night at 92% precision |
+| Stage 3 | 14 / 502k | ≈ 0.48 | wrong excludes 4 vs 13 (tuning), 0 vs 0 (holdout); ≈ 4 more vague headlines a night, ≈ 13k more enrich tokens |
+| Stage 5 | 8 / ≈345k | ≈ 0.48 + 2.2 | about today's: fewer wrong merges (13 vs 31 pairs, in-sample) but each hides the other story, where today's rewritten headline keeps it; wider net adds ≈ 11 true duplicates a night at 92% (in-sample); merged groups show an existing title, not an LLM headline in the output language (32 on 10-06) |
 
 ## Risks
 
 - **A wrong merge hides a story** (the reader sees one headline for two events): gated
   separately in 5.4, like wrong excludes (Decision 8).
 - **Merged headlines lose today's rewrite** (Decision 6): a merged group shows an existing title,
-  possibly in the source language, where today's LLM wrote one in the output language.
+  possibly in the source language, where today's LLM wrote one in the output language (32
+  keepers on 10-06). Most article lines already show the original title: 343 of the 412
+  articles on 10-06 have no enriched title.
 - **A Jev outage** falls back to the LLM for that night (Decision 5).
-- **Rate limits** are "adjusting dynamically": SDK retries; the bench used 16 concurrent
-  requests against the documented 80 req/s.
+- **Rate limits** are "adjusting dynamically": SDK retries; the 10-06 live run reached 61 req/s
+  at 16 concurrent requests against the documented 80 req/s. One request that still fails after
+  the retries sends the whole step to its LLM path.
+- **Catch-up nights**: the wider net grows with the square of the night's size (277 articles →
+  1 320 pairs, 452 → 3 187); it is capped at the 5 000 most similar pairs (≈ 80 s, ≈ \$0.10).
 - **Free-text policies are read literally**: docs tell users to phrase topics as subjects.
 - **The `jev-latest` alias moves**: the model is pinned (Decision 3).

@@ -20,6 +20,7 @@ from uuid import uuid4
 from news_recap.recap.agents.ai_agent import read_agent_usage
 from news_recap.recap.agents.concurrency import ConcurrencyController
 from news_recap.recap.agents.transport_anthropic import DirectAnthropicTransport
+from news_recap.recap.jev.usage import is_jev_task_dir
 from news_recap.recap.models import Digest, DigestArticle, to_article_index
 from news_recap.recap.pipeline_setup import _DIGEST_FILENAME, finalize_digest_entry
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
@@ -42,25 +43,31 @@ _USAGE_FILENAME = "meta/usage.json"
 
 
 def _log_pipeline_token_summary(logger: Any, pdir: Path) -> None:
-    """Scan all task workdirs for usage.json and log per-phase and total tokens."""
+    """Log per-phase tokens; the total counts agent tokens only, Jev phases are listed apart."""
     phase_tokens: dict[str, int] = {}
+    jev_tokens: dict[str, int] = {}
     for usage_path in sorted(pdir.glob(f"*/{_USAGE_FILENAME}")):
         task_dir = usage_path.parent.parent
         _, tokens = read_agent_usage(task_dir)
         if not tokens:
             continue
+        if is_jev_task_dir(task_dir):
+            jev_tokens[task_dir.name] = tokens
+            continue
         phase = task_dir.name.rsplit("-", 1)[0]
         phase_tokens[phase] = phase_tokens.get(phase, 0) + tokens
 
-    if not phase_tokens:
+    if not phase_tokens and not jev_tokens:
         return
 
     total = sum(phase_tokens.values())
     parts = [f"{phase}={tokens:,}" for phase, tokens in phase_tokens.items()]
+    jev = "".join(f" | {name}={tokens:,}" for name, tokens in jev_tokens.items())
     logger.info(
-        "[bold cyan]── tokens ──[/bold cyan] %s | total=%s",
+        "[bold cyan]── tokens ──[/bold cyan] %s | total=%s%s",
         ", ".join(parts),
         f"{total:,}",
+        jev,
     )
 
 

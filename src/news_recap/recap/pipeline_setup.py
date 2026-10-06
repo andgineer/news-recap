@@ -17,6 +17,7 @@ import msgspec
 
 from news_recap.config import DEFAULT_JEV_MODEL, Settings
 from news_recap.recap.agents.routing import RoutingDefaults
+from news_recap.recap.jev.usage import is_jev_task_dir
 from news_recap.recap.models import Digest, DigestArticle, UserPreferences
 from news_recap.recap.storage.pipeline_io import _DEFAULT_MIN_RESOURCE_CHARS
 from news_recap.storage.io import load_msgspec, save_msgspec
@@ -43,6 +44,8 @@ class DigestIndexEntry(msgspec.Struct):
     prompt_bytes: int = 0
     output_bytes: int = 0
     input_article_count: int = 0
+    jev_tokens: int = 0
+    jev_cost_usd: float = 0.0
 
 
 def _load_digest_index(workdir_root: Path) -> list[DigestIndexEntry]:
@@ -177,6 +180,8 @@ def _parse_pipeline_start(dir_name: str) -> datetime | None:
 class _UsageStats:
     elapsed: float = 0.0
     tokens: int = 0
+    jev_tokens: int = 0
+    jev_cost_usd: float = 0.0
     prompt_bytes: int = 0
     output_bytes: int = 0
 
@@ -186,7 +191,8 @@ def _aggregate_usage(pdir: Path) -> _UsageStats:
 
     Field names in usage.json must stay in sync with ``_save_usage`` /
     ``read_agent_usage`` in ``agents/ai_agent.py``, ``agents/api_agent.py`` and
-    ``jev/usage.py``.
+    ``jev/usage.py``. Jev is billed in dollars, not against the agents' quota, so its tokens
+    are kept out of ``tokens``.
     """
     stats = _UsageStats()
     for task_dir in pdir.iterdir():
@@ -197,7 +203,12 @@ def _aggregate_usage(pdir: Path) -> _UsageStats:
             try:
                 data = json.loads(usage_path.read_text("utf-8"))
                 stats.elapsed += float(data.get("elapsed_seconds", 0))
-                stats.tokens += int(data.get("total_tokens") or data.get("tokens_used") or 0)
+                tokens = int(data.get("total_tokens") or data.get("tokens_used") or 0)
+                if is_jev_task_dir(task_dir):
+                    stats.jev_tokens += tokens
+                    stats.jev_cost_usd += float(data.get("cost_usd") or 0)
+                else:
+                    stats.tokens += tokens
             except (OSError, json.JSONDecodeError, ValueError):
                 pass
         prompt = task_dir / "input" / "task_prompt.txt"
@@ -275,6 +286,8 @@ def finalize_digest_entry(workdir_root: Path, pdir: Path, digest: Digest) -> Non
             usage = _aggregate_usage(pdir)
             e.elapsed_seconds = usage.elapsed
             e.total_tokens = usage.tokens
+            e.jev_tokens = usage.jev_tokens
+            e.jev_cost_usd = round(usage.jev_cost_usd, 6)
             e.prompt_bytes = usage.prompt_bytes
             e.output_bytes = usage.output_bytes
             _save_digest_index(workdir_root, entries)

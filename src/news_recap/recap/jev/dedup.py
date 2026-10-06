@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
@@ -13,11 +14,16 @@ from news_recap.recap.jev.classify import LEAD_CHARS
 from news_recap.recap.jev.client import JevClient
 from news_recap.recap.models import DigestArticle
 
+logger = logging.getLogger(__name__)
+
 SAME_EVENT_THRESHOLD = 0.40
 # Pairs below the embedding pre-filter are far more often different stories, so the wider net
 # asks Jev for more confidence.
 WIDE_SIMILARITY = 0.85
 WIDE_THRESHOLD = 0.70
+# The wider net grows with the square of the night's size; this bounds a catch-up night after
+# missed runs (~80 s, ~$0.10) and keeps its most similar pairs.
+WIDE_MAX_PAIRS = 5000
 PAIR_KEY = "same"
 STATE_VARIANTS = ("headline", "lead")
 PAIR_STATE = "headline"
@@ -151,26 +157,27 @@ def merge_groups(
     return [[by_id[i] for i in group] for group in ids]
 
 
-def wide_pairs(
+def wide_pairs(  # noqa: PLR0913
     articles: Sequence[DigestArticle],
     embeddings: Mapping[str, Vector],
     groups: Sequence[Sequence[DigestArticle]],
     high: float,
     low: float = WIDE_SIMILARITY,
+    limit: int = WIDE_MAX_PAIRS,
 ) -> list[tuple[DigestArticle, DigestArticle]]:
-    """Pairs at similarity in ``[low, high)`` that no candidate group already holds."""
+    """The *limit* most similar pairs in ``[low, high)`` that no candidate group already holds."""
     group_of = {a.article_id: k for k, group in enumerate(groups) for a in group}
-    pairs = []
+    scored = []
     for a, b in combinations(articles, 2):
-        same_group = (
-            a.article_id in group_of and group_of.get(b.article_id) == group_of[a.article_id]
-        )
-        if (
-            not same_group
-            and low <= cosine_similarity(embeddings[a.article_id], embeddings[b.article_id]) < high
-        ):
-            pairs.append((a, b))
-    return pairs
+        if a.article_id in group_of and group_of.get(b.article_id) == group_of[a.article_id]:
+            continue
+        similarity = cosine_similarity(embeddings[a.article_id], embeddings[b.article_id])
+        if low <= similarity < high:
+            scored.append((similarity, a, b))
+    if len(scored) > limit:
+        logger.warning("dedup: wider net capped at %d of %d pairs", limit, len(scored))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [(a, b) for _, a, b in scored[:limit]]
 
 
 def _components(pairs: set[tuple[str, str]]) -> list[set[str]]:

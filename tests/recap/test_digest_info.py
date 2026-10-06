@@ -295,6 +295,8 @@ def test_finalize_failed_digest(tmp_path: Path) -> None:
 def test_finalize_aggregates_usage(tmp_path: Path) -> None:
     import json
 
+    from news_recap.recap.jev.usage import save_jev_usage
+
     pdir = tmp_path / "pipeline-2026-03-01-100000"
     digest = _make_digest(
         pdir,
@@ -326,12 +328,20 @@ def test_finalize_aggregates_usage(tmp_path: Path) -> None:
     task2_output = pdir / "classify-2" / "output"
     task2_output.mkdir(parents=True)
     (task2_output / "agent_stdout.log").write_text("D" * 200)
+    save_jev_usage(
+        pdir / "dedup-jev",
+        elapsed=2.0,
+        input_tokens=500_000,
+        requests=10,
+        model="jev-1.13.0",
+    )
 
     create_digest_entry(tmp_path, pdir.name, "2026-03-01", 1)
     finalize_digest_entry(tmp_path, pdir, digest)
     entries = _load_digest_index(tmp_path)
-    assert entries[0].elapsed_seconds == 15.5
+    assert entries[0].elapsed_seconds == 17.5
     assert entries[0].total_tokens == 800
+    assert (entries[0].jev_tokens, entries[0].jev_cost_usd) == (500_000, 0.021)
     assert entries[0].prompt_bytes == 1500
     assert entries[0].output_bytes == 600
 

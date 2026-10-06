@@ -52,9 +52,10 @@ split (54): the block's headlines, `same_story` (the split separates reports of 
 ## `dedup-2026-10-06.jsonl`
 
 **Claim** (`spec/plan-jev-decisions.md`, Stage 5): with the "news" question, headline-only state,
-merging at ≥ 0.40 inside today's candidate groups, Jev makes fewer wrong merges than today's LLM
-dedup (13 vs 31 on the tuning nights, 1 vs 2 on the holdout) with as many correct pair decisions;
-the wider net (similarity 0.85–0.90, merging at ≥ 0.70) adds merges that are 92% right.
+merging at ≥ 0.40 inside today's candidate groups, Jev makes fewer wrong pair merges than today's
+LLM dedup (13 vs 31 on the tuning nights, 1 vs 2 on the holdout; in-sample) with as many correct
+pair decisions; the wider net (similarity 0.85–0.90, merging at ≥ 0.70) adds merges that are 92%
+right (43 of 46 tuning, 4 of 5 holdout).
 
 One row per pair (1 763):
 
@@ -64,5 +65,11 @@ One row per pair (1 763):
 - `gemini_merged`: today's agy `gemini-3.7-flash` put both articles in one `MERGED` group (always
   false for `wide`: today's pipeline never sees those pairs).
 - `jev_p`: `jev-1.13.0` probability of "same piece of news", headline-only state.
+- `jev_merged`: what the pipeline merges — for `group`, both articles in one star group of their
+  candidate group at ≥ 0.40 (keeper = longest text, so not recomputable from `jev_p` alone); for
+  `wide`, `jev_p` ≥ 0.70.
+
+Scoring: a pair's truth is its label; an unlabelled pair counts only when `jev_merged` and
+`gemini_merged` agree (and then as correct); every disagreement is labelled.
 - `label`, `labeler`: `same` | `different` for 319 pairs, all by `claude-opus-5-5`, under the
   rule in Stage 5; `null` elsewhere.

@@ -531,7 +531,10 @@ def _apply_merge(
         return
 
     keeper = max(merged_articles, key=lambda a: len(a.clean_text))
-    keeper.enriched_title = merge.merged_text
+    # Jev keeps the original title when no member was enriched; marking it enriched would make a
+    # resumed enrich skip the keeper.
+    if merge.merged_text != keeper.title:
+        keeper.enriched_title = merge.merged_text
 
     for other in merged_articles:
         if other.article_id == keeper.article_id:
