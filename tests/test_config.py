@@ -440,7 +440,7 @@ def test_classify_backend_rejects_unknown_value(
         Settings.from_env()
 
 
-def test_dedup_backend_follows_the_classify_rules(
+def test_dedup_backend_is_jev_only_when_asked(
     jev_env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -454,11 +454,10 @@ def test_dedup_backend_follows_the_classify_rules(
     assert any("NEWS_RECAP_DEDUP_BACKEND=jev" in r.getMessage() for r in caplog.records)
 
     (data_dir / ".env").write_text("TYPESAFE_API_KEY=k\n")
-    monkeypatch.delenv("NEWS_RECAP_DEDUP_BACKEND")
     settings = Settings.from_env()
     assert (settings.jev.dedup_backend, settings.jev.classify_backend) == ("jev", "jev")
 
-    monkeypatch.setenv("NEWS_RECAP_DEDUP_BACKEND", "llm")
+    monkeypatch.delenv("NEWS_RECAP_DEDUP_BACKEND")
     settings = Settings.from_env()
     assert (settings.jev.dedup_backend, settings.jev.classify_backend) == ("llm", "jev")
 

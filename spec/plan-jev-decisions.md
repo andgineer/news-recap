@@ -1,7 +1,9 @@
 # Plan: Per-Item Decisions on Jev, Writing on the LLM
 
-Status: Stages 0–3 and 5 done; Stage 4 (routing) failed on 2026-10-06, so the restructure is
-dropped and Stage 5 became duplicate detection on Jev (the former Fallback B). Next: Stage 7 after
+Status: Stages 0–3 done; Stage 4 (routing) failed on 2026-10-06, so the restructure is dropped
+and Stage 5 became duplicate detection on Jev (the former Fallback B). Stage 5 is built but
+opt-in: its merges hide more stories than today's (see its results), so Stage 5b restores
+LLM-written merged headlines before dedup on Jev becomes the default. Then Stage 7 after
 ≥ 14 nights. Related:
 `plan-token-optimization.md` (its Phases 5–6, local clustering and the local classify cascade,
 are superseded by Stages 3 and 5 here), issue #18 (Stage 0).
@@ -558,11 +560,10 @@ sweeping both thresholds from stored probabilities:
 
 ## Stage 5 — Duplicate detection on Jev (former Fallback B; ~1 day + bench)
 
-**Done 2026-10-06: gate passed** (`recap/jev/dedup.py`, `Deduplicate._dedup_on_jev`,
+**Built 2026-10-06; the pair gate passed but the reader-visible one failed** (`recap/jev/dedup.py`, `Deduplicate._dedup_on_jev`,
 `NEWS_RECAP_DEDUP_BACKEND`, `bench_jev.py dedup [--wide]`; tests in `tests/recap/jev/test_dedup.py`,
 `tests/test_bench_jev.py`, `tests/test_config.py`, `tests/recap/storage/test_pipeline_io.py`).
-`dedup_backend` defaults to `jev` when a key is found; `NEWS_RECAP_DEDUP_BACKEND=llm` forces the
-LLM. Labels: 319 pairs by Claude (`labeler: claude-opus-5-5`). Bench rows:
+`NEWS_RECAP_DEDUP_BACKEND=jev` turns it on; the default stays `llm` until Stage 5b passes. Labels: 319 pairs by Claude (`labeler: claude-opus-5-5`). Bench rows:
 `bench/dedup-2026-10-06.jsonl`.
 
 Results (headline state, the "news" question below; candidate groups merge at ≥ 0.40, the wider
@@ -754,8 +755,8 @@ agy figures are the 10-06 night (412 articles); Jev from the bench.
 
 ## Risks
 
-- **A wrong merge hides a story** (the reader sees one headline for two events): gated
-  separately in 5.4, like wrong excludes (Decision 8).
+- **A wrong merge hides a story** (the reader sees one headline for two events): Stage 5b's gate
+  counts stories whose headline disappears, like wrong excludes (Decision 8).
 - **Merged headlines lose today's rewrite** (Decision 6): a merged group shows an existing title,
   possibly in the source language, where today's LLM wrote one in the output language (32
   keepers on 10-06). Most article lines already show the original title: 343 of the 412

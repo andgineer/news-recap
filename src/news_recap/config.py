@@ -473,12 +473,12 @@ def resolve_typesafe_api_key(data_dir: Path) -> str | None:
     return None
 
 
-def _step_backend(step: str, api_key: str | None, data_dir: Path) -> str:
-    """``NEWS_RECAP_<STEP>_BACKEND``; unset means Jev when a key is found, else the LLM."""
+def _step_backend(step: str, api_key: str | None, data_dir: Path, *, jev_default: bool) -> str:
+    """``NEWS_RECAP_<STEP>_BACKEND``; unset means Jev for a *jev_default* step with a key."""
     var = f"NEWS_RECAP_{step.upper()}_BACKEND"
     backend = os.getenv(var, "").strip().lower()
     if not backend:
-        return "jev" if api_key else "llm"
+        return "jev" if api_key and jev_default else "llm"
     if backend == "jev" and api_key is None:
         logger.warning(
             "%s=jev but %s is not set (env, ./.env, %s); %s uses the LLM.",
@@ -495,8 +495,10 @@ def _collect_jev_settings(data_dir: Path) -> JevSettings:
     api_key = resolve_typesafe_api_key(data_dir)
     return JevSettings(
         api_key=api_key,
-        classify_backend=_step_backend("classify", api_key, data_dir),
-        dedup_backend=_step_backend("dedup", api_key, data_dir),
+        classify_backend=_step_backend("classify", api_key, data_dir, jev_default=True),
+        # Jev's merges keep one existing title, which hides a wrongly merged story; dedup stays
+        # opt-in until merged headlines are written again.
+        dedup_backend=_step_backend("dedup", api_key, data_dir, jev_default=False),
     )
 
 
