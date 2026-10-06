@@ -31,8 +31,9 @@ def _write_pipeline(root: Path, name: str, titles: list[str], status: str = "com
     ]
     (pdir / "pipeline_input.json").write_text(
         json.dumps({"articles": articles, "preferences": {"exclude": POLICY}}),
+        "utf-8",
     )
-    (pdir / "digest.json").write_text(json.dumps({"status": status}))
+    (pdir / "digest.json").write_text(json.dumps({"status": status}), "utf-8")
     return pdir
 
 
@@ -47,12 +48,15 @@ def test_snapshot_copies_new_and_refreshes_incomplete(tmp_path):
     bench = _bench(tmp_path)
     _write_pipeline(bench.workdir_root, "pipeline-a", ["A"])
     _write_pipeline(bench.workdir_root, "pipeline-b", ["B"], status="running")
-    (bench.workdir_root / "digests.json").write_text("{}")
+    (bench.workdir_root / "digests.json").write_text("{}", "utf-8")
 
     assert bench_jev.snapshot(bench.workdir_root, bench.pipelines) == ["pipeline-a", "pipeline-b"]
 
-    (bench.workdir_root / "pipeline-a" / "extra").write_text("x")
-    (bench.workdir_root / "pipeline-b" / "digest.json").write_text('{"status": "completed"}')
+    (bench.workdir_root / "pipeline-a" / "extra").write_text("x", "utf-8")
+    (bench.workdir_root / "pipeline-b" / "digest.json").write_text(
+        '{"status": "completed"}',
+        "utf-8",
+    )
     assert bench_jev.snapshot(bench.workdir_root, bench.pipelines) == ["pipeline-b"]
     assert not (bench.pipelines / "pipeline-a" / "extra").exists()
     assert bench_jev._digest_completed(bench.pipelines / "pipeline-b")
@@ -94,7 +98,7 @@ def test_stage1_items_takes_all_disagreements_and_seeded_agreements(tmp_path, mo
     ]
     rows += [_exp_row("p2", f"a{i}", "ok", excl=0.1, vague=0.1) for i in range(10)]
     path = tmp_path / "exp.json"
-    path.write_text(json.dumps({"topics": ["x", "y"], "rows": rows}))
+    path.write_text(json.dumps({"topics": ["x", "y"], "rows": rows}), "utf-8")
 
     items = bench_jev.stage1_items(path)
 
@@ -137,7 +141,7 @@ def test_label_records_undo_and_resumes(tmp_path):
     assert remaining == 1
     assert shown[2] == shown[1]  # an unknown key re-shows the same item
     assert shown[4] == shown[1]  # undo re-shows the undone item
-    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows = [json.loads(line) for line in path.read_text("utf-8").splitlines()]
     assert [r["label"] for r in rows] == ["ok", "vague", "skip"]
     assert set(rows[0]) == {"pipeline", "headline", "label", "labeler", "labeled_at"}
     assert rows[0]["labeler"] == "user"
@@ -199,7 +203,8 @@ def test_judge_classify_caches_answers(tmp_path, monkeypatch):
 
     def fake_run(run_dir: Path, model: str) -> str:
         calls.append(run_dir)
-        heads = re.findall(r"^(\d+)\. headline: (.+)$", (run_dir / "prompt.txt").read_text(), re.M)
+        prompt = (run_dir / "prompt.txt").read_text("utf-8")
+        heads = re.findall(r"^(\d+)\. headline: (.+)$", prompt, re.M)
         return "\n".join(f"{n}: exclude" for n, headline in heads if headline != "B")
 
     answers = bench_jev.judge_classify(bench, items, model="m", workers=2, run=fake_run)
@@ -246,8 +251,9 @@ def _write_classify_task(pdir: Path, num: int, headlines: list[str], stdout: str
     (task / "input" / "task_prompt.txt").write_text(
         f"EDITORIAL POLICY — EXCLUDE:\n{POLICY}\n\n=== HEADLINES (format: NUMBER: HEADLINE) ===\n"
         f"Do NOT write any files.\n{lines}",
+        "utf-8",
     )
-    (task / "output" / "agent_stdout.log").write_text(stdout)
+    (task / "output" / "agent_stdout.log").write_text(stdout, "utf-8")
 
 
 def test_replay_nights_joins_prompt_and_stdout(tmp_path):
@@ -527,9 +533,11 @@ def _write_route_night(root: Path, name: str = "p") -> Path:
         json.dumps(
             {"status": "completed", "articles": articles, "blocks": blocks, "recaps": recaps},
         ),
+        "utf-8",
     )
     (pdir / "pipeline_input.json").write_text(
         json.dumps({"articles": articles, "preferences": {"follow": "Serbia", "exclude": POLICY}}),
+        "utf-8",
     )
     return pdir
 
@@ -741,8 +749,11 @@ def _write_dedup_night(root: Path, name: str = "p") -> Path:
     task = pdir / "dedup-1"
     (task / "input").mkdir(parents=True)
     (task / "output").mkdir()
-    (task / "input" / "task_prompt.txt").write_text(_SINGLE_PROMPT)
-    (task / "output" / "agent_stdout.log").write_text("MERGED: x\n1, 2\nSINGLE: 3\n")
+    (task / "input" / "task_prompt.txt").write_text(_SINGLE_PROMPT, "utf-8")
+    (task / "output" / "agent_stdout.log").write_text(
+        "MERGED: x\n1, 2\nSINGLE: 3\n",
+        "utf-8",
+    )
     (pdir / "dedup-jev").mkdir()
     return pdir
 
