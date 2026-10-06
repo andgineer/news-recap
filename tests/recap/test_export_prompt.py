@@ -12,7 +12,7 @@ from news_recap.recap.export_prompt import (
     _copy_to_clipboard,
     _render_prompt,
 )
-from news_recap.recap.models import DigestArticle
+from news_recap.recap.models import DigestArticle, UserPreferences
 
 
 def _make_article(
@@ -220,6 +220,8 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     )
 
     mock_settings = MagicMock()
+
+    mock_settings.preferences = UserPreferences()
     mock_settings.data_dir = tmp_path
     mock_settings.ingestion.gc_retention_days = 7
     mock_settings.ingestion.digest_lookback_days = 2
@@ -260,7 +262,7 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
 
     since = date(2026, 3, 9)
     with (
-        patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
+        patch("news_recap.recap.export_prompt.Settings.load", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
         patch(
             "news_recap.recap.export_prompt.recap_flow", side_effect=fake_recap_flow
@@ -292,6 +294,8 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
     article = _make_article("y1", "No-AI article", "https://noai.com/1", "noai.com")
 
     mock_settings = MagicMock()
+
+    mock_settings.preferences = UserPreferences()
     mock_settings.data_dir = tmp_path
     mock_settings.ingestion.gc_retention_days = 7
     mock_settings.ingestion.digest_lookback_days = 2
@@ -307,7 +311,7 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
 
     since = date(2026, 3, 26)
     with (
-        patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
+        patch("news_recap.recap.export_prompt.Settings.load", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
         patch("news_recap.recap.export_prompt.recap_flow") as mock_flow,
         patch(
@@ -355,6 +359,8 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
     (existing_pdir / "digest.json").write_bytes(msgspec.json.encode(digest_obj))
 
     mock_settings = MagicMock()
+
+    mock_settings.preferences = UserPreferences()
     mock_settings.data_dir = tmp_path
     mock_settings.ingestion.gc_retention_days = 7
     mock_settings.ingestion.digest_lookback_days = 2
@@ -396,7 +402,7 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
 
     since = date(2026, 3, 9)
     with (
-        patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
+        patch("news_recap.recap.export_prompt.Settings.load", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.IngestionStore", return_value=mock_store),
         patch("news_recap.recap.export_prompt.recap_flow", side_effect=fake_recap_flow),
         patch(

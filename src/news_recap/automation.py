@@ -19,6 +19,8 @@ from typing import Literal
 
 import click
 
+from news_recap.config import Settings
+
 Severity = Literal["ok", "info", "warn", "error", "log", "heading"]
 ScheduleLine = tuple[Severity, str]
 
@@ -34,16 +36,11 @@ class ScheduleMeta:
 
 
 def resolve_rss_urls(cli_urls: tuple[str, ...]) -> tuple[str, ...]:
-    """Return RSS URLs from *cli_urls* or ``NEWS_RECAP_RSS_FEED_URLS``; error if neither."""
-    if cli_urls:
+    """The feeds to bake into the scheduled run: *cli_urls*, or none to follow config.toml."""
+    if cli_urls or Settings.load().rss.feed_urls:
         return cli_urls
-    raw = os.getenv("NEWS_RECAP_RSS_FEED_URLS", "").strip()
-    if raw:
-        urls = tuple(u.strip() for u in raw.split(",") if u.strip())
-        if urls:
-            return urls
     raise click.UsageError(
-        "No RSS feed URLs provided. Pass --rss URL or set NEWS_RECAP_RSS_FEED_URLS.",
+        "No RSS feed URLs: run `news-recap config set rss URL` or pass --rss URL.",
     )
 
 

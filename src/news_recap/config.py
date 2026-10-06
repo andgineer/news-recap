@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import msgspec
 from dotenv import dotenv_values
 
-from news_recap.user_config import DEFAULT_AGENT, UserConfigManager
+from news_recap.config_file import AGENTS, STEP_BACKENDS, config_path, load_config_file
+from news_recap.recap.models import UserPreferences
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,8 @@ class DedupSettings:
 
 TYPESAFE_API_KEY_VAR = "TYPESAFE_API_KEY"
 DEFAULT_JEV_MODEL = "jev-1.13.0"
-STEP_BACKENDS = ("llm", "jev")
+DEFAULT_AGENT = "antigravity"
+DATA_DIR_VAR = "NEWS_RECAP_DATA_DIR"
 
 
 @dataclass(slots=True)
@@ -161,7 +164,7 @@ class OrchestratorSettings:
     """CLI orchestrator settings."""
 
     workdir_root: Path = Path.home() / ".news_recap_data" / "workdir"
-    default_agent: str = "codex"
+    default_agent: str = DEFAULT_AGENT
     execution_backend: str = "cli"
     task_model_map: dict[str, dict[str, Any]] = field(
         default_factory=_default_task_model_map,
@@ -190,14 +193,7 @@ class OrchestratorSettings:
     agent_api_key_vars: dict[str, list[str]] = field(
         default_factory=lambda: dict(_DEFAULT_AGENT_API_KEY_VARS),
     )
-    worker_id: str = "worker-default"
-    poll_interval_seconds: float = 2.0
-    retry_base_seconds: int = 30
-    retry_max_seconds: int = 900
-    worker_stale_attempt_seconds: int = 1_800
-    worker_graceful_shutdown_seconds: int = 30
     api_max_parallel: int = 5
-    api_timeout_seconds: int = 120
     api_concurrency_recovery_successes: int = 10
     api_retry_max_backoff_seconds: float = 60.0
     api_retry_jitter_seconds: float = 5.0
@@ -214,119 +210,30 @@ class Settings:
     rss: RssSettings = field(default_factory=RssSettings)
     orchestrator: OrchestratorSettings = field(default_factory=OrchestratorSettings)
     jev: JevSettings = field(default_factory=JevSettings)
+    preferences: UserPreferences = field(default_factory=UserPreferences)
 
     @classmethod
-    def from_env(
-        cls,
-        execution_backend: str | None = None,
-    ) -> Settings:
-        """Load settings from environment with sane defaults for local development.
-
-        *execution_backend* overrides ``NEWS_RECAP_EXECUTION_BACKEND`` when provided.
-        Passing ``"api"`` also forces ``default_agent`` to ``"claude"`` (the only
-        supported provider for the API backend).
-        """
-
-        rss_urls = _collect_feed_urls()
-        default_data_dir = str(Path.home() / ".news_recap_data")
-        data_dir = Path(os.getenv("NEWS_RECAP_DATA_DIR", default_data_dir))
-        workdir_env = os.getenv("NEWS_RECAP_LLM_WORKDIR_ROOT")
-        workdir_root = Path(workdir_env) if workdir_env else data_dir / "workdir"
-
-        env_agent = os.getenv("NEWS_RECAP_LLM_DEFAULT_AGENT")
-        if env_agent:
-            default_agent = env_agent
-        else:
-            default_agent = UserConfigManager(data_dir).load().get("default_agent", DEFAULT_AGENT)
-
-        settings = cls(
+    def defaults(cls, data_dir: Path) -> Settings:
+        """Release defaults for *data_dir*, before ``config.toml`` is applied."""
+        return cls(
             data_dir=data_dir,
-            ingestion=IngestionSettings(
-                page_size=int(
-                    os.getenv(
-                        "NEWS_RECAP_INGESTION_PAGE_SIZE",
-                        os.getenv("NEWS_RECAP_INOREADER_PAGE_SIZE", "50"),
-                    ),
-                ),
-                max_pages=int(
-                    os.getenv(
-                        "NEWS_RECAP_INGESTION_MAX_PAGES",
-                        os.getenv("NEWS_RECAP_INOREADER_MAX_PAGES", "0"),
-                    ),
-                ),
-                backfill_max_gaps=int(os.getenv("NEWS_RECAP_BACKFILL_MAX_GAPS", "10")),
-                clean_text_max_chars=int(os.getenv("NEWS_RECAP_CLEAN_TEXT_MAX_CHARS", "12000")),
-                gc_retention_days=int(os.getenv("NEWS_RECAP_GC_RETENTION_DAYS", "7")),
-                digest_lookback_days=int(os.getenv("NEWS_RECAP_DIGEST_LOOKBACK_DAYS", "2")),
-                min_resource_chars=int(os.getenv("NEWS_RECAP_MIN_RESOURCE_CHARS", "200")),
-            ),
-            dedup=DedupSettings(
-                threshold=float(os.getenv("NEWS_RECAP_DEDUP_THRESHOLD", "0.90")),
-                model_name=os.getenv(
-                    "NEWS_RECAP_DEDUP_MODEL_NAME",
-                    "intfloat/multilingual-e5-small",
-                ),
-            ),
-            rss=RssSettings(
-                feed_urls=rss_urls,
-                default_items_per_feed=int(
-                    os.getenv("NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED", "10000"),
-                ),
-                per_feed_items=_collect_feed_item_overrides(),
-                snapshot_max_age_hours=int(
-                    os.getenv("NEWS_RECAP_RSS_SNAPSHOT_MAX_AGE_HOURS", "24"),
-                ),
-                max_retries=int(os.getenv("NEWS_RECAP_RSS_MAX_RETRIES", "3")),
-                retry_backoff_seconds=float(
-                    os.getenv("NEWS_RECAP_RSS_RETRY_BACKOFF_SECONDS", "1.0"),
-                ),
-                request_timeout_seconds=float(
-                    os.getenv("NEWS_RECAP_RSS_REQUEST_TIMEOUT_SECONDS", "30.0"),
-                ),
-            ),
-            orchestrator=OrchestratorSettings(
-                workdir_root=workdir_root,
-                default_agent=default_agent,
-                execution_backend=os.getenv("NEWS_RECAP_EXECUTION_BACKEND", "cli").strip(),
-                codex_command_template=_DEFAULT_CODEX_CMD,
-                claude_command_template=_DEFAULT_CLAUDE_CMD,
-                antigravity_command_template=_DEFAULT_ANTIGRAVITY_CMD,
-                task_model_map=_collect_task_model_map(),
-                api_model_map=_collect_api_model_map(),
-                agent_max_parallel=_default_agent_max_parallel(),
-                worker_id=os.getenv("NEWS_RECAP_LLM_WORKER_ID", "worker-default"),
-                poll_interval_seconds=float(
-                    os.getenv("NEWS_RECAP_LLM_POLL_INTERVAL_SECONDS", "2.0"),
-                ),
-                retry_base_seconds=int(
-                    os.getenv("NEWS_RECAP_LLM_RETRY_BASE_SECONDS", "30"),
-                ),
-                retry_max_seconds=int(
-                    os.getenv("NEWS_RECAP_LLM_RETRY_MAX_SECONDS", "900"),
-                ),
-                worker_stale_attempt_seconds=int(
-                    os.getenv("NEWS_RECAP_WORKER_STALE_ATTEMPT_SECONDS", "1800"),
-                ),
-                worker_graceful_shutdown_seconds=int(
-                    os.getenv("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS", "30"),
-                ),
-                api_max_parallel=int(os.getenv("NEWS_RECAP_API_MAX_PARALLEL", "5")),
-                api_timeout_seconds=int(os.getenv("NEWS_RECAP_API_TIMEOUT_SECONDS", "120")),
-                api_concurrency_recovery_successes=int(
-                    os.getenv("NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES", "10"),
-                ),
-                api_retry_max_backoff_seconds=float(
-                    os.getenv("NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS", "60.0"),
-                ),
-                api_retry_jitter_seconds=float(
-                    os.getenv("NEWS_RECAP_API_RETRY_JITTER_SECONDS", "5.0"),
-                ),
-                api_downshift_pause_seconds=float(
-                    os.getenv("NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS", "2.0"),
-                ),
-            ),
-            jev=_collect_jev_settings(data_dir),
+            orchestrator=OrchestratorSettings(workdir_root=data_dir / "workdir"),
         )
+
+    @classmethod
+    def load(cls, execution_backend: str | None = None) -> Settings:
+        """Release defaults overridden by ``<data_dir>/config.toml``.
+
+        *execution_backend* overrides the file's ``llm.execution_backend``; ``"api"`` also
+        forces the agent to ``claude``, the only provider of the API backend.
+        """
+        data_dir = data_dir_from_env()
+        settings = cls.defaults(data_dir)
+        for key, value in load_config_file(config_path(data_dir)):
+            _apply(settings, key.target, value)
+        settings.jev.api_key = resolve_typesafe_api_key(data_dir)
+        for step in ("classify", "dedup"):
+            _require_jev_key(settings, step)
         if execution_backend is not None:
             settings.orchestrator.execution_backend = execution_backend
             if execution_backend == "api":
@@ -343,31 +250,29 @@ class Settings:
 
     def _validate_storage_and_ingestion(self) -> None:
         if self.ingestion.gc_retention_days < 1:
-            raise ValueError("NEWS_RECAP_GC_RETENTION_DAYS must be >= 1.")
+            raise ValueError("ingestion.retention_days must be >= 1.")
         if self.ingestion.digest_lookback_days < 1:
-            raise ValueError("NEWS_RECAP_DIGEST_LOOKBACK_DAYS must be >= 1.")
+            raise ValueError("ingestion.lookback_days must be >= 1.")
         if not (0.0 < self.dedup.threshold <= 1.0):
-            raise ValueError("NEWS_RECAP_DEDUP_THRESHOLD must be in (0, 1].")
+            raise ValueError("dedup.threshold must be in (0, 1].")
         if self.jev.classify_backend not in STEP_BACKENDS:
-            raise ValueError("NEWS_RECAP_CLASSIFY_BACKEND must be 'llm' or 'jev'.")
+            raise ValueError("classify_backend must be 'llm' or 'jev'.")
         if self.jev.dedup_backend not in STEP_BACKENDS:
-            raise ValueError("NEWS_RECAP_DEDUP_BACKEND must be 'llm' or 'jev'.")
+            raise ValueError("dedup_backend must be 'llm' or 'jev'.")
 
     def _validate_orchestrator_routing(self) -> None:  # noqa: C901
-        supported_agents = {"codex", "claude", "antigravity"}
+        supported_agents = set(AGENTS)
         default_agent = self.orchestrator.default_agent.strip().lower()
         if default_agent not in supported_agents:
-            raise ValueError(
-                "NEWS_RECAP_LLM_DEFAULT_AGENT must be one of: codex, claude, antigravity.",
-            )
+            raise ValueError(f"agent must be one of: {', '.join(AGENTS)}.")
 
         execution_backend = self.orchestrator.execution_backend
         if execution_backend not in {"cli", "api"}:
-            raise ValueError("NEWS_RECAP_EXECUTION_BACKEND must be 'cli' or 'api'.")
+            raise ValueError("llm.execution_backend must be 'cli' or 'api'.")
         if execution_backend == "api" and default_agent != "claude":
             raise ValueError(
-                f"execution_backend=api requires default_agent=claude.\n"
-                f"Set NEWS_RECAP_LLM_DEFAULT_AGENT=claude (current value: {default_agent}).",
+                f"execution_backend=api requires the claude agent.\n"
+                f'Set agent = "claude" in config.toml (current value: {default_agent}).',
             )
 
         for task_type, agent_models in self.orchestrator.task_model_map.items():
@@ -393,42 +298,17 @@ class Settings:
                 _validate_command_template(name=name, template=template)
 
     def _validate_orchestrator_runtime_limits(self) -> None:
-        if not self.orchestrator.worker_id.strip():
-            raise ValueError("NEWS_RECAP_LLM_WORKER_ID must not be empty.")
-        self._validate_retry_limits()
-        self._validate_api_limits()
-
-    def _validate_retry_limits(self) -> None:
-        o = self.orchestrator
-        if o.poll_interval_seconds < 0:
-            raise ValueError("NEWS_RECAP_LLM_POLL_INTERVAL_SECONDS must be >= 0.")
-        if o.retry_base_seconds < 0:
-            raise ValueError("NEWS_RECAP_LLM_RETRY_BASE_SECONDS must be >= 0.")
-        if o.retry_max_seconds < 0:
-            raise ValueError("NEWS_RECAP_LLM_RETRY_MAX_SECONDS must be >= 0.")
-        if o.retry_max_seconds < o.retry_base_seconds:
-            raise ValueError(
-                "NEWS_RECAP_LLM_RETRY_MAX_SECONDS must be >= NEWS_RECAP_LLM_RETRY_BASE_SECONDS.",
-            )
-        if o.worker_stale_attempt_seconds <= 0:
-            raise ValueError("NEWS_RECAP_WORKER_STALE_ATTEMPT_SECONDS must be > 0.")
-        if o.worker_graceful_shutdown_seconds <= 0:
-            raise ValueError("NEWS_RECAP_WORKER_GRACEFUL_SHUTDOWN_SECONDS must be > 0.")
-
-    def _validate_api_limits(self) -> None:
         o = self.orchestrator
         if o.api_max_parallel < 1:
-            raise ValueError("NEWS_RECAP_API_MAX_PARALLEL must be >= 1.")
-        if o.api_timeout_seconds <= 0:
-            raise ValueError("NEWS_RECAP_API_TIMEOUT_SECONDS must be > 0.")
+            raise ValueError("api.max_parallel must be >= 1.")
         if o.api_concurrency_recovery_successes < 1:
-            raise ValueError("NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES must be >= 1.")
+            raise ValueError("api.concurrency_recovery_successes must be >= 1.")
         if o.api_retry_max_backoff_seconds < 0:
-            raise ValueError("NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS must be >= 0.")
+            raise ValueError("api.retry_max_backoff_seconds must be >= 0.")
         if o.api_retry_jitter_seconds < 0:
-            raise ValueError("NEWS_RECAP_API_RETRY_JITTER_SECONDS must be >= 0.")
+            raise ValueError("api.retry_jitter_seconds must be >= 0.")
         if o.api_downshift_pause_seconds < 0:
-            raise ValueError("NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS must be >= 0.")
+            raise ValueError("api.downshift_pause_seconds must be >= 0.")
 
     def validate_for_rss(self, override_feed_urls: tuple[str, ...] = ()) -> None:
         """Raise configuration error if RSS feed URLs are missing or invalid."""
@@ -437,15 +317,13 @@ class Settings:
         if not effective_feed_urls:
             raise ValueError(
                 "At least one RSS feed URL is required. "
-                "Set NEWS_RECAP_RSS_FEED_URLS or pass --rss.",
+                "Run `news-recap config set rss URL` or pass --rss.",
             )
 
         for feed_url in effective_feed_urls:
             _validate_feed_url(feed_url)
         if self.rss.default_items_per_feed <= 0:
-            raise ValueError(
-                "NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED must be a positive integer.",
-            )
+            raise ValueError("rss.default_items_per_feed must be a positive integer.")
         for feed_url, items in self.rss.per_feed_items.items():
             _validate_feed_url(feed_url)
             if items <= 0:
@@ -453,7 +331,12 @@ class Settings:
                     f"Per-feed RSS items override must be positive: {feed_url!r} -> {items}",
                 )
         if self.rss.snapshot_max_age_hours < 0:
-            raise ValueError("NEWS_RECAP_RSS_SNAPSHOT_MAX_AGE_HOURS must be >= 0.")
+            raise ValueError("rss.snapshot_max_age_hours must be >= 0.")
+
+
+def data_dir_from_env() -> Path:
+    """The data directory: ``NEWS_RECAP_DATA_DIR`` or ``~/.news_recap_data``."""
+    return Path(os.getenv(DATA_DIR_VAR) or Path.home() / ".news_recap_data")
 
 
 def resolve_typesafe_api_key(data_dir: Path) -> str | None:
@@ -473,135 +356,55 @@ def resolve_typesafe_api_key(data_dir: Path) -> str | None:
     return None
 
 
-def _step_backend(step: str, api_key: str | None, data_dir: Path) -> str:
-    """``NEWS_RECAP_<STEP>_BACKEND``; unset means Jev when a key is found, else the LLM."""
-    var = f"NEWS_RECAP_{step.upper()}_BACKEND"
-    backend = os.getenv(var, "").strip().lower()
-    if not backend:
-        return "jev" if api_key else "llm"
-    if backend == "jev" and api_key is None:
+def _require_jev_key(settings: Settings, step: str) -> None:
+    attr = f"{step}_backend"
+    if getattr(settings.jev, attr) == "jev" and settings.jev.api_key is None:
         logger.warning(
-            "%s=jev but %s is not set (env, ./.env, %s); %s uses the LLM.",
-            var,
+            '%s = "jev" in config.toml but %s is not set (env, ./.env, %s); %s uses the LLM.',
+            attr,
             TYPESAFE_API_KEY_VAR,
-            data_dir / ".env",
+            settings.data_dir / ".env",
             step,
         )
-        return "llm"
-    return backend
+        setattr(settings.jev, attr, "llm")
 
 
-def _collect_jev_settings(data_dir: Path) -> JevSettings:
-    api_key = resolve_typesafe_api_key(data_dir)
-    return JevSettings(
-        api_key=api_key,
-        classify_backend=_step_backend("classify", api_key, data_dir),
-        dedup_backend=_step_backend("dedup", api_key, data_dir),
-    )
+def _apply(settings: Settings, target: str, value: Any) -> None:
+    """Set the ``Settings`` attribute at dotted *target* from a validated file value."""
+    *path, attr = target.split(".")
+    obj: Any = settings
+    for part in path:
+        obj = getattr(obj, part)
+    if target.startswith("preferences."):
+        settings.preferences = msgspec.structs.replace(
+            settings.preferences,
+            **{attr: value.strip()},
+        )
+        return
+    if target == "rss.feed_urls":
+        value = _normalize_feed_urls(value)
+    elif target == "orchestrator.workdir_root":
+        value = Path(value).expanduser()
+    elif target == "orchestrator.task_model_map":
+        value = _merge_task_model_map(obj.task_model_map, value)
+    elif target == "orchestrator.api_model_map":
+        value = {**obj.api_model_map, **{str(k).lower(): str(v) for k, v in value.items()}}
+    setattr(obj, attr, value)
 
 
-def _collect_feed_urls() -> tuple[str, ...]:
-    values: list[str] = []
-    single = os.getenv("NEWS_RECAP_RSS_FEED_URL", "").strip()
-    if single:
-        values.append(single)
-    csv_list = os.getenv("NEWS_RECAP_RSS_FEED_URLS", "").strip()
-    if csv_list:
-        values.extend(part.strip() for part in csv_list.split(","))
-    return _normalize_feed_urls(values)
-
-
-def _collect_feed_item_overrides() -> dict[str, int]:
-    raw = os.getenv("NEWS_RECAP_RSS_FEED_ITEMS", "").strip()
-    if not raw:
-        return {}
-
-    overrides: dict[str, int] = {}
-    for part in raw.split(","):
-        token = part.strip()
-        if not token:
-            continue
-        if "|" not in token:
-            raise ValueError(
-                "Invalid NEWS_RECAP_RSS_FEED_ITEMS entry: "
-                f"{token!r}. Expected format '<feed_url>|<items>'.",
-            )
-        feed_url, items_raw = token.rsplit("|", 1)
-        feed_url = feed_url.strip()
-        items_raw = items_raw.strip()
-        _validate_feed_url(feed_url)
-        try:
-            items = int(items_raw)
-        except ValueError as error:
-            raise ValueError(
-                f"Invalid NEWS_RECAP_RSS_FEED_ITEMS value for {feed_url!r}: {items_raw!r}",
-            ) from error
-        if items <= 0:
-            raise ValueError(
-                "Invalid NEWS_RECAP_RSS_FEED_ITEMS value for "
-                f"{feed_url!r}: {items!r} (must be > 0)",
-            )
-        overrides[feed_url] = items
-    return overrides
-
-
-def _collect_api_model_map() -> dict[str, str]:
-    """Build task → API model ID map from env or defaults.
-
-    Env format (CSV of ``task_type=model_id``):
-        ``NEWS_RECAP_API_MODEL_MAP=recap_merge_sections=claude-sonnet-5,recap_classify=claude-haiku-4-5-20251001``
-    """
-    raw = os.getenv("NEWS_RECAP_API_MODEL_MAP", "").strip()
-    if not raw:
-        return _default_api_model_map()
-
-    base = _default_api_model_map()
-    for part in raw.split(","):
-        token = part.strip()
-        if not token:
-            continue
-        if "=" not in token:
-            raise ValueError(
-                "Invalid NEWS_RECAP_API_MODEL_MAP entry: "
-                f"{token!r}. Expected format '<task_type>=<model_id>'.",
-            )
-        task_type, model_id = token.split("=", 1)
-        task_type = task_type.strip().lower()
-        model_id = model_id.strip()
-        if not task_type or not model_id:
-            raise ValueError(f"Invalid NEWS_RECAP_API_MODEL_MAP entry: {token!r}")
-        base[task_type] = model_id
-    return base
-
-
-def _collect_task_model_map() -> dict[str, dict[str, Any]]:
-    """Build task → agent → model overrides from env or defaults.
-
-    Env format (CSV of ``task_type:agent=model_flags``):
-        ``NEWS_RECAP_LLM_TASK_MODEL_MAP=recap_merge_sections:codex=--model gpt-5.6-sol ...``
-    """
-    raw = os.getenv("NEWS_RECAP_LLM_TASK_MODEL_MAP", "").strip()
-    if not raw:
-        return _default_task_model_map()
-
-    mapping: dict[str, dict[str, Any]] = {}
-    for part in raw.split(","):
-        token = part.strip()
-        if not token:
-            continue
-        if "=" not in token or ":" not in token.split("=", 1)[0]:
-            raise ValueError(
-                "Invalid NEWS_RECAP_LLM_TASK_MODEL_MAP entry: "
-                f"{token!r}. Expected format '<task_type>:<agent>=<model_flags>'.",
-            )
-        key, model = token.split("=", 1)
-        task_type, agent = key.rsplit(":", 1)
-        task_type = task_type.strip().lower()
-        agent = agent.strip().lower()
-        if not task_type or not agent:
-            raise ValueError(f"Invalid NEWS_RECAP_LLM_TASK_MODEL_MAP key: {key!r}")
-        mapping.setdefault(task_type, {})[agent] = {"model": model.strip()}
-    return mapping
+def _merge_task_model_map(
+    defaults: dict[str, dict[str, Any]],
+    overrides: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Override the model flags of single task/agent entries, keeping each entry's env."""
+    merged = {
+        task: {agent: dict(e) for agent, e in agents.items()} for task, agents in defaults.items()
+    }
+    for task, agents in overrides.items():
+        for agent, flags in agents.items():
+            entry = merged.setdefault(task.lower(), {}).setdefault(agent.lower(), {})
+            entry["model"] = flags.strip()
+    return merged
 
 
 def _normalize_feed_urls(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
@@ -625,18 +428,6 @@ def _validate_feed_url(value: str) -> None:
             "Invalid RSS feed URL: "
             f"{value!r}. Expected an absolute URL with http:// or https:// scheme.",
         )
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    normalized = value.strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"Invalid boolean value for {name}: {value!r}")
 
 
 def _validate_command_template(*, name: str, template: str) -> None:

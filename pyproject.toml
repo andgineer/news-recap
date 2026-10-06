@@ -24,6 +24,7 @@ dependencies = [
     "langcodes[data]>=3.5.1",
     "typesafe-sdk>=0.7.2",
     "python-dotenv>=1.0",
+    "tomlkit>=0.13",
 ]
 
 [project.optional-dependencies]

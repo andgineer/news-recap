@@ -23,7 +23,7 @@ from news_recap.main import (
 )
 from news_recap.recap.digest_info import DigestInfoController, DigestSummary
 from news_recap.recap.launcher import _emit_run_summary
-from news_recap.recap.models import Digest, DigestArticle
+from news_recap.recap.models import Digest, DigestArticle, UserPreferences
 
 pytestmark = [
     allure.epic("CLI"),
@@ -225,7 +225,7 @@ def test_info_digest_shows_detail(tmp_path: Path) -> None:
     runner = CliRunner()
     with (
         patch.object(DigestInfoController, "digest_detail", return_value=summary),
-        patch("news_recap.main.Settings.from_env", return_value=settings),
+        patch("news_recap.main.Settings.load", return_value=settings),
     ):
         result = runner.invoke(news_recap, ["--no-color", "info", "1"])
     assert result.exit_code == 0
@@ -253,7 +253,7 @@ def test_info_digest_shows_task_table(tmp_path: Path) -> None:
     runner = CliRunner()
     with (
         patch.object(DigestInfoController, "digest_detail", return_value=summary),
-        patch("news_recap.main.Settings.from_env", return_value=settings),
+        patch("news_recap.main.Settings.load", return_value=settings),
     ):
         result = runner.invoke(news_recap, ["--no-color", "info", "1"])
     assert result.exit_code == 0
@@ -280,7 +280,7 @@ def test_info_digest_task_table_shows_jev_cost(tmp_path: Path) -> None:
     runner = CliRunner()
     with (
         patch.object(DigestInfoController, "digest_detail", return_value=_make_summary()),
-        patch("news_recap.main.Settings.from_env", return_value=settings),
+        patch("news_recap.main.Settings.load", return_value=settings),
     ):
         result = runner.invoke(news_recap, ["--no-color", "info", "1"])
     assert result.exit_code == 0
@@ -299,7 +299,7 @@ def test_info_digest_task_table_hides_cost_without_jev(tmp_path: Path) -> None:
     runner = CliRunner()
     with (
         patch.object(DigestInfoController, "digest_detail", return_value=_make_summary()),
-        patch("news_recap.main.Settings.from_env", return_value=settings),
+        patch("news_recap.main.Settings.load", return_value=settings),
     ):
         result = runner.invoke(news_recap, ["--no-color", "info", "1"])
     assert result.exit_code == 0
@@ -316,7 +316,7 @@ def test_info_digest_no_task_table_when_no_workdir(tmp_path: Path) -> None:
     runner = CliRunner()
     with (
         patch.object(DigestInfoController, "digest_detail", return_value=summary),
-        patch("news_recap.main.Settings.from_env", return_value=settings),
+        patch("news_recap.main.Settings.load", return_value=settings),
     ):
         result = runner.invoke(news_recap, ["--no-color", "info", "1"])
     assert result.exit_code == 0
@@ -331,7 +331,7 @@ def test_info_without_id_shows_app_paths() -> None:
     settings.data_dir = Path("/tmp/data")
     settings.orchestrator.workdir_root = Path("/tmp/workdirs")
     with (
-        patch("news_recap.main.Settings.from_env", return_value=settings),
+        patch("news_recap.main.Settings.load", return_value=settings),
         patch("news_recap.main._platform", return_value="linux"),
         patch("news_recap.main._app_dir", return_value=Path("/tmp/app")),
         patch("news_recap.main._log_dir", return_value=Path("/tmp/logs")),
@@ -428,7 +428,8 @@ def test_schedule_get_plain_defaults(monkeypatch) -> None:
     runner = CliRunner()
     result = runner.invoke(news_recap, ["--no-color", "schedule", "get"])
     assert result.exit_code == 0
-    assert "default" in result.output
+    assert "Agent          from config.toml" in result.output
+    assert "Feeds          from config.toml" in result.output
     assert "no (global news-recap)" in result.output
 
 
@@ -556,7 +557,7 @@ def test_digest_detail_found(tmp_path: Path) -> None:
 
     settings = MagicMock()
     settings.orchestrator.workdir_root.resolve.return_value = tmp_path
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         result = DigestInfoController().digest_detail(1)
     assert result is not None
     assert result.digest_id == 1
@@ -566,7 +567,7 @@ def test_digest_detail_found(tmp_path: Path) -> None:
 def test_digest_detail_not_found(tmp_path: Path) -> None:
     settings = MagicMock()
     settings.orchestrator.workdir_root.resolve.return_value = tmp_path
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         result = DigestInfoController().digest_detail(99)
     assert result is None
 
@@ -592,6 +593,8 @@ def test_prompt_from_digest_loads_articles(tmp_path: Path) -> None:
     (pdir / "digest.json").write_bytes(msgspec.json.encode(digest))
 
     mock_settings = MagicMock()
+
+    mock_settings.preferences = UserPreferences()
     mock_settings.orchestrator.workdir_root.resolve.return_value = tmp_path
     mock_settings.data_dir = tmp_path
     mock_settings.dedup.model_name = "test"
@@ -610,7 +613,7 @@ def test_prompt_from_digest_loads_articles(tmp_path: Path) -> None:
     (tmp_path / "digests.json").write_text(json.dumps(digests_index))
 
     with (
-        patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
+        patch("news_recap.recap.export_prompt.Settings.load", return_value=mock_settings),
         patch("news_recap.recap.export_prompt.recap_flow") as mock_flow,
         patch(
             "news_recap.recap.export_prompt.SentenceTransformerEmbedder",
@@ -635,11 +638,13 @@ def test_prompt_from_digest_not_found(tmp_path: Path) -> None:
     from news_recap.recap.export_prompt import PromptCliController, PromptCommand
 
     mock_settings = MagicMock()
+
+    mock_settings.preferences = UserPreferences()
     mock_settings.orchestrator.workdir_root.resolve.return_value = tmp_path
     mock_settings.data_dir = tmp_path
 
     with (
-        patch("news_recap.recap.export_prompt.Settings.from_env", return_value=mock_settings),
+        patch("news_recap.recap.export_prompt.Settings.load", return_value=mock_settings),
         pytest.raises(click.ClickException, match="not found"),
     ):
         controller = PromptCliController()

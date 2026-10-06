@@ -3,7 +3,8 @@
 Status: Stages 0–3, 5 and 5b done. Stage 4 (routing) failed on 2026-10-06, so the restructure
 is dropped and Stage 5 became duplicate detection on Jev (the former Fallback B). Stage 5's
 merges alone hid more stories than today's dedup, so Stage 5b writes the merged headlines with
-one agy launch, as today's dedup does. Next: Stage 7 after ≥ 14 nights. Related:
+one agy launch, as today's dedup does. Jev is opt-in per step (Decision 10); the author's
+machine runs classify on Jev and dedup on the LLM. Next: Stage 7 after ≥ 14 nights. Related:
 `plan-token-optimization.md` (its Phases 5–6, local clustering and the local classify cascade,
 are superseded by Stages 3 and 5 here), issue #18 (Stage 0).
 
@@ -139,21 +140,21 @@ median night: 12 → 9 → 6.
 
 1. **Use `typesafe-sdk` directly**, not the `jev` wrapper: `jev` requires Python ≥ 3.14 and
    discards the probabilities the thresholds need.
-2. **Key lookup**, first hit wins: env `TYPESAFE_API_KEY` → `./.env` → `<data_dir>/.env`.
-   Read with `dotenv_values()`, never written to `os.environ`. `TYPESAFE_API_KEY` is always
-   stripped from agent subprocess env (agents read untrusted news text with permissions
-   skipped).
+2. **Key lookup**, first hit wins: env `TYPESAFE_API_KEY` → `./.env` → `<data_dir>/.env`; a blank
+   value falls through. Read with `dotenv_values()`, never written to `os.environ`.
+   `TYPESAFE_API_KEY` is always stripped from agent subprocess env (agents read untrusted news
+   text with permissions skipped). Every other setting, the Jev backends included, lives in
+   `<data_dir>/config.toml` (`plan-config-toml.md`).
 3. **Pinned model** `jev-1.13.0`; thresholds are tuned against it. Upgrading = rerun the bench,
    then bump.
 4. **Thresholds are module constants**, set from the bench.
 5. **Jev failure:** SDK retries, then `JevUnavailableError`; the step logs a warning and reruns
-   on its LLM path (classify and deduplicate keep their LLM paths until Stage 7, which deletes
-   one only if it never triggered).
+   on its LLM path. The LLM paths stay: they are the defaults (Decision 10).
 6. **Merged headline.** Today's LLM dedup writes a new headline for each merged group that keeps
    the facts of all members. Jev cannot write, so after Jev picks the groups one agy launch
    writes every group's headline from all its members (Stage 5b). A group that launch leaves
-   without a headline keeps the keeper's `enriched_title`, else the first member's
-   `enriched_title`, else the keeper's `title`.
+   without a headline stays unmerged: a duplicate left visible is the lesser harm (Decision 8),
+   as when one of today's dedup launches fails.
 7. **Gates compare Jev with today's LLM on the same items**: the reader-visible errors a step
    can cause (wrong excludes, wrong merges) must not increase and its correct decisions must not
    decrease; a gate that requires more says so. Ground truth is labels made blind by Claude
@@ -164,6 +165,9 @@ median night: 12 → 9 → 6.
    wrong excludes are gated separately.
 9. **Bench data** lives in `~/.news_recap_data/bench/`. Only the rows a spec sentence relies on
    are committed (`bench/` in the repo, with a README naming the claim each file supports).
+10. **Jev is opt-in per step.** `classify_backend` and `dedup_backend` in `config.toml`
+    default to `llm` with or without a key, so a fresh install runs with no keys at all on the
+    free agy tier; the docs' quick start shows that path first and Jev as an option.
 
 ## Stage 0 — Reliability and telemetry (~0.5 day, independent of Jev)
 
@@ -302,7 +306,9 @@ on the other three nights only (`HOLDOUT_PIPELINE` in `bench_jev.py`).
   from there: `MAX_CONCURRENCY = 16` is a constant in `jev/client.py`, `PRICE_PER_MTOK = 0.042`
   in `jev/usage.py`, and `save_jev_usage` has no `price_per_mtok` argument.
 - `JevUnavailable` is named `JevUnavailableError` (ruff N818, same as the other exceptions).
-- The key lookup is `config.resolve_typesafe_api_key(data_dir)`, shared by `Settings.from_env`
+- The per-step backends are `classify_backend` / `dedup_backend` in `config.toml`, not the
+  `NEWS_RECAP_*_BACKEND` variables of the bullets below (`plan-config-toml.md`).
+- The key lookup is `config.resolve_typesafe_api_key(data_dir)`, shared by `Settings.load`
   and `make_jev_client`. An empty value falls through to the next source.
 - `jev_task_dir(pipeline_dir, step)` names the `<step>-jev` workdir.
 - `TYPESAFE_API_KEY` is popped after `extra_env` is merged, so no task-map env can re-add it.
@@ -366,9 +372,8 @@ Tests:
 
 **Done 2026-10-06: gate passed** (`recap/jev/classify.py`, `Classify._classify_on_jev`,
 `bench_jev.py classify`; tests in `tests/recap/jev/test_classify.py`, `tests/test_bench_jev.py`,
-`tests/test_config.py`, `tests/test_cli_output.py`). `classify_backend` now defaults to `jev`
-when a key is found; `NEWS_RECAP_CLASSIFY_BACKEND=llm` still forces the LLM. Bench rows:
-`bench/classify-2026-10-06.jsonl`.
+`tests/test_config.py`, `tests/test_cli_output.py`). Classify on Jev is opt-in:
+`news-recap config set classify_backend jev` (Decision 10). Bench rows: `bench/classify-2026-10-06.jsonl`.
 
 Results (exclude ≥ 0.75, vague ≥ 0.65, `full` state; every Jev/Gemini disagreement labelled,
 unlabelled agreements count as correct):
@@ -414,8 +419,8 @@ Differences from the bullets below:
   disagreements of the top configurations go to `bench/labels/pending-classify.jsonl` for
   `label --items`.
 - The stage table gains a Cost column, shown only when a step reports `cost_usd`.
-- Tests pin `NEWS_RECAP_CLASSIFY_BACKEND=llm` (autouse fixture): `./.env` holds a real key, and
-  the new default would make flow tests call live Jev.
+- Tests run against a temporary data directory (autouse fixture), so a developer's key or
+  `config.toml` never reaches them.
 
 3.1 `recap/jev/classify.py`:
 
@@ -564,11 +569,10 @@ sweeping both thresholds from stored probabilities:
 ## Stage 5 — Duplicate detection on Jev (former Fallback B; ~1 day + bench)
 
 **Built 2026-10-06; the pair gate passed but the reader-visible one failed** (`recap/jev/dedup.py`, `Deduplicate._dedup_on_jev`,
-`NEWS_RECAP_DEDUP_BACKEND`, `bench_jev.py dedup [--wide]`; tests in `tests/recap/jev/test_dedup.py`,
+`dedup_backend`, `bench_jev.py dedup [--wide]`; tests in `tests/recap/jev/test_dedup.py`,
 `tests/test_bench_jev.py`, `tests/test_config.py`, `tests/recap/storage/test_pipeline_io.py`).
-Since Stage 5b, `dedup_backend` defaults to `jev` when a key is found; `NEWS_RECAP_DEDUP_BACKEND=llm`
-forces the LLM. Labels: 319 pairs by Claude (`labeler: claude-opus-5-5`). Bench rows:
-`bench/dedup-2026-10-06.jsonl`.
+Dedup on Jev is opt-in: `news-recap config set dedup_backend jev` (Decision 10). Labels: 319 pairs by Claude
+(`labeler: claude-opus-5-5`). Bench rows: `bench/dedup-2026-10-06.jsonl`.
 
 Results (headline state, the "news" question below; candidate groups merge at ≥ 0.40, the wider
 net at ≥ 0.70; every Jev/Gemini disagreement labelled, unlabelled agreements count as correct):
@@ -586,13 +590,16 @@ net at ≥ 0.70; every Jev/Gemini disagreement labelled, unlabelled agreements c
   reaction is lost ("Spaniards welcome snap election"). A Jev merge shows one existing title, so
   its wrong merge hides the other story (OpenAI's office suite under OpenAI's app-store story).
   Most of Jev's wrongly merged pairs are reports of one event at different moments or two
-  speeches by one person. In articles, with the wider net: on the tuning nights Jev removes 151
-  true duplicates (Gemini 132) and 9 different stories (Gemini 17), and every one of Jev's 9
-  disappears from the digest, where 15 of Gemini's 16 groups keep the story in the merged
+  speeches by one person. In articles, with the 0.85–0.90 wider net: on the tuning nights Jev
+  removes 151 true duplicates (Gemini 132) and 9 different stories (Gemini 17), and every one of
+  Jev's 9 disappears from the digest, where 15 of Gemini's 16 groups keep the story in the merged
   headline; on the holdout, 9 / 7 duplicates and 2 / 2 different stories (both of Gemini's kept in
-  its headline).
-- Wider net (similarity 0.85–0.90, outside today's candidate groups, which today's pipeline never
-  examines): Jev says "same" for 46 pairs on the tuning nights, 43 labelled same (93%), and 5 on
+  its headline). Stage 5b closes the gap.
+- **The duplicate gain comes from the wider net.** Inside today's candidate groups alone Jev
+  removes fewer true duplicates than today: 123 vs 132 on the tuning nights, 7 vs 7 on the
+  holdout.
+- Wider net, first measured at similarity 0.85–0.90 (outside today's candidate groups, which
+  today's pipeline never examines): Jev says "same" for 46 pairs on the tuning nights, 43 labelled same (93%), and 5 on
   the holdout, 4 same; 47 of 51 (92%, 95% interval 81–97%) overall, above the 90% bar. The holdout
   alone (4 of 5) is too small to decide, so Stage 7 checks it on new nights. Star grouping merges
   an outsider only when it matches the group's keeper, so on the tuning nights these pairs remove
@@ -600,7 +607,14 @@ net at ≥ 0.70; every Jev/Gemini disagreement labelled, unlabelled agreements c
   matches only a non-keeper member stays (Starship's orbit in Serbian on 09-29). Typical catches are
   translations and paraphrases: Starship's first orbit in Serbian and English, the Kyiv academy
   strike in Croatian and English, the Vučić → Brnabić handover reports.
-- Live check on a copy of night 10-06 (real embedder, real Jev, no agy): 452 articles → 410
+- **Shipped band: 0.87–0.90** (`WIDE_SIMILARITY`). The 0.85–0.87 band is 74% of the wider net's
+  requests for 22 of its 47 true merges. At 0.87: Jev's "same" pairs are 22 of 24 labelled same
+  on the tuning nights and 3 of 3 on the holdout; Jev removes 138 true duplicates and 9 different
+  stories on the tuning nights (today 132 / 17; +15 from the wider net) and 9 / 1 on the holdout
+  (today 7 / 2). Requests on 10-06 ≈ 1 200 instead of 3 576, ≈ \$0.74/month instead of \$2.2
+  (scaled from the bench's band counts, not a live run). Narrower bands: 0.88 → 133 true
+  duplicates, \$0.44; no wider net → 123, below today.
+- Live check at the 0.85 band on a copy of night 10-06 (real embedder, real Jev, no agy): 452 articles → 410
   (today's LLM dedup removed 40 that night), 3 576 pair requests (389 candidate + 3 187 wider),
   1.72M tokens, \$0.072, 72 s (61 requests/s at 16 concurrent). Jev for dedup ≈ \$2.2/month; agy
   −6 launches / −157k tokens on that night. 12 of its 13 wider-net merges are labelled same.
@@ -628,10 +642,10 @@ Differences from the bullets below:
 - Merge groups are connected components of "same" pairs, star-grouped inside (keeper = longest
   text), so a wider-net pair can join a candidate group.
 - Not covered, as today: `group_similar` splits a candidate group above 20 articles into chunks,
-  and pairs at similarity ≥ 0.90 across those chunks are never asked (5, 8 and 4 pairs on 09-29,
-  09-30 and 10-01).
+  and pairs at similarity ≥ 0.90 across those chunks are never asked (5–8 pairs a night on the
+  bench nights).
 - No full `create --stop-after deduplicate` run: it needs enrich, i.e. agy launches. The first
-  nightly run with the default backend is the end-to-end check.
+  nightly run with `dedup_backend = "jev"` is the end-to-end check.
 
 Today: `group_similar` builds candidate groups (connected components at embedding similarity
 ≥ `dedup_threshold` 0.90 over title + text), then 3–6 agy launches a night answer `MERGED` /
@@ -703,6 +717,10 @@ the pipeline makes from the stored Stage 5 probabilities):
 - 25.8–33.0k agy tokens per launch (20–28k input, about 13k of it the per-launch overhead;
   3.6–5.8k output including thinking), ≈ 20 s.
 - The holdout night was not run (one more launch); Stage 7 reads new nights' merged groups.
+- The gate ran on the 0.85–0.90 wider net's groups. At the shipped 0.87 band 8 of the 9 wrongly
+  merged members sit in the same groups (7 stated, the Greta Garbo review lost); the ninth
+  (Reuters' FlyDubai explainer) is in a group that lost one same-story member, and its headline
+  was not re-measured, to spare agy launches in a week already near the lockout level.
 
 Stage 5's merges keep one existing title, so a wrong merge hides the other story; today's LLM
 rewrites the merged headline and keeps it (15 of its 16 wrong groups). Stage 5b keeps Jev's
@@ -712,13 +730,14 @@ groups and gives each one an LLM headline again, in one launch for the whole nig
   timeout as today's dedup) gets every merge group as `=== GROUP N ===` with `n: [source] title`
   lines and answers `GROUP N: <headline>` per group, under today's rules (keep the key facts of
   all members, a separate fact, statement or reaction included; not much longer than the longest
-  original; output language). A failed launch or a group without an answer keeps its Decision 6
-  title. Merge groups are emitted in a fixed order (by smallest article id).
+  original; output language). A failed launch, or a group the launch leaves without a headline,
+  leaves that group unmerged (Decision 6). Merge groups are emitted in a fixed order (by smallest
+  article id).
 - Gate (Claude reads every group with a member labelled `different` from its keeper, on the four
   tuning nights): stories whose fact is missing from the written headline ≤ today's (1, the
   "Spaniards welcome snap election" reaction); every group gets a headline in the output
   language.
-- Pass → `dedup_backend` defaults to `jev` when a key is found. Fail → dedup stays on the LLM.
+- Pass → dedup on Jev can be turned on (`dedup_backend = "jev"`). Fail → it stays off.
 
 ## Stage 6 — dropped
 
@@ -732,18 +751,11 @@ labelled pairs, like Stage 3.
   - the Cost section rewritten (agy launches and tokens per night, Jev \$/month);
   - bench conclusions under Experiments, citing the committed `bench/` rows, including why
     section routing on Jev was rejected (Stage 4).
-- `README.md`, `docs/src/en/`, `docs/src/ru/`:
-  - `TYPESAFE_API_KEY` and the two `.env` locations;
-  - `NEWS_RECAP_CLASSIFY_BACKEND` and `NEWS_RECAP_DEDUP_BACKEND` (`llm` forces the LLM step);
-  - write exclude topics as subjects ("Croatian domestic news", not "Croatian news"), since Jev
-    reads topics literally.
 - `spec/plan-token-optimization.md`: mark Phases 5–6 superseded by this plan.
 - `bench/README.md`: each committed run file and the spec sentence relying on it. A run stays
   only while a claim rests on it.
-- LLM fallbacks (classify, deduplicate): one that never triggered over ≥ 14 nights is deleted
-  with its prompt and backend setting; otherwise keep it and record the observed failure rate in
-  `spec/pipeline.md`.
-- Wider-net check on new nights: label every wider-net merge (`wide` and `same` in
+- Record the observed Jev failure rate (fallbacks to the LLM) in `spec/pipeline.md`.
+- Once dedup on Jev runs nightly, a wider-net check on new nights: label every wider-net merge (`wide` and `same` in
   `dedup-jev/output/jev_answers.json`) of the first 7 nightly runs. Keep the wider net if ≥ 90%
   are the same piece of news; otherwise raise `WIDE_THRESHOLD` to the lowest value that reaches
   90% on them. On the same nights, read every merged group with a separate story and check that
@@ -776,8 +788,9 @@ uv run python scripts/bench_jev.py label          # Stage 1
 uv run python scripts/bench_jev.py classify       # Stage 3
 uv run python scripts/bench_jev.py route          # Stage 4 (rejected; reproduces the numbers)
 uv run python scripts/bench_jev.py dedup          # Stage 5
-NEWS_RECAP_CLASSIFY_BACKEND=jev news-recap create --stop-after classify
-NEWS_RECAP_DEDUP_BACKEND=jev news-recap create --stop-after deduplicate
+uv run python scripts/bench_jev.py dedup-titles   # Stage 5b — one agy launch per night
+news-recap config set classify_backend jev && news-recap create --stop-after classify
+news-recap config set dedup_backend jev && news-recap create --stop-after deduplicate
 ```
 
 The classify command shows a `classify-jev` row with tokens and cost and creates no `classify-N`
@@ -785,7 +798,7 @@ workdirs; the dedup command shows a `dedup-jev` row and a single `dedup-N` workd
 headlines launch.
 
 Manual, once: put `TYPESAFE_API_KEY` into `~/.news_recap_data/.env` so the scheduled job
-(launchd starts it with cwd `/`) finds it.
+(launchd starts it with cwd `/`) finds it; the backends are in `~/.news_recap_data/config.toml`.
 
 ## Expected impact
 
@@ -794,22 +807,22 @@ agy figures are the 10-06 night (412 articles); Jev from the bench.
 | After | agy launches / tokens | Jev \$/month | Measured quality change |
 |---|---|---|---|
 | Stage 0 | 17 / 629k | 0 | nights lost to `load_resources`: 3/32 → 0 |
-| Stage 3 | 14 / ≈515k | ≈ 0.48 | wrong excludes 4 vs 13 (tuning), 0 vs 0 (holdout); ≈ 4 more vague headlines a night, ≈ 13k more enrich tokens |
-| Stage 5 + 5b | 9 / ≈391k | ≈ 0.48 + 2.2 | stories lost from merged headlines 1 vs today's 1; true duplicates removed 151 vs 132 (4 tuning nights, in-sample); merged headlines written in the output language, as today |
+| Stage 3 (classify on Jev) | 14 / ≈515k | ≈ 0.48 | wrong excludes 4 vs 13 (tuning), 0 vs 0 (holdout); ≈ 4 more vague headlines a night, ≈ 13k more enrich tokens |
+| Stage 5 + 5b (dedup on Jev, 0.87 band) | 9 / ≈391k | ≈ 0.48 + 0.74 | stories lost from merged headlines 1 vs today's 1 (gated at the 0.85 band); true duplicates removed 138 vs 132 (4 tuning nights, in-sample), +15 of them from the wider net; merged headlines written in the output language, as today |
 
 ## Risks
 
 - **A wrong merge hides a story** (the reader sees one headline for two events): the Stage 5b
   headline states the merged-in story; its gate counts stories missing from it, like wrong
   excludes (Decision 8).
-- **A failed headline launch** leaves that night's merged groups with an existing title, possibly
-  in the source language (Decision 6), and a wrongly merged story hidden. The night still gets
-  its digest.
+- **A failed headline launch** leaves that night's Jev groups unmerged (Decision 6): about 40
+  duplicates stay visible, nothing is hidden, as when one of today's dedup launches fails.
 - **A Jev outage** falls back to the LLM for that night (Decision 5).
 - **Rate limits** are "adjusting dynamically": SDK retries; the 10-06 live run reached 61 req/s
   at 16 concurrent requests against the documented 80 req/s. One request that still fails after
   the retries sends the whole step to its LLM path.
-- **Catch-up nights**: the wider net grows with the square of the night's size (277 articles →
-  1 320 pairs, 452 → 3 187); it is capped at the 5 000 most similar pairs (≈ 80 s, ≈ \$0.10).
+- **Catch-up nights**: the wider net grows with the square of the night's size (at 0.85–0.90:
+  277 articles → 1 320 pairs, 452 → 3 187; the 0.87 band asks about a quarter of those); it is
+  capped at the 5 000 most similar pairs (≈ 80 s, ≈ \$0.10).
 - **Free-text policies are read literally**: docs tell users to phrase topics as subjects.
 - **The `jev-latest` alias moves**: the model is pinned (Decision 3).

@@ -163,7 +163,7 @@ class DigestInfoController:
     """Show/delete completed and unfinished digests."""
 
     def digest_info(self, *, no_color: bool = False, show_all: bool = False) -> None:
-        settings = Settings.from_env()
+        settings = Settings.load()
         workdir_root = settings.orchestrator.workdir_root.resolve()
 
         summaries = _list_digests(workdir_root, completed_only=not show_all)
@@ -202,7 +202,7 @@ class DigestInfoController:
 
     def digest_detail(self, digest_id: int) -> DigestSummary | None:
         """Return summary for a single digest, or None if not found."""
-        settings = Settings.from_env()
+        settings = Settings.load()
         workdir_root = settings.orchestrator.workdir_root.resolve()
         for s in _list_digests(workdir_root, completed_only=False):
             if s.digest_id == digest_id:
@@ -211,7 +211,7 @@ class DigestInfoController:
 
     def delete_digest(self, digest_id: int) -> list[str]:
         """Delete a digest (any status) by its numeric ID."""
-        settings = Settings.from_env()
+        settings = Settings.load()
         workdir_root = settings.orchestrator.workdir_root.resolve()
 
         was_completed = any(

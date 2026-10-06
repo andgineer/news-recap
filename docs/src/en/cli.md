@@ -11,16 +11,18 @@
 - `list`: show completed digests and uncovered article periods.
 - `delete`: delete a digest so its articles become available for the next one.
 - `serve`: start the digest web viewer.
-- `configure`: view and edit persistent user preferences.
+- `config`: show the settings file (created on first use); `config set` changes a setting.
 - `schedule set`: install or update the daily scheduled digest job.
 - `schedule get`: show current schedule configuration.
 - `schedule delete`: remove the daily scheduled digest job.
 
 ## Common Notes
 
-- Set the data directory via `NEWS_RECAP_DATA_DIR` (default `~/.news_recap_data`).
+- Settings live in `config.toml` in the data directory; see [`config`](#config).
+- The data directory is `~/.news_recap_data`; the `NEWS_RECAP_DATA_DIR` environment variable
+  points elsewhere.
 - Data is stored as JSON files with daily partitioning; old partitions are
-  garbage-collected automatically based on `NEWS_RECAP_GC_RETENTION_DAYS`.
+  garbage-collected automatically after `ingestion.retention_days`.
 
 ## Ingestion
 
@@ -35,9 +37,8 @@ news-recap ingest --rss https://example.com/feed.xml
 Key options:
 - `--rss` (repeatable)
 
-If `--rss` is omitted, feeds are loaded from:
-- `NEWS_RECAP_RSS_FEED_URLS`
-- `NEWS_RECAP_RSS_FEED_URL`
+If `--rss` is omitted, the feeds come from `rss` in `config.toml`
+(`news-recap config set rss URL [URL …]`).
 
 ## Digest Pipeline Commands
 
@@ -59,8 +60,8 @@ news-recap create --from-digest 3
 Key options:
 - `--agent` (`codex`, `claude`, or `antigravity`)
 - `--limit` (cap number of articles loaded)
-- `--max-days` (max days to look back for articles; default 2,
-  env `NEWS_RECAP_DIGEST_LOOKBACK_DAYS`)
+- `--max-days` (max days to look back for articles; default `ingestion.lookback_days`
+  in `config.toml`, 2)
 - `--all` (ignore previous digests; include all articles within
   the lookback window)
 - `--api` (use direct Anthropic API instead of CLI agents)
@@ -96,7 +97,7 @@ If there are time gaps between consecutive digests' article ranges, they are
 shown under "Uncovered periods".
 
 Old pipeline directories are automatically garbage-collected (same retention
-as articles, controlled by `NEWS_RECAP_GC_RETENTION_DAYS`).
+as articles, `ingestion.retention_days` in `config.toml`).
 
 ### `delete`
 Delete a completed digest so its articles become available for the next one.
@@ -124,36 +125,31 @@ Key options:
 - `--host` — host to bind to (default `127.0.0.1`).
 - `--port` — port to bind to (default `8080`).
 
-### `configure`
-View and edit persistent user preferences: language, exclude topics, follow
-topics, and default LLM agent.
-
-Preferences are stored in `config.json` inside the data directory
-(shown by `news-recap info`). They serve as defaults for `create` and `prompt`
-commands — CLI flags still override them.
+### `config`
+Show your settings, or change one. The settings file is `config.toml` in the data directory
+(`~/.news_recap_data/config.toml`); the first `news-recap config` writes it with release
+defaults.
 
 ```bash
-news-recap configure
+news-recap config                                   # show the file path and the settings
+news-recap config set rss https://example.com/feed.xml https://example.org/rss
+news-recap config set language en
+news-recap config set agent claude                  # antigravity | codex | claude
+news-recap config set exclude "horoscopes" "sports (except Russia)"
+news-recap config set classify_backend jev          # llm | jev
 ```
 
-The command shows current values (with a `(default)` tag for fields that haven't
-been set yet), then lets you pick which ones to update:
+`config set` edits these keys: `language`, `exclude`, `follow`, `agent`, `rss`,
+`classify_backend`, `dedup_backend`. `exclude` and `follow` take one topic per argument and are
+stored one per line; a note in parentheses is an exception ("sports (except Russia)"). Comments
+and anything else in the file are kept.
 
-```
-Current settings:
-  1. Language:      ru (default)
-  2. Exclude:       horoscopes, medical advice, sports (except Russia), ... (default)
-  3. Follow:        Russia, Serbia, war in Ukraine (default)
-  4. Default Agent: codex (default)
+The rest of `config.toml` is advanced settings, written commented out with the current
+release's default: the app follows each new release's defaults until you uncomment a line and
+change it. See the [settings reference](#config-toml).
 
-Select fields to update (comma-separated numbers, 'all', or Enter to skip):
-```
-
-Priority order (highest wins):
-
-1. CLI flags (`--language`, `--agent`)
-2. Config file (`config.json`)
-3. Code defaults
+Priority (highest wins): CLI flags (`--rss`, `--agent`, `--language`), then `config.toml`, then
+release defaults.
 
 ## API Mode
 
@@ -170,52 +166,72 @@ export ANTHROPIC_API_KEY=sk-ant-...
 news-recap create --api
 ```
 
-`--api` sets `backend=api` and `agent=claude` automatically. No other env vars needed.
+`--api` sets the API backend and the `claude` agent for that run.
 
 ### Per-task model map
 
 By default, cost-sensitive tasks use `claude-haiku-4-5-20251001`, while
-`recap_merge_sections` uses `claude-sonnet-5`. Override individual tasks with
-`NEWS_RECAP_API_MODEL_MAP` (comma-separated `task_type=model_id` pairs):
+`recap_merge_sections` uses `claude-sonnet-5`. Override single tasks in the `[api]` section of
+`config.toml`:
 
-```bash
-export NEWS_RECAP_API_MODEL_MAP="recap_merge_sections=claude-sonnet-5,recap_classify=claude-haiku-4-5-20251001"
+```toml
+[api]
+model_map.recap_merge_sections = "claude-sonnet-5"
 ```
 
-### API mode environment variables
+### API mode settings {#api-settings}
 
-- `NEWS_RECAP_EXECUTION_BACKEND` — `cli` (default) or `api`.
-- `NEWS_RECAP_API_MODEL_MAP` — per-task model overrides (`task_type=model_id,...`).
-- `NEWS_RECAP_API_MAX_PARALLEL` — initial concurrency cap (default `5`). Automatically
-  downshifted on rate-limit errors and recovered after consecutive successes.
-- `NEWS_RECAP_API_TIMEOUT_SECONDS` — per-call timeout (default `120`).
-- `NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES` — consecutive successes needed
-  to increment the concurrency cap by 1 after a downshift (default `10`).
-- `NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS` — exponential backoff ceiling (default `60`).
-- `NEWS_RECAP_API_RETRY_JITTER_SECONDS` — uniform jitter added to each backoff (default `5`).
-- `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — extra pause after a rate-limit downshift
-  before the next slot acquire (default `2`).
+In the `[api]` section of `config.toml`:
+
+- `max_parallel` — initial concurrency cap (default `5`). Automatically downshifted on
+  rate-limit errors and recovered after consecutive successes.
+- `concurrency_recovery_successes` — consecutive successes needed to raise the cap by 1 after
+  a downshift (default `10`).
+- `retry_max_backoff_seconds` — exponential backoff ceiling (default `60`).
+- `retry_jitter_seconds` — uniform jitter added to each backoff (default `5`).
+- `downshift_pause_seconds` — extra pause after a rate-limit downshift before the next slot
+  acquire (default `2`).
+
+`llm.execution_backend = "api"` (with `agent = "claude"`) makes API mode the default.
 
 ## Scheduled Runs
 
 See [Scheduled Runs](automation.md) for setup, platform details, logs, and troubleshooting.
 
-## Important Environment Variables
+## Settings reference (config.toml) {#config-toml}
 
-### Data and Storage
-- `NEWS_RECAP_DATA_DIR` — root directory for all data files (default `~/.news_recap_data`).
-- `NEWS_RECAP_GC_RETENTION_DAYS` — how many days of article partitions to keep (default 7).
-- `NEWS_RECAP_DIGEST_LOOKBACK_DAYS` — max days of articles to include in a digest (default 2).
-  By default the window starts from the last successful digest date; use
-  `--all` to always use the full window.
+Everyday keys (also settable with `news-recap config set`):
 
-### RSS Feeds
-- `NEWS_RECAP_RSS_FEED_URLS` — comma-separated list of feed URLs.
-- `NEWS_RECAP_RSS_FEED_URL` — single feed URL (convenience alias).
-- `NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED` — max items to fetch per feed.
-- `NEWS_RECAP_RSS_FEED_ITEMS` — per-feed item overrides (`<feed_url>|<items>,...`).
+- `language` — digest language, a BCP-47 code (`en`, `ru`, `sr`, …). Default `ru`.
+- `exclude` — topics to drop, one per line. Phrase them as subjects ("Croatian domestic news",
+  not "Croatian news"): Jev reads topics literally.
+- `follow` — topics that get their own sections, one per line.
+- `agent` — `antigravity` (free Gemini tier, no keys; default), `codex` or `claude`.
+- `rss` — feed URLs.
+- `classify_backend`, `dedup_backend` — `llm` (default) or `jev`; see
+  [Jev](index.md#optional-jev).
 
-### LLM Agents
+Advanced sections, written commented out with the release defaults:
+
+- `[ingestion]` — `lookback_days` (max days of articles in a digest, default 2; by default the
+  window starts at the last digest, `--all` uses the full window), `retention_days` (days of
+  article partitions kept, default 7), `page_size`, `max_pages`, `backfill_max_gaps`,
+  `clean_text_max_chars`, `min_resource_chars`.
+- `[fetch]` — RSS fetching: `default_items_per_feed`, `per_feed_items`
+  (`{ "https://…" = 500 }`), `snapshot_max_age_hours`, `max_retries`,
+  `retry_backoff_seconds`, `request_timeout_seconds`.
+- `[dedup]` — `threshold` (embedding similarity of a candidate group, default 0.9),
+  `model_name`.
+- `[llm]` — `workdir_root`, `execution_backend` (`cli` | `api`), and model flags per task and
+  agent: `models.recap_classify.claude = "--model haiku"`.
+- `[api]` — see [API mode settings](#api-settings).
+
+Environment variables are only for secrets and the data directory:
+
+- `NEWS_RECAP_DATA_DIR` — data directory (default `~/.news_recap_data`).
+- `TYPESAFE_API_KEY` — the Jev key; also read from `.env` in the current directory or the data
+  directory.
+- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ANTIGRAVITY_API_KEY` — agent API keys (see below).
 
 > **Subscription vs API billing.** When spawning CLI agents (`claude`, `codex`, `antigravity`)
 > as subprocesses, `news-recap create` removes vendor API keys
@@ -232,10 +248,6 @@ See [Scheduled Runs](automation.md) for setup, platform details, logs, and troub
 > news-recap create --use-api-key
 > ```
 
-- `NEWS_RECAP_LLM_DEFAULT_AGENT` — default agent (`codex`, `claude`, or `antigravity`).
-- `NEWS_RECAP_LLM_TASK_MODEL_MAP` — per-task-type model overrides by agent
-  (`task_type:agent=model_flags,...`).
-
 ## Help
 
 ```bash
@@ -247,7 +259,7 @@ news-recap info --help
 news-recap list --help
 news-recap delete --help
 news-recap serve --help
-news-recap configure --help
+news-recap config --help
 news-recap schedule --help
 news-recap schedule set --help
 ```

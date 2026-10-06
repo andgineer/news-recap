@@ -102,7 +102,7 @@ def test_no_agent_flag_leaves_file_unchanged(tmp_path: Path) -> None:
 
 
 @patch("news_recap.recap.launcher.recap_flow")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_controller_resume_with_agent_override_normalizes(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,
@@ -141,7 +141,7 @@ def test_controller_resume_with_agent_override_normalizes(
 
 
 @patch("news_recap.recap.launcher.recap_flow")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_controller_resume_refreshes_model_flags_without_agent_override(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,
@@ -186,7 +186,7 @@ def test_controller_resume_refreshes_model_flags_without_agent_override(
 
 
 @patch("news_recap.recap.launcher.recap_flow")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_create_exits_1_when_pipeline_failed(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,
@@ -295,7 +295,7 @@ def _make_settings_mock(tmp_path: Path) -> MagicMock:
 
 
 @patch("news_recap.recap.launcher.recap_flow")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_from_digest_reuses_articles_and_date(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,
@@ -330,7 +330,7 @@ def test_from_digest_reuses_articles_and_date(
 
 
 @patch("news_recap.recap.launcher.recap_flow")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_from_digest_applies_new_options(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,
@@ -358,7 +358,7 @@ def test_from_digest_applies_new_options(
 
 
 @patch("news_recap.recap.launcher.recap_flow")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_from_digest_skips_resume_logic(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,
@@ -387,7 +387,7 @@ def test_from_digest_skips_resume_logic(
 
 
 @patch("news_recap.recap.launcher.recap_flow")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_new_pipeline_records_jev_settings(
     mock_from_env: MagicMock,
     mock_flow: MagicMock,

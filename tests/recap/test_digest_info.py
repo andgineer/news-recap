@@ -513,7 +513,7 @@ def test_digest_info_empty_workdir(tmp_path: Path, capsys: object) -> None:
     settings = MagicMock()
     settings.orchestrator.workdir_root = tmp_path / "nonexistent"
     settings.data_dir = tmp_path
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
     assert "no digests found" in out.lower()
@@ -547,7 +547,7 @@ def test_digest_info_hides_gap_with_zero_articles(tmp_path: Path, capsys: object
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
     settings.data_dir = tmp_path
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
 
@@ -590,7 +590,7 @@ def test_digest_info_no_gap_when_overlapping(tmp_path: Path, capsys: object) -> 
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
     settings.data_dir = tmp_path
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
 
@@ -620,7 +620,7 @@ def test_digest_info_zero_article_excluded_from_gaps(tmp_path: Path, capsys: obj
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
     settings.data_dir = tmp_path
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
 
@@ -794,7 +794,7 @@ def test_delete_cli_help() -> None:
 def test_delete_nonexistent_digest(tmp_path: Path) -> None:
     settings = MagicMock()
     settings.orchestrator.workdir_root = tmp_path / "nonexistent"
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         lines = DigestInfoController().delete_digest(99)
     assert any("not found" in l.lower() for l in lines)
 
@@ -813,7 +813,7 @@ def test_delete_removes_pipeline_dir_and_index_entry(tmp_path: Path) -> None:
 
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         lines = DigestInfoController().delete_digest(1)
 
     assert not pdir.exists()
@@ -831,7 +831,7 @@ def test_delete_running_digest_by_id(tmp_path: Path) -> None:
 
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         lines = DigestInfoController().delete_digest(1)
     assert not pdir.exists()
     assert any("deleted" in l.lower() for l in lines)
@@ -912,7 +912,7 @@ def test_list_all_shows_running_and_failed(tmp_path: Path, capsys: object) -> No
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
     settings.data_dir = tmp_path
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         DigestInfoController().digest_info(show_all=True)
     out = capsys.readouterr().out  # type: ignore[union-attr]
     assert "failed" in out.lower()
@@ -943,7 +943,7 @@ def test_list_default_hides_non_completed(tmp_path: Path, capsys: object) -> Non
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
     settings.data_dir = tmp_path
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         DigestInfoController().digest_info()
     out = capsys.readouterr().out  # type: ignore[union-attr]
     assert "Status" not in out
@@ -958,7 +958,7 @@ def test_list_all_with_no_completed_digests(tmp_path: Path, capsys: object) -> N
     settings = MagicMock()
     settings.orchestrator.workdir_root = workdir
     settings.data_dir = tmp_path
-    with patch("news_recap.recap.digest_info.Settings.from_env", return_value=settings):
+    with patch("news_recap.recap.digest_info.Settings.load", return_value=settings):
         DigestInfoController().digest_info(show_all=True)
     out = capsys.readouterr().out  # type: ignore[union-attr]
     assert "running" in out.lower()

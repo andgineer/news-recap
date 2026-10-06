@@ -19,36 +19,53 @@ Pro-подписки.
 
 ## Быстрый старт
 
-Установите [`uv`](https://docs.astral.sh/uv/getting-started/installation/), затем
+Бесплатный вариант не требует ключей API: установите
+[`uv`](https://docs.astral.sh/uv/getting-started/installation/) и
+[Antigravity CLI](https://antigravity.google/) (`agy`, вход через аккаунт Google), затем
 установите `news-recap`:
 
 ```bash
 uv tool install news-recap --upgrade --python 3.13
-news-recap --help
 ```
 
-Получите RSS-ссылку.
+Получите RSS-ссылку. Пример для Inoreader: откройте контекстное меню папки, выберите
+`Properties` и скопируйте RSS-ссылку оттуда.
 
-Пример для Inoreader: откройте контекстное меню папки, выберите `Properties` и
-скопируйте RSS-ссылку оттуда.
-
-Создайте дайджест вручную:
+Сохраните её в настройках и создайте дайджест:
 
 ```bash
-news-recap ingest --rss "https://www.inoreader.com/stream/..."
+news-recap config set rss "https://www.inoreader.com/stream/..."
+news-recap ingest
 news-recap create
+news-recap serve
 ```
+
+`news-recap config` показывает файл настроек (`~/.news_recap_data/config.toml`): язык,
+исключаемые и отслеживаемые темы, агент, фиды. Чтобы вместо бесплатного агента работать по
+подписке: `news-recap config set agent claude` (или `codex`).
 
 Или настройте расписание (подробнее в [Запуск по расписанию](automation.md)):
 
 ```bash
-news-recap schedule set --rss "https://www.inoreader.com/stream/..."
-```
-
-Читайте:
-
-```bash
-news-recap serve
+news-recap schedule set
 ```
 
 Полный список команд: [CLI](cli.md).
+
+## Дополнительно: Jev {#jev}
+
+[TypeSafe Jev](https://docs.typesafe.ai/) может взять на себя два решения «да/нет» вместо LLM:
+какие заголовки исключить или переписать (`classify_backend`) и какие статьи — дубликаты
+(`dedup_backend`). Нужен платный ключ API (для classify заметно меньше \$1 в месяц, для dedup
+около \$0.75); он экономит запуски агента, что важно на бесплатном тарифе Antigravity.
+
+Положите ключ в `~/.news_recap_data/.env` (не в `config.toml`):
+
+```bash
+echo "TYPESAFE_API_KEY=..." >> ~/.news_recap_data/.env
+news-recap config set classify_backend jev
+news-recap config set dedup_backend jev
+```
+
+Jev читает исключаемые темы буквально, поэтому формулируйте их как предмет новости:
+«Croatian domestic news», а не «Croatian news». Без ключа оба шага остаются на LLM.

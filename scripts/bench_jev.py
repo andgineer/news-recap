@@ -149,7 +149,7 @@ class Bench:
 
     @classmethod
     def from_settings(cls) -> Bench:
-        settings = Settings.from_env()
+        settings = Settings.load()
         return cls(
             root=settings.data_dir / "bench",
             workdir_root=settings.orchestrator.workdir_root,
@@ -1967,7 +1967,7 @@ def dedup_titles_report(rows: Sequence[Mapping[str, Any]]) -> list[str]:
 
 
 def _cmd_dedup_titles(bench: Bench, args: argparse.Namespace) -> None:
-    settings = Settings.from_env()
+    settings = Settings.load()
     probs = stored_dedup_probs(bench, PAIR_STATE, CHOSEN_DEDUP_QUESTION, DEFAULT_JEV_MODEL)
     labels = read_dedup_labels(bench.labels("dedup"))
     rows: list[dict[str, Any]] = []

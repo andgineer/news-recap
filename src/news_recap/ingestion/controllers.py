@@ -31,7 +31,7 @@ class IngestionCliController:
     """Coordinates ingestion command execution."""
 
     def run_daily(self, command: DailyIngestionCommand) -> IngestionResult:
-        settings = Settings.from_env()
+        settings = Settings.load()
         settings.validate_for_rss(override_feed_urls=command.feed_urls)
         feed_urls = _effective_feed_urls(command.feed_urls, settings)
         with _store(settings) as store:

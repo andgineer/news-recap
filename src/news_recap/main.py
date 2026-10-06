@@ -31,7 +31,7 @@ from news_recap.ingestion.controllers import (
     IngestionCliController,
     IngestionResult,
 )
-from news_recap.operation_configure import operation_configure
+from news_recap.operation_config import set_config, show_config
 from news_recap.recap.digest_info import (
     DigestInfoController,
     _fmt_dt,
@@ -77,7 +77,7 @@ def _common_article_options(fn):  # type: ignore[no-untyped-def]
             default=None,
             help=(
                 "Max days to look back for articles"
-                " (default: 2, env NEWS_RECAP_DIGEST_LOOKBACK_DAYS)."
+                " (default: ingestion.lookback_days in config.toml)."
             ),
         ),
         click.option(
@@ -447,10 +447,28 @@ def serve(
     )
 
 
-@news_recap.command("configure")
-def configure_cmd() -> None:
-    """View and edit persistent user preferences (language, exclude, follow, default agent)."""
-    for severity, text in operation_configure():
+@click.group("config", invoke_without_command=True)
+@click.pass_context
+def config_group(ctx: click.Context) -> None:
+    """Show the settings in config.toml, creating it on first use."""
+    if ctx.invoked_subcommand is None:
+        for severity, text in show_config():
+            _emit_styled(severity, text)
+
+
+news_recap.add_command(config_group)
+
+
+@config_group.command("set")
+@click.argument("key")
+@click.argument("values", nargs=-1, required=True)
+def config_set(key: str, values: tuple[str, ...]) -> None:
+    """Set KEY: language, exclude, follow, agent, rss, classify_backend or dedup_backend.
+
+    rss takes one or more URLs; exclude and follow take one topic per argument.
+    Advanced settings are edited in config.toml directly.
+    """
+    for severity, text in set_config(key, values):
         _emit_styled(severity, text)
 
 
@@ -473,7 +491,7 @@ news_recap.add_command(schedule_group)
     "--agent",
     type=click.Choice(["codex", "claude", "antigravity"], case_sensitive=False),
     default=None,
-    help="LLM agent for the digest step. Omit to use the config default.",
+    help="LLM agent for the digest step. Omit to use the agent in config.toml.",
 )
 @click.option(
     "--time",
@@ -573,7 +591,7 @@ def _emit_prompt(lines: Iterator[PromptLine]) -> None:
 
 
 def _print_info() -> None:
-    settings = Settings.from_env()
+    settings = Settings.load()
     platform = _platform()
     data_dir = settings.data_dir.resolve()
     workdir_root = settings.orchestrator.workdir_root.resolve()
@@ -750,7 +768,7 @@ def _print_digest_detail(digest_id: int) -> None:
         raise SystemExit(1)
 
     console = Console(no_color=NO_COLOR, highlight=not NO_COLOR)
-    settings = Settings.from_env()
+    settings = Settings.load()
     workdir = settings.orchestrator.workdir_root.resolve() / s.pipeline_dir_name
 
     console.print()
@@ -797,7 +815,7 @@ def _print_schedule(meta: ScheduleMeta | None) -> None:
         console.print(f"    {styled} {value}")
 
     _row("Time", meta.time)
-    _row("Agent", meta.agent or "default")
+    _row("Agent", meta.agent or "from config.toml")
     _row("Venv", meta.venv_bin or "no (global news-recap)")
 
     if meta.rss_urls:
@@ -807,6 +825,8 @@ def _print_schedule(meta: ScheduleMeta | None) -> None:
         for url in meta.rss_urls:
             styled_url = f"[cyan]{url}[/cyan]" if not NO_COLOR else url
             console.print(f"    {styled_url}")
+    else:
+        _row("Feeds", "from config.toml")
 
     console.print()
 

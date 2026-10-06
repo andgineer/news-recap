@@ -138,7 +138,7 @@ def resolve_routing_for_enqueue(
         if agent != "claude":
             raise ValueError(
                 f"execution_backend=api requires agent=claude; got agent={agent}.\n"
-                "Pass --agent claude or set NEWS_RECAP_LLM_DEFAULT_AGENT=claude.",
+                'Pass --agent claude or set agent = "claude" in config.toml.',
             )
         model = (
             model_override.strip()
@@ -148,7 +148,7 @@ def resolve_routing_for_enqueue(
         if not model:
             raise ValueError(
                 f"No API model configured for task_type={task_type!r}. "
-                "Add it to api_model_map or set NEWS_RECAP_API_MODEL_MAP.",
+                "Add it to api.model_map in config.toml.",
             )
         command_template = ""
     else:

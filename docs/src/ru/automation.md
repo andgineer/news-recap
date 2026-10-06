@@ -2,17 +2,18 @@
 
 ## Установка
 
-```bash
-news-recap schedule set --rss https://your-feed.com/rss
-```
-
-Можно передать несколько фидов:
+Запуск по расписанию берёт фиды и агента из `config.toml`: задайте их один раз и включите
+расписание:
 
 ```bash
-news-recap schedule set --rss https://feed1.com/rss --rss https://feed2.com/rss
+news-recap config set rss https://feed1.com/rss https://feed2.com/rss
+news-recap schedule set
 ```
 
-Чтобы зафиксировать LLM-агента для шага создания дайджеста:
+Последующие изменения `config.toml` меняют и запуск по расписанию; повторять `schedule set`
+не нужно.
+
+Чтобы зафиксировать фиды или агента в самом расписании (тогда они важнее `config.toml`):
 
 ```bash
 news-recap schedule set --rss https://your-feed.com/rss --agent claude
@@ -21,20 +22,13 @@ news-recap schedule set --rss https://your-feed.com/rss --agent claude
 Чтобы изменить время ежедневного запуска (по умолчанию 03:00):
 
 ```bash
-news-recap schedule set --rss https://your-feed.com/rss --time 07:30
+news-recap schedule set --time 07:30
 ```
 
 Чтобы использовать текущий Python venv вместо глобально установленного `news-recap`:
 
 ```bash
-news-recap schedule set --rss https://your-feed.com/rss --venv
-```
-
-Или задать переменную `NEWS_RECAP_RSS_FEED_URLS` (URL через запятую):
-
-```bash
-export NEWS_RECAP_RSS_FEED_URLS="https://feed1.com/rss,https://feed2.com/rss"
-news-recap schedule set
+news-recap schedule set --venv
 ```
 
 Команда автоматически определит платформу и установит:

@@ -127,27 +127,18 @@ def test_resolve_rss_urls_from_cli():
     assert urls == ("https://a.com/rss", "https://b.com/rss")
 
 
-def test_resolve_rss_urls_from_env(monkeypatch):
-    monkeypatch.setenv("NEWS_RECAP_RSS_FEED_URLS", "https://a.com/rss,https://b.com/rss")
-    urls = resolve_rss_urls(())
-    assert urls == ("https://a.com/rss", "https://b.com/rss")
+def test_resolve_rss_urls_follows_config_when_no_cli_urls(write_config):
+    write_config('rss = ["https://a.com/rss"]\n')
+    assert resolve_rss_urls(()) == ()  # nothing baked: the scheduled run reads config.toml
 
 
-def test_resolve_rss_urls_cli_takes_precedence(monkeypatch):
-    monkeypatch.setenv("NEWS_RECAP_RSS_FEED_URLS", "https://env.com/rss")
-    urls = resolve_rss_urls(("https://cli.com/rss",))
-    assert urls == ("https://cli.com/rss",)
+def test_resolve_rss_urls_cli_takes_precedence(write_config):
+    write_config('rss = ["https://a.com/rss"]\n')
+    assert resolve_rss_urls(("https://cli.com/rss",)) == ("https://cli.com/rss",)
 
 
-def test_resolve_rss_urls_error_when_empty(monkeypatch):
-    monkeypatch.delenv("NEWS_RECAP_RSS_FEED_URLS", raising=False)
-    with pytest.raises(UsageError, match="--rss"):
-        resolve_rss_urls(())
-
-
-def test_resolve_rss_urls_env_whitespace_only(monkeypatch):
-    monkeypatch.setenv("NEWS_RECAP_RSS_FEED_URLS", "  ,  , ")
-    with pytest.raises(UsageError, match="--rss"):
+def test_resolve_rss_urls_error_when_no_feeds_anywhere():
+    with pytest.raises(UsageError, match="config set rss"):
         resolve_rss_urls(())
 
 
@@ -177,15 +168,14 @@ def test_schedule_delete_cli_help():
 
 
 def test_schedule_set_requires_rss(monkeypatch):
-    monkeypatch.delenv("NEWS_RECAP_RSS_FEED_URLS", raising=False)
     runner = CliRunner()
     result = runner.invoke(news_recap, ["schedule", "set"])
     assert result.exit_code != 0
     assert "--rss" in result.output
 
 
-def test_schedule_set_with_rss_from_env(monkeypatch):
-    monkeypatch.setenv("NEWS_RECAP_RSS_FEED_URLS", "https://example.com/feed.xml")
+def test_schedule_set_with_rss_from_config(monkeypatch, write_config):
+    write_config('rss = ["https://example.com/feed.xml"]\n')
 
     calls: list[dict] = []
 
@@ -206,14 +196,13 @@ def test_schedule_set_with_rss_from_env(monkeypatch):
     result = runner.invoke(news_recap, ["schedule", "set"])
     assert result.exit_code == 0
     assert len(calls) == 1
-    assert calls[0]["rss_urls"] == ("https://example.com/feed.xml",)
+    assert calls[0]["rss_urls"] == ()
     assert calls[0]["hour"] == 3
     assert calls[0]["minute"] == 0
     assert calls[0]["venv_bin"] is None
 
 
 def test_schedule_set_with_rss_option(monkeypatch):
-    monkeypatch.delenv("NEWS_RECAP_RSS_FEED_URLS", raising=False)
 
     calls: list[dict] = []
 
@@ -232,7 +221,6 @@ def test_schedule_set_with_rss_option(monkeypatch):
 
 
 def test_schedule_set_with_agent_option(monkeypatch):
-    monkeypatch.delenv("NEWS_RECAP_RSS_FEED_URLS", raising=False)
 
     calls: list[dict] = []
 
@@ -251,7 +239,6 @@ def test_schedule_set_with_agent_option(monkeypatch):
 
 
 def test_schedule_set_with_time_option(monkeypatch):
-    monkeypatch.delenv("NEWS_RECAP_RSS_FEED_URLS", raising=False)
 
     calls: list[dict] = []
 

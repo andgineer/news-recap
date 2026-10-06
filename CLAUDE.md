@@ -55,14 +55,16 @@ All persistence uses `msgspec.Struct` models serialized to JSON files via `stora
 - **`msgspec.Struct`** for all domain models — same struct is used for storage, pipeline transfer, and agent serialization. No `to_dict()`/`from_dict()` boilerplate.
 - **File-based contracts** (`contracts.py`): task I/O uses JSON files in per-task workdirs managed by `TaskWorkdirManager`.
 - **Routing** (`agents/routing.py`): `FrozenRouting` resolves agent + profile (fast/quality) → concrete model.
-- **All settings** via `Settings.from_env()` in `config.py` (dataclass + env vars, no config files).
+- **All settings** via `Settings.load()` in `config.py`: dataclass defaults overridden by
+  `<data_dir>/config.toml` (`config_file.py`; edited with `news-recap config`). Env vars only
+  for secrets (agent API keys; `TYPESAFE_API_KEY`, also read from `.env`) and `NEWS_RECAP_DATA_DIR`.
 
 ## Documentation
 
 All project documentation lives in `spec/`. The directory is flat — no subdirectory split by type. Current files:
 
 - `spec/pipeline.md` — recap pipeline architecture, per-step contracts, state/checkpointing, experiments.
-- `spec/agents.md` — LLM agent backends: available models, manifest contract, workdir layout, command templates, pricing, env vars.
+- `spec/agents.md` — LLM agent backends: available models, manifest contract, workdir layout, command templates, configuration.
 
 ## Coding Conventions
 

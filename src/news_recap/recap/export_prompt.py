@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 import click
+import msgspec
 
 from news_recap.config import Settings
 from news_recap.ingestion.repository import IngestionStore
@@ -40,7 +41,6 @@ from news_recap.recap.pipeline_setup import (
     since_display_date,
 )
 from news_recap.storage.io import load_msgspec
-from news_recap.user_config import UserConfigManager
 
 _DEFAULT_GROUP_THRESHOLD = 0.65
 
@@ -211,9 +211,10 @@ class PromptCliController:
             command.all_articles,
         )
 
-        settings = Settings.from_env()
-        cfg_mgr = UserConfigManager(settings.data_dir)
-        preferences = cfg_mgr.build_preferences(language_override=command.language)
+        settings = Settings.load()
+        preferences = settings.preferences
+        if command.language is not None:
+            preferences = msgspec.structs.replace(preferences, language=command.language)
 
         if command.from_digest is not None:
             kept_articles, since_date = self._load_digest_articles(

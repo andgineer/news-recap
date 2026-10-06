@@ -131,7 +131,7 @@ def create_app(
     digest instead of searching by today's date.
     """
     app = Flask(__name__, template_folder="templates")
-    _settings = settings or Settings.from_env()  # noqa: F841
+    _settings = settings or Settings.load()  # noqa: F841
 
     @app.template_filter("nl2br")
     def nl2br(value: str) -> Markup:
@@ -186,7 +186,7 @@ class WebCliController:
     """Launch the Flask digest viewer."""
 
     def serve(self, command: WebServeCommand) -> Iterator[str]:
-        settings = Settings.from_env()
+        settings = Settings.load()
         workdir_root = settings.orchestrator.workdir_root.resolve()
 
         if command.digest_id is not None:

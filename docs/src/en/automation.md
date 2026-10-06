@@ -2,17 +2,17 @@
 
 ## Setup
 
-```bash
-news-recap schedule set --rss https://your-feed.com/rss
-```
-
-Multiple feeds:
+The scheduled run uses the feeds and agent from `config.toml`, so set them once and schedule:
 
 ```bash
-news-recap schedule set --rss https://feed1.com/rss --rss https://feed2.com/rss
+news-recap config set rss https://feed1.com/rss https://feed2.com/rss
+news-recap schedule set
 ```
 
-To pin a specific LLM agent for the digest step:
+Changing `config.toml` later changes what the scheduled run does; no need to re-run
+`schedule set`.
+
+To pin feeds or an agent into the scheduled run instead (they then override `config.toml`):
 
 ```bash
 news-recap schedule set --rss https://your-feed.com/rss --agent claude
@@ -21,20 +21,13 @@ news-recap schedule set --rss https://your-feed.com/rss --agent claude
 To change the daily run time (default 03:00):
 
 ```bash
-news-recap schedule set --rss https://your-feed.com/rss --time 07:30
+news-recap schedule set --time 07:30
 ```
 
 To use the current Python venv instead of global `news-recap`:
 
 ```bash
-news-recap schedule set --rss https://your-feed.com/rss --venv
-```
-
-Or set `NEWS_RECAP_RSS_FEED_URLS` (comma-separated):
-
-```bash
-export NEWS_RECAP_RSS_FEED_URLS="https://feed1.com/rss,https://feed2.com/rss"
-news-recap schedule set
+news-recap schedule set --venv
 ```
 
 The command auto-detects the platform and installs:

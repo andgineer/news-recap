@@ -423,7 +423,7 @@ def _make_articles_in_store(store_mock: MagicMock) -> list[DigestArticle]:
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.IngestionStore")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_from_sets_since_date_and_lookback(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -446,7 +446,7 @@ def test_from_sets_since_date_and_lookback(
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.IngestionStore")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_to_filters_articles(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -469,7 +469,7 @@ def test_to_filters_articles(
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.IngestionStore")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_selection_params_persisted(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -492,7 +492,7 @@ def test_selection_params_persisted(
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.IngestionStore")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_fresh_skips_resume(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -516,7 +516,7 @@ def test_fresh_skips_resume(
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.IngestionStore")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_runtime_override_still_resumes(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -568,7 +568,7 @@ class TestEffectiveTo:
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.IngestionStore")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_to_only_filters_articles(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -598,7 +598,7 @@ def test_to_only_filters_articles(
 
 @patch("news_recap.recap.launcher.recap_flow")
 @patch("news_recap.recap.launcher.IngestionStore")
-@patch("news_recap.recap.launcher.Settings.from_env")
+@patch("news_recap.recap.launcher.Settings.load")
 def test_from_datetime_passes_datetime_as_since(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -628,7 +628,7 @@ def test_from_datetime_passes_datetime_as_since(
 @patch("news_recap.recap.export_prompt.reorder_articles")
 @patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder")
 @patch("news_recap.recap.export_prompt.IngestionStore")
-@patch("news_recap.recap.export_prompt.Settings.from_env")
+@patch("news_recap.recap.export_prompt.Settings.load")
 def test_prompt_no_ai_to_only_filters(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -672,7 +672,7 @@ def test_prompt_no_ai_to_only_filters(
 @patch("news_recap.recap.export_prompt._copy_to_clipboard", return_value=True)
 @patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder")
 @patch("news_recap.recap.export_prompt.IngestionStore")
-@patch("news_recap.recap.export_prompt.Settings.from_env")
+@patch("news_recap.recap.export_prompt.Settings.load")
 def test_prompt_no_ai_from_sets_since(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -713,7 +713,7 @@ def test_prompt_no_ai_from_sets_since(
 @patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder")
 @patch("news_recap.recap.export_prompt.recap_flow")
 @patch("news_recap.recap.export_prompt.IngestionStore")
-@patch("news_recap.recap.export_prompt.Settings.from_env")
+@patch("news_recap.recap.export_prompt.Settings.load")
 def test_prompt_ai_to_filters_articles_in_pipeline_input(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -797,7 +797,7 @@ def test_prompt_validation_from_with_max_days() -> None:
 @patch("news_recap.recap.export_prompt.SentenceTransformerEmbedder")
 @patch("news_recap.recap.export_prompt.recap_flow")
 @patch("news_recap.recap.export_prompt.IngestionStore")
-@patch("news_recap.recap.export_prompt.Settings.from_env")
+@patch("news_recap.recap.export_prompt.Settings.load")
 def test_prompt_ai_resume_applies_agent_override(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,
@@ -854,7 +854,7 @@ def test_prompt_ai_resume_applies_agent_override(
 
 @patch("news_recap.recap.export_prompt.recap_flow")
 @patch("news_recap.recap.export_prompt.IngestionStore")
-@patch("news_recap.recap.export_prompt.Settings.from_env")
+@patch("news_recap.recap.export_prompt.Settings.load")
 def test_prompt_ai_empty_after_filter_short_circuits(
     mock_env: MagicMock,
     mock_store_cls: MagicMock,

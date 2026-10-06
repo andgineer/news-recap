@@ -127,34 +127,12 @@ agy {model} --dangerously-skip-permissions --output-format json -p "Read your ta
 
 Token usage: the envelope's input, output, thinking, cache-read and total tokens are saved per task. Measured 2026-10-05 with `gemini-3.7-flash --effort low`: a "Reply OK" launch used 12,921 input tokens, which is the per-launch agent overhead, and a 20-headline classify launch used 25,117 input and 2,245 output tokens.
 
-## Pricing Configuration
+## Configuration
 
-Set `NEWS_RECAP_LLM_PRICING` env var. Format: `agent:model:input_per_1m_usd:output_per_1m_usd`, comma-separated.
-
-```bash
-export NEWS_RECAP_LLM_PRICING="codex:gpt-5.6-luna:0.20:1.20,codex:gpt-5.6-terra:2.00:12.00,codex:gpt-5.6-sol:4.00:20.00,gemini:gemini-3.7-flash:0.75:3.75,gemini:gemini-3.5-flash-lite:0.30:2.50,claude:claude-haiku-4-5-20251001:1.00:5.00,claude:claude-sonnet-5:2.00:10.00"
-```
-
-Wildcards supported: `codex:*:1.50:6.00` or `*:*:2.00:8.00`.
-
-When only `total_tokens` is available (no input/output split), cost is estimated using the average of input and output prices.
-
-## Env Var Reference
-
-| Variable | Default | Description |
-|---|---|---|
-| `NEWS_RECAP_LLM_DEFAULT_AGENT` | `codex` | Default agent for new tasks |
-| `NEWS_RECAP_LLM_CODEX_COMMAND_TEMPLATE` | see above | Codex CLI template |
-| `NEWS_RECAP_LLM_CLAUDE_COMMAND_TEMPLATE` | see above | Claude CLI template |
-| `NEWS_RECAP_LLM_GEMINI_COMMAND_TEMPLATE` | see above | Gemini CLI template |
-| `NEWS_RECAP_LLM_CODEX_MODEL_FAST` | `gpt-5.6-luna` | Codex fast profile model |
-| `NEWS_RECAP_LLM_CODEX_MODEL_QUALITY` | `gpt-5.6-sol` | Codex quality profile model |
-| `NEWS_RECAP_LLM_CLAUDE_MODEL_FAST` | `haiku` | Claude fast profile model |
-| `NEWS_RECAP_LLM_CLAUDE_MODEL_QUALITY` | `claude-opus-5` | Claude quality profile model |
-| `NEWS_RECAP_LLM_GEMINI_MODEL_FAST` | `gemini-3.5-flash-lite` | Gemini fast profile model |
-| `NEWS_RECAP_LLM_GEMINI_MODEL_QUALITY` | `gemini-3.7-flash` | Gemini quality profile model |
-| `NEWS_RECAP_BACKEND_CAPABILITY_MODE` | `manifest_native` | `manifest_native` or `stdout_parser_fallback` |
-| `NEWS_RECAP_LLM_PRICING` | (empty) | Token pricing map |
+The agent, the per-task model flags and the API-mode settings are user settings in
+`<data_dir>/config.toml` (the `agent` key and the `[llm]` and `[api]` sections), with the
+release defaults written there commented out. Agent API keys are secrets: they come only from
+the environment and are stripped from agent subprocesses unless API mode needs them.
 
 ## Quick Test Run
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from news_recap.config import Settings
+from news_recap.recap.models import UserPreferences
 
 _ECHO_AGENT_COMMAND_TEMPLATE = (
     f"{sys.executable} -m news_recap.recap.agents.echo --prompt-file {{prompt_file}}"
@@ -17,29 +19,40 @@ _ECHO_AGENT_COMMAND_TEMPLATE = (
 
 
 @pytest.fixture(autouse=True)
-def _jev_backends_llm(monkeypatch):
-    # ./.env may hold a real TYPESAFE_API_KEY, which would make classify and dedup call live Jev.
-    monkeypatch.setenv("NEWS_RECAP_CLASSIFY_BACKEND", "llm")
-    monkeypatch.setenv("NEWS_RECAP_DEDUP_BACKEND", "llm")
+def _isolated_data_dir(monkeypatch, tmp_path_factory):
+    # The developer's ~/.news_recap_data (config.toml, .env with a real key) must not reach tests.
+    monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(tmp_path_factory.mktemp("data")))
+
+
+@pytest.fixture()
+def write_config():
+    """Write ``config.toml`` into the test's isolated data dir."""
+
+    def write(text: str) -> Path:
+        path = Path(os.environ["NEWS_RECAP_DATA_DIR"]) / "config.toml"
+        path.write_text(text, "utf-8")
+        return path
+
+    return write
 
 
 @pytest.fixture()
 def echo_agent(monkeypatch):
-    """Monkeypatch Settings.from_env to use the echo agent for codex."""
-    original_from_env = Settings.from_env
+    """Monkeypatch Settings.load to use the echo agent for codex."""
+    original_load = Settings.load
 
-    def _patched_from_env(**kwargs):
-        settings = original_from_env(**kwargs)
+    def _patched_load(**kwargs):
+        settings = original_load(**kwargs)
         new_orch = replace(
             settings.orchestrator, codex_command_template=_ECHO_AGENT_COMMAND_TEMPLATE
         )
         return replace(settings, orchestrator=new_orch)
 
-    monkeypatch.setattr(Settings, "from_env", staticmethod(_patched_from_env))
+    monkeypatch.setattr(Settings, "load", staticmethod(_patched_load))
 
 
 def make_settings_mock(tmp_path: Path) -> MagicMock:
-    """Build a ``MagicMock`` mimicking ``Settings.from_env()`` for controller tests."""
+    """Build a ``MagicMock`` mimicking ``Settings.load()`` for controller tests."""
     settings = MagicMock()
     settings.orchestrator.workdir_root = tmp_path / "workdirs"
     settings.orchestrator.default_agent = "codex"
@@ -67,4 +80,5 @@ def make_settings_mock(tmp_path: Path) -> MagicMock:
     settings.jev.model = "jev-1.13.0"
     settings.jev.classify_backend = "llm"
     settings.jev.dedup_backend = "llm"
+    settings.preferences = UserPreferences()
     return settings

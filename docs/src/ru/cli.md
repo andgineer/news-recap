@@ -11,16 +11,18 @@
 - `list`: показать завершённые дайджесты и непокрытые периоды.
 - `delete`: удалить дайджест, чтобы его статьи стали доступны для следующего.
 - `serve`: запуск веб-просмотрщика дайджестов.
-- `configure`: просмотр и редактирование пользовательских настроек.
+- `config`: показать файл настроек (создаётся при первом вызове); `config set` меняет настройку.
 - `schedule set`: установить или обновить ежедневный автозапуск.
 - `schedule get`: показать текущую конфигурацию расписания.
 - `schedule delete`: удалить ежедневный автозапуск.
 
 ## Общие Замечания
 
-- Каталог данных задаётся переменной `NEWS_RECAP_DATA_DIR` (по умолчанию `~/.news_recap_data`).
+- Настройки хранятся в `config.toml` в каталоге данных; см. [`config`](#config).
+- Каталог данных — `~/.news_recap_data`; переменная окружения `NEWS_RECAP_DATA_DIR`
+  указывает другой.
 - Данные хранятся в JSON-файлах с ежедневным разбиением; старые партиции
-  удаляются автоматически по значению `NEWS_RECAP_GC_RETENTION_DAYS`.
+  удаляются автоматически через `ingestion.retention_days` дней.
 
 ## Ingestion
 
@@ -35,9 +37,8 @@ news-recap ingest --rss https://example.com/feed.xml
 Ключевые опции:
 - `--rss` (повторяемая)
 
-Если `--rss` не указан, фиды берутся из:
-- `NEWS_RECAP_RSS_FEED_URLS`
-- `NEWS_RECAP_RSS_FEED_URL`
+Если `--rss` не указан, фиды берутся из ключа `rss` в `config.toml`
+(`news-recap config set rss URL [URL …]`).
 
 ## Команды пайплайна дайджеста
 
@@ -59,8 +60,8 @@ news-recap create --from-digest 3
 Ключевые опции:
 - `--agent` (`codex`, `claude` или `antigravity`)
 - `--limit` (ограничить число загружаемых статей)
-- `--max-days` (максимум дней для выборки статей; по умолчанию 2,
-  переменная `NEWS_RECAP_DIGEST_LOOKBACK_DAYS`)
+- `--max-days` (максимум дней для выборки статей; по умолчанию `ingestion.lookback_days`
+  в `config.toml`, 2)
 - `--all` (игнорировать предыдущие дайджесты; брать все статьи
   в пределах окна)
 - `--api` (использовать прямой Anthropic API вместо CLI-агентов)
@@ -97,7 +98,7 @@ news-recap list
 статьями, они показываются в разделе «Uncovered periods».
 
 Старые каталоги пайплайнов автоматически удаляются (тот же срок хранения,
-что и у статей, управляется `NEWS_RECAP_GC_RETENTION_DAYS`).
+что и у статей, `ingestion.retention_days` в `config.toml`).
 
 ### `delete`
 Удалить дайджест, чтобы его статьи стали доступны для следующего.
@@ -125,37 +126,31 @@ news-recap serve 2
 - `--host` — хост для привязки (по умолчанию `127.0.0.1`).
 - `--port` — порт для привязки (по умолчанию `8080`).
 
-### `configure`
-Просмотр и редактирование пользовательских настроек: язык, исключаемые темы,
-отслеживаемые темы и LLM-агент по умолчанию.
-
-Настройки хранятся в `config.json` в каталоге данных
-(показывается командой `news-recap info`). Они используются как значения по
-умолчанию для команд `create` и `prompt` — флаги CLI по-прежнему имеют
-приоритет.
+### `config`
+Показать настройки или изменить одну из них. Файл настроек — `config.toml` в каталоге данных
+(`~/.news_recap_data/config.toml`); первый вызов `news-recap config` создаёт его со значениями
+по умолчанию текущего релиза.
 
 ```bash
-news-recap configure
+news-recap config                                   # путь к файлу и настройки
+news-recap config set rss https://example.com/feed.xml https://example.org/rss
+news-recap config set language en
+news-recap config set agent claude                  # antigravity | codex | claude
+news-recap config set exclude "horoscopes" "sports (except Russia)"
+news-recap config set classify_backend jev          # llm | jev
 ```
 
-Команда показывает текущие значения (с пометкой `(default)` для полей, которые
-ещё не были заданы), затем предлагает выбрать поля для обновления:
+`config set` меняет ключи `language`, `exclude`, `follow`, `agent`, `rss`, `classify_backend`,
+`dedup_backend`. `exclude` и `follow` принимают по одной теме на аргумент и хранятся по одной
+на строку; пояснение в скобках — исключение («sports (except Russia)»). Комментарии и всё
+остальное в файле сохраняются.
 
-```
-Current settings:
-  1. Language:      ru (default)
-  2. Exclude:       horoscopes, medical advice, sports (except Russia), ... (default)
-  3. Follow:        Russia, Serbia, war in Ukraine (default)
-  4. Default Agent: codex (default)
+Остальное в `config.toml` — расширенные настройки, записанные закомментированными со
+значением по умолчанию текущего релиза: приложение следует умолчаниям каждого нового релиза,
+пока вы не раскомментируете строку. См. [справочник настроек](#config-toml).
 
-Select fields to update (comma-separated numbers, 'all', or Enter to skip):
-```
-
-Приоритет значений (от высшего к низшему):
-
-1. Флаги CLI (`--language`, `--agent`)
-2. Файл конфигурации (`config.json`)
-3. Значения по умолчанию в коде
+Приоритет (от высшего к низшему): флаги CLI (`--rss`, `--agent`, `--language`), затем
+`config.toml`, затем значения по умолчанию релиза.
 
 ## API-режим
 
@@ -172,52 +167,74 @@ export ANTHROPIC_API_KEY=sk-ant-...
 news-recap create --api
 ```
 
-Флаг `--api` автоматически задаёт `backend=api` и `agent=claude`. Других переменных окружения не требуется.
+Флаг `--api` включает API-режим и агента `claude` для этого запуска.
 
 ### Таблица моделей по задачам
 
 По умолчанию экономичные этапы используют `claude-haiku-4-5-20251001`, а
-`recap_merge_sections` — `claude-sonnet-5`. Для переопределения отдельных задач
-используйте `NEWS_RECAP_API_MODEL_MAP` (пары `task_type=model_id` через запятую):
+`recap_merge_sections` — `claude-sonnet-5`. Отдельные задачи переопределяются в секции `[api]`
+файла `config.toml`:
 
-```bash
-export NEWS_RECAP_API_MODEL_MAP="recap_merge_sections=claude-sonnet-5,recap_classify=claude-haiku-4-5-20251001"
+```toml
+[api]
+model_map.recap_merge_sections = "claude-sonnet-5"
 ```
 
-### Переменные окружения API-режима
+### Настройки API-режима {#api-settings}
 
-- `NEWS_RECAP_EXECUTION_BACKEND` — `cli` (по умолчанию) или `api`.
-- `NEWS_RECAP_API_MODEL_MAP` — переопределения модели по задачам (`task_type=model_id,...`).
-- `NEWS_RECAP_API_MAX_PARALLEL` — начальный лимит параллелизма (по умолчанию `5`).
-  Автоматически снижается при ошибках rate-limit и восстанавливается после успешных вызовов.
-- `NEWS_RECAP_API_TIMEOUT_SECONDS` — таймаут одного вызова (по умолчанию `120`).
-- `NEWS_RECAP_API_CONCURRENCY_RECOVERY_SUCCESSES` — число последовательных успехов
-  для увеличения лимита параллелизма на 1 после снижения (по умолчанию `10`).
-- `NEWS_RECAP_API_RETRY_MAX_BACKOFF_SECONDS` — потолок экспоненциальной задержки (по умолчанию `60`).
-- `NEWS_RECAP_API_RETRY_JITTER_SECONDS` — равномерный джиттер для каждой задержки (по умолчанию `5`).
-- `NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS` — дополнительная пауза после снижения лимита
-  перед следующей попыткой захвата слота (по умолчанию `2`).
+В секции `[api]` файла `config.toml`:
+
+- `max_parallel` — начальный лимит параллелизма (по умолчанию `5`). Автоматически снижается
+  при ошибках rate-limit и восстанавливается после успешных вызовов.
+- `concurrency_recovery_successes` — число последовательных успехов для увеличения лимита на 1
+  после снижения (по умолчанию `10`).
+- `retry_max_backoff_seconds` — потолок экспоненциальной задержки (по умолчанию `60`).
+- `retry_jitter_seconds` — равномерный джиттер для каждой задержки (по умолчанию `5`).
+- `downshift_pause_seconds` — дополнительная пауза после снижения лимита перед следующей
+  попыткой захвата слота (по умолчанию `2`).
+
+`llm.execution_backend = "api"` (вместе с `agent = "claude"`) делает API-режим режимом по
+умолчанию.
 
 ## Автозапуск
 
 Подробная настройка, платформенные детали, логи и диагностика: [Запуск по расписанию](automation.md).
 
-## Важные Переменные Окружения
+## Справочник настроек (config.toml) {#config-toml}
 
-### Данные и хранение
-- `NEWS_RECAP_DATA_DIR` — корневой каталог для всех файлов данных (по умолчанию `~/.news_recap_data`).
-- `NEWS_RECAP_GC_RETENTION_DAYS` — сколько дней хранить партиции статей (по умолчанию 7).
-- `NEWS_RECAP_DIGEST_LOOKBACK_DAYS` — максимум дней для выборки статей в дайджест (по умолчанию 2).
-  По умолчанию окно начинается от даты последнего успешного дайджеста;
-  `--all` отключает эту привязку.
+Основные ключи (их же меняет `news-recap config set`):
 
-### RSS-фиды
-- `NEWS_RECAP_RSS_FEED_URLS` — список URL фидов через запятую.
-- `NEWS_RECAP_RSS_FEED_URL` — один URL фида (для удобства).
-- `NEWS_RECAP_RSS_DEFAULT_ITEMS_PER_FEED` — максимум элементов на фид.
-- `NEWS_RECAP_RSS_FEED_ITEMS` — переопределения числа элементов по фидам (`<feed_url>|<items>,...`).
+- `language` — язык дайджеста, код BCP-47 (`en`, `ru`, `sr`, …). По умолчанию `ru`.
+- `exclude` — исключаемые темы, по одной на строку. Формулируйте их как предмет новости
+  («Croatian domestic news», а не «Croatian news»): Jev читает темы буквально.
+- `follow` — темы, получающие собственные разделы, по одной на строку.
+- `agent` — `antigravity` (бесплатный тариф Gemini, без ключей; по умолчанию), `codex` или
+  `claude`.
+- `rss` — URL фидов.
+- `classify_backend`, `dedup_backend` — `llm` (по умолчанию) или `jev`; см.
+  [Jev](index.md#jev).
 
-### LLM-агенты
+Расширенные секции, записанные закомментированными со значениями по умолчанию:
+
+- `[ingestion]` — `lookback_days` (максимум дней статей в дайджесте, по умолчанию 2; окно
+  начинается от последнего дайджеста, `--all` берёт всё окно), `retention_days` (сколько дней
+  хранить партиции статей, по умолчанию 7), `page_size`, `max_pages`, `backfill_max_gaps`,
+  `clean_text_max_chars`, `min_resource_chars`.
+- `[fetch]` — загрузка RSS: `default_items_per_feed`, `per_feed_items`
+  (`{ "https://…" = 500 }`), `snapshot_max_age_hours`, `max_retries`, `retry_backoff_seconds`,
+  `request_timeout_seconds`.
+- `[dedup]` — `threshold` (порог эмбеддингового сходства группы-кандидата, по умолчанию 0.9),
+  `model_name`.
+- `[llm]` — `workdir_root`, `execution_backend` (`cli` | `api`) и флаги модели по задаче и
+  агенту: `models.recap_classify.claude = "--model haiku"`.
+- `[api]` — см. [Настройки API-режима](#api-settings).
+
+Переменные окружения — только для секретов и каталога данных:
+
+- `NEWS_RECAP_DATA_DIR` — каталог данных (по умолчанию `~/.news_recap_data`).
+- `TYPESAFE_API_KEY` — ключ Jev; читается также из `.env` в текущем каталоге или в каталоге
+  данных.
+- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ANTIGRAVITY_API_KEY` — ключи API агентов (см. ниже).
 
 > **Подписка vs API-биллинг.** При запуске CLI-агентов (`claude`, `codex`, `antigravity`)
 > как подпроцессов `news-recap create` по умолчанию удаляет ключи API вендоров
@@ -234,10 +251,6 @@ export NEWS_RECAP_API_MODEL_MAP="recap_merge_sections=claude-sonnet-5,recap_clas
 > news-recap create --use-api-key
 > ```
 
-- `NEWS_RECAP_LLM_DEFAULT_AGENT` — агент по умолчанию (`codex`, `claude` или `antigravity`).
-- `NEWS_RECAP_LLM_TASK_MODEL_MAP` — переопределения модели по типу задачи и агенту
-  (`task_type:agent=model_flags,...`).
-
 ## Help
 
 ```bash
@@ -249,7 +262,7 @@ news-recap info --help
 news-recap list --help
 news-recap delete --help
 news-recap serve --help
-news-recap configure --help
+news-recap config --help
 news-recap schedule --help
 news-recap schedule set --help
 ```

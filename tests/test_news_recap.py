@@ -42,7 +42,7 @@ def test_info_shows_app_paths():
     settings.orchestrator.workdir_root = workdir_root
 
     with (
-        patch("news_recap.main.Settings.from_env", return_value=settings),
+        patch("news_recap.main.Settings.load", return_value=settings),
         patch("news_recap.main._platform", return_value="linux"),
         patch("news_recap.main._app_dir", return_value=app_dir),
         patch("news_recap.main._log_dir", return_value=log_dir),

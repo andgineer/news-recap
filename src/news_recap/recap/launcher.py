@@ -32,7 +32,6 @@ from news_recap.recap.pipeline_setup import (
     since_display_date,
 )
 from news_recap.storage.io import load_msgspec
-from news_recap.user_config import UserConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +128,7 @@ def _apply_resume_patches(
     default_agent = routing.get("default_agent") if isinstance(routing, dict) else None
     agent = str(raw.get("agent_override") or default_agent or "").strip().lower()
     if agent:
-        _patch_routing_defaults_for_agent(raw, agent, Settings.from_env())
+        _patch_routing_defaults_for_agent(raw, agent, Settings.load())
 
     path.write_text(json.dumps(raw, ensure_ascii=False, default=str), "utf-8")
 
@@ -385,12 +384,13 @@ class RecapCliController:
             command.all_articles,
         )
 
-        settings = Settings.from_env(
+        settings = Settings.load(
             execution_backend="api" if command.api_mode else None,
         )
         routing_defaults = _build_routing_defaults(settings)
-        cfg_mgr = UserConfigManager(settings.data_dir)
-        preferences = cfg_mgr.build_preferences(language_override=command.language)
+        preferences = settings.preferences
+        if command.language is not None:
+            preferences = msgspec.structs.replace(preferences, language=command.language)
         cap_days, _ = _resolve_article_window(
             command.date_from,
             settings,

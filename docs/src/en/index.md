@@ -18,31 +18,52 @@ a Pro subscription for AI-powered aggregation.
 
 ## Quick start
 
-Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/), then install
-`news-recap`:
+The free way needs no API keys: install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+and the [Antigravity CLI](https://antigravity.google/) (`agy`, signed in with a Google account),
+then install `news-recap`:
 
 ```bash
 uv tool install news-recap --upgrade --python 3.13
-news-recap --help
 ```
 
-Get an RSS URL.
-
-Inoreader example: open the context menu of the folder, choose `Properties`,
+Get an RSS URL. Inoreader example: open the context menu of the folder, choose `Properties`,
 and copy the RSS link shown there.
 
-Run a digest creation manually:
+Save it in your settings and create a digest:
 
 ```bash
-news-recap ingest --rss "https://www.inoreader.com/stream/..."
+news-recap config set rss "https://www.inoreader.com/stream/..."
+news-recap ingest
 news-recap create
 news-recap serve
 ```
 
+`news-recap config` shows your settings file (`~/.news_recap_data/config.toml`): language,
+topics to exclude and follow, agent, feeds. To use a subscription agent instead of the free
+one: `news-recap config set agent claude` (or `codex`).
+
 Or set up scheduling (details in [Scheduled Runs](automation.md)):
 
 ```bash
-news-recap schedule set --rss "https://www.inoreader.com/stream/..."
+news-recap schedule set
 ```
 
 See [CLI](cli.md) for the full command reference.
+
+## Optional: Jev {#optional-jev}
+
+[TypeSafe Jev](https://docs.typesafe.ai/) can take over two yes/no decisions from the LLM: which
+headlines to exclude or rewrite (`classify_backend`) and which articles are duplicates
+(`dedup_backend`). It needs a paid API key (well under \$1 a month for classify, about
+\$0.75 for dedup) and saves agent launches, which matters on the free Antigravity tier.
+
+Put the key in `~/.news_recap_data/.env` (never in `config.toml`):
+
+```bash
+echo "TYPESAFE_API_KEY=..." >> ~/.news_recap_data/.env
+news-recap config set classify_backend jev
+news-recap config set dedup_backend jev
+```
+
+Jev reads exclude topics literally, so phrase them as subjects: "Croatian domestic news",
+not "Croatian news". Without a key, both steps stay on the LLM.

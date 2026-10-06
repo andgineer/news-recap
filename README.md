@@ -17,19 +17,20 @@ to follow, the noise to exclude, and the language to read in.
 
 ## Quick start
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and set up
-one of the supported [CLI agents](spec/agents.md), then run:
+The free way needs no API keys: install [uv](https://docs.astral.sh/uv/getting-started/installation/)
+and the [Antigravity CLI](https://antigravity.google/) (`agy`), then run:
 
 ```bash
 uv tool install news-recap --upgrade --python 3.13
-news-recap ingest --rss "YOUR_RSS_URL"
-news-recap create --agent codex
+news-recap config set rss "YOUR_RSS_URL"
+news-recap ingest
+news-recap create
 news-recap serve
 ```
 
-Use `--agent claude` or `--agent antigravity` to choose another backend.
-For scheduled runs, feed setup, and preferences, see the
-[manual](https://andgineer.github.io/news-recap/).
+Settings live in `~/.news_recap_data/config.toml` (`news-recap config` shows them); use
+`news-recap config set agent claude` or `codex` for a subscription agent. For scheduled runs,
+optional Jev filtering and all settings, see the [manual](https://andgineer.github.io/news-recap/).
 
 ## Under the hood
 
