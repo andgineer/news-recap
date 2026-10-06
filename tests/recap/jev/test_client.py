@@ -89,7 +89,8 @@ def test_decide_keeps_request_order_and_counts_tokens(fake_sdk) -> None:
     assert client.input_tokens == sum(100 + i for i in range(6))
     assert client.requests == 6
     fake = _FakeAsyncClient.instances[0]
-    assert fake.kwargs == {"api_key": "key", "model": "jev-1.13.0"}
+    assert (fake.kwargs["api_key"], fake.kwargs["model"]) == ("key", "jev-1.13.0")
+    assert fake.kwargs["retry"].max_retries == 5
     assert fake.max_in_flight <= 2
     assert fake.closed
 
@@ -131,6 +132,18 @@ def test_sdk_errors_map_to_jev_unavailable(fake_sdk, error: TypeSafeError) -> No
     assert isinstance(raised.value, RecapPipelineError)
     assert raised.value.__cause__ is error
     assert type(error).__name__ in str(raised.value)
+
+
+def test_missing_answer_maps_to_jev_unavailable(fake_sdk) -> None:
+    unanswered = SystemOneResponse.model_validate(
+        {"model": "jev-1.13.0", "usage": {"input_tokens": 7}, "answers": {}},
+    )
+    fake_sdk(lambda state: unanswered if state == 1 else _response(0.5, tokens=10))
+    client = JevClient("key", "jev-1.13.0")
+
+    with pytest.raises(JevUnavailableError, match="no answer to q"):
+        client.decide([(i, _QUESTIONS) for i in range(3)])
+    assert client.input_tokens >= 7
 
 
 def test_other_errors_are_not_mapped(fake_sdk) -> None:

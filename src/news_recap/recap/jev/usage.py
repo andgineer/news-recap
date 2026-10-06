@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
+from typing import Any
 
 PRICE_PER_MTOK = 0.042
 _USAGE_FILENAME = "meta/usage.json"
@@ -30,17 +32,25 @@ def save_jev_usage(
     requests: int,
     model: str,
 ) -> None:
-    """Write ``meta/usage.json`` readable by ``read_agent_usage`` and the run aggregator."""
-    usage = {
-        "elapsed_seconds": round(elapsed, 1),
-        "tokens_used": input_tokens,
-        "total_tokens": input_tokens,
-        "backend": "jev",
-        "requests": requests,
-        "model": model,
-        "cost_usd": round(input_tokens * PRICE_PER_MTOK / 1_000_000, 6),
-    }
+    """Add this run to ``meta/usage.json``, readable by ``read_agent_usage`` and the aggregator.
+
+    A resumed night that asks Jev again is billed again, so earlier runs are kept in the sum.
+    """
     path = task_dir / _USAGE_FILENAME
+    previous: dict[str, Any] = {}
+    if path.exists():
+        with contextlib.suppress(OSError, json.JSONDecodeError):
+            previous = json.loads(path.read_text("utf-8"))
+    tokens = int(previous.get("tokens_used") or 0) + input_tokens
+    usage = {
+        "elapsed_seconds": round(float(previous.get("elapsed_seconds") or 0) + elapsed, 1),
+        "tokens_used": tokens,
+        "total_tokens": tokens,
+        "backend": "jev",
+        "requests": int(previous.get("requests") or 0) + requests,
+        "model": model,
+        "cost_usd": round(tokens * PRICE_PER_MTOK / 1_000_000, 6),
+    }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(usage), "utf-8")
 

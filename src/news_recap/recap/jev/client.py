@@ -10,6 +10,7 @@ from typesafe_sdk import (
     AsyncTypeSafeClient,
     JSONContent,
     Question,
+    RetryPolicy,
     SystemOneResponse,
     TypeSafeError,
 )
@@ -18,6 +19,9 @@ from news_recap.config import resolve_typesafe_api_key
 from news_recap.recap.exceptions import RecapPipelineError
 
 MAX_CONCURRENCY = 16
+# One request failing after its retries sends the whole step to its LLM path (agy launches), so
+# retry longer than the SDK's default of 2.
+_RETRY = RetryPolicy(max_retries=5)
 
 JevRequest = tuple[JSONContent, Mapping[str, Question]]
 
@@ -45,19 +49,28 @@ class JevClient:
             return []
         try:
             return asyncio.run(self._decide_all(requests))
+        except* JevUnavailableError as group:
+            raise group.exceptions[0] from None
         except* TypeSafeError as group:
             error = group.exceptions[0]
             raise JevUnavailableError(f"{type(error).__name__}: {error}") from error
 
     async def _decide_all(self, requests: Sequence[JevRequest]) -> list[SystemOneResponse]:
         semaphore = asyncio.Semaphore(self.max_concurrency)
-        async with AsyncTypeSafeClient(api_key=self._api_key, model=self.model) as client:
+        async with AsyncTypeSafeClient(
+            api_key=self._api_key,
+            model=self.model,
+            retry=_RETRY,
+        ) as client:
 
             async def one(state: JSONContent, questions: Mapping[str, Question]):
                 async with semaphore:
                     response = await client.system_one(state=state, questions=questions)
                 self.input_tokens += response.usage.input_tokens or 0
                 self.requests += 1
+                # The SDK drops answers of types it does not model.
+                if missing := sorted(set(questions) - set(response.answers)):
+                    raise JevUnavailableError(f"no answer to {', '.join(missing)}")
                 return response
 
             async with asyncio.TaskGroup() as group:

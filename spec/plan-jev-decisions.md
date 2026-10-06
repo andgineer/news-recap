@@ -12,7 +12,7 @@ A change ships only if it lowers agy token use or improves the digest, without m
 worse. Two outcomes, each measured against a baseline recorded under *Evidence*:
 
 1. **A digest every night.** Baseline: 21 of 32 nights (2026-09-04 … 10-05).
-2. **Fewer agy tokens per night, digest no worse.** Baseline: 629k agy tokens on 10-06 (502k
+2. **Fewer agy tokens per night, digest no worse.** Baseline: 629k agy tokens on 10-06 (≈515k
    after Stage 3). Quality gates per step: no more wrongly dropped stories, no more wrongly merged
    ones, and duplicates removed at least as reliably as today.
 
@@ -128,9 +128,9 @@ classify (Jev) → load_resources → enrich (LLM) → deduplicate (Jev) → one
   of an agy launch per batch of clusters (Stage 5).
 - Everything else is unchanged.
 
-agy on 10-06: 17 launches / 629k tokens before Stage 3, 14 / 502k after it, 8 / ≈345k after
-Stage 5 (enrich 3, oneshot_digest 3, merge_sections, refine_layout). On the median night: 12 →
-9 → 5.
+agy on 10-06: 17 launches / 629k tokens before Stage 3, 14 / ≈515k after it, 8 / ≈358k after
+Stage 5 (enrich 3, oneshot_digest 3, merge_sections, refine_layout), counting ≈13k more enrich
+tokens for Jev's extra vague headlines. On the median night: 12 → 9 → 5.
 
 ## Decisions
 
@@ -486,8 +486,8 @@ archived night except the holdout (09-29, 09-30, 10-01, 10-06):
 | tuning, 1 519 articles, 227 multi-article blocks | 47 (20.7%) ❌ | 2.2% | 15 / 14 of 16 |
 | holdout, 239 articles, 32 blocks | 7 (21.9%) ❌ | 4.6% | 1 / 1 of 2 |
 
-- Follow placement agrees with today's digests 98–100% in both directions (Serbia 365/366
-  LLM→Jev, 365/371 Jev→LLM on tuning nights).
+- Follow placement agrees with today's digests on tuning nights: Serbia 365/366 LLM→Jev and
+  365/371 Jev→LLM, Russia 69/69 and 69/76, war in Ukraine 28/30 both ways.
 - Of the 54 split blocks, 43 separate different stories that today's LLM bundled by theme
   (DoorDash drones + FedEx trucks); 11 (4.2% of 259 blocks) put one news event in two sections
   (French student protests in Society and in International politics; BMW pricing in Economy and
@@ -580,15 +580,19 @@ net at ≥ 0.70; every Jev/Gemini disagreement labelled, unlabelled agreements c
   ("Nvidia unveiled an AI-agent safety platform and announced a record buyback"); only one
   reaction is lost ("Spaniards welcome snap election"). A Jev merge shows one existing title, so
   its wrong merge hides the other story (OpenAI's office suite under OpenAI's app-store story).
-  Most of Jev's 8 wrongly merged groups (7 tuning, 1 holdout) are reports of one event at
-  different moments or two speeches by one person. In articles, tuning nights: Jev wrongly removes 7 (Gemini 17), leaves 15
-  duplicates inside candidate groups (Gemini 6), and with the wider net removes ≈166 true
-  duplicates (Gemini 132). **Dedup on Jev is a token saving at about today's quality, not a
-  quality gain.**
+  Most of Jev's wrongly merged pairs are reports of one event at different moments or two
+  speeches by one person. In articles, with the wider net: on the tuning nights Jev removes 151
+  true duplicates (Gemini 132) and 9 different stories (Gemini 17), and every one of Jev's 9
+  disappears from the digest, where 15 of Gemini's 16 groups keep the story in the merged
+  headline; on the holdout, 9 / 7 duplicates and 2 / 2 different stories (both of Gemini's kept in
+  its headline).
 - Wider net (similarity 0.85–0.90, outside today's candidate groups, which today's pipeline never
-  examines): Jev merges 46 pairs on the tuning nights, 43 labelled same (93%), and 5 on the
-  holdout, 4 same; 47 of 51 (92%, 95% interval 81–97%) overall, above the 90% bar. The holdout
-  alone (4 of 5) is too small to decide, so Stage 7 checks it on new nights. Typical catches are
+  examines): Jev says "same" for 46 pairs on the tuning nights, 43 labelled same (93%), and 5 on
+  the holdout, 4 same; 47 of 51 (92%, 95% interval 81–97%) overall, above the 90% bar. The holdout
+  alone (4 of 5) is too small to decide, so Stage 7 checks it on new nights. Star grouping merges
+  an outsider only when it matches the group's keeper, so on the tuning nights these pairs remove
+  30 articles (28 duplicates, 2 different stories), ≈ 7 duplicates a night; a translation that
+  matches only a non-keeper member stays (Starship's orbit in Serbian on 09-29). Typical catches are
   translations and paraphrases: Starship's first orbit in Serbian and English, the Kyiv academy
   strike in Croatian and English, the Vučić → Brnabić handover reports.
 - Live check on a copy of night 10-06 (real embedder, real Jev, no agy): 452 articles → 410
@@ -745,8 +749,8 @@ agy figures are the 10-06 night (412 articles); Jev from the bench.
 | After | agy launches / tokens | Jev \$/month | Measured quality change |
 |---|---|---|---|
 | Stage 0 | 17 / 629k | 0 | nights lost to `load_resources`: 3/32 → 0 |
-| Stage 3 | 14 / 502k | ≈ 0.48 | wrong excludes 4 vs 13 (tuning), 0 vs 0 (holdout); ≈ 4 more vague headlines a night, ≈ 13k more enrich tokens |
-| Stage 5 | 8 / ≈345k | ≈ 0.48 + 2.2 | about today's: fewer wrong merges (13 vs 31 pairs, in-sample) but each hides the other story, where today's rewritten headline keeps it; wider net adds ≈ 11 true duplicates a night at 92% (in-sample); merged groups show an existing title, not an LLM headline in the output language (32 on 10-06) |
+| Stage 3 | 14 / ≈515k | ≈ 0.48 | wrong excludes 4 vs 13 (tuning), 0 vs 0 (holdout); ≈ 4 more vague headlines a night, ≈ 13k more enrich tokens |
+| Stage 5 | 8 / ≈358k | ≈ 0.48 + 2.2 | about today's: fewer wrong merges (13 vs 31 pairs, in-sample) but each hides the other story, where today's rewritten headline keeps it; wider net adds ≈ 7 true duplicates a night (in-sample); merged groups show an existing title, not an LLM headline in the output language (32 on 10-06) |
 
 ## Risks
 

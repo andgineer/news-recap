@@ -22,6 +22,16 @@ def test_usage_round_trips_through_read_agent_usage(tmp_path: Path) -> None:
     assert data["cost_usd"] == 0.0147
 
 
+def test_a_second_run_adds_to_the_usage(tmp_path: Path) -> None:
+    task_dir = jev_task_dir(tmp_path, "dedup")
+    save_jev_usage(task_dir, elapsed=1.0, input_tokens=400_000, requests=10, model="jev-1.13.0")
+    save_jev_usage(task_dir, elapsed=2.0, input_tokens=600_000, requests=20, model="jev-1.13.0")
+
+    data = json.loads((task_dir / "meta" / "usage.json").read_text("utf-8"))
+    assert (data["tokens_used"], data["requests"], data["elapsed_seconds"]) == (1_000_000, 30, 3.0)
+    assert data["cost_usd"] == 0.042
+
+
 def test_run_aggregator_keeps_jev_out_of_agent_tokens(tmp_path: Path) -> None:
     save_jev_usage(
         jev_task_dir(tmp_path, "dedup"),

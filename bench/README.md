@@ -67,9 +67,10 @@ One row per pair (1 763):
 - `jev_p`: `jev-1.13.0` probability of "same piece of news", headline-only state.
 - `jev_merged`: what the pipeline merges — for `group`, both articles in one star group of their
   candidate group at ≥ 0.40 (keeper = longest text, so not recomputable from `jev_p` alone); for
-  `wide`, `jev_p` ≥ 0.70.
+  `wide`, `jev_p` ≥ 0.70, i.e. Jev says "same" (star grouping still leaves 7 of the 46 such
+  tuning-night pairs unmerged, those matching only a non-keeper member).
+- `label`, `labeler`: `same` | `different` for 319 pairs, all by `claude-opus-5-5`, under the
+  rule in Stage 5; `null` elsewhere.
 
 Scoring: a pair's truth is its label; an unlabelled pair counts only when `jev_merged` and
 `gemini_merged` agree (and then as correct); every disagreement is labelled.
-- `label`, `labeler`: `same` | `different` for 319 pairs, all by `claude-opus-5-5`, under the
-  rule in Stage 5; `null` elsewhere.
