@@ -24,3 +24,27 @@ One row per headline of the four nights with a Gemini classify verdict (1 736):
 
 Scoring: a row's truth is its label; an unlabelled row counts only when Jev and Gemini agree
 (and then as correct — 59 of 60 sampled agreements were); every disagreement is labelled.
+
+## `route-2026-10-06.jsonl`, `route-splits-2026-10-06.jsonl`
+
+**Claim** (`spec/plan-jev-decisions.md`, Stage 4): routing articles to fixed sections on Jev
+before writing places follow topics as well as today's LLM, but splits 20.7% of today's
+multi-article blocks across sections (21.9% on the holdout), and 11 of 259 blocks put one news
+event in two sections; so routing was rejected.
+
+`route-2026-10-06.jsonl`, one row per kept article of the five archived nights (1 758):
+
+- `llm_follow`: the follow section today's digest placed the article in (`Russia`, `Serbia`,
+  `war in Ukraine`) or `none`; `null` when the article is in no block (the writer excluded it).
+- `jev_p`: `jev-1.13.0` probabilities, `url` state (headline or enriched title, source, URL,
+  first 300 chars of text). `s1`…`s3` are yes-probabilities of one Noul per follow topic in the
+  order above; `s4`…`s9` and `other` are one Choice over the general sections (International
+  politics and security, Technology and AI, Consumer tech and guides, Economy and business,
+  Science and nature, Society and culture).
+- `jev_section`: the section picked with follow ≥ 0.30, confidence ≥ 0.40.
+- `label`, `labeler`: accepted follow placements for the 53 follow disagreements, all by
+  `claude-opus-5-5`; `boundary` tags the items labelled "either" (Kosovo, Republika Srpska).
+
+`route-splits-2026-10-06.jsonl`, one row per block of today's digests that the picked sections
+split (54): the block's headlines, `same_story` (the split separates reports of one news event),
+`story`, and `follow_angle` where a follow section got a local reaction to the event.

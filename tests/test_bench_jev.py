@@ -427,3 +427,276 @@ def test_write_pending_dedupes_and_replaces(tmp_path):
     assert bench_jev.read_items(path) == [Item("p", "a"), Item("p", "b")]
     assert bench_jev.write_pending(path, []) == 0
     assert bench_jev.read_items(path) == []
+
+
+# --- route ------------------------------------------------------------------
+
+
+def _route_article(article_id: str, enriched_title: str | None = None):
+    return bench_jev.DigestArticle(
+        article_id=article_id,
+        title=f"Title {article_id}",
+        url=f"https://example.rs/srbija/politika/{article_id}",
+        source="example.rs",
+        published_at="2026-10-01T00:00:00+00:00",
+        clean_text="lead " * 100,
+        enriched_title=enriched_title,
+    )
+
+
+def test_default_sections_parse_into_six_described_sections() -> None:
+    sections = bench_jev.build_sections("Russia, Serbia, war in Ukraine")
+    assert [s.name for s in sections if s.follow] == ["Russia", "Serbia", "war in Ukraine"]
+    general = [s for s in sections if not s.follow]
+    assert len(general) == 6
+    assert general[0].name == "International politics and security"
+    assert general[0].criterion.startswith("International politics and security: diplomacy, ")
+    assert [s.key for s in sections] == [f"s{i}" for i in range(1, 10)]
+
+
+def test_route_questions_ask_follow_topics_separately() -> None:
+    sections = bench_jev.build_sections("Serbia (including Vojvodina)", "Economy, Science (space)")
+    questions = bench_jev.route_questions(sections)
+
+    assert list(questions) == ["s1", bench_jev.CHOICE_KEY]
+    follow = questions["s1"]
+    assert isinstance(follow, bench_jev.Noul)
+    assert '"Serbia: including Vojvodina"' in str(follow.instructions)
+    choice = questions[bench_jev.CHOICE_KEY]
+    assert isinstance(choice, bench_jev.Choice)
+    assert list(choice.criteria) == ["s2", "s3", bench_jev.OTHER]
+    assert (choice.criteria["s2"], choice.criteria["s3"]) == ("Economy", "Science: space")
+
+
+def test_pick_section_prefers_the_most_probable_follow_topic() -> None:
+    probs = {"s1": 0.5, "s2": 0.8, "s3": 0.95, bench_jev.OTHER: 0.05}
+    assert bench_jev.pick_section(probs, ["s1", "s2"], follow_threshold=0.3) == "s2"
+    assert bench_jev.pick_section(probs, ["s1", "s2"], follow_threshold=0.9) == "s3"
+    assert bench_jev.pick_section(probs, [], follow_threshold=0.3) == "s3"
+
+
+def test_pick_section_sends_low_confidence_to_other() -> None:
+    probs = {"s1": 0.1, "s2": 0.35, "s3": 0.33, bench_jev.OTHER: 0.32}
+    assert (
+        bench_jev.pick_section(probs, ["s1"], follow_threshold=0.3, min_confidence=0.4)
+        == bench_jev.OTHER
+    )
+    assert bench_jev.pick_section(probs, ["s1"], follow_threshold=0.3, min_confidence=0.3) == "s2"
+
+
+def test_route_state_uses_enriched_title_and_url() -> None:
+    state = bench_jev.route_state(_route_article("a", enriched_title="Better headline"))
+    assert state["headline"] == "Better headline"
+    assert state["url"] == "https://example.rs/srbija/politika/a"
+    assert state["source"] == "example.rs"
+    assert "url" not in bench_jev.route_state(_route_article("a"), "lead")
+    assert bench_jev.route_state(_route_article("a"), "lead")["headline"] == "Title a"
+    with pytest.raises(ValueError, match="unknown state variant"):
+        bench_jev.route_state(_route_article("a"), "headline_only")
+
+
+_ROUTE_SECTIONS = "Economy, Science"
+
+
+def _write_route_night(root: Path, name: str = "p") -> Path:
+    """Articles A-F; today's blocks: [A, B] in "Сербия", [C] and [D, E] elsewhere; F unplaced."""
+    pdir = root / name
+    pdir.mkdir(parents=True)
+    articles = [
+        {
+            "article_id": f"id-{t}",
+            "title": t,
+            "url": f"https://news.rs/{t}",
+            "source": "news.rs",
+            "published_at": "",
+            "clean_text": f"lead  of\n{t} " * 40,
+            "verdict": "ok",
+        }
+        for t in "ABCDEF"
+    ]
+    blocks = [
+        {"title": "b0", "article_ids": ["id-A", "id-B"]},
+        {"title": "b1", "article_ids": ["id-C"]},
+        {"title": "b2", "article_ids": ["id-D", "id-E"]},
+    ]
+    recaps = [
+        {"title": "Сербия", "block_indices": [0]},
+        {"title": "Технологии", "block_indices": [1, 2]},
+    ]
+    (pdir / "digest.json").write_text(
+        json.dumps(
+            {"status": "completed", "articles": articles, "blocks": blocks, "recaps": recaps},
+        ),
+    )
+    (pdir / "pipeline_input.json").write_text(
+        json.dumps({"articles": articles, "preferences": {"follow": "Serbia", "exclude": POLICY}}),
+    )
+    return pdir
+
+
+def _route_night(tmp_path: Path, sections: str = _ROUTE_SECTIONS):
+    return bench_jev.load_route_night(_write_route_night(tmp_path), sections)
+
+
+class _FakeRouteClient:
+    """Serbia yes-probability and general-section probabilities per headline."""
+
+    model = "jev-1.13.0"
+
+    def __init__(self, probs_by_headline: dict[str, tuple[float, dict[str, float]]]) -> None:
+        self.probs_by_headline = probs_by_headline
+        self.input_tokens = 0
+        self.requests = 0
+        self.headlines: list[str] = []
+
+    def decide(self, requests):
+        from typesafe_sdk import SystemOneResponse
+
+        out = []
+        for state, questions in requests:
+            assert list(questions) == ["s1", "section"]
+            self.headlines.append(state["headline"])
+            assert state["url"].startswith("https://news.rs/")
+            serbia, general = self.probs_by_headline[state["headline"]]
+            self.input_tokens += 10
+            self.requests += 1
+            choice = max(general, key=general.__getitem__)
+            answers = {
+                "s1": {"type": "noul", "noul": serbia},
+                "section": {
+                    "type": "choice",
+                    "choice": choice,
+                    "confidence": general[choice],
+                    "probabilities": general,
+                },
+            }
+            out.append(
+                SystemOneResponse.model_validate(
+                    {"model": self.model, "usage": {"input_tokens": 10}, "answers": answers},
+                ),
+            )
+        return out
+
+
+_ECONOMY = {"s2": 0.9, "s3": 0.1, "other": 0.0}
+_SCIENCE = {"s2": 0.1, "s3": 0.9, "other": 0.0}
+_UNSURE = {"s2": 0.3, "s3": 0.3, "other": 0.4}
+
+
+def test_load_route_night_maps_llm_follow_sections_and_multi_article_blocks(tmp_path):
+    night = _route_night(tmp_path)
+
+    assert night.follow_names == ("Serbia",)
+    assert [s.name for s in night.sections] == ["Serbia", "Economy", "Science"]
+    assert {i.headline: f for i, f in night.llm_follow.items()} == {
+        "A": "Serbia",
+        "B": "Serbia",
+        "C": "none",
+        "D": "none",
+        "E": "none",
+    }
+    assert [[i.headline for i in b] for b in night.blocks] == [["A", "B"], ["D", "E"]]
+    assert len(night.articles) == 6
+
+
+def test_run_route_asks_only_for_unstored_items_of_the_same_question(tmp_path):
+    bench = _bench(tmp_path)
+    night = _route_night(bench.pipelines)
+    client = _FakeRouteClient({h: (0.1, _ECONOMY) for h in "ABCDEF"})
+
+    probs, tokens = bench_jev.run_route(bench, client, [night], "url")
+    assert client.headlines == list("ABCDEF")
+    assert probs[Item("p", "A")] == {"s1": 0.1, **_ECONOMY}
+    assert tokens == {"p": 60}
+
+    bench_jev.run_route(bench, client, [night], "url")
+    assert client.requests == 6
+
+    reworded = bench_jev.load_route_night(bench.pipelines / "p", "Economy, Science (space)")
+    bench_jev.run_route(bench, client, [reworded], "url")
+    assert client.requests == 12
+    with pytest.raises(SystemExit, match="incomplete"):
+        bench_jev.run_route(bench, None, [night], "lead")
+
+
+def _route_probs(**by_headline: tuple[float, dict[str, float]]) -> dict:
+    return {Item("p", h): {"s1": serbia, **general} for h, (serbia, general) in by_headline.items()}
+
+
+def test_evaluate_route_measures_splits_other_and_follow_disagreements(tmp_path):
+    night = _route_night(tmp_path)
+    probs = _route_probs(
+        A=(0.9, _ECONOMY),
+        B=(0.1, _ECONOMY),
+        C=(0.1, _UNSURE),
+        D=(0.1, _SCIENCE),
+        E=(0.1, _SCIENCE),
+        F=(0.8, _SCIENCE),
+    )
+    labels = {Item("p", "B"): frozenset({"Serbia"})}
+
+    result = bench_jev.evaluate_route(bench_jev.RouteConfig(0.5, 0.4), [night], probs, labels)
+
+    assert result.sections[Item("p", "A")] == "Serbia"
+    assert result.sections[Item("p", "B")] == "Economy"
+    assert result.sections[Item("p", "C")] == "other"
+    assert result.sections[Item("p", "F")] == "Serbia"
+    assert (result.split_blocks, result.split_rate) == (1, 0.5)
+    assert result.other_share == pytest.approx(1 / 6)
+    assert result.disagreements == (Item("p", "B"),)
+    assert (result.right(result.jev_follow), result.right(result.llm_follow)) == (0, 1)
+    assert not result.follow_ok
+    assert not result.structure_ok
+
+    lenient = bench_jev.evaluate_route(bench_jev.RouteConfig(0.05, 0.3), [night], probs, {})
+    assert lenient.split_blocks == 0  # every article clears the follow threshold
+    assert lenient.unknown == (Item("p", "C"), Item("p", "D"), Item("p", "E"))
+
+
+def test_route_report_gate(tmp_path):
+    night = _route_night(tmp_path)
+    probs = _route_probs(
+        A=(0.9, _ECONOMY),
+        B=(0.9, _ECONOMY),
+        C=(0.1, _ECONOMY),
+        D=(0.9, _SCIENCE),
+        E=(0.1, _SCIENCE),
+        F=(0.1, _SCIENCE),
+    )
+    config = bench_jev.RouteConfig(0.5, 0.4)
+
+    result = bench_jev.evaluate_route(config, [night], probs, {})
+    passed, lines = bench_jev.route_report(result, [night])
+    assert not passed
+    assert lines[-1] == "gate incomplete: label 1 follow disagreements first"
+    assert "split: 1 of 2 multi-article blocks (50.0%)" in lines
+
+    probs[Item("p", "D")] = {"s1": 0.1, **_SCIENCE}
+    result = bench_jev.evaluate_route(config, [night], probs, {})
+    passed, lines = bench_jev.route_report(result, [night])
+    assert passed
+    assert "gate follow: PASS (Jev right 0 >= LLM right 0)" in lines
+    assert any(line.startswith("  Serbia") and "LLM->Jev 2/2" in line for line in lines)
+
+
+def test_read_route_labels_accepts_several_placements(tmp_path):
+    path = tmp_path / "route.jsonl"
+    bench_jev._append_jsonl(
+        path,
+        [
+            {"pipeline": "p", "headline": "a", "label": ["Serbia"]},
+            {"pipeline": "p", "headline": "a", "label": ["Serbia", "none"]},
+            {"pipeline": "p", "headline": "b", "label": "skip"},
+        ],
+    )
+    assert bench_jev.read_route_labels(path) == {Item("p", "a"): frozenset({"Serbia", "none"})}
+
+
+def test_write_route_pending_hides_both_answers(tmp_path):
+    night = _route_night(tmp_path)
+    path = tmp_path / "pending.jsonl"
+
+    assert bench_jev.write_route_pending(path, [night], [Item("p", "B")]) == 1
+    (row,) = bench_jev._read_jsonl(path)
+    assert set(row) == {"pipeline", "headline", "enriched_title", "source", "lead"}
+    assert row["lead"].startswith("lead of B lead of B")

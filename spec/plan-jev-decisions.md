@@ -1,30 +1,26 @@
-# Plan: Jev Decides the Structure, the LLM Writes
+# Plan: Per-Item Decisions on Jev, Writing on the LLM
 
-Status: proposed (2026-10-05). Related: `plan-token-optimization.md` (its Phases 5–6, local
-clustering and the local classify cascade, are superseded by Stages 3–5 here), issue #18
-(Stage 0).
+Status: Stages 0–3 done; Stage 4 (routing) failed on 2026-10-06, so the restructure is dropped
+and Stage 5 is duplicate detection on Jev (the former Fallback B). Related:
+`plan-token-optimization.md` (its Phases 5–6, local clustering and the local classify cascade,
+are superseded by Stages 3 and 5 here), issue #18 (Stage 0).
 
 ## Goal
 
-Two outcomes, each measured against a baseline recorded under *Evidence*:
+A change ships only if it lowers agy token use or improves the digest, without making the other
+worse. Two outcomes, each measured against a baseline recorded under *Evidence*:
 
 1. **A digest every night.** Baseline: 21 of 32 nights (2026-09-04 … 10-05).
-2. **A better digest, as judged by its reader:** fewer duplicate entries inside blocks, follow
-   topics always in their own section, the same sections every day, no more wrongly dropped
-   stories than today, and block quality no worse.
+2. **Fewer agy tokens per night, digest no worse.** Baseline: 629k agy tokens on 10-06 (502k
+   after Stage 3). Quality gates per step: no more wrongly dropped stories, no more wrongly merged
+   ones, and duplicates removed at least as reliably as today.
 
-Means: every *decision* (exclude / vague, which section, same news?) moves to TypeSafe's Jev;
-the LLM (agy) only *writes* (enriched headlines, block descriptions, section summaries). The
-pipeline is reshaped around Jev's cost model instead of swapping LLM calls one for one:
-
-- An LLM launch is expensive and unreliable per item, so today's pipeline packs hundreds of items
-  into a few prompts and then repairs the side effects: recognition-rate guards, BlockDedup,
-  MergeSections (sections invented independently per batch), RefineLayout (orphan sections), and
-  an embedding pre-filter that keeps dedup launches few.
-- A Jev request costs ~\$0.00003, answers every item (no dropped or miscounted lines) and
-  returns probabilities, but cannot write. So Jev makes many small independent decisions up
-  front, the LLM writes inside a structure that is already fixed, and the repair steps lose
-  their reason to exist.
+Means: TypeSafe's Jev takes over the per-item *decisions* it was measured to make at least as
+well as the LLM: exclude / vague (Stage 3) and "same piece of news?" (Stage 5). A Jev request
+costs ~\$0.00003, answers every item and returns probabilities, but cannot write; agy keeps
+enriching headlines, writing blocks and sections, merging per-batch sections and refining the
+layout. Moving section placement to Jev was tested in Stage 4 and rejected: it splits about three
+stories a night across two sections.
 
 ## Evidence (measured 2026-10-05)
 
@@ -38,6 +34,20 @@ pipeline is reshaped around Jev's cost model instead of swapping LLM calls one f
 
 Every log ends with `RESULT: OK`: `recap_flow` catches `RecapPipelineError`, so `create`
 exits 0 on a failed pipeline.
+
+### agy tokens per step (night 2026-10-06, 412 kept articles)
+
+The only archived night with token telemetry (Stage 0.5):
+
+| Step | Launches | Tokens |
+|---|---|---|
+| classify (on Jev since Stage 3) | 3 | 126,718 |
+| dedup | 6 | 157,484 |
+| enrich | 3 | 123,312 |
+| oneshot_digest | 3 | 170,614 |
+| merge_sections | 1 | 17,869 |
+| refine_layout | 1 | 33,008 |
+| total | 17 | 629,005 |
 
 agy launches per completed night (21 nights, median): classify 3, enrich 1, dedup 4,
 oneshot_digest 2, merge_sections 1, refine_layout 1 — total 12.
@@ -107,26 +117,17 @@ Rows = Gemini, columns = Jev:
 ## Target pipeline
 
 ```
-classify (Jev) → load_resources → enrich (LLM) → route (Jev) → oneshot_digest (LLM) → collapse_duplicates (Jev)
+classify (Jev) → load_resources → enrich (LLM) → deduplicate (Jev) → oneshot_digest (LLM)
+  → merge_sections (LLM) → refine_layout (LLM)
 ```
 
-- **classify** — Jev: exclude via one Noul per policy topic, vague via one Noul.
-- **route** — Jev Choice per article over a fixed section list: follow topics + general
-  sections + "other".
-- **oneshot_digest** — the LLM receives articles already grouped by section, groups each
-  section's articles into blocks, and writes block descriptions and section summaries. A section
-  is never split across launches unless it alone exceeds the batch size, so no step has to
-  reconcile sections invented per batch.
-- **collapse_duplicates** — Jev "same piece of news?" for every article pair inside each block;
-  duplicates fold into the keeper's `alt_urls`. The LLM's grouping supplies the candidates, so
-  translations and paraphrases are caught.
-- **Deleted:** the `deduplicate` step (embedding pre-filter + LLM), `merge_sections`,
-  `refine_layout`.
-- **Kept:** BlockDedup phases 1–3. Phase 3 (fuzzy title merge) also repairs a story that routing
-  split across two sections.
+- **classify** — Jev: exclude via one Noul per policy topic, vague via one Noul (Stage 3).
+- **deduplicate** — the embedding pre-filter stays; Jev answers "same piece of news?" for every
+  pair inside each candidate group instead of an agy launch per batch of clusters (Stage 5).
+- Everything else is unchanged.
 
-agy launches per night: enrich 1 + oneshot_digest 2 = 3, plus one when the section list or the
-output language changes (title translation, cached).
+agy on 10-06: 17 launches / 629k tokens before Stage 3, 11 / 502k after it, 5 / ≈345k after
+Stage 5 (enrich, oneshot_digest, merge_sections, refine_layout).
 
 ## Decisions
 
@@ -139,18 +140,12 @@ output language changes (title translation, cached).
 3. **Pinned model** `jev-1.13.0`; thresholds are tuned against it. Upgrading = rerun the bench,
    then bump.
 4. **Thresholds are module constants**, set from the bench.
-5. **Jev failure:** SDK retries, then `JevUnavailableError`.
-   - In classify: warning, the step reruns on the LLM path (kept until Stage 7).
-   - In route and collapse_duplicates: `RecapPipelineError`. The night fails visibly (exit 1
-     after Stage 0.3) and resumes from the checkpoint on the next run. No LLM twin is kept for
-     these steps; the classify fallback count during Stages 3–6 is the measured Jev
-     availability behind this choice.
-6. **Section list** = follow topics (from `preferences.follow`) + general sections (new
-   user-config key `sections`, same comma syntax as `exclude`/`follow`, default seeded in
-   Stage 4) + "other".
-   - Routing uses English names and descriptions (Jev's strongest language).
-   - Display titles in the output language come from a one-time LLM translation cached per
-     (section list, language, prompt) hash, so titles are identical every night.
+5. **Jev failure:** SDK retries, then `JevUnavailableError`; the step logs a warning and reruns
+   on its LLM path (classify and deduplicate keep their LLM paths until Stage 7, which deletes
+   one only if it never triggered).
+6. **Merged headline.** Today's LLM dedup writes a new headline for each merged group. Jev cannot
+   write, so a merged group keeps the keeper's `enriched_title`, else the first member's
+   `enriched_title`, else the keeper's `title`.
 7. **Gates require improvement** wherever the reader can see the difference; non-inferiority
    only where a gate says so. Ground truth is the user's labels; the Sonnet judge is used only
    for tasks where its agreement with the user's labels has been measured.
@@ -201,7 +196,7 @@ with a flow that fails returns `exit_code == 1`, and the output contains "Pipeli
 0.4 **Archive: done 2026-10-05.** The four workdirs are in
 `~/.news_recap_data/bench/pipelines/`, the Jev experiment (scripts, dataset, probabilities) in
 `~/.news_recap_data/bench/jev-exp-2026-10-05/`. Workdirs are deleted after 7 days
-(`gc_retention_days`), so until Stage 6 ends run `bench_jev.py snapshot` (Stage 1) at least
+(`gc_retention_days`), so until Stage 5 ends run `bench_jev.py snapshot` (Stage 1) at least
 every 5 days.
 
 0.5 **agy consumption telemetry.** One probe launch: `agy --output-format json -p "Reply OK"`
@@ -221,7 +216,7 @@ cache-read and total tokens; the first branch below is implemented and documente
 ## Stage 1 — Ground truth (~0.5 day + ~30 min of labelling)
 
 1.1 New `scripts/bench_jev.py`; subcommands are added per stage:
-`snapshot | label | judge-check | classify | route | ab | report` (+ `dedup` in Fallback B).
+`snapshot | label | judge-check | classify | route | dedup`.
 It reads `TYPESAFE_API_KEY` the same way as the pipeline (Decision 2). This stage implements:
 
 **Done 2026-10-05** (`scripts/bench_jev.py`, `tests/test_bench_jev.py`). Differences from the
@@ -345,7 +340,7 @@ next to the existing `api_key_vars` stripping.
   - Jev task dirs are named `<step>-jev` (e.g. `classify-jev`) so the stage table lists them.
 - `policy.py`
   - `split_policy_topics(text: str) -> list[str]`: split on commas at parenthesis depth 0,
-    strip, drop empties (doctests). Used by classify, route and the `sections` key.
+    strip, drop empties (doctests). Used by classify and the Stage 4 bench.
 
 Tests:
 
@@ -465,6 +460,50 @@ Outcomes:
 
 ## Stage 4 — Routing go/no-go (offline, ~0.5 day, ≈ \$0.05 of Jev)
 
+**Done 2026-10-06: gate failed (split rate); routing is dropped.** The user chose Fallback B
+(now Stage 5) after a comparison against today's pipeline: the restructure would save 51k more
+agy tokens a night than Fallback B (208k vs 157k of today's 502k) at the cost of about three
+stories a night shown in two sections. The bench stays (`bench_jev.py route`, with the routing
+code inside the script; tests in `tests/test_bench_jev.py`) so the numbers below reproduce.
+Labels by Claude (`labeler: claude-opus-5-5`): `bench/labels/route.jsonl` (53 follow
+disagreements) and `bench/labels/route-splits.jsonl` (54 split blocks). Bench rows:
+`bench/route-2026-10-06.jsonl`.
+
+Results, chosen configuration (follow ≥ 0.30, confidence ≥ 0.40, `url` state); tuning = every
+archived night except the holdout (09-29, 09-30, 10-01, 10-06):
+
+| | split blocks | other share | follow disagreements: Jev right / LLM right |
+|---|---|---|---|
+| tuning, 1 519 articles, 227 multi-article blocks | 47 (20.7%) ❌ | 2.2% | 15 / 14 of 16 |
+| holdout, 239 articles, 32 blocks | 7 (21.9%) ❌ | 4.6% | 1 / 1 of 2 |
+
+- Follow placement agrees with today's digests 98–100% in both directions (Serbia 365/366
+  LLM→Jev, 365/371 Jev→LLM on tuning nights).
+- Of the 54 split blocks, 43 separate different stories that today's LLM bundled by theme
+  (DoorDash drones + FedEx trucks); 11 (4.2% of 259 blocks) put one news event in two sections
+  (French student protests in Society and in International politics; BMW pricing in Economy and
+  in other).
+- Cost: ≈ 311k tokens per tuning night → \$0.39/month; bench spend ≈ \$0.15.
+
+Differences from the bullets below:
+
+- **Follow topics are Nouls, not Choice options.** With one Choice over all sections the split
+  rate was 30.8%: Choice probabilities are exclusive and peaked (a Serbian tender → "Economy"
+  p≈1.0, Serbia ≈0), so `FOLLOW_THRESHOLD` never fired. One Noul per follow topic ("is this story
+  mainly about …?") plus a Choice over general sections + other.
+- **The URL is in the state.** 94–165 articles a night (021.rs, tanjug.rs) have no text; their
+  URL carries the outlet's own section (`srbija/hronika`, `info/region-i-svet`). Serbia
+  agreement 360/366 → 365/366 for +7% tokens.
+- "Science, climate and nature" became "Science and nature (research, medicine, climate,
+  environment, wildlife)": the `sections` comma syntax would split the first name in two.
+- The plan's split remedy does not work: with the pipeline's embedder (multilingual-e5-small)
+  connected components at 0.65–0.80 swallow each whole night; at 0.90 they chain unrelated
+  stories and the split rate rises (22.5%).
+- Labels replace the judge for follow disagreements (as in Stage 3), and the 20-item user
+  spot-check was not needed. Two boundaries are labelled "either placement" and tagged
+  (`boundary`): Kosovo stories and Republika Srpska / BiH elections; the follow gate passes under
+  every reading of them.
+
 4.1 Seed the general sections from the section titles of the 4 archived digests (English name
 + description):
 
@@ -506,162 +545,80 @@ sweeping both thresholds from stored probabilities:
 
 - Split rate too high → route by majority vote within embedding clusters (`reorder_articles`
   groups at 0.65) and re-measure.
-- Still failing → Fallback B (Appendix); Stages 5–6 are skipped.
+- Still failing → Fallback B (now Stage 5).
 
-## Stage 5 — Build the restructure (~3 days, on a branch)
+## Stage 5 — Duplicate detection on Jev (former Fallback B; ~1 day + bench)
 
-5.1 Preferences: `UserPreferences.sections: str` (default from 4.1); add `sections` to
-`user_config.py` `_KNOWN_KEYS` and to the prompts in `operation_configure.py`. `PipelineInput`
-carries it inside `preferences`.
+Today: `group_similar` builds candidate groups (connected components at embedding similarity
+≥ `dedup_threshold` 0.90 over title + text), then 3–6 agy launches a night answer `MERGED` /
+`SINGLE` per cluster and write a merged headline (157k tokens on 10-06).
 
-5.2 Section titles: `recap/section_titles.py`.
-
-- `section_titles(ctx, sections) -> dict[str, str]` reads
-  `<data_dir>/sections/titles-<hash>.json`; the hash covers the section list, the output
-  language and the prompt body.
-- On a miss: one LLM launch (`recap_section_titles`, new entry in the `config.py` task maps)
-  with the numbered English names, output `N: <title>` in the output language; parse, check the
-  count, save. "other" is translated in the same call.
-
-5.3 `Route` step (`recap/tasks/route.py`, `name = "route"`):
-
-- `DigestArticle.section: str | None = None` (the default keeps old checkpoints loadable);
-- `execute` routes every article in `ctx.digest.articles` without a section, then writes
-  `route-jev/` usage and answers;
-- `restore_state` is a no-op (the section is persisted in the digest).
-
-5.4 `OneshotDigest` (`recap/tasks/oneshot_digest.py`):
-
-- group `ctx.digest.articles` by `section`; order each group with `reorder_articles` (existing
-  embedder and `oneshot_digest_order.json`);
-- pack sections into launches of ≤ `_BATCH_SIZE` articles, first-fit decreasing; a section
-  larger than `_BATCH_SIZE` is cut into chunks, with a log line;
-- new `RECAP_ONESHOT_DIGEST_PROMPT` body:
-  - articles listed under `=== SECTION <id>: <English name> ===` headers, numbered globally;
-  - the model outputs `SECTION: <id>`, `SECTION_SUMMARY:`, `BLOCK:`/`ARTICLES:` and
-    `EXCLUDED:`;
-  - it never creates or renames sections and never moves an article to another section;
-  - the "EDITORIAL FOCUS — KEEP SEPARATE" paragraph and the section-label instruction (task
-    item 4) are removed; the block-writing instructions (task item 3, no catch-all block,
-    every number exactly once) stay;
-- parser: `SECTION: <id>` maps to the section; a block under an unknown id, or one whose
-  articles come from several sections, goes to the section holding most of its articles
-  (counted and logged as `cross_section_blocks`);
-- `_build_digest_entries` builds sections in a fixed order (follow topics, general sections in
-  list order, "other" last) with titles from 5.2 and summaries from the model; empty sections
-  are dropped; chunks of one oversized section are concatenated;
-- delete `_run_merge`, `_parse_merge_output`, `_MergedSection`,
-  `_build_merged_digest_entries` and `RECAP_MERGE_SECTIONS_PROMPT`;
-- keep `_dedup_blocks` and `_fuzzy_merge_blocks`;
-- batch cache: keep `batch_num_to_id.json`, add `batch_sections.json`; a cached batch is reused
-  only if its section composition matches.
-
-5.5 `CollapseDuplicates` step (`recap/tasks/collapse_duplicates.py`,
-`name = "collapse_duplicates"`) with `recap/jev/collapse.py`:
+5.1 `recap/jev/dedup.py`:
 
 - `PAIR_QUESTION` Noul: "Do article_a and article_b report the same specific news event, so a
   reader would consider them the same piece of news (not merely related stories)?"; state
-  `{headline_a, headline_b}` (enriched title when present). The bench tests adding leads.
-- For each block with ≥ 2 articles, ask all pairs.
-- Star grouping, no chaining: articles sorted by `len(clean_text)` descending; each joins the
-  first existing group whose keeper it matches at ≥ `SAME_EVENT_THRESHOLD` (initial 0.5, the
-  experiment's best), otherwise it starts a new group.
-- Non-keepers go to the keeper's `alt_urls` and are removed from `block.article_ids` and
-  `ctx.digest.articles`; the keeper's title is unchanged (the block description already
-  carries the story).
-- `restore_state` is a no-op.
+  `{headline_a, headline_b}` (enriched title when present). Bench variant `lead` adds
+  `lead_a`, `lead_b` (first 300 chars of text).
+- `SAME_EVENT_THRESHOLD` from the bench (the 2026-10-05 experiment: 90.2% pair agreement with
+  Gemini at 0.5, 144k tokens for 399 pairs).
+- `star_groups(ids, same) -> list[list[str]]`: ids sorted by `len(clean_text)` descending; each
+  joins the first group whose keeper it matches at ≥ the threshold, else starts a new group; only
+  groups of ≥ 2 are returned. No chaining: A≈B, B≈C, A≉C → C does not join A's group.
+- `dedup_groups(client, groups, id_to_article, threshold)`: one request per pair inside each
+  candidate group; returns the merge groups and per-pair probabilities.
 
-5.6 Delete:
+5.2 `Deduplicate.execute` (`recap/tasks/deduplicate.py`): when `dedup_backend == "jev"`, turn
+each merge group into `_MergeAction(merged_text=<Decision 6 title>, indices=<1-based positions in
+the candidate group>)`, so `_apply_merge` and `_update_pipeline_state` are reused unchanged;
+write `dedup-jev/meta/usage.json` (also when Jev fails) and `output/jev_answers.json`. On
+`JevUnavailableError` or a missing key at run time: warning, then the LLM path.
 
-- `recap/tasks/refine_layout.py`, `RECAP_REFINE_LAYOUT_PROMPT`,
-  `tests/recap/tasks/test_refine_layout.py`;
-- `recap/tasks/deduplicate.py`, the dedup prompts in `prompts.py`, `tests/test_deduplicate.py`,
-  `tests/recap/tasks/test_deduplicate.py`, and the parts of `tests/recap/tasks/test_dedup_helpers.py` that
-  cover only deleted code; `recap/dedup/cluster.py` stays (fuzzy merge, ordering);
-- `config.py` task-map entries `recap_dedup`, `recap_merge_sections`, `recap_refine_layout`;
-- `PipelineInput.dedup_threshold` (old `pipeline_input.json` files still load: fields are read
-  with `raw.get`).
+5.3 Settings: `NEWS_RECAP_DEDUP_BACKEND=llm|jev`, parsed like the classify backend (no key →
+`llm` with a warning); `PipelineInput.dedup_backend`. Default `llm` until the gate passes, then
+`jev` when a key is found. `tests/conftest.py` pins `llm`.
 
-5.7 Phase graph:
+5.4 `bench_jev.py dedup`:
 
-- `flow.py`: `Classify, LoadResources, Enrich, Route, OneshotDigest, CollapseDuplicates`;
-- `main.py:240` `--stop-after` choices: `classify, load_resources, enrich, route,
-  oneshot_digest, collapse_duplicates`; the same list in `docs/src/en/cli.md` and
-  `docs/src/ru/cli.md`;
-- old checkpoints resume: `deduplicate` or `refine_layout` in `completed_phases` is ignored.
+- replay Gemini's decisions from the archived `dedup-N` workdirs: single-cluster prompts
+  (`=== NEWS (k total) ===`) and multi-cluster prompts (`=== CLUSTER N (k articles) ===`), lines
+  `n: [source] headline`; stdout `MERGED:` + a numbers line, `SINGLE: n`, `CLUSTER N:` headers.
+  A pair is "merged by Gemini" when both articles sit in one `MERGED` group;
+- Jev probabilities per pair and state variant in `bench/runs/dedup-<variant>-<date>.jsonl`;
+- sweep the threshold 0.30 … 0.90; apply `star_groups` per cluster, so the scored decision is
+  what the pipeline would merge; score pairwise co-membership against Gemini's;
+- label every disputed pair (`bench/labels/dedup.jsonl`: `same` | `different`), blind;
+- gate, on tuning nights and on the holdout separately: Jev's wrong merges (merged, label
+  `different`) ≤ Gemini's, and Jev's correct pair decisions ≥ Gemini's; unlabelled agreements
+  count as correct;
+- wider net (a quality gain today's launches cannot afford): pairs today never examines
+  (similarity 0.80–0.90, no chaining). Jev-merged pairs among them are labelled; the wider net
+  ships only if ≥ 90% of its added merges are labelled `same`.
 
-5.8 Tests:
+5.5 Tests: star grouping (no chaining, keeper = longest text), display title order, the Jev
+path producing `_MergeAction`s, fallback on `JevUnavailableError`, backend parsing; bench replay
+parser and gate.
 
-- `tests/recap/tasks/test_route.py`: follow precedence, low confidence → "other", a persisted section is not
-  re-routed, `JevUnavailableError` → `RecapPipelineError`;
-- `tests/recap/tasks/test_oneshot_digest.py`: packing never splits a section smaller than `_BATCH_SIZE`, the prompt
-  carries section headers, id mapping, unknown id → majority section, fixed section order,
-  cached batch reused only on matching composition;
-- `tests/recap/tasks/test_collapse_duplicates.py`: star grouping (A≈B, B≈C, A≉C → C does not join A's group),
-  keeper choice, `alt_urls`, removal from blocks and articles;
-- `tests/recap/test_section_titles.py`: cache hit; miss → one launch; the hash changes with list, language
-  and prompt;
-- `tests/recap/test_flow.py`, `tests/recap/test_pipeline_setup.py`: new phase list; a checkpoint with old phase names
-  resumes.
+## Stage 6 — dropped
 
-## Stage 6 — Side-by-side week (7 nights)
-
-6.1 `bench_jev.py ab` replaces the plain `create` in the scheduled job for the week:
-
-1. production (main): `news-recap create --stop-after enrich`;
-2. copy the pipeline dir to `<data_dir>/bench/ab/<date>/b/`;
-3. resume production to completion — arm A, today's pipeline after Stage 3;
-4. in a worktree of the branch, `recap_flow(<copy>, <date>)` — arm B.
-
-Both arms start from identical classify, load_resources and enrich output, so only the structure
-differs. agy cost: arm A ≈ 9 launches + arm B 2 = 11 a night, about today's load, so a lockout
-is possible near the end of the week; a locked night is skipped, not repeated.
-
-6.2 Reader verdict: `bench_jev.py ab --review <date>` renders both digests with
-`web/templates/digest.html` as "A"/"B" in random order and records
-`{date, preferred: A|B|same, notes}` to `bench/ab/verdicts.jsonl`.
-
-6.3 Metrics per arm per night (`bench_jev.py report`):
-
-- agy launches, `prompt_bytes`, `output_bytes`, agy tokens if Stage 0.5 found them; Jev tokens
-  and \$;
-- sections, blocks, sections ≤ 2 blocks, coverage, writer-excluded articles,
-  `cross_section_blocks`, fuzzy merges;
-- section-title Jaccard vs the previous night of the same arm;
-- **duplicates left in blocks**: the judge on 100 random within-block pairs per arm per night;
-- **collapse precision** (arm B): the judge on 50 collapsed pairs;
-- **block coherence**: the judge on 30 random multi-article blocks per arm ("do all articles
-  describe one story?");
-- **follow leaks**: the judge on articles about a follow topic placed outside its section,
-  sampled from both arms.
-
-6.4 Gate:
-
-- the reader prefers B on ≥ 5 of 7 nights (≥ 4 of 5 if lockouts cut the week);
-- fewer duplicates left in blocks in B; collapse precision ≥ 90%;
-- block coherence in B not lower than in A by more than 5 points (non-inferiority);
-- follow leaks in B ≤ A.
-
-Pass → merge the branch. Fail → do not merge; Fallback B (Appendix).
+The side-by-side week tested the restructure, which Stage 4 rejected. Stage 5 is gated on
+labelled pairs, like Stage 3.
 
 ## Stage 7 — Docs and cleanup (~0.5 day)
 
 - `spec/pipeline.md`:
-  - overview and per-step contracts for classify (Jev), route, oneshot_digest and
-    collapse_duplicates; Deduplicate, MergeSections and RefineLayout removed;
-  - the Cost section rewritten (agy launches per night, Jev \$/month);
-  - bench conclusions under Experiments, citing the committed `bench/` rows.
+  - per-step contracts for classify (Jev) and deduplicate (Jev);
+  - the Cost section rewritten (agy launches and tokens per night, Jev \$/month);
+  - bench conclusions under Experiments, citing the committed `bench/` rows, including why
+    section routing on Jev was rejected (Stage 4).
 - `README.md`, `docs/src/en/`, `docs/src/ru/`:
   - `TYPESAFE_API_KEY` and the two `.env` locations;
-  - the `sections` setting;
   - write exclude topics as subjects ("Croatian domestic news", not "Croatian news"), since Jev
-    reads topics literally;
-  - the new `--stop-after` values.
+    reads topics literally.
 - `spec/plan-token-optimization.md`: mark Phases 5–6 superseded by this plan.
 - `bench/README.md`: each committed run file and the spec sentence relying on it. A run stays
   only while a claim rests on it.
-- LLM classify fallback: if it never triggered over ≥ 14 nights, delete the LLM classify path,
-  its prompt and `classify_backend`; otherwise keep it and record the observed failure rate in
+- LLM fallbacks (classify, deduplicate): one that never triggered over ≥ 14 nights is deleted
+  with its prompt and backend setting; otherwise keep it and record the observed failure rate in
   `spec/pipeline.md`.
 
 ## Bench
@@ -687,62 +644,36 @@ inv pre
 uv run python scripts/bench_jev.py snapshot
 uv run python scripts/bench_jev.py label          # Stage 1
 uv run python scripts/bench_jev.py classify       # Stage 3
-uv run python scripts/bench_jev.py route          # Stage 4
-uv run python scripts/bench_jev.py ab             # Stage 6, nightly
-uv run python scripts/bench_jev.py report
+uv run python scripts/bench_jev.py route          # Stage 4 (rejected; reproduces the numbers)
+uv run python scripts/bench_jev.py dedup          # Stage 5
 NEWS_RECAP_CLASSIFY_BACKEND=jev news-recap create --stop-after classify
+NEWS_RECAP_DEDUP_BACKEND=jev news-recap create --stop-after deduplicate
 ```
 
-The last command must show a `classify-jev` row with tokens and cost in the stage table and
-create no `classify-N` workdirs. After Stage 5, a full `news-recap create` shows `route-jev`,
-`oneshot_digest-N` and `collapse_duplicates-jev` rows and no `dedup-N`, `merge_sections` or
-`refine_layout` workdirs.
+The classify command shows a `classify-jev` row with tokens and cost and creates no `classify-N`
+workdirs; the dedup command, likewise, a `dedup-jev` row and no `dedup-N` workdirs.
 
 Manual, once: put `TYPESAFE_API_KEY` into `~/.news_recap_data/.env` so the scheduled job
 (launchd starts it with cwd `/`) finds it.
 
 ## Expected impact
 
-| After | agy launches/night (median) | Jev \$/month | Measured quality change |
-|---|---|---|---|
-| Stage 0 | 12 | 0 | nights lost to `load_resources`: 3/32 → 0 |
-| Stage 3 | 9 | ≈ 0.45 | wrong excludes vs labels ≤ Gemini's |
-| Stage 6 pass | 3 (+1 when the section list changes) | ≈ 1.05 | reader preference, fewer duplicates, follow leaks ≤ today |
-| Fallback B | 5 | ≈ 0.5 | none beyond Stage 3 |
+agy figures are the 10-06 night (412 articles); Jev from the bench.
 
-Jev per night after Stage 6: classify ≈ 0.35M tokens, route ≈ 0.25M (~360 articles × ~700
-tokens), collapse ≤ 0.25M (≤ 1 000 pairs) — ≈ \$0.035 a night.
+| After | agy launches / tokens | Jev \$/month | Measured quality change |
+|---|---|---|---|
+| Stage 0 | 17 / 629k | 0 | nights lost to `load_resources`: 3/32 → 0 |
+| Stage 3 | 11 / 502k | ≈ 0.48 | wrong excludes vs labels ≤ Gemini's |
+| Stage 5 | 5 / ≈345k | 0.48 + dedup (5.4 measures it) | wrong merges ≤ today's; wider net only if ≥ 90% right |
 
 ## Risks
 
-- **Routing splits a story** across sections (an English report in "International politics",
-  the Serbian ones in "Serbia"): measured in Stage 4, partly repaired by fuzzy merge, gated in
-  Stage 6.
-- **Fixed sections lose day-specific ones** (a one-off crisis section): such stories land in the
-  closest general section or "other"; the other-share gate bounds it, and the user extends
-  `sections` when a topic recurs.
-- **A Jev outage** fails route/collapse for that night (Decision 5); the classify fallback count
-  measures how often that would happen.
-- **Rate limits** are "adjusting dynamically": SDK retries; the experiment used 16 concurrent
+- **A wrong merge hides a story** (the reader sees one headline for two events): gated
+  separately in 5.4, like wrong excludes (Decision 8).
+- **Merged headlines lose today's rewrite** (Decision 6): a merged group shows an existing title,
+  possibly in the source language, where today's LLM wrote one in the output language.
+- **A Jev outage** falls back to the LLM for that night (Decision 5).
+- **Rate limits** are "adjusting dynamically": SDK retries; the bench used 16 concurrent
   requests against the documented 80 req/s.
-- **Free-text policies and section descriptions are read literally**: docs tell users to phrase
-  topics as subjects.
+- **Free-text policies are read literally**: docs tell users to phrase topics as subjects.
 - **The `jev-latest` alias moves**: the model is pinned (Decision 3).
-
-## Appendix — Fallback B: dedup on Jev, merge/refine on the LLM
-
-Used if Stage 4 or Stage 6 fails. agy launches 12 → 5 (enrich 1, oneshot 2, merge 1, refine 1).
-
-- `recap/jev/dedup.py`: the Stage 5.5 `PAIR_QUESTION` on pairs inside each embedding group
-  (`group_similar` at `dedup_threshold`) and the same star grouping. Display title: the
-  keeper's `enriched_title`, else the first member's `enriched_title`, else the keeper's
-  `title`. Results take the shape of `_run_llm_dedup`'s, with
-  `_MergeAction(merged_text=<display title>, indices=<1-based positions in group_ids>)`, so
-  `_apply_merge` and `_update_pipeline_state` are reused.
-- `Deduplicate.execute` (`recap/tasks/deduplicate.py:229`) calls it instead of
-  `_run_llm_dedup`, with the LLM path as fallback on `JevUnavailableError`.
-- `bench_jev.py dedup`: parse `dedup-N/input/task_prompt.txt` (`=== CLUSTER N (k articles) ===`,
-  lines `n: [source] headline`) and the stdout (`MERGED:` + number line, `SINGLE: n`); pairwise
-  co-membership precision/recall vs Gemini's groups; judge disputed pairs; sweep the threshold.
-  Gate: judged correct ≥ Gemini's. The earlier experiment measured 90.2% pair agreement at 0.5
-  (144k tokens for 399 pairs).

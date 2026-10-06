@@ -6,6 +6,7 @@ Usage:
     uv run python scripts/bench_jev.py label [--items items.jsonl]
     uv run python scripts/bench_jev.py judge-check --task classify
     uv run python scripts/bench_jev.py classify [--holdout] [--config full:0.8:full:0.6]
+    uv run python scripts/bench_jev.py route [--holdout] [--config 0.35:0.4]
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import shutil
 import subprocess
 import textwrap
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +30,8 @@ from pathlib import Path
 from typing import Any
 
 import click
+import msgspec
+from typesafe_sdk import Choice, Noul, SystemOneResponse
 
 from news_recap.config import DEFAULT_JEV_MODEL, Settings
 from news_recap.recap.jev.classify import (
@@ -41,6 +44,7 @@ from news_recap.recap.jev.classify import (
     verdict,
 )
 from news_recap.recap.jev.client import JevClient, make_jev_client
+from news_recap.recap.jev.policy import split_policy_topics
 from news_recap.recap.jev.usage import PRICE_PER_MTOK
 from news_recap.recap.models import DigestArticle
 from news_recap.storage.io import atomic_write
@@ -855,6 +859,511 @@ def write_pending(path: Path, items: Iterable[Item]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# route
+# ---------------------------------------------------------------------------
+
+FOLLOW_THRESHOLD = 0.30
+MIN_ROUTE_CONFIDENCE = 0.4
+OTHER = "other"
+CHOICE_KEY = "section"
+ROUTE_STATE_VARIANTS = ("lead", "url")
+ROUTE_STATE = "url"
+
+DEFAULT_SECTIONS = (
+    "International politics and security (diplomacy, conflicts, elections and governments, "
+    "including US politics), "
+    "Technology and AI (AI, software, internet companies, cybersecurity, tech regulation), "
+    "Consumer tech and guides (gadgets, reviews, deals, how-tos), "
+    "Economy and business, "
+    "Science and nature (research, medicine, climate, environment, wildlife), "
+    "Society and culture (education, media, film, games, the arts)"
+)
+
+_INSTRUCTIONS = (
+    "Which section of a daily news digest does this story belong to? Judge by what the story is "
+    "about, not by the language or country of the outlet."
+)
+_OTHER_CRITERION = "No listed section clearly fits."
+# Choice probabilities are exclusive: a Serbian tender scores ~1.0 for "Economy" and ~0 for
+# "Serbia", so follow topics get independent yes/no questions instead.
+_FOLLOW_INSTRUCTIONS = (
+    'Is this news story mainly about "{topic}" (its events, people, places, politics, economy, '
+    "society or culture, including its relations with others)? Judge by what the story is about, "
+    "not by the language or country of the outlet that published it."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Section:
+    key: str
+    name: str
+    description: str
+    follow: bool
+
+    @property
+    def criterion(self) -> str:
+        return f"{self.name}: {self.description}" if self.description else self.name
+
+
+def parse_section(text: str) -> tuple[str, str]:
+    """Split ``name (description)`` into its parts.
+
+    >>> parse_section("Technology and AI (AI, software)")
+    ('Technology and AI', 'AI, software')
+    >>> parse_section("Economy and business")
+    ('Economy and business', '')
+    """
+    name, _, rest = text.partition("(")
+    return name.strip(), rest.rpartition(")")[0].strip()
+
+
+def build_sections(follow: str, sections: str = DEFAULT_SECTIONS) -> list[Section]:
+    """Follow topics first, then general sections, keyed ``s1``, ``s2``, … in that order.
+
+    >>> [(s.key, s.name, s.follow) for s in build_sections("Serbia", "Economy, Science (space)")]
+    [('s1', 'Serbia', True), ('s2', 'Economy', False), ('s3', 'Science', False)]
+    """
+    topics = [(t, True) for t in split_policy_topics(follow)]
+    topics += [(t, False) for t in split_policy_topics(sections)]
+    return [
+        Section(f"s{i}", *parse_section(text), follow=is_follow)
+        for i, (text, is_follow) in enumerate(topics, 1)
+    ]
+
+
+def route_questions(sections: Sequence[Section]) -> dict[str, Noul | Choice]:
+    """A Noul per follow section keyed by its section key, plus the general-section Choice."""
+    questions: dict[str, Noul | Choice] = {
+        s.key: Noul(instructions=_FOLLOW_INSTRUCTIONS.format(topic=s.criterion))
+        for s in sections
+        if s.follow
+    }
+    criteria = {s.key: s.criterion for s in sections if not s.follow}
+    criteria[OTHER] = _OTHER_CRITERION
+    questions[CHOICE_KEY] = Choice(instructions=_INSTRUCTIONS, criteria=criteria)
+    return questions
+
+
+def route_probabilities(response: SystemOneResponse) -> dict[str, float]:
+    """Follow-topic yes probabilities and general-section choice probabilities in one map."""
+    probs = {key: answer.noul for key, answer in response.nouls.items()}
+    probs.update(response.choices[CHOICE_KEY].probabilities)
+    return probs
+
+
+def pick_section(
+    probabilities: Mapping[str, float],
+    follow_keys: Sequence[str],
+    follow_threshold: float = FOLLOW_THRESHOLD,
+    min_confidence: float = MIN_ROUTE_CONFIDENCE,
+) -> str:
+    """The most probable follow section at or above *follow_threshold*, else the general argmax.
+
+    A follow topic wins over a general section that fits better, so a Serbia story stays in
+    Serbia; a general argmax below *min_confidence* goes to ``other``.
+
+    >>> p = {"s1": 0.36, "s2": 0.9, "s3": 0.1, "other": 0.0}
+    >>> pick_section(p, ["s1"], 0.35, 0.4), pick_section(p, ["s1"], 0.4, 0.4)
+    ('s1', 's2')
+    >>> pick_section({"s1": 0.1, "s2": 0.39, "s3": 0.31, "other": 0.3}, ["s1"], 0.35, 0.4)
+    'other'
+    """
+    follow = {k: probabilities.get(k, 0.0) for k in follow_keys}
+    if follow:
+        top = max(follow, key=follow.__getitem__)
+        if follow[top] >= follow_threshold:
+            return top
+    general = {k: p for k, p in probabilities.items() if k not in follow}
+    best = max(general, key=general.__getitem__)
+    return best if general[best] >= min_confidence else OTHER
+
+
+def route_state(article: DigestArticle, variant: str = ROUTE_STATE) -> dict[str, str]:
+    if variant not in ROUTE_STATE_VARIANTS:
+        raise ValueError(
+            f"unknown state variant {variant!r}; expected one of {ROUTE_STATE_VARIANTS}",
+        )
+    state = {**article_state(article, "full"), "headline": article.enriched_title or article.title}
+    if variant == "url":
+        state["url"] = article.url
+    return state
+
+
+FOLLOW_GRID = tuple(round(0.20 + 0.05 * i, 2) for i in range(9))
+CONFIDENCE_GRID = tuple(round(0.20 + 0.05 * i, 2) for i in range(9))
+MAX_SPLIT_RATE = 0.10
+MAX_OTHER_SHARE = 0.15
+NO_FOLLOW = "none"
+# The LLM's follow sections, as titled in the archived (Russian) digests.
+LLM_FOLLOW_TITLES = {"Россия": "Russia", "Сербия": "Serbia", "Война в Украине": "war in Ukraine"}
+
+
+@dataclass(frozen=True, slots=True)
+class RouteNight:
+    pipeline: str
+    articles: tuple[DigestArticle, ...]
+    sections: tuple[Section, ...]
+    llm_follow: dict[Item, str]  # every article in a block: its LLM follow section or "none"
+    blocks: tuple[tuple[Item, ...], ...]  # blocks with two or more articles
+
+    @property
+    def follow_names(self) -> tuple[str, ...]:
+        return tuple(s.name for s in self.sections if s.follow)
+
+    def item(self, article: DigestArticle) -> Item:
+        return Item(self.pipeline, article.title.strip())
+
+
+def load_route_night(pipeline_dir: Path, general_sections: str = DEFAULT_SECTIONS) -> RouteNight:
+    """Kept articles, the section list and today's LLM placement of one archived night."""
+    digest = json.loads((pipeline_dir / "digest.json").read_text("utf-8"))
+    preferences = json.loads((pipeline_dir / "pipeline_input.json").read_text("utf-8"))[
+        "preferences"
+    ]
+    articles = tuple(msgspec.convert(a, DigestArticle) for a in digest["articles"])
+    by_id = {a.article_id: Item(pipeline_dir.name, a.title.strip()) for a in articles}
+    llm_follow: dict[Item, str] = {}
+    for recap in digest["recaps"]:
+        follow = LLM_FOLLOW_TITLES.get(recap["title"].strip(), NO_FOLLOW)
+        for idx in recap["block_indices"]:
+            for aid in digest["blocks"][idx]["article_ids"]:
+                llm_follow[by_id[aid]] = follow
+    blocks = tuple(
+        tuple(by_id[aid] for aid in block["article_ids"])
+        for block in digest["blocks"]
+        if len(block["article_ids"]) > 1
+    )
+    return RouteNight(
+        pipeline_dir.name,
+        articles,
+        tuple(build_sections(preferences.get("follow", ""), general_sections)),
+        llm_follow,
+        blocks,
+    )
+
+
+def question_id(questions: dict[str, Noul | Choice]) -> str:
+    payload = json.dumps(
+        {k: q.model_dump(mode="json") for k, q in questions.items()},
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def stored_route_probs(bench: Bench, variant: str, model: str) -> dict[tuple[str, Item], Probs]:
+    """Stored probabilities keyed by (question id, item); later files win."""
+    probs: dict[tuple[str, Item], Probs] = {}
+    for path in bench.runs("route", variant):
+        for row in _read_jsonl(path):
+            if row["model"] == model:
+                probs[row["qid"], Item(row["pipeline"], row["headline"])] = row["p"]
+    return probs
+
+
+def run_route(
+    bench: Bench,
+    client: JevClient | None,
+    nights: Iterable[RouteNight],
+    variant: str = ROUTE_STATE,
+    model: str = DEFAULT_JEV_MODEL,
+) -> tuple[dict[Item, Probs], dict[str, int]]:
+    """Probabilities for every article of *nights*, asking Jev only for those not stored.
+
+    Returns the probabilities and the stored Jev tokens per night.
+    """
+    nights = list(nights)
+    stored = stored_route_probs(bench, variant, model)
+    probs: dict[Item, Probs] = {}
+    for night in nights:
+        qid = question_id(route_questions(night.sections))
+        todo = [a for a in night.articles if (qid, night.item(a)) not in stored]
+        if todo:
+            if client is None:
+                raise SystemExit("TYPESAFE_API_KEY is not set and stored route runs are incomplete")
+            print(f"  Jev route {variant}: {night.pipeline}, {len(todo)} articles", flush=True)
+            results = route_responses(client, todo, night.sections, variant)
+            rows = [
+                {
+                    "pipeline": night.pipeline,
+                    "headline": night.item(article).headline,
+                    "qid": qid,
+                    "model": client.model,
+                    "p": p,
+                    "tokens": tokens,
+                    "run_at": _now(),
+                }
+                for article, (p, tokens) in zip(todo, results, strict=True)
+            ]
+            _append_jsonl(bench.new_run("route", variant), rows)
+            stored.update({(qid, Item(r["pipeline"], r["headline"])): r["p"] for r in rows})
+        probs.update({night.item(a): stored[qid, night.item(a)] for a in night.articles})
+    return probs, route_night_tokens(bench, nights, variant, model)
+
+
+def route_responses(
+    client: JevClient,
+    articles: list[DigestArticle],
+    sections: tuple[Section, ...],
+    variant: str,
+) -> list[tuple[Probs, int]]:
+    questions = route_questions(sections)
+    responses = client.decide([(route_state(a, variant), questions) for a in articles])
+    return [(route_probabilities(r), r.usage.input_tokens or 0) for r in responses]
+
+
+def route_night_tokens(
+    bench: Bench,
+    nights: Iterable[RouteNight],
+    variant: str,
+    model: str,
+) -> dict[str, int]:
+    wanted = {night.pipeline: question_id(route_questions(night.sections)) for night in nights}
+    per_item: dict[Item, int] = {}
+    for path in bench.runs("route", variant):
+        for row in _read_jsonl(path):
+            if row["model"] == model and wanted.get(row["pipeline"]) == row["qid"]:
+                per_item[Item(row["pipeline"], row["headline"])] = row["tokens"]
+    totals: Counter[str] = Counter()
+    for item, tokens in per_item.items():
+        totals[item.pipeline] += tokens
+    return dict(totals)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class RouteConfig:
+    follow_threshold: float
+    min_confidence: float
+
+    @classmethod
+    def parse(cls, text: str) -> RouteConfig:
+        """``follow_threshold:min_confidence``.
+
+        >>> RouteConfig.parse("0.35:0.4")
+        RouteConfig(follow_threshold=0.35, min_confidence=0.4)
+        """
+        follow, confidence = text.split(":")
+        return cls(float(follow), float(confidence))
+
+    def __str__(self) -> str:
+        return f"follow>={self.follow_threshold:.2f} confidence>={self.min_confidence:.2f}"
+
+
+CHOSEN_ROUTE = RouteConfig(FOLLOW_THRESHOLD, MIN_ROUTE_CONFIDENCE)
+
+
+def read_route_labels(path: Path) -> dict[Item, frozenset[str]]:
+    """Accepted follow placements per item (a follow section name or ``none``); later rows win."""
+    return {
+        Item(r["pipeline"], r["headline"]): frozenset(r["label"])
+        for r in _read_jsonl(path)
+        if r["label"] != SKIP
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class RouteResult:
+    config: RouteConfig
+    sections: dict[Item, str]  # every article: routed section name or "other"
+    jev_follow: dict[Item, str]  # every article in a block: routed follow section or "none"
+    llm_follow: dict[Item, str]
+    blocks: tuple[tuple[Item, ...], ...]
+    labels: dict[Item, frozenset[str]]
+
+    @property
+    def other_share(self) -> float:
+        return _share(sum(s == OTHER for s in self.sections.values()), len(self.sections))
+
+    @property
+    def split_blocks(self) -> int:
+        return sum(len({self.sections[i] for i in block}) > 1 for block in self.blocks)
+
+    @property
+    def split_rate(self) -> float:
+        return _share(self.split_blocks, len(self.blocks))
+
+    @property
+    def disagreements(self) -> tuple[Item, ...]:
+        return tuple(sorted(i for i, f in self.llm_follow.items() if self.jev_follow[i] != f))
+
+    @property
+    def unknown(self) -> tuple[Item, ...]:
+        return tuple(i for i in self.disagreements if i not in self.labels)
+
+    def right(self, follow: dict[Item, str]) -> int:
+        return sum(follow[i] in self.labels[i] for i in self.disagreements if i in self.labels)
+
+    @property
+    def structure_ok(self) -> bool:
+        return self.split_rate <= MAX_SPLIT_RATE and self.other_share <= MAX_OTHER_SHARE
+
+    @property
+    def follow_ok(self) -> bool:
+        return self.right(self.jev_follow) >= self.right(self.llm_follow)
+
+    def rank_key(self) -> tuple[bool, int, int, float, float]:
+        """Structure gate first, then Jev's lead on labelled follow disagreements."""
+        return (
+            not self.structure_ok,
+            self.right(self.llm_follow) - self.right(self.jev_follow),
+            len(self.unknown),
+            self.split_rate,
+            self.other_share,
+        )
+
+
+def _share(part: int, whole: int) -> float:
+    return part / whole if whole else 0.0
+
+
+def evaluate_route(
+    config: RouteConfig,
+    nights: Iterable[RouteNight],
+    probs: dict[Item, Probs],
+    labels: dict[Item, frozenset[str]],
+) -> RouteResult:
+    sections: dict[Item, str] = {}
+    jev_follow: dict[Item, str] = {}
+    llm_follow: dict[Item, str] = {}
+    blocks: list[tuple[Item, ...]] = []
+    for night in nights:
+        names = {s.key: s.name for s in night.sections}
+        follow_keys = [s.key for s in night.sections if s.follow]
+        for article in night.articles:
+            item = night.item(article)
+            key = pick_section(
+                probs[item],
+                follow_keys,
+                config.follow_threshold,
+                config.min_confidence,
+            )
+            sections[item] = names.get(key, OTHER)
+        for item, follow in night.llm_follow.items():
+            llm_follow[item] = follow
+            jev_follow[item] = sections[item] if sections[item] in night.follow_names else NO_FOLLOW
+        blocks += night.blocks
+    return RouteResult(config, sections, jev_follow, llm_follow, tuple(blocks), labels)
+
+
+def sweep_route(
+    nights: list[RouteNight],
+    probs: dict[Item, Probs],
+    labels: dict[Item, frozenset[str]],
+) -> list[RouteResult]:
+    results = [
+        evaluate_route(RouteConfig(f, c), nights, probs, labels)
+        for f in FOLLOW_GRID
+        for c in CONFIDENCE_GRID
+    ]
+    return sorted(results, key=lambda r: (r.rank_key(), r.config))
+
+
+def route_sweep_table(results: list[RouteResult], top: int) -> list[str]:
+    lines = [
+        f"{'config':<36}{'split':>7}{'other':>7}{'disagree':>9}"
+        f"{'Jev ok':>8}{'LLM ok':>8}{'unlab':>7}",
+    ]
+    lines += [
+        f"{r.config!s:<36}{r.split_rate:>7.1%}{r.other_share:>7.1%}{len(r.disagreements):>9}"
+        f"{r.right(r.jev_follow):>8}{r.right(r.llm_follow):>8}{len(r.unknown):>7}"
+        for r in results[:top]
+    ]
+    return lines
+
+
+def follow_agreement(result: RouteResult, follow_names: Iterable[str]) -> list[str]:
+    """Per follow section: LLM placements Jev keeps there, and Jev placements the LLM had there."""
+    lines = []
+    for name in follow_names:
+        llm = [i for i, f in result.llm_follow.items() if f == name]
+        jev = [i for i, f in result.jev_follow.items() if f == name]
+        kept = sum(result.jev_follow[i] == name for i in llm)
+        confirmed = sum(result.llm_follow[i] == name for i in jev)
+        lines.append(
+            f"  {name:<16} LLM->Jev {kept}/{len(llm)} ({_share(kept, len(llm)):.0%})   "
+            f"Jev->LLM {confirmed}/{len(jev)} ({_share(confirmed, len(jev)):.0%})",
+        )
+    return lines
+
+
+def section_sizes(result: RouteResult, nights: list[RouteNight]) -> list[str]:
+    names = [*dict.fromkeys(s.name for night in nights for s in night.sections), OTHER]
+    counts = {night.pipeline: Counter[str]() for night in nights}
+    for item, name in result.sections.items():
+        counts[item.pipeline][name] += 1
+    width = max(len(n) for n in names) + 2
+    header = "".join(f"{night.pipeline[9:19]:>12}" for night in nights)
+    lines = [f"  {'section':<{width}}{header}"]
+    lines += [
+        f"  {name:<{width}}" + "".join(f"{counts[n.pipeline][name]:>12}" for n in nights)
+        for name in names
+    ]
+    return lines
+
+
+def route_report(result: RouteResult, nights: list[RouteNight]) -> tuple[bool, list[str]]:
+    """Metrics of one configuration plus the Stage 4.4 gate; returns (passed, lines)."""
+    jev_right, llm_right = result.right(result.jev_follow), result.right(result.llm_follow)
+    labelled = len(result.disagreements) - len(result.unknown)
+    follow_names = list(dict.fromkeys(n for night in nights for n in night.follow_names))
+    lines = [
+        f"config {result.config}: {len(result.sections)} articles, "
+        f"{len(result.llm_follow)} of them in today's blocks",
+        f"split: {result.split_blocks} of {len(result.blocks)} multi-article blocks "
+        f"({result.split_rate:.1%})",
+        f"other: {sum(s == OTHER for s in result.sections.values())} articles "
+        f"({result.other_share:.1%})",
+        "follow agreement (articles in today's blocks):",
+        *follow_agreement(result, follow_names),
+        f"follow disagreements: {len(result.disagreements)}, labelled {labelled}: "
+        f"Jev right {jev_right}, LLM right {llm_right}",
+        "section sizes:",
+        *section_sizes(result, nights),
+        f"gate split: {'PASS' if result.split_rate <= MAX_SPLIT_RATE else 'FAIL'} "
+        f"(<= {MAX_SPLIT_RATE:.0%})",
+        f"gate other: {'PASS' if result.other_share <= MAX_OTHER_SHARE else 'FAIL'} "
+        f"(<= {MAX_OTHER_SHARE:.0%})",
+        f"gate follow: {'PASS' if result.follow_ok else 'FAIL'} "
+        f"(Jev right {jev_right} >= LLM right {llm_right})",
+    ]
+    if result.unknown:
+        lines.append(f"gate incomplete: label {len(result.unknown)} follow disagreements first")
+    return not result.unknown and result.structure_ok and result.follow_ok, lines
+
+
+def disagreement_examples(result: RouteResult, n: int, seed: int = STAGE1_SEED) -> list[str]:
+    items = list(result.disagreements)
+    sample = sorted(random.Random(seed).sample(items, min(n, len(items))))  # noqa: S311
+    lines = []
+    for item in sample:
+        label = "/".join(sorted(result.labels.get(item, {"?"})))
+        lines.append(
+            f"  Jev={result.jev_follow[item]:<15} LLM={result.llm_follow[item]:<15} "
+            f"label={label:<15} {item.headline[:80]}",
+        )
+    return lines
+
+
+def write_route_pending(path: Path, nights: list[RouteNight], items: Iterable[Item]) -> int:
+    """Blind labelling rows: both headlines, source and lead; no system's answer."""
+    wanted = set(items)
+    rows = [
+        {
+            "pipeline": night.pipeline,
+            "headline": night.item(a).headline,
+            "enriched_title": a.enriched_title,
+            "source": a.source,
+            "lead": " ".join(a.clean_text[:LEAD_CHARS].split()),
+        }
+        for night in nights
+        for a in night.articles
+        if night.item(a) in wanted
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows).encode())
+    return len(rows)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -950,6 +1459,64 @@ def _cmd_classify(bench: Bench, args: argparse.Namespace) -> None:
     print(f"\nStage 3 gate on these nights: {'PASS' if passed else 'FAIL'}")
 
 
+def _route_nights(bench: Bench, holdout: bool) -> list[RouteNight]:
+    names = sorted(
+        p.name
+        for p in bench.pipelines.glob("pipeline-*")
+        if _digest_completed(p) and (p.name == HOLDOUT_PIPELINE) == holdout
+    )
+    return [load_route_night(bench.pipelines / name) for name in names]
+
+
+def _route_probs(
+    bench: Bench,
+    nights: list[RouteNight],
+    variant: str,
+) -> tuple[dict[Item, Probs], dict[str, int]]:
+    names = ", ".join(n.pipeline for n in nights)
+    print(f"Nights {names}: {sum(len(n.articles) for n in nights)} kept articles")
+    for night in nights:
+        missing = set(night.follow_names) - set(night.llm_follow.values())
+        if missing:
+            print(f"  {night.pipeline}: no LLM section mapped to {sorted(missing)}")
+    client = make_jev_client(bench.data_dir, DEFAULT_JEV_MODEL)
+    probs, tokens = run_route(bench, client, nights, variant)
+    if client is not None and client.requests:
+        cost = client.input_tokens * PRICE_PER_MTOK / 1_000_000
+        print(f"Jev: {client.requests} requests, {client.input_tokens:,} tokens, ${cost:.4f}")
+    return probs, tokens
+
+
+def _cmd_route(bench: Bench, args: argparse.Namespace) -> None:
+    nights = _route_nights(bench, args.holdout)
+    probs, tokens = _route_probs(bench, nights, args.variant)
+    labels = read_route_labels(bench.labels("route"))
+    fixed = RouteConfig.parse(args.config) if args.config else None
+    if fixed is None and args.holdout:
+        fixed = CHOSEN_ROUTE
+    if fixed:
+        results = [evaluate_route(fixed, nights, probs, labels)]
+    else:
+        results = sweep_route(nights, probs, labels)
+        print(f"\nTop {args.top} of {len(results)} configurations:")
+        for line in route_sweep_table(results, args.top):
+            print("  " + line)
+    pending = {item for r in results[: args.top] for item in r.unknown}
+    if n_pending := write_route_pending(bench.pending("route"), nights, pending):
+        print(f"\n{n_pending} unlabelled follow disagreements -> {bench.pending('route')}")
+
+    passed, lines = route_report(results[0], nights)
+    _, cost_lines = monthly_cost(tokens)
+    print()
+    for line in [*lines, *cost_lines]:
+        print(line)
+    if args.examples:
+        print(f"\n{args.examples} random follow disagreements:")
+        for line in disagreement_examples(results[0], args.examples):
+            print(line)
+    print(f"\nStage 4 gate on these nights: {'PASS' if passed else 'FAIL'}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -972,6 +1539,16 @@ def main() -> None:
     )
     classify.add_argument("--variants", default=",".join(STATE_VARIANTS))
     classify.add_argument("--top", type=int, default=TOP_CONFIGS)
+    route = sub.add_parser("route", help="Jev section routing vs today's digests, sweep, gate")
+    route.add_argument(
+        "--holdout",
+        action="store_true",
+        help="score one configuration (default: the one chosen on tuning nights) on the holdout",
+    )
+    route.add_argument("--config", help="follow_threshold:min_confidence instead of sweeping")
+    route.add_argument("--variant", choices=ROUTE_STATE_VARIANTS, default=ROUTE_STATE)
+    route.add_argument("--top", type=int, default=TOP_CONFIGS)
+    route.add_argument("--examples", type=int, default=20, help="random disagreements to print")
     args = parser.parse_args()
 
     commands = {
@@ -979,6 +1556,7 @@ def main() -> None:
         "label": _cmd_label,
         "judge-check": _cmd_judge_check,
         "classify": _cmd_classify,
+        "route": _cmd_route,
     }
     commands[args.command](Bench.from_settings(), args)
 
