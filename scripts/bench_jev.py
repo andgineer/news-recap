@@ -7,6 +7,7 @@ Usage:
     uv run python scripts/bench_jev.py judge-check --task classify
     uv run python scripts/bench_jev.py classify [--holdout] [--config full:0.8:full:0.6]
     uv run python scripts/bench_jev.py route [--holdout] [--config 0.35:0.4]
+    uv run python scripts/bench_jev.py dedup [--holdout] [--config lead:news:0.5]
 """
 
 from __future__ import annotations
@@ -44,6 +45,15 @@ from news_recap.recap.jev.classify import (
     verdict,
 )
 from news_recap.recap.jev.client import JevClient, make_jev_client
+from news_recap.recap.jev.dedup import (
+    PAIR_KEY,
+    PAIR_QUESTION,
+    PAIR_STATE,
+    SAME_EVENT_THRESHOLD,
+    merge_groups,
+    pair_state,
+)
+from news_recap.recap.jev.dedup import STATE_VARIANTS as DEDUP_STATE_VARIANTS
 from news_recap.recap.jev.policy import split_policy_topics
 from news_recap.recap.jev.usage import PRICE_PER_MTOK
 from news_recap.recap.models import DigestArticle
@@ -1364,6 +1374,508 @@ def write_route_pending(path: Path, nights: list[RouteNight], items: Iterable[It
 
 
 # ---------------------------------------------------------------------------
+# dedup
+# ---------------------------------------------------------------------------
+
+DEDUP_GRID = tuple(round(0.30 + 0.05 * i, 2) for i in range(13))
+SAME, DIFFERENT = "same", "different"
+PAIR_LABELS = (SAME, DIFFERENT)
+DEDUP_EMBEDDER = "intfloat/multilingual-e5-small"
+DEDUP_THRESHOLD = 0.90
+# Rows stored before question variants existed used the "event" question.
+DEDUP_QUESTIONS = {
+    "event": Noul(
+        instructions=(
+            "Do article_a and article_b report the same specific news event, so a reader would "
+            "consider them the same piece of news (not merely related stories)?"
+        ),
+    ),
+    "news": PAIR_QUESTION,
+}
+CHOSEN_DEDUP_QUESTION = "news"
+
+_CLUSTER_PROMPT_RE = re.compile(r"^=== CLUSTER (\d+) \(\d+ articles\) ===\s*$", re.MULTILINE)
+_CLUSTER_OUTPUT_RE = re.compile(r"^CLUSTER (\d+):\s*$", re.MULTILINE)
+_DEDUP_LINE_RE = re.compile(r"^(\d+): \[([^\]]*)\] (.+)$", re.MULTILINE)
+
+Pair = tuple[str, str, str]  # (pipeline, headline_a, headline_b) with headline_a < headline_b
+
+
+def make_pair(pipeline: str, a: str, b: str) -> Pair:
+    first, second = sorted((a, b))
+    return (pipeline, first, second)
+
+
+def parse_merged_groups(text: str, n: int) -> list[list[int]]:
+    """0-based positions per ``MERGED`` group; a position already merged is not reused.
+
+    >>> parse_merged_groups("MERGED: x\\n\\n1, 3\\nSINGLE: 2\\nMERGED: y\\n3, 4, 9", 4)
+    [[0, 2]]
+    """
+    lines = [line.strip() for line in text.splitlines()]
+    seen: set[int] = set()
+    groups = []
+    for i, line in enumerate(lines):
+        if not line.upper().startswith("MERGED:"):
+            continue
+        numbers = next((ln for ln in lines[i + 1 :] if ln), "")
+        positions = [
+            int(tok) - 1
+            for tok in re.split(r"[,\s]+", numbers)
+            if tok.isdigit() and 1 <= int(tok) <= n
+        ]
+        fresh = sorted({p for p in positions if p not in seen})
+        if len(fresh) > 1:
+            groups.append(fresh)
+            seen.update(fresh)
+    return groups
+
+
+def parse_dedup_task(
+    prompt: str,
+    stdout: str,
+) -> list[tuple[list[tuple[str, str]], list[list[int]]]]:
+    """``(source, headline)`` lines and Gemini's merged positions for each cluster of one task.
+
+    A multi-cluster answer whose ``CLUSTER N:`` headers do not match the prompt merged nothing:
+    the pipeline rejects it.
+    """
+    if not _CLUSTER_PROMPT_RE.search(prompt):
+        lines = _DEDUP_LINE_RE.findall(prompt.partition("=== NEWS")[2])
+        return [([(s, h.strip()) for _, s, h in lines], parse_merged_groups(stdout, len(lines)))]
+    parts = _CLUSTER_PROMPT_RE.split(prompt)[1:]
+    out_parts = _CLUSTER_OUTPUT_RE.split(stdout)[1:]
+    answers = dict(zip(out_parts[::2], out_parts[1::2], strict=True))
+    valid = len(answers) == len(parts) // 2
+    clusters = []
+    for num, body in zip(parts[::2], parts[1::2], strict=True):
+        lines = _DEDUP_LINE_RE.findall(body)
+        merged = parse_merged_groups(answers.get(num, ""), len(lines)) if valid else []
+        clusters.append(([(s, h.strip()) for _, s, h in lines], merged))
+    return clusters
+
+
+@dataclass(frozen=True, slots=True)
+class DedupCluster:
+    """One candidate group as today's LLM saw it, with Gemini's merge groups."""
+
+    pipeline: str
+    articles: tuple[DigestArticle, ...]  # article_id = title = the headline in the prompt
+    merged: tuple[tuple[int, ...], ...]
+
+    def pairs(self) -> list[Pair]:
+        return [
+            make_pair(self.pipeline, a.title, b.title)
+            for i, a in enumerate(self.articles)
+            for b in self.articles[i + 1 :]
+        ]
+
+    def gemini_pairs(self) -> set[Pair]:
+        return {
+            make_pair(self.pipeline, self.articles[i].title, self.articles[j].title)
+            for group in self.merged
+            for i in group
+            for j in group
+            if i < j
+        }
+
+
+def _dedup_article(raw: dict[str, Any] | None, source: str, headline: str) -> DigestArticle:
+    raw = raw or {}
+    return DigestArticle(
+        article_id=headline,
+        title=headline,
+        url=raw.get("url") or "",
+        source=source,
+        published_at=raw.get("published_at") or "",
+        clean_text=raw.get("clean_text") or "",
+    )
+
+
+def replay_dedup(pipeline_dir: Path) -> list[DedupCluster]:
+    """Gemini's dedup decisions per candidate group, parsed from the ``dedup-N`` workdirs."""
+    _, by_title = _pipeline_articles(pipeline_dir)
+    clusters = []
+    for task_dir in sorted(pipeline_dir.glob("dedup-*")):
+        try:
+            prompt = (task_dir / "input" / "task_prompt.txt").read_text("utf-8")
+            stdout = (task_dir / "output" / "agent_stdout.log").read_text("utf-8")
+        except OSError:
+            continue
+        for lines, merged in parse_dedup_task(prompt, stdout):
+            articles = tuple(_dedup_article(by_title.get(h), s, h) for s, h in lines)
+            clusters.append(DedupCluster(pipeline_dir.name, articles, tuple(map(tuple, merged))))
+    return clusters
+
+
+def stored_dedup_probs(
+    bench: Bench,
+    variant: str,
+    question: str,
+    model: str,
+) -> dict[Pair, tuple[float, int]]:
+    """Stored ``(probability, tokens)`` per pair; later files win."""
+    probs: dict[Pair, tuple[float, int]] = {}
+    for path in bench.runs("dedup", variant):
+        for row in _read_jsonl(path):
+            if row["model"] == model and row.get("question", "event") == question:
+                pair = make_pair(row["pipeline"], row["headline_a"], row["headline_b"])
+                probs[pair] = (row["p"], row["tokens"])
+    return probs
+
+
+def run_dedup_variant(  # noqa: PLR0913
+    bench: Bench,
+    client: JevClient | None,
+    clusters: Iterable[DedupCluster],
+    variant: str,
+    question: str = "event",
+    model: str = DEFAULT_JEV_MODEL,
+) -> dict[Pair, tuple[float, int]]:
+    """``(probability, tokens)`` for every candidate pair, asking Jev only for unstored ones."""
+    pairs = [
+        (cluster.pipeline, a, b)
+        for cluster in clusters
+        for i, a in enumerate(cluster.articles)
+        for b in cluster.articles[i + 1 :]
+    ]
+    return run_dedup_pairs(bench, client, pairs, variant, question, model)
+
+
+def run_dedup_pairs(  # noqa: PLR0913
+    bench: Bench,
+    client: JevClient | None,
+    pairs: Iterable[tuple[str, DigestArticle, DigestArticle]],
+    variant: str,
+    question: str,
+    model: str = DEFAULT_JEV_MODEL,
+) -> dict[Pair, tuple[float, int]]:
+    """``(probability, tokens)`` for every stored pair, asking Jev for the missing *pairs*."""
+    stored = stored_dedup_probs(bench, variant, question, model)
+    todo: dict[str, list[tuple[DigestArticle, DigestArticle]]] = {}
+    for night, a, b in pairs:
+        if make_pair(night, a.title, b.title) not in stored:
+            todo.setdefault(night, []).append((a, b))
+    for night, night_pairs in sorted(todo.items()):
+        if client is None:
+            raise SystemExit("TYPESAFE_API_KEY is not set and stored dedup runs are incomplete")
+        print(f"  Jev dedup {variant}/{question}: {night}, {len(night_pairs)} pairs", flush=True)
+        questions = {PAIR_KEY: DEDUP_QUESTIONS[question]}
+        responses = client.decide([(pair_state(a, b, variant), questions) for a, b in night_pairs])
+        rows = []
+        for (a, b), response in zip(night_pairs, responses, strict=True):
+            _, first, second = make_pair(night, a.title, b.title)
+            rows.append(
+                {
+                    "pipeline": night,
+                    "headline_a": first,
+                    "headline_b": second,
+                    "variant": variant,
+                    "question": question,
+                    "model": client.model,
+                    "p": response.nouls[PAIR_KEY].noul,
+                    "tokens": response.usage.input_tokens or 0,
+                    "run_at": _now(),
+                },
+            )
+        _append_jsonl(bench.new_run("dedup", variant), rows)
+        stored.update(
+            {
+                make_pair(r["pipeline"], r["headline_a"], r["headline_b"]): (r["p"], r["tokens"])
+                for r in rows
+            },
+        )
+    return stored
+
+
+def read_dedup_labels(path: Path) -> dict[Pair, str]:
+    return {
+        make_pair(r["pipeline"], r["headline_a"], r["headline_b"]): r["label"]
+        for r in _read_jsonl(path)
+        if r["label"] in PAIR_LABELS
+    }
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class DedupConfig:
+    variant: str
+    question: str
+    threshold: float
+
+    @classmethod
+    def parse(cls, text: str) -> DedupConfig:
+        """``variant:question:threshold``.
+
+        >>> DedupConfig.parse("lead:news:0.6")
+        DedupConfig(variant='lead', question='news', threshold=0.6)
+        """
+        variant, question, threshold = text.split(":")
+        if variant not in DEDUP_STATE_VARIANTS or question not in DEDUP_QUESTIONS:
+            raise ValueError(
+                f"expected variant in {DEDUP_STATE_VARIANTS}, question in {list(DEDUP_QUESTIONS)}: "
+                f"{text!r}",
+            )
+        return cls(variant, question, float(threshold))
+
+    @property
+    def run(self) -> tuple[str, str]:
+        return (self.variant, self.question)
+
+    def __str__(self) -> str:
+        return f"{self.variant}:{self.question}:{self.threshold:.2f}"
+
+
+@dataclass(frozen=True, slots=True)
+class PairScores:
+    merged: frozenset[Pair]
+    truth: dict[Pair, str]  # scored pairs only
+
+    @property
+    def wrong_merges(self) -> int:
+        return sum(p in self.merged for p, t in self.truth.items() if t == DIFFERENT)
+
+    @property
+    def missed_merges(self) -> int:
+        return sum(p not in self.merged for p, t in self.truth.items() if t == SAME)
+
+    @property
+    def correct(self) -> int:
+        return len(self.truth) - self.wrong_merges - self.missed_merges
+
+
+@dataclass(frozen=True, slots=True)
+class DedupResult:
+    config: DedupConfig
+    jev: PairScores
+    gemini: PairScores
+    pairs: int
+    unknown: tuple[Pair, ...]
+
+    @property
+    def gate_ok(self) -> bool:
+        return (
+            self.jev.wrong_merges <= self.gemini.wrong_merges
+            and self.jev.correct >= self.gemini.correct
+        )
+
+    def rank_key(self) -> tuple[bool, int, int, int]:
+        """Gate first, then fewest errors, fewest wrong merges, fewest unlabelled disputes."""
+        return (
+            not self.gate_ok,
+            self.jev.wrong_merges + self.jev.missed_merges,
+            self.jev.wrong_merges,
+            len(self.unknown),
+        )
+
+
+def jev_merged_pairs(
+    clusters: Iterable[DedupCluster],
+    probs: dict[Pair, tuple[float, int]],
+    threshold: float,
+) -> set[Pair]:
+    """Pairs the pipeline would merge: star groups per candidate group at *threshold*."""
+
+    def same(pipeline: str) -> Callable[[DigestArticle, DigestArticle], bool]:
+        return lambda a, b: probs[make_pair(pipeline, a.title, b.title)][0] >= threshold
+
+    merged: set[Pair] = set()
+    for cluster in clusters:
+        for group in merge_groups(cluster.articles, same(cluster.pipeline)):
+            merged.update(
+                make_pair(cluster.pipeline, a.title, b.title)
+                for i, a in enumerate(group)
+                for b in group[i + 1 :]
+            )
+    return merged
+
+
+def evaluate_dedup(
+    config: DedupConfig,
+    clusters: list[DedupCluster],
+    probs: dict[Pair, tuple[float, int]],
+    labels: dict[Pair, str],
+) -> DedupResult:
+    jev = jev_merged_pairs(clusters, probs, config.threshold)
+    gemini = set().union(*(c.gemini_pairs() for c in clusters))
+    truth: dict[Pair, str] = {}
+    unknown = []
+    for pair in (p for c in clusters for p in c.pairs()):
+        if pair in labels:
+            truth[pair] = labels[pair]
+        elif (pair in jev) == (pair in gemini):
+            truth[pair] = SAME if pair in jev else DIFFERENT
+        else:
+            unknown.append(pair)
+    return DedupResult(
+        config,
+        PairScores(frozenset(jev), truth),
+        PairScores(frozenset(gemini), truth),
+        len(truth) + len(unknown),
+        tuple(sorted(unknown)),
+    )
+
+
+def sweep_dedup(
+    clusters: list[DedupCluster],
+    probs: dict[tuple[str, str], dict[Pair, tuple[float, int]]],
+    labels: dict[Pair, str],
+) -> list[DedupResult]:
+    results = [
+        evaluate_dedup(DedupConfig(variant, question, t), clusters, run_probs, labels)
+        for (variant, question), run_probs in sorted(probs.items())
+        for t in DEDUP_GRID
+    ]
+    return sorted(results, key=lambda r: (r.rank_key(), r.config))
+
+
+def dedup_sweep_table(results: list[DedupResult], top: int) -> list[str]:
+    lines = [
+        f"{'config':<22}{'merged':>8}{'wrong':>7}{'missed':>8}{'correct':>9}{'gate':>6}{'unlab':>7}",
+    ]
+    lines += [
+        f"{r.config!s:<22}{len(r.jev.merged):>8}{r.jev.wrong_merges:>7}{r.jev.missed_merges:>8}"
+        f"{r.jev.correct:>9}{'yes' if r.gate_ok else 'no':>6}{len(r.unknown):>7}"
+        for r in results[:top]
+    ]
+    return lines
+
+
+def dedup_report(result: DedupResult) -> tuple[bool, list[str]]:
+    """Jev vs Gemini on candidate pairs plus the Stage 5.4 gate; returns (passed, lines)."""
+    jev, gem = result.jev, result.gemini
+    lines = [
+        f"config {result.config}: {result.pairs} candidate pairs, {len(jev.truth)} scored, "
+        f"{len(result.unknown)} unlabelled disputes left out",
+        "(unlabelled Jev/Gemini agreements count as correct)",
+        f"{'':<8}{'merged':>8}{'wrong':>7}{'missed':>8}{'correct':>9}",
+    ]
+    lines += [
+        f"{name:<8}{len(s.merged):>8}{s.wrong_merges:>7}{s.missed_merges:>8}{s.correct:>9}"
+        for name, s in (("Jev", jev), ("Gemini", gem))
+    ]
+    lines.append(
+        f"gate dedup: {'PASS' if result.gate_ok else 'FAIL'} (wrong merges {jev.wrong_merges} vs "
+        f"{gem.wrong_merges}, correct {jev.correct} vs {gem.correct})",
+    )
+    if result.unknown:
+        lines.append(f"gate incomplete: label {len(result.unknown)} disputed pairs first")
+    return not result.unknown and result.gate_ok, lines
+
+
+def write_dedup_pending(path: Path, clusters: list[DedupCluster], pairs: Iterable[Pair]) -> int:
+    """Blind labelling rows: both headlines with source and lead; no system's answer."""
+    wanted = set(pairs)
+    by_headline = {(c.pipeline, a.title): a for c in clusters for a in c.articles}
+    rows = []
+    for pipeline, first, second in sorted(wanted):
+        row: dict[str, str] = {"pipeline": pipeline}
+        for side, headline in (("a", first), ("b", second)):
+            article = by_headline[pipeline, headline]
+            row[f"headline_{side}"] = headline
+            row[f"source_{side}"] = article.source
+            row[f"lead_{side}"] = " ".join(article.clean_text[:LEAD_CHARS].split())
+        rows.append(row)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows).encode())
+    return len(rows)
+
+
+def dedup_night_tokens(
+    probs: dict[Pair, tuple[float, int]],
+    pairs: Iterable[Pair],
+) -> dict[str, int]:
+    totals: Counter[str] = Counter()
+    for pair in pairs:
+        totals[pair[0]] += probs[pair][1]
+    return dict(totals)
+
+
+WIDE_LOW = 0.85
+WIDE_MIN_PRECISION = 0.90
+WIDE_THRESHOLD = 0.70
+
+
+def kept_articles(pipeline_dir: Path) -> list[DigestArticle]:
+    """The night's articles that entered dedup (kept ones plus those dedup folded away)."""
+    digest = json.loads((pipeline_dir / "digest.json").read_text("utf-8"))
+    urls = {a["url"] for a in digest["articles"]}
+    urls |= {alt["url"] for a in digest["articles"] for alt in a.get("alt_urls") or []}
+    _, by_title = _pipeline_articles(pipeline_dir)
+    return [
+        _dedup_article(raw, raw.get("source") or "", title)
+        for title, raw in by_title.items()
+        if raw.get("url") in urls
+    ]
+
+
+def _embedding_text(article: DigestArticle) -> str:
+    return f"{article.title}. {article.clean_text.strip()}".strip()
+
+
+def night_similarities(bench: Bench, pipeline_dir: Path, articles: list[DigestArticle]) -> Any:
+    """Cosine similarity matrix of *articles* with the pipeline's dedup embedder (cached)."""
+    import numpy as np  # noqa: PLC0415 - only the wide net needs it
+
+    cache = bench.root / "cache" / f"dedup-embeddings-{pipeline_dir.name}.npy"
+    if cache.exists():
+        vectors = np.load(cache)
+    else:
+        from news_recap.recap.dedup.embedder import build_embedder  # noqa: PLC0415
+
+        embedder = build_embedder(DEDUP_EMBEDDER, allow_fallback=False)
+        vectors = np.array(embedder.embed([_embedding_text(a) for a in articles]))
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        np.save(cache, vectors)
+    vectors = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+    return vectors @ vectors.T
+
+
+def wide_pairs(  # noqa: PLR0913
+    pipeline: str,
+    articles: list[DigestArticle],
+    similarities: Any,
+    clusters: Iterable[DedupCluster],
+    high: float,
+    low: float = WIDE_LOW,
+) -> list[tuple[str, DigestArticle, DigestArticle]]:
+    """Pairs with similarity in ``[low, high)`` that no candidate group of today's dedup holds."""
+    member = {a.title: k for k, c in enumerate(clusters) for a in c.articles}
+    pairs = []
+    for i, a in enumerate(articles):
+        for j in range(i + 1, len(articles)):
+            b = articles[j]
+            same_group = a.title in member and member.get(b.title) == member[a.title]
+            if low <= similarities[i, j] < high and not same_group:
+                pairs.append((pipeline, a, b))
+    return pairs
+
+
+def wide_report(
+    pairs: list[Pair],
+    probs: dict[Pair, tuple[float, int]],
+    labels: dict[Pair, str],
+    threshold: float,
+) -> tuple[bool, list[Pair], list[str]]:
+    """Precision of the merges the wider net adds; returns (ships, unlabelled merges, lines)."""
+    merged = [p for p in pairs if probs[p][0] >= threshold]
+    labelled = [p for p in merged if p in labels]
+    right = sum(labels[p] == SAME for p in labelled)
+    unlabelled = [p for p in merged if p not in labels]
+    precision = _share(right, len(labelled))
+    ships = not unlabelled and precision >= WIDE_MIN_PRECISION
+    by_night = Counter(p[0] for p in merged)
+    lines = [
+        f"wider net: {len(pairs)} pairs outside today's candidate groups, Jev merges "
+        f"{len(merged)} ({', '.join(f'{n[9:19]} {c}' for n, c in sorted(by_night.items()))})",
+        f"  labelled {len(labelled)}: {right} same ({precision:.1%}); "
+        f"ships at >= {WIDE_MIN_PRECISION:.0%}: {'yes' if ships else 'no'}",
+    ]
+    if unlabelled:
+        lines.append(f"  label {len(unlabelled)} merged pairs first")
+    return ships, unlabelled, lines
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1517,6 +2029,82 @@ def _cmd_route(bench: Bench, args: argparse.Namespace) -> None:
     print(f"\nStage 4 gate on these nights: {'PASS' if passed else 'FAIL'}")
 
 
+def _archived_nights(bench: Bench, holdout: bool) -> list[str]:
+    return sorted(
+        p.name
+        for p in bench.pipelines.glob("pipeline-*")
+        if _digest_completed(p) and (p.name == HOLDOUT_PIPELINE) == holdout
+    )
+
+
+def _cmd_dedup(bench: Bench, args: argparse.Namespace) -> None:
+    nights = _archived_nights(bench, args.holdout)
+    clusters = [c for night in nights for c in replay_dedup(bench.pipelines / night)]
+    pairs = [p for c in clusters for p in c.pairs()]
+    print(f"Nights {', '.join(nights)}: {len(clusters)} candidate groups, {len(pairs)} pairs")
+    fixed = DedupConfig.parse(args.config) if args.config else None
+    if fixed is None and args.holdout:
+        fixed = DedupConfig(PAIR_STATE, CHOSEN_DEDUP_QUESTION, SAME_EVENT_THRESHOLD)
+    runs = (
+        [fixed.run]
+        if fixed
+        else [(v, q) for v in args.variants.split(",") for q in args.questions.split(",")]
+    )
+    client = make_jev_client(bench.data_dir, DEFAULT_JEV_MODEL)
+    probs = {run: run_dedup_variant(bench, client, clusters, *run) for run in runs}
+    if client is not None and client.requests:
+        cost = client.input_tokens * PRICE_PER_MTOK / 1_000_000
+        print(f"Jev: {client.requests} requests, {client.input_tokens:,} tokens, ${cost:.4f}")
+
+    labels = read_dedup_labels(bench.labels("dedup"))
+    if fixed:
+        results = [evaluate_dedup(fixed, clusters, probs[fixed.run], labels)]
+    else:
+        results = sweep_dedup(clusters, probs, labels)
+        print(f"\nTop {args.top} of {len(results)} configurations (Jev scores):")
+        for line in dedup_sweep_table(results, args.top):
+            print("  " + line)
+    pending = [p for r in results[: args.top] for p in r.unknown]
+    if n_pending := write_dedup_pending(bench.pending("dedup"), clusters, pending):
+        print(f"\n{n_pending} unlabelled disputed pairs -> {bench.pending('dedup')}")
+
+    passed, lines = dedup_report(results[0])
+    _, cost_lines = monthly_cost(dedup_night_tokens(probs[results[0].config.run], pairs))
+    print()
+    for line in [*lines, *cost_lines]:
+        print(line)
+    print(f"\nStage 5 gate on these nights: {'PASS' if passed else 'FAIL'}")
+    if args.wide:
+        _wide_net(bench, client, nights, clusters, results[0].config, labels)
+
+
+def _wide_net(  # noqa: PLR0913
+    bench: Bench,
+    client: JevClient | None,
+    nights: list[str],
+    clusters: list[DedupCluster],
+    config: DedupConfig,
+    labels: dict[Pair, str],
+) -> None:
+    candidates = []
+    for night in nights:
+        articles = kept_articles(bench.pipelines / night)
+        similarities = night_similarities(bench, bench.pipelines / night, articles)
+        night_clusters = [c for c in clusters if c.pipeline == night]
+        candidates += wide_pairs(night, articles, similarities, night_clusters, DEDUP_THRESHOLD)
+    probs = run_dedup_pairs(bench, client, candidates, *config.run)
+    pairs = [make_pair(n, a.title, b.title) for n, a, b in candidates]
+    _, unlabelled, lines = wide_report(pairs, probs, labels, WIDE_THRESHOLD)
+    if unlabelled:
+        clusters_view = [DedupCluster(n, (a, b), ()) for n, a, b in candidates]
+        write_dedup_pending(bench.pending("dedup"), clusters_view, unlabelled)
+        print(f"\n{len(unlabelled)} unlabelled wide-net merges -> {bench.pending('dedup')}")
+    _, cost_lines = monthly_cost(dedup_night_tokens(probs, pairs))
+    print()
+    for line in [*lines, *cost_lines]:
+        print(line)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1549,6 +2137,21 @@ def main() -> None:
     route.add_argument("--variant", choices=ROUTE_STATE_VARIANTS, default=ROUTE_STATE)
     route.add_argument("--top", type=int, default=TOP_CONFIGS)
     route.add_argument("--examples", type=int, default=20, help="random disagreements to print")
+    dedup = sub.add_parser("dedup", help="Jev vs Gemini on duplicate pairs, sweep, gate")
+    dedup.add_argument(
+        "--holdout",
+        action="store_true",
+        help="score one configuration (default: the module constants) on the holdout night",
+    )
+    dedup.add_argument("--config", help="variant:question:threshold instead of sweeping")
+    dedup.add_argument("--variants", default=",".join(DEDUP_STATE_VARIANTS))
+    dedup.add_argument("--questions", default=",".join(DEDUP_QUESTIONS))
+    dedup.add_argument(
+        "--wide",
+        action="store_true",
+        help=f"also score the wider net: pairs at similarity {WIDE_LOW}-{DEDUP_THRESHOLD}",
+    )
+    dedup.add_argument("--top", type=int, default=TOP_CONFIGS)
     args = parser.parse_args()
 
     commands = {
@@ -1557,6 +2160,7 @@ def main() -> None:
         "judge-check": _cmd_judge_check,
         "classify": _cmd_classify,
         "route": _cmd_route,
+        "dedup": _cmd_dedup,
     }
     commands[args.command](Bench.from_settings(), args)
 

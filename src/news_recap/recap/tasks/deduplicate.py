@@ -1,14 +1,19 @@
-"""Task launcher: DEDUPLICATE — merge duplicate news via embedding pre-filter + LLM."""
+"""Task launcher: DEDUPLICATE — merge duplicate news via embedding pre-filter + Jev or LLM."""
 
 from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from pathlib import Path
 
 from news_recap.recap.dedup.cluster import group_similar
-from news_recap.recap.dedup.embedder import build_embedder
+from news_recap.recap.dedup.embedder import Vector, build_embedder
+from news_recap.recap.jev.client import JevUnavailableError, make_jev_client
+from news_recap.recap.jev.dedup import display_title, find_duplicates, wide_pairs
+from news_recap.recap.jev.usage import jev_task_dir, save_answers, save_jev_usage
 from news_recap.recap.models import DigestArticle, language_display_name
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
@@ -222,7 +227,7 @@ def _parse_numbers(text: str, valid: set[int]) -> list[int]:
 
 
 class Deduplicate(TaskLauncher):
-    """Merge duplicate news: embedding pre-filter + per-cluster LLM calls."""
+    """Merge duplicate news: embedding pre-filter, then Jev pair answers or LLM calls."""
 
     name = "deduplicate"
 
@@ -233,13 +238,29 @@ class Deduplicate(TaskLauncher):
             logger.info("[cyan]dedup:[/cyan] Fewer than 2 articles, skipping")
             return
 
-        groups = _compute_groups(ctx, articles)
+        groups, embeddings = _compute_groups(ctx, articles)
+        id_to_article = {a.article_id: a for a in articles}
+        if ctx.inp.dedup_backend == "jev" and self._dedup_on_jev(groups, embeddings, id_to_article):
+            return
         if not groups:
             return
 
-        id_to_article = {a.article_id: a for a in articles}
         batch_results, n_failed = _run_llm_dedup(ctx, groups, id_to_article)
+        self._apply(batch_results, id_to_article, source="LLM")
 
+        if n_failed > 0:
+            logger.warning(
+                "[cyan]dedup:[/cyan] %d cluster(s) failed — partial results saved",
+                n_failed,
+            )
+
+    def _apply(
+        self,
+        batch_results: list[tuple[list[str], _DedupResult]],
+        id_to_article: dict[str, DigestArticle],
+        *,
+        source: str,
+    ) -> None:
         remove_ids: set[str] = set()
         merge_count = 0
         for group_ids, result in batch_results:
@@ -248,18 +269,82 @@ class Deduplicate(TaskLauncher):
                 merge_count += 1
 
         if remove_ids:
-            _update_pipeline_state(ctx, remove_ids, batch_results, id_to_article, merge_count)
+            _update_pipeline_state(self.ctx, remove_ids, batch_results, id_to_article, merge_count)
         else:
-            logger.info("[cyan]dedup:[/cyan] No duplicates found by LLM")
+            logger.info("[cyan]dedup:[/cyan] No duplicates found by %s", source)
 
-        if n_failed > 0:
-            logger.warning(
-                "[cyan]dedup:[/cyan] %d cluster(s) failed — partial results saved",
-                n_failed,
+    def _dedup_on_jev(
+        self,
+        groups: list[list[str]],
+        embeddings: dict[str, Vector],
+        id_to_article: dict[str, DigestArticle],
+    ) -> bool:
+        """Merge duplicates found by Jev; ``False`` means the caller runs the LLM path instead."""
+        ctx = self.ctx
+        client = make_jev_client(Path(ctx.inp.data_dir), ctx.inp.jev_model)
+        if client is None:
+            logger.warning("dedup: no TYPESAFE_API_KEY — deduplicating with the LLM")
+            return False
+        candidate_groups = [[id_to_article[i] for i in group] for group in groups]
+        extra = wide_pairs(
+            list(id_to_article.values()),
+            embeddings,
+            candidate_groups,
+            high=ctx.inp.dedup_threshold,
+        )
+        logger.info(
+            "[cyan]dedup:[/cyan] %d candidate group(s) + %d wider pair(s) -> Jev",
+            len(candidate_groups),
+            len(extra),
+        )
+        task_dir = jev_task_dir(ctx.pdir, "dedup")
+        started = time.monotonic()
+        try:
+            merges, answers = find_duplicates(client, candidate_groups, extra)
+        except JevUnavailableError as exc:
+            logger.warning("dedup: Jev unavailable (%s) — deduplicating with the LLM", exc)
+            return False
+        finally:
+            save_jev_usage(
+                task_dir,
+                elapsed=time.monotonic() - started,
+                input_tokens=client.input_tokens,
+                requests=client.requests,
+                model=client.model,
             )
+        save_answers(
+            task_dir,
+            [
+                {
+                    "a": x.a.article_id,
+                    "b": x.b.article_id,
+                    "title_a": x.a.title,
+                    "title_b": x.b.title,
+                    "p": x.probability,
+                    "wide": x.wide,
+                    "same": x.same,
+                }
+                for x in answers
+            ],
+        )
+        batch_results = [
+            (
+                [a.article_id for a in group],
+                _DedupResult(
+                    merges=[_MergeAction(display_title(group), list(range(1, len(group) + 1)))],
+                    singles=[],
+                ),
+            )
+            for group in merges
+        ]
+        self._apply(batch_results, id_to_article, source="Jev")
+        return True
 
 
-def _compute_groups(ctx: FlowContext, articles: list[DigestArticle]) -> list[list[str]]:
+def _compute_groups(
+    ctx: FlowContext,
+    articles: list[DigestArticle],
+) -> tuple[list[list[str]], dict[str, Vector]]:
     """Compute embeddings and group articles by similarity."""
     embedder = build_embedder(ctx.inp.dedup_model_name, allow_fallback=True)
     texts = [_build_embedding_text(a) for a in articles]
@@ -267,12 +352,12 @@ def _compute_groups(ctx: FlowContext, articles: list[DigestArticle]) -> list[lis
 
     logger.info("[cyan]dedup:[/cyan] Computing embeddings for %d articles", len(articles))
     vectors = embedder.embed(texts)
-    embeddings: dict[str, list[float]] = dict(zip(ids, vectors, strict=True))
+    embeddings: dict[str, Vector] = dict(zip(ids, vectors, strict=True))
 
     groups = group_similar(ids, embeddings, ctx.inp.dedup_threshold)
     if not groups:
-        logger.info("[cyan]dedup:[/cyan] No similar groups found, skipping LLM phase")
-        return []
+        logger.info("[cyan]dedup:[/cyan] No similar groups found")
+        return [], embeddings
 
     total_grouped = sum(len(g) for g in groups)
     logger.info(
@@ -281,7 +366,7 @@ def _compute_groups(ctx: FlowContext, articles: list[DigestArticle]) -> list[lis
         total_grouped,
         ctx.inp.dedup_threshold,
     )
-    return groups
+    return groups, embeddings
 
 
 def _log_batch_result(

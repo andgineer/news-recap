@@ -345,6 +345,7 @@ def jev_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path
     monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(data_dir))
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     monkeypatch.delenv("NEWS_RECAP_CLASSIFY_BACKEND", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_DEDUP_BACKEND", raising=False)
     return cwd, data_dir
 
 
@@ -436,4 +437,31 @@ def test_classify_backend_rejects_unknown_value(
 ) -> None:
     monkeypatch.setenv("NEWS_RECAP_CLASSIFY_BACKEND", "gemini")
     with pytest.raises(ValueError, match="NEWS_RECAP_CLASSIFY_BACKEND"):
+        Settings.from_env()
+
+
+def test_dedup_backend_follows_the_classify_rules(
+    jev_env: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _, data_dir = jev_env
+    assert Settings.from_env().jev.dedup_backend == "llm"
+
+    monkeypatch.setenv("NEWS_RECAP_DEDUP_BACKEND", "jev")
+    with caplog.at_level("WARNING", logger="news_recap.config"):
+        assert Settings.from_env().jev.dedup_backend == "llm"
+    assert any("NEWS_RECAP_DEDUP_BACKEND=jev" in r.getMessage() for r in caplog.records)
+
+    (data_dir / ".env").write_text("TYPESAFE_API_KEY=k\n")
+    monkeypatch.delenv("NEWS_RECAP_DEDUP_BACKEND")
+    settings = Settings.from_env()
+    assert (settings.jev.dedup_backend, settings.jev.classify_backend) == ("jev", "jev")
+
+    monkeypatch.setenv("NEWS_RECAP_DEDUP_BACKEND", "llm")
+    settings = Settings.from_env()
+    assert (settings.jev.dedup_backend, settings.jev.classify_backend) == ("llm", "jev")
+
+    monkeypatch.setenv("NEWS_RECAP_DEDUP_BACKEND", "gemini")
+    with pytest.raises(ValueError, match="NEWS_RECAP_DEDUP_BACKEND"):
         Settings.from_env()

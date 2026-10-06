@@ -49,6 +49,7 @@ class PipelineInput:
     selection_params: dict[str, object] | None = None
     jev_model: str = DEFAULT_JEV_MODEL
     classify_backend: str = "llm"
+    dedup_backend: str = "llm"
 
     @property
     def execution_backend(self) -> str:
@@ -102,6 +103,7 @@ def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
         selection_params=raw.get("selection_params"),
         jev_model=raw.get("jev_model", DEFAULT_JEV_MODEL),
         classify_backend=raw.get("classify_backend", "llm"),
+        dedup_backend=raw.get("dedup_backend", "llm"),
     )
 
 

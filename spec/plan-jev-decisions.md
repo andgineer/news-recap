@@ -1,7 +1,8 @@
 # Plan: Per-Item Decisions on Jev, Writing on the LLM
 
-Status: Stages 0–3 done; Stage 4 (routing) failed on 2026-10-06, so the restructure is dropped
-and Stage 5 is duplicate detection on Jev (the former Fallback B). Related:
+Status: Stages 0–3 and 5 done; Stage 4 (routing) failed on 2026-10-06, so the restructure is
+dropped and Stage 5 became duplicate detection on Jev (the former Fallback B). Next: Stage 7 after
+≥ 14 nights. Related:
 `plan-token-optimization.md` (its Phases 5–6, local clustering and the local classify cascade,
 are superseded by Stages 3 and 5 here), issue #18 (Stage 0).
 
@@ -123,7 +124,8 @@ classify (Jev) → load_resources → enrich (LLM) → deduplicate (Jev) → one
 
 - **classify** — Jev: exclude via one Noul per policy topic, vague via one Noul (Stage 3).
 - **deduplicate** — the embedding pre-filter stays; Jev answers "same piece of news?" for every
-  pair inside each candidate group instead of an agy launch per batch of clusters (Stage 5).
+  pair inside each candidate group, plus a wider net of pairs just below the pre-filter, instead
+  of an agy launch per batch of clusters (Stage 5).
 - Everything else is unchanged.
 
 agy on 10-06: 17 launches / 629k tokens before Stage 3, 11 / 502k after it, 5 / ≈345k after
@@ -549,6 +551,53 @@ sweeping both thresholds from stored probabilities:
 
 ## Stage 5 — Duplicate detection on Jev (former Fallback B; ~1 day + bench)
 
+**Done 2026-10-06: gate passed** (`recap/jev/dedup.py`, `Deduplicate._dedup_on_jev`,
+`NEWS_RECAP_DEDUP_BACKEND`, `bench_jev.py dedup [--wide]`; tests in `tests/recap/jev/test_dedup.py`,
+`tests/test_bench_jev.py`, `tests/test_config.py`, `tests/recap/storage/test_pipeline_io.py`).
+`dedup_backend` defaults to `jev` when a key is found; `NEWS_RECAP_DEDUP_BACKEND=llm` forces the
+LLM. Labels: 319 pairs by Claude (`labeler: claude-opus-5-5`). Bench rows:
+`bench/dedup-2026-10-06.jsonl`.
+
+Results (headline state, the "news" question below; candidate groups merge at ≥ 0.40, the wider
+net at ≥ 0.70; every Jev/Gemini disagreement labelled, unlabelled agreements count as correct):
+
+| | candidate pairs | wrong merges (Jev / Gemini) | missed duplicates | correct pairs |
+|---|---|---|---|---|
+| tuning, 4 nights | 1 569 | 13 / 31 | 25 / 8 | 1 531 / 1 530 |
+| holdout | 85 | 1 / 2 | 1 / 1 | 83 / 82 |
+
+- Wider net (similarity 0.85–0.90, outside today's candidate groups, which today's pipeline never
+  examines): Jev merges 46 pairs on the tuning nights, 43 labelled same (93%), and 5 on the
+  holdout, 4 same; 47 of 51 (92%) overall, above the 90% bar. Typical catches are translations
+  and paraphrases: Starship's first orbit in Serbian and English, the Kyiv academy strike in
+  Croatian and English, the Vučić → Brnabić handover reports.
+- Live check on a copy of night 10-06 (real embedder, real Jev, no agy): 452 articles → 410
+  (today's LLM dedup removed 40 that night), 3 576 pair requests (389 candidate + 3 187 wider),
+  1.72M tokens, \$0.07, 72 s. Jev for dedup ≈ \$1.5–2/month; agy −6 launches / −157k tokens on
+  that night.
+- Bench spend ≈ \$0.45 (all Stage 5 runs).
+
+Differences from the bullets below:
+
+- **The question.** The plan's "same specific news event" Noul made 61 errors where Gemini made
+  23 (at that point of labelling): it merged separate statements about one story (the opposition's
+  and the government's reactions to the Šapić incident, a death and the condolences) and split one
+  incident reported at different moments (a Starship live stream and the orbit reports). The
+  production question asks whether one item could replace the other "without the reader losing
+  an important fact", with yes/no criteria stating the rule. The headline-only state beats
+  headline + source + lead with this question.
+- Labelling rule: same = one event or announcement reported twice, including the same incident at
+  different moments, live coverage and later reports, eyewitness accounts, and one statement
+  carried by several outlets; different = separate events, or a separate statement, reaction,
+  denial or official assessment, an analysis, explainer or interview, or a roundup covering
+  several stories (Reuters' "World News" videos).
+- Two thresholds, `SAME_EVENT_THRESHOLD` 0.40 and `WIDE_THRESHOLD` 0.70: below the pre-filter,
+  pairs are more often different stories. The 0.80–0.85 band (5–18k pairs a night) was not tried.
+- Merge groups are connected components of "same" pairs, star-grouped inside (keeper = longest
+  text), so a wider-net pair can join a candidate group.
+- No full `create --stop-after deduplicate` run: it needs enrich, i.e. agy launches. The first
+  nightly run with the default backend is the end-to-end check.
+
 Today: `group_similar` builds candidate groups (connected components at embedding similarity
 ≥ `dedup_threshold` 0.90 over title + text), then 3–6 agy launches a night answer `MERGED` /
 `SINGLE` per cluster and write a merged headline (157k tokens on 10-06).
@@ -612,6 +661,7 @@ labelled pairs, like Stage 3.
     section routing on Jev was rejected (Stage 4).
 - `README.md`, `docs/src/en/`, `docs/src/ru/`:
   - `TYPESAFE_API_KEY` and the two `.env` locations;
+  - `NEWS_RECAP_CLASSIFY_BACKEND` and `NEWS_RECAP_DEDUP_BACKEND` (`llm` forces the LLM step);
   - write exclude topics as subjects ("Croatian domestic news", not "Croatian news"), since Jev
     reads topics literally.
 - `spec/plan-token-optimization.md`: mark Phases 5–6 superseded by this plan.
@@ -664,7 +714,7 @@ agy figures are the 10-06 night (412 articles); Jev from the bench.
 |---|---|---|---|
 | Stage 0 | 17 / 629k | 0 | nights lost to `load_resources`: 3/32 → 0 |
 | Stage 3 | 11 / 502k | ≈ 0.48 | wrong excludes vs labels ≤ Gemini's |
-| Stage 5 | 5 / ≈345k | 0.48 + dedup (5.4 measures it) | wrong merges ≤ today's; wider net only if ≥ 90% right |
+| Stage 5 | 5 / ≈345k | ≈ 0.48 + 1.5–2 | wrong merges 13 vs 31; wider net adds ≈ 11 true duplicates a night at 92% precision |
 
 ## Risks
 

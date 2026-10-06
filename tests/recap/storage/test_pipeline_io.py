@@ -78,12 +78,15 @@ def test_read_pipeline_input_old_format_jev_defaults(tmp_path):
     inp = read_pipeline_input(str(_write_pipeline_input(tmp_path)))
     assert inp.jev_model == "jev-1.13.0"
     assert inp.classify_backend == "llm"
+    assert inp.dedup_backend == "llm"
 
 
 def test_read_pipeline_input_jev_fields(tmp_path):
     pipeline_dir = _write_pipeline_input(
-        tmp_path, extra={"jev_model": "jev-9.9.9", "classify_backend": "jev"}
+        tmp_path,
+        extra={"jev_model": "jev-9.9.9", "classify_backend": "jev", "dedup_backend": "jev"},
     )
     inp = read_pipeline_input(str(pipeline_dir))
     assert inp.jev_model == "jev-9.9.9"
     assert inp.classify_backend == "jev"
+    assert inp.dedup_backend == "jev"

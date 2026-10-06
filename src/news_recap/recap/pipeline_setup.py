@@ -490,6 +490,7 @@ def _write_pipeline_input(  # noqa: PLR0913
     selection_params: dict[str, object] | None = None,
     jev_model: str = DEFAULT_JEV_MODEL,
     classify_backend: str = "llm",
+    dedup_backend: str = "llm",
 ) -> None:
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
     pipeline_dir.mkdir(parents=True, exist_ok=True)
@@ -508,6 +509,7 @@ def _write_pipeline_input(  # noqa: PLR0913
         "use_api_key": use_api_key,
         "jev_model": jev_model,
         "classify_backend": classify_backend,
+        "dedup_backend": dedup_backend,
     }
     if selection_params is not None:
         payload["selection_params"] = selection_params

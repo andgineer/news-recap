@@ -700,3 +700,152 @@ def test_write_route_pending_hides_both_answers(tmp_path):
     (row,) = bench_jev._read_jsonl(path)
     assert set(row) == {"pipeline", "headline", "enriched_title", "source", "lead"}
     assert row["lead"].startswith("lead of B lead of B")
+
+
+# --- dedup ------------------------------------------------------------------
+
+_SINGLE_PROMPT = """You are a senior news editor.
+=== NEWS (3 total) ===
+Do NOT write any files.
+1: [a.com] Alpha
+2: [b.com] Beta
+3: [c.com] Gamma"""
+
+_MULTI_PROMPT = """Groups below.
+=== CLUSTER 1 (2 articles) ===
+1: [a.com] Delta
+2: [b.com] Epsilon
+
+=== CLUSTER 2 (2 articles) ===
+1: [c.com] Zeta
+2: [d.com] Eta
+"""
+
+
+def test_parse_dedup_task_single_and_multi_cluster():
+    single = bench_jev.parse_dedup_task(_SINGLE_PROMPT, "MERGED: x\n1, 3\nSINGLE: 2\n")
+    assert single == [([("a.com", "Alpha"), ("b.com", "Beta"), ("c.com", "Gamma")], [[0, 2]])]
+
+    multi = bench_jev.parse_dedup_task(
+        _MULTI_PROMPT, "CLUSTER 1:\nSINGLE: 1\nSINGLE: 2\n\nCLUSTER 2:\nMERGED: y\n1, 2\n"
+    )
+    assert [m for _, m in multi] == [[], [[0, 1]]]
+    assert multi[1][0] == [("c.com", "Zeta"), ("d.com", "Eta")]
+
+    rejected = bench_jev.parse_dedup_task(_MULTI_PROMPT, "CLUSTER 2:\nMERGED: y\n1, 2\n")
+    assert [m for _, m in rejected] == [[], []]
+
+
+def _write_dedup_night(root: Path, name: str = "p") -> Path:
+    pdir = _write_pipeline(root, name, ["Alpha", "Beta", "Gamma", "Delta"])
+    task = pdir / "dedup-1"
+    (task / "input").mkdir(parents=True)
+    (task / "output").mkdir()
+    (task / "input" / "task_prompt.txt").write_text(_SINGLE_PROMPT)
+    (task / "output" / "agent_stdout.log").write_text("MERGED: x\n1, 2\nSINGLE: 3\n")
+    (pdir / "dedup-jev").mkdir()
+    return pdir
+
+
+def test_replay_dedup_reads_clusters_with_article_text(tmp_path):
+    (cluster,) = bench_jev.replay_dedup(_write_dedup_night(tmp_path))
+    assert [a.title for a in cluster.articles] == ["Alpha", "Beta", "Gamma"]
+    assert cluster.articles[0].clean_text.startswith("text  of\nAlpha")
+    assert cluster.gemini_pairs() == {("p", "Alpha", "Beta")}
+    assert len(cluster.pairs()) == 3
+
+
+class _FakePairClient:
+    model = "jev-1.13.0"
+
+    def __init__(self, probs: dict[frozenset[str], float]) -> None:
+        self.probs = probs
+        self.input_tokens = 0
+        self.requests = 0
+
+    def decide(self, requests):
+        from typesafe_sdk import SystemOneResponse
+
+        out = []
+        for state, _ in requests:
+            key = frozenset((state["article_a"]["headline"], state["article_b"]["headline"]))
+            self.requests += 1
+            self.input_tokens += 7
+            out.append(
+                SystemOneResponse.model_validate(
+                    {
+                        "model": self.model,
+                        "usage": {"input_tokens": 7},
+                        "answers": {"same": {"type": "noul", "noul": self.probs.get(key, 0.1)}},
+                    },
+                ),
+            )
+        return out
+
+
+def test_run_dedup_variant_stores_per_question(tmp_path):
+    bench = _bench(tmp_path)
+    clusters = bench_jev.replay_dedup(_write_dedup_night(bench.pipelines))
+    client = _FakePairClient({frozenset({"Alpha", "Beta"}): 0.9})
+
+    probs = bench_jev.run_dedup_variant(bench, client, clusters, "headline", "news")
+    assert probs[("p", "Alpha", "Beta")] == (0.9, 7)
+    assert client.requests == 3
+    bench_jev.run_dedup_variant(bench, client, clusters, "headline", "news")
+    assert client.requests == 3
+    bench_jev.run_dedup_variant(bench, client, clusters, "headline", "event")
+    assert client.requests == 6
+    with pytest.raises(SystemExit, match="incomplete"):
+        bench_jev.run_dedup_variant(bench, None, clusters, "lead", "news")
+
+
+def test_evaluate_dedup_gate_counts_wrong_and_missed_merges(tmp_path):
+    (cluster,) = bench_jev.replay_dedup(_write_dedup_night(tmp_path))
+    ab, ac, bc = ("p", "Alpha", "Beta"), ("p", "Alpha", "Gamma"), ("p", "Beta", "Gamma")
+    probs = {ab: (0.2, 5), ac: (0.9, 5), bc: (0.1, 5)}
+    config = bench_jev.DedupConfig("headline", "news", 0.5)
+
+    unknown = bench_jev.evaluate_dedup(config, [cluster], probs, {})
+    assert unknown.unknown == (ab, ac)
+    passed, lines = bench_jev.dedup_report(unknown)
+    assert not passed
+    assert lines[-1] == "gate incomplete: label 2 disputed pairs first"
+
+    result = bench_jev.evaluate_dedup(config, [cluster], probs, {ab: "different", ac: "same"})
+    assert (result.jev.wrong_merges, result.jev.missed_merges, result.jev.correct) == (0, 0, 3)
+    assert (result.gemini.wrong_merges, result.gemini.missed_merges) == (1, 1)
+    assert bench_jev.dedup_report(result)[0]
+
+    worse = bench_jev.evaluate_dedup(config, [cluster], probs, {ab: "same", ac: "different"})
+    assert not worse.gate_ok
+
+
+def test_wide_report_needs_every_merge_labelled_and_precision():
+    pairs = [("p", "a", "b"), ("p", "a", "c"), ("p", "b", "c")]
+    probs = {pairs[0]: (0.9, 1), pairs[1]: (0.8, 1), pairs[2]: (0.2, 1)}
+
+    ships, unlabelled, _ = bench_jev.wide_report(pairs, probs, {}, 0.7)
+    assert (ships, unlabelled) == (False, pairs[:2])
+    ships, _, lines = bench_jev.wide_report(
+        pairs, probs, {pairs[0]: "same", pairs[1]: "different"}, 0.7
+    )
+    assert not ships
+    assert "labelled 2: 1 same (50.0%)" in lines[1]
+    assert bench_jev.wide_report(pairs, probs, {pairs[0]: "same", pairs[1]: "same"}, 0.7)[0]
+
+
+def test_wide_pairs_skips_pairs_inside_one_candidate_group(tmp_path):
+    import numpy as np
+
+    (cluster,) = bench_jev.replay_dedup(_write_dedup_night(tmp_path))
+    articles = [*cluster.articles, bench_jev._dedup_article(None, "d.com", "Delta")]
+    sims = np.array(
+        [
+            [1.0, 0.86, 0.86, 0.86],
+            [0.86, 1.0, 0.95, 0.5],
+            [0.86, 0.95, 1.0, 0.89],
+            [0.86, 0.5, 0.89, 1.0],
+        ],
+    )
+    pairs = bench_jev.wide_pairs("p", articles, sims, [cluster], high=0.90)
+    assert [(a.title, b.title) for _, a, b in pairs] == [("Alpha", "Delta"), ("Gamma", "Delta")]

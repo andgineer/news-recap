@@ -17,9 +17,10 @@ _ECHO_AGENT_COMMAND_TEMPLATE = (
 
 
 @pytest.fixture(autouse=True)
-def _classify_backend_llm(monkeypatch):
-    # ./.env may hold a real TYPESAFE_API_KEY, which would make classify call live Jev.
+def _jev_backends_llm(monkeypatch):
+    # ./.env may hold a real TYPESAFE_API_KEY, which would make classify and dedup call live Jev.
     monkeypatch.setenv("NEWS_RECAP_CLASSIFY_BACKEND", "llm")
+    monkeypatch.setenv("NEWS_RECAP_DEDUP_BACKEND", "llm")
 
 
 @pytest.fixture()
@@ -65,4 +66,5 @@ def make_settings_mock(tmp_path: Path) -> MagicMock:
     settings.dedup.model_name = "intfloat/multilingual-e5-small"
     settings.jev.model = "jev-1.13.0"
     settings.jev.classify_backend = "llm"
+    settings.jev.dedup_backend = "llm"
     return settings

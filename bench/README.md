@@ -48,3 +48,21 @@ event in two sections; so routing was rejected.
 `route-splits-2026-10-06.jsonl`, one row per block of today's digests that the picked sections
 split (54): the block's headlines, `same_story` (the split separates reports of one news event),
 `story`, and `follow_angle` where a follow section got a local reaction to the event.
+
+## `dedup-2026-10-06.jsonl`
+
+**Claim** (`spec/plan-jev-decisions.md`, Stage 5): with the "news" question, headline-only state,
+merging at ≥ 0.40 inside today's candidate groups, Jev makes fewer wrong merges than today's LLM
+dedup (13 vs 31 on the tuning nights, 1 vs 2 on the holdout) with as many correct pair decisions;
+the wider net (similarity 0.85–0.90, merging at ≥ 0.70) adds merges that are 92% right.
+
+One row per pair (1 763):
+
+- `candidate`: `group` = a pair inside one of today's candidate groups (all 1 654 of the five
+  nights); `wide` = a wider-net pair Jev scored ≥ 0.40 (the rest of the ~9 600 wider pairs scored
+  lower and are left out).
+- `gemini_merged`: today's agy `gemini-3.7-flash` put both articles in one `MERGED` group (always
+  false for `wide`: today's pipeline never sees those pairs).
+- `jev_p`: `jev-1.13.0` probability of "same piece of news", headline-only state.
+- `label`, `labeler`: `same` | `different` for 319 pairs, all by `claude-opus-5-5`, under the
+  rule in Stage 5; `null` elsewhere.

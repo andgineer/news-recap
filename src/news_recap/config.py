@@ -40,7 +40,7 @@ class DedupSettings:
 
 TYPESAFE_API_KEY_VAR = "TYPESAFE_API_KEY"
 DEFAULT_JEV_MODEL = "jev-1.13.0"
-CLASSIFY_BACKENDS = ("llm", "jev")
+STEP_BACKENDS = ("llm", "jev")
 
 
 @dataclass(slots=True)
@@ -50,6 +50,7 @@ class JevSettings:
     api_key: str | None = field(default=None, repr=False)
     model: str = DEFAULT_JEV_MODEL
     classify_backend: str = "llm"
+    dedup_backend: str = "llm"
 
 
 @dataclass(slots=True)
@@ -347,8 +348,10 @@ class Settings:
             raise ValueError("NEWS_RECAP_DIGEST_LOOKBACK_DAYS must be >= 1.")
         if not (0.0 < self.dedup.threshold <= 1.0):
             raise ValueError("NEWS_RECAP_DEDUP_THRESHOLD must be in (0, 1].")
-        if self.jev.classify_backend not in CLASSIFY_BACKENDS:
+        if self.jev.classify_backend not in STEP_BACKENDS:
             raise ValueError("NEWS_RECAP_CLASSIFY_BACKEND must be 'llm' or 'jev'.")
+        if self.jev.dedup_backend not in STEP_BACKENDS:
+            raise ValueError("NEWS_RECAP_DEDUP_BACKEND must be 'llm' or 'jev'.")
 
     def _validate_orchestrator_routing(self) -> None:  # noqa: C901
         supported_agents = {"codex", "claude", "antigravity"}
@@ -470,20 +473,31 @@ def resolve_typesafe_api_key(data_dir: Path) -> str | None:
     return None
 
 
-def _collect_jev_settings(data_dir: Path) -> JevSettings:
-    api_key = resolve_typesafe_api_key(data_dir)
-    classify_backend = os.getenv("NEWS_RECAP_CLASSIFY_BACKEND", "").strip().lower()
-    if not classify_backend:
-        classify_backend = "jev" if api_key else "llm"
-    elif classify_backend == "jev" and api_key is None:
+def _step_backend(step: str, api_key: str | None, data_dir: Path) -> str:
+    """``NEWS_RECAP_<STEP>_BACKEND``; unset means Jev when a key is found, else the LLM."""
+    var = f"NEWS_RECAP_{step.upper()}_BACKEND"
+    backend = os.getenv(var, "").strip().lower()
+    if not backend:
+        return "jev" if api_key else "llm"
+    if backend == "jev" and api_key is None:
         logger.warning(
-            "NEWS_RECAP_CLASSIFY_BACKEND=jev but %s is not set (env, ./.env, %s); "
-            "classify uses the LLM.",
+            "%s=jev but %s is not set (env, ./.env, %s); %s uses the LLM.",
+            var,
             TYPESAFE_API_KEY_VAR,
             data_dir / ".env",
+            step,
         )
-        classify_backend = "llm"
-    return JevSettings(api_key=api_key, classify_backend=classify_backend)
+        return "llm"
+    return backend
+
+
+def _collect_jev_settings(data_dir: Path) -> JevSettings:
+    api_key = resolve_typesafe_api_key(data_dir)
+    return JevSettings(
+        api_key=api_key,
+        classify_backend=_step_backend("classify", api_key, data_dir),
+        dedup_backend=_step_backend("dedup", api_key, data_dir),
+    )
 
 
 def _collect_feed_urls() -> tuple[str, ...]:
