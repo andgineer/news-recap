@@ -627,6 +627,9 @@ Differences from the bullets below:
   pairs are more often different stories. The 0.80–0.85 band (5–18k pairs a night) was not tried.
 - Merge groups are connected components of "same" pairs, star-grouped inside (keeper = longest
   text), so a wider-net pair can join a candidate group.
+- Not covered, as today: `group_similar` splits a candidate group above 20 articles into chunks,
+  and pairs at similarity ≥ 0.90 across those chunks are never asked (5, 8 and 4 pairs on 09-29,
+  09-30 and 10-01).
 - No full `create --stop-after deduplicate` run: it needs enrich, i.e. agy launches. The first
   nightly run with the default backend is the end-to-end check.
 
