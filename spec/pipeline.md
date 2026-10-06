@@ -80,6 +80,10 @@ workers. A char-budget check prevents prompts from exceeding 60 000 chars.
 Recognition rate below 80% raises `RecapPipelineError`. Batch success rate
 below 80% also raises.
 
+Batch sizes here and in enrich are tuned ceilings, not budgets to fill: past them the model
+silently drops or miscounts items, the recognition guard fails the batch and it reruns whole,
+so larger batches do not save launches.
+
 ### LoadResources
 
 | | |

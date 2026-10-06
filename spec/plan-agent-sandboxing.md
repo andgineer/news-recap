@@ -2,10 +2,9 @@
 
 Status: proposed. **Target platform: macOS** — the pipeline runs on the operator's MacBook
 via cron (`scripts/macos_run.sh`); a `scripts/linux_run.sh` launcher also exists, so
-controls that work on both are preferred where cheap. Companion plan:
-`plan-token-optimization.md` (its Phase 1 slims down the `claude` launch). Both plans
-**retain the current file-based prompt delivery** (`{prompt_file}`) and stdout result
-capture — see *Prompt delivery* below.
+controls that work on both are preferred where cheap. The plan **retains the current
+file-based prompt delivery** (`{prompt_file}`) and stdout result capture — see *Prompt
+delivery* below.
 
 ## Backend priority (drives every decision here)
 
@@ -243,8 +242,8 @@ probability this stays optional. The irreducible residual after any of this is d
 
 ## Rollout order
 
-1. **Phase 0** immediately (portable, benefits the Linux launcher too; shares the one
-   claude template edit with the token plan). Ships behind no flag — it only removes
+1. **Phase 0** immediately (portable, benefits the Linux launcher too). Ships behind no
+   flag — it only removes
    overreach and is proven for claude.
 2. **Phase 1** behind `NEWS_RECAP_AGENT_SANDBOX=1` on the Mac: run E1–E5, settle the
    `settings.json` values, take the fork. On HAPPY, flip agy to the sandboxed settings as

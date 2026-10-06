@@ -67,7 +67,15 @@ Agents discover all file paths from the manifest — no article IDs or file cont
 
 ## Command Templates
 
-Defaults live in `config.py`. All templates use `{model}` and `{prompt}` placeholders expanded via `shlex.split`.
+Defaults live in `config.py`. All templates use the `{model}` and `{prompt_file}` placeholders, expanded via `shlex.split`.
+
+Prompts are delivered as a file (`{prompt_file}`) that the agent reads, never on stdin: `claude -p`
+returns empty output once piped stdin exceeds a few KB (our prompts reach 60 KB), `agy -p` has
+silently dropped stdout under a subprocess, and `codex exec -` hangs on EOF with a non-TTY pipe.
+Results are captured from stdout.
+
+`claude` is never run with `--bare`: it limits authentication to `ANTHROPIC_API_KEY`, so the
+subscription login would not be used.
 
 ### Codex
 

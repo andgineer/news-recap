@@ -5,8 +5,7 @@ is dropped and Stage 5 became duplicate detection on Jev (the former Fallback B)
 merges alone hid more stories than today's dedup, so Stage 5b writes the merged headlines with
 one agy launch, as today's dedup does. Jev is opt-in per step (Decision 10); the author's
 machine runs classify on Jev and dedup on the LLM. Next: Stage 7 after ≥ 14 nights. Related:
-`plan-token-optimization.md` (its Phases 5–6, local clustering and the local classify cascade,
-are superseded by Stages 3 and 5 here), issue #18 (Stage 0).
+issue #18 (Stage 0).
 
 ## Goal
 
@@ -222,9 +221,9 @@ cache-read and total tokens; the first branch below is implemented and documente
 
 - If the JSON carries token usage: for antigravity, add `--output-format json` to the command
   template, parse the envelope in `recap/agents/ai_agent.py`, write the result text back as the
-  stdout the parsers expect, and save the tokens in `meta/usage.json`. The claude envelope
-  design in `plan-token-optimization.md` Phase 1 item 3 applies unchanged (usage parsed before
-  the empty-stdout check; `_summarise_output` scans the extracted text).
+  stdout the parsers expect, and save the tokens in `meta/usage.json`. A claude envelope works
+  the same way (usage parsed before the empty-stdout check; `_summarise_output` scans the
+  extracted text).
 - If not: record that in `spec/agents.md`. Consumption is then measured as launches plus
   `prompt_bytes`/`output_bytes`, which `digests.json` already records per run.
 
@@ -751,7 +750,6 @@ labelled pairs, like Stage 3.
   - the Cost section rewritten (agy launches and tokens per night, Jev \$/month);
   - bench conclusions under Experiments, citing the committed `bench/` rows, including why
     section routing on Jev was rejected (Stage 4).
-- `spec/plan-token-optimization.md`: mark Phases 5–6 superseded by this plan.
 - `bench/README.md`: each committed run file and the spec sentence relying on it. A run stays
   only while a claim rests on it.
 - Record the observed Jev failure rate (fallbacks to the LLM) in `spec/pipeline.md`.
