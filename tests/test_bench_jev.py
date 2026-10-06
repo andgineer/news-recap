@@ -860,3 +860,41 @@ def test_wide_pairs_skips_pairs_inside_one_candidate_group(tmp_path):
     )
     pairs = bench_jev.wide_pairs("p", articles, sims, [cluster], high=0.90)
     assert [(a.title, b.title) for _, a, b in pairs] == [("Alpha", "Delta"), ("Gamma", "Delta")]
+
+
+def test_night_merge_groups_star_groups_candidates_and_the_wider_net():
+    sizes = {"A": 50, "B": 40, "C": 30, "D": 20, "E": 10}
+    art = {
+        h: bench_jev._dedup_article({"clean_text": "x" * n}, "s.com", h) for h, n in sizes.items()
+    }
+    cluster = bench_jev.DedupCluster("p", (art["A"], art["B"], art["C"]), ())
+    probs = {
+        bench_jev.make_pair("p", "A", "B"): (0.45, 1),  # candidate pair: >= 0.40 merges
+        bench_jev.make_pair("p", "A", "C"): (0.10, 1),
+        bench_jev.make_pair("p", "B", "C"): (0.90, 1),  # B is not C's keeper: no chaining
+        bench_jev.make_pair("p", "A", "E"): (0.75, 1),  # wider net: >= 0.70 merges
+        bench_jev.make_pair("p", "C", "D"): (0.65, 1),
+    }
+    wide = [("p", art["A"], art["E"]), ("p", art["C"], art["D"])]
+
+    groups = bench_jev.night_merge_groups([cluster], wide, probs)
+
+    assert [[a.title for a in g] for g in groups] == [["A", "B", "E"]]
+
+
+def test_dedup_titles_report_lists_groups_with_a_different_member():
+    night = "pipeline-2026-10-01-011209"
+    labels = {bench_jev.make_pair(night, "A", "C"): "different"}
+    group = [bench_jev._dedup_article(None, "s.com", h) for h in ("A", "B", "C")]
+    rows = [
+        bench_jev.title_row(night, group, "A", {}),
+        bench_jev.title_row(night, group, "A and C", labels),
+    ]
+
+    assert [m["label"] for m in rows[1]["members"]] == [None, None, "different"]
+    assert rows[0]["fallback"]
+    assert bench_jev.dedup_titles_report(rows) == [
+        "2 merge groups, 1 kept an existing title",
+        "[2026-10-01] A and C",
+        "    different: C",
+    ]

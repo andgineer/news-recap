@@ -228,12 +228,22 @@ def find_duplicates(
     ]
     same = {pair_key(x.a, x.b) for x in answers if x.same}
     by_id = {a.article_id: a for x in answers for a in (x.a, x.b)}
-    merges = [
+    return merges_from(same, by_id), answers
+
+
+def merges_from(
+    same: set[tuple[str, str]],
+    by_id: Mapping[str, DigestArticle],
+) -> list[list[DigestArticle]]:
+    """Star groups inside each connected component of *same* ``pair_key``s, keeper first.
+
+    Components come in a fixed order (by smallest article id).
+    """
+    return [
         group
-        for component in _components(same)
+        for component in sorted(_components(same), key=min)
         for group in merge_groups(
             [by_id[i] for i in sorted(component)],
             lambda x, y: pair_key(x, y) in same,
         )
     ]
-    return merges, answers

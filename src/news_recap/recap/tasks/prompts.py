@@ -184,6 +184,33 @@ REMINDER — ALL output MUST be in {language}.
 {output_instruction}{clusters_block}""",
 )
 
+RECAP_DEDUP_TITLES_PROMPT = PromptTemplate(
+    body="""\
+You are a senior news editor. Each GROUP below lists news reports that a duplicate \
+detector will show as a single entry in a news digest.
+
+For every group write one headline for that entry.
+
+Requirements:
+- Key facts from all reports in the group must be preserved: if a report adds a separate \
+fact, statement or reaction, the headline mentions it too
+- The headline must not be significantly longer than the longest original
+- Be specific and factual — no clickbait, no vague teasers
+
+OUTPUT LANGUAGE: {language}.
+Write every headline in {language}.
+
+Output format — one line per group, every group exactly once:
+
+GROUP <number>: <headline>
+
+Example:
+GROUP 1: EU introduces 38% tariffs on Chinese electric vehicles starting July 2025
+
+=== GROUPS ({group_count} total) ===
+{output_instruction}{groups_block}""",
+)
+
 _SINGLE_SHOT_BODY = """\
 You are a news editor. Below is a list of articles.
 

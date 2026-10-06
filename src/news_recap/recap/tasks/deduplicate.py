@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
 
+from news_recap.recap.agents.subprocess import SubprocessError
 from news_recap.recap.dedup.cluster import group_similar
 from news_recap.recap.dedup.embedder import Vector, build_embedder
 from news_recap.recap.jev.client import JevUnavailableError, make_jev_client
@@ -22,11 +23,13 @@ from news_recap.recap.tasks.base import (
     TaskLauncher,
     log_parse_failure,
     read_agent_stdout,
+    run_single_agent,
 )
 from news_recap.recap.tasks.parallel import submit_and_collect
 from news_recap.recap.tasks.prompts import (
     RECAP_DEDUP_MULTI_PROMPT,
     RECAP_DEDUP_PROMPT,
+    RECAP_DEDUP_TITLES_PROMPT,
     render_prompt,
 )
 
@@ -43,6 +46,7 @@ type ClusterBatch = list[list[str]]
 _CLUSTER_HEADER_RE = re.compile(r"^CLUSTER\s+\d+:", re.MULTILINE)
 _MERGED_RE = re.compile(r"^MERGED:\s*(.+)$", re.IGNORECASE)
 _SINGLE_RE = re.compile(r"^SINGLE:\s*(\d+)\s*$", re.IGNORECASE)
+_GROUP_TITLE_RE = re.compile(r"^\s*GROUP\s+(\d+):\s*(.*?)\s*$", re.IGNORECASE | re.MULTILINE)
 
 
 @dataclass(slots=True)
@@ -75,6 +79,27 @@ def _build_articles_block(articles: list[DigestArticle]) -> str:
         title = a.enriched_title or a.title
         lines.append(f"{i}: [{a.source}] {title}")
     return "\n".join(lines)
+
+
+def build_title_groups_block(groups: list[list[DigestArticle]]) -> str:
+    return "\n\n".join(
+        f"=== GROUP {i} ({len(group)} articles) ===\n{_build_articles_block(group)}"
+        for i, group in enumerate(groups, 1)
+    )
+
+
+def parse_merged_titles(text: str, group_count: int) -> dict[int, str]:
+    """``GROUP N: headline`` lines; numbers out of range, repeated or without text are dropped.
+
+    >>> parse_merged_titles("GROUP 1: A\\nnoise\\nGROUP 3: C\\nGROUP 1: B\\nGROUP 2:", 2)
+    {1: 'A'}
+    """
+    titles: dict[int, str] = {}
+    for match in _GROUP_TITLE_RE.finditer(text):
+        num, title = int(match.group(1)), match.group(2)
+        if 1 <= num <= group_count and num not in titles and title:
+            titles[num] = title
+    return titles
 
 
 def _batch_clusters(groups: list[list[str]]) -> list[ClusterBatch]:
@@ -331,14 +356,49 @@ class Deduplicate(TaskLauncher):
             (
                 [a.article_id for a in group],
                 _DedupResult(
-                    merges=[_MergeAction(display_title(group), list(range(1, len(group) + 1)))],
+                    merges=[_MergeAction(title, list(range(1, len(group) + 1)))],
                     singles=[],
                 ),
             )
-            for group in merges
+            for group, title in zip(merges, write_merged_titles(ctx, merges), strict=True)
         ]
         self._apply(batch_results, id_to_article, source="Jev")
         return True
+
+
+def write_merged_titles(ctx: FlowContext, groups: list[list[DigestArticle]]) -> list[str]:
+    """One LLM launch writes each merge group's headline from all its members.
+
+    A Jev merge alone would show one member's title and hide a wrongly merged story; a group
+    the launch leaves without a headline keeps its ``display_title``.
+    """
+    fallback = [display_title(group) for group in groups]
+    if not groups:
+        return fallback
+    prompt = render_prompt(
+        RECAP_DEDUP_TITLES_PROMPT,
+        ctx.inp.prompt_backend,
+        language=language_display_name(ctx.inp.preferences.language),
+        group_count=str(len(groups)),
+        groups_block=build_title_groups_block(groups),
+    )
+    try:
+        stdout_path = run_single_agent(
+            ctx,
+            "recap_dedup",
+            prompt,
+            batch=next_batch_number(ctx.pdir, "recap_dedup"),
+        )
+        written = parse_merged_titles(read_agent_stdout(stdout_path, "recap_dedup"), len(groups))
+    except (RecapPipelineError, SubprocessError) as exc:
+        logger.warning("dedup: merged headlines failed (%s) — keeping existing titles", exc)
+        return fallback
+    logger.info(
+        "[cyan]dedup:[/cyan] merged headlines written for %d of %d group(s)",
+        len(written),
+        len(groups),
+    )
+    return [written.get(i, title) for i, title in enumerate(fallback, 1)]
 
 
 def _compute_groups(

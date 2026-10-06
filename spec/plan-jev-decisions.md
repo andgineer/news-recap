@@ -1,10 +1,9 @@
 # Plan: Per-Item Decisions on Jev, Writing on the LLM
 
-Status: Stages 0–3 done; Stage 4 (routing) failed on 2026-10-06, so the restructure is dropped
-and Stage 5 became duplicate detection on Jev (the former Fallback B). Stage 5 is built but
-opt-in: its merges hide more stories than today's (see its results), so Stage 5b restores
-LLM-written merged headlines before dedup on Jev becomes the default. Then Stage 7 after
-≥ 14 nights. Related:
+Status: Stages 0–3, 5 and 5b done. Stage 4 (routing) failed on 2026-10-06, so the restructure
+is dropped and Stage 5 became duplicate detection on Jev (the former Fallback B). Stage 5's
+merges alone hid more stories than today's dedup, so Stage 5b writes the merged headlines with
+one agy launch, as today's dedup does. Next: Stage 7 after ≥ 14 nights. Related:
 `plan-token-optimization.md` (its Phases 5–6, local clustering and the local classify cascade,
 are superseded by Stages 3 and 5 here), issue #18 (Stage 0).
 
@@ -21,8 +20,8 @@ worse. Two outcomes, each measured against a baseline recorded under *Evidence*:
 Means: TypeSafe's Jev takes over the per-item *decisions* it was measured to make at least as
 well as the LLM: exclude / vague (Stage 3) and "same piece of news?" (Stage 5). A Jev request
 costs ~\$0.00003, answers every item and returns probabilities, but cannot write; agy keeps
-enriching headlines, writing blocks and sections, merging per-batch sections and refining the
-layout. Moving section placement to Jev was tested in Stage 4 and rejected: it splits about three
+enriching headlines, writing merged headlines, blocks and sections, merging per-batch sections
+and refining the layout. Moving section placement to Jev was tested in Stage 4 and rejected: it splits about three
 stories a night across two sections.
 
 ## Evidence (measured 2026-10-05)
@@ -127,12 +126,14 @@ classify (Jev) → load_resources → enrich (LLM) → deduplicate (Jev) → one
 - **classify** — Jev: exclude via one Noul per policy topic, vague via one Noul (Stage 3).
 - **deduplicate** — the embedding pre-filter stays; Jev answers "same piece of news?" for every
   pair inside each candidate group, plus a wider net of pairs just below the pre-filter, instead
-  of an agy launch per batch of clusters (Stage 5).
+  of an agy launch per batch of clusters (Stage 5); one agy launch then writes the headline of
+  every merged group (Stage 5b).
 - Everything else is unchanged.
 
-agy on 10-06: 17 launches / 629k tokens before Stage 3, 14 / ≈515k after it, 8 / ≈358k after
-Stage 5 (enrich 3, oneshot_digest 3, merge_sections, refine_layout), counting ≈13k more enrich
-tokens for Jev's extra vague headlines. On the median night: 12 → 9 → 5.
+agy on 10-06: 17 launches / 629k tokens before Stage 3, 14 / ≈515k after it, 9 / ≈391k after
+Stage 5b (dedup headlines 1, enrich 3, oneshot_digest 3, merge_sections, refine_layout), counting
+≈13k more enrich tokens for Jev's extra vague headlines and 33k for the headline launch. On the
+median night: 12 → 9 → 6.
 
 ## Decisions
 
@@ -148,8 +149,10 @@ tokens for Jev's extra vague headlines. On the median night: 12 → 9 → 5.
 5. **Jev failure:** SDK retries, then `JevUnavailableError`; the step logs a warning and reruns
    on its LLM path (classify and deduplicate keep their LLM paths until Stage 7, which deletes
    one only if it never triggered).
-6. **Merged headline.** Today's LLM dedup writes a new headline for each merged group. Jev cannot
-   write, so a merged group keeps the keeper's `enriched_title`, else the first member's
+6. **Merged headline.** Today's LLM dedup writes a new headline for each merged group that keeps
+   the facts of all members. Jev cannot write, so after Jev picks the groups one agy launch
+   writes every group's headline from all its members (Stage 5b). A group that launch leaves
+   without a headline keeps the keeper's `enriched_title`, else the first member's
    `enriched_title`, else the keeper's `title`.
 7. **Gates compare Jev with today's LLM on the same items**: the reader-visible errors a step
    can cause (wrong excludes, wrong merges) must not increase and its correct decisions must not
@@ -563,7 +566,8 @@ sweeping both thresholds from stored probabilities:
 **Built 2026-10-06; the pair gate passed but the reader-visible one failed** (`recap/jev/dedup.py`, `Deduplicate._dedup_on_jev`,
 `NEWS_RECAP_DEDUP_BACKEND`, `bench_jev.py dedup [--wide]`; tests in `tests/recap/jev/test_dedup.py`,
 `tests/test_bench_jev.py`, `tests/test_config.py`, `tests/recap/storage/test_pipeline_io.py`).
-`NEWS_RECAP_DEDUP_BACKEND=jev` turns it on; the default stays `llm` until Stage 5b passes. Labels: 319 pairs by Claude (`labeler: claude-opus-5-5`). Bench rows:
+Since Stage 5b, `dedup_backend` defaults to `jev` when a key is found; `NEWS_RECAP_DEDUP_BACKEND=llm`
+forces the LLM. Labels: 319 pairs by Claude (`labeler: claude-opus-5-5`). Bench rows:
 `bench/dedup-2026-10-06.jsonl`.
 
 Results (headline state, the "news" question below; candidate groups merge at ≥ 0.40, the wider
@@ -678,6 +682,41 @@ write `dedup-jev/meta/usage.json` (also when Jev fails) and `output/jev_answers.
 path producing `_MergeAction`s, fallback on `JevUnavailableError`, backend parsing; bench replay
 parser and gate.
 
+## Stage 5b — Merged headlines on the LLM (~0.5 day + one agy launch per bench night)
+
+**Done 2026-10-06: gate passed** (`deduplicate.write_merged_titles`, `RECAP_DEDUP_TITLES_PROMPT`,
+`jev.dedup.merges_from`, `bench_jev.py dedup-titles`; tests in `tests/recap/jev/test_dedup.py`,
+`tests/test_bench_jev.py`). Bench rows: `bench/dedup-titles-2026-10-06.jsonl`.
+
+Results (one agy `gemini-3.7-flash --effort low` launch per tuning night, on the merge groups
+the pipeline makes from the stored Stage 5 probabilities):
+
+- 123 groups, every one with a headline (none kept a Decision 6 title), all in Russian; median
+  length 1.16 × the longest original, 10 groups above 1.5 ×.
+- Of the 9 members labelled `different` from their keeper, 8 are stated in the written headline
+  ("OpenAI expanded ChatGPT with apps, automation and an office suite, challenging the App Store
+  and Microsoft"). One is lost: a review of the AI Greta Garbo advert, an opinion piece. Today's
+  dedup also loses one (the "Spaniards welcome snap election" reaction).
+- 25.8–33.0k agy tokens per launch (20–28k input, about 13k of it the per-launch overhead;
+  3.6–5.8k output including thinking), ≈ 20 s.
+- The holdout night was not run (one more launch); Stage 7 reads new nights' merged groups.
+
+Stage 5's merges keep one existing title, so a wrong merge hides the other story; today's LLM
+rewrites the merged headline and keeps it (15 of its 16 wrong groups). Stage 5b keeps Jev's
+groups and gives each one an LLM headline again, in one launch for the whole night.
+
+- `Deduplicate._dedup_on_jev`: after `find_duplicates`, one `recap_dedup` launch (same model and
+  timeout as today's dedup) gets every merge group as `=== GROUP N ===` with `n: [source] title`
+  lines and answers `GROUP N: <headline>` per group, under today's rules (keep the key facts of
+  all members, a separate fact, statement or reaction included; not much longer than the longest
+  original; output language). A failed launch or a group without an answer keeps its Decision 6
+  title. Merge groups are emitted in a fixed order (by smallest article id).
+- Gate (Claude reads every group with a member labelled `different` from its keeper, on the four
+  tuning nights): stories whose fact is missing from the written headline ≤ today's (1, the
+  "Spaniards welcome snap election" reaction); every group gets a headline in the output
+  language.
+- Pass → `dedup_backend` defaults to `jev` when a key is found. Fail → dedup stays on the LLM.
+
 ## Stage 6 — dropped
 
 The side-by-side week tested the restructure, which Stage 4 rejected. Stage 5 is gated on
@@ -704,7 +743,8 @@ labelled pairs, like Stage 3.
 - Wider-net check on new nights: label every wider-net merge (`wide` and `same` in
   `dedup-jev/output/jev_answers.json`) of the first 7 nightly runs. Keep the wider net if ≥ 90%
   are the same piece of news; otherwise raise `WIDE_THRESHOLD` to the lowest value that reaches
-  90% on them.
+  90% on them. On the same nights, read every merged group with a separate story and check that
+  its written headline states it (Stage 5b's gate on new data).
 - agy tokens per night are `total_tokens` in `digests.json` (agents only); Jev is recorded apart
   in `jev_tokens` and `jev_cost_usd`. Goal 2 is checked on these.
 
@@ -738,7 +778,8 @@ NEWS_RECAP_DEDUP_BACKEND=jev news-recap create --stop-after deduplicate
 ```
 
 The classify command shows a `classify-jev` row with tokens and cost and creates no `classify-N`
-workdirs; the dedup command, likewise, a `dedup-jev` row and no `dedup-N` workdirs.
+workdirs; the dedup command shows a `dedup-jev` row and a single `dedup-N` workdir, the merged
+headlines launch.
 
 Manual, once: put `TYPESAFE_API_KEY` into `~/.news_recap_data/.env` so the scheduled job
 (launchd starts it with cwd `/`) finds it.
@@ -751,16 +792,16 @@ agy figures are the 10-06 night (412 articles); Jev from the bench.
 |---|---|---|---|
 | Stage 0 | 17 / 629k | 0 | nights lost to `load_resources`: 3/32 → 0 |
 | Stage 3 | 14 / ≈515k | ≈ 0.48 | wrong excludes 4 vs 13 (tuning), 0 vs 0 (holdout); ≈ 4 more vague headlines a night, ≈ 13k more enrich tokens |
-| Stage 5 | 8 / ≈358k | ≈ 0.48 + 2.2 | about today's: fewer wrong merges (13 vs 31 pairs, in-sample) but each hides the other story, where today's rewritten headline keeps it; wider net adds ≈ 7 true duplicates a night (in-sample); merged groups show an existing title, not an LLM headline in the output language (32 on 10-06) |
+| Stage 5 + 5b | 9 / ≈391k | ≈ 0.48 + 2.2 | stories lost from merged headlines 1 vs today's 1; true duplicates removed 151 vs 132 (4 tuning nights, in-sample); merged headlines written in the output language, as today |
 
 ## Risks
 
-- **A wrong merge hides a story** (the reader sees one headline for two events): Stage 5b's gate
-  counts stories whose headline disappears, like wrong excludes (Decision 8).
-- **Merged headlines lose today's rewrite** (Decision 6): a merged group shows an existing title,
-  possibly in the source language, where today's LLM wrote one in the output language (32
-  keepers on 10-06). Most article lines already show the original title: 343 of the 412
-  articles on 10-06 have no enriched title.
+- **A wrong merge hides a story** (the reader sees one headline for two events): the Stage 5b
+  headline states the merged-in story; its gate counts stories missing from it, like wrong
+  excludes (Decision 8).
+- **A failed headline launch** leaves that night's merged groups with an existing title, possibly
+  in the source language (Decision 6), and a wrongly merged story hidden. The night still gets
+  its digest.
 - **A Jev outage** falls back to the LLM for that night (Decision 5).
 - **Rate limits** are "adjusting dynamically": SDK retries; the 10-06 live run reached 61 req/s
   at 16 concurrent requests against the documented 80 req/s. One request that still fails after

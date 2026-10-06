@@ -50,13 +50,21 @@ from news_recap.recap.jev.dedup import (
     PAIR_QUESTION,
     PAIR_STATE,
     SAME_EVENT_THRESHOLD,
+    display_title,
     merge_groups,
+    merges_from,
+    pair_key,
     pair_state,
 )
 from news_recap.recap.jev.dedup import STATE_VARIANTS as DEDUP_STATE_VARIANTS
 from news_recap.recap.jev.policy import split_policy_topics
 from news_recap.recap.jev.usage import PRICE_PER_MTOK
-from news_recap.recap.models import DigestArticle
+from news_recap.recap.models import Digest, DigestArticle
+from news_recap.recap.pipeline_setup import _build_routing_defaults
+from news_recap.recap.storage.pipeline_io import read_pipeline_input
+from news_recap.recap.storage.workdir import TaskWorkdirManager
+from news_recap.recap.tasks.base import FlowContext
+from news_recap.recap.tasks.deduplicate import write_merged_titles
 from news_recap.storage.io import atomic_write
 
 VERDICTS = ("ok", "vague", "exclude")
@@ -1876,6 +1884,111 @@ def wide_report(
 
 
 # ---------------------------------------------------------------------------
+# Stage 5b: merged headlines written by one LLM launch per night
+# ---------------------------------------------------------------------------
+
+
+def night_merge_groups(
+    clusters: Iterable[DedupCluster],
+    wide: Iterable[tuple[str, DigestArticle, DigestArticle]],
+    probs: Mapping[Pair, tuple[float, int]],
+) -> list[list[DigestArticle]]:
+    """The merge groups the pipeline makes from stored probabilities, keeper first."""
+    by_id: dict[str, DigestArticle] = {}
+    same: set[tuple[str, str]] = set()
+
+    def judge(pipeline: str, a: DigestArticle, b: DigestArticle, threshold: float) -> None:
+        by_id.setdefault(a.article_id, a)
+        by_id.setdefault(b.article_id, b)
+        if probs[make_pair(pipeline, a.title, b.title)][0] >= threshold:
+            same.add(pair_key(a, b))
+
+    for cluster in clusters:
+        for i, a in enumerate(cluster.articles):
+            for b in cluster.articles[i + 1 :]:
+                judge(cluster.pipeline, a, b, SAME_EVENT_THRESHOLD)
+    for pipeline, a, b in wide:
+        judge(pipeline, a, b, WIDE_THRESHOLD)
+    return merges_from(same, by_id)
+
+
+def _headline_context(bench: Bench, settings: Settings, night: str, agent: str) -> FlowContext:
+    """A scratch pipeline dir for *night* that launches *agent* with today's routing."""
+    pdir = bench.root / "runs" / f"dedup-titles-{datetime.now(UTC):%Y-%m-%d}" / night
+    pdir.mkdir(parents=True, exist_ok=True)
+    raw = json.loads((bench.pipelines / night / "pipeline_input.json").read_text("utf-8"))
+    raw["routing_defaults"] = msgspec.to_builtins(_build_routing_defaults(settings))
+    raw["agent_override"] = agent
+    (pdir / "pipeline_input.json").write_text(json.dumps(raw, ensure_ascii=False), "utf-8")
+    digest = Digest(
+        digest_id="bench",
+        run_date=night[9:19],
+        status="running",
+        pipeline_dir=str(pdir),
+    )
+    return FlowContext(
+        pdir=pdir,
+        workdir_mgr=TaskWorkdirManager(pdir),
+        inp=read_pipeline_input(str(pdir)),
+        article_map={},
+        digest=digest,
+    )
+
+
+def title_row(
+    night: str,
+    group: list[DigestArticle],
+    written: str,
+    labels: Mapping[Pair, str],
+) -> dict[str, Any]:
+    keeper, *others = group
+    against_keeper = [labels.get(make_pair(night, keeper.title, a.title)) for a in others]
+    return {
+        "pipeline": night,
+        "written": written,
+        "fallback": written == display_title(group),
+        "members": [
+            {"title": a.title, "source": a.source, "label": label}
+            for a, label in zip(group, [None, *against_keeper], strict=True)
+        ],
+    }
+
+
+def dedup_titles_report(rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Every group with a member labelled ``different`` from its keeper, to read by hand."""
+    fallback = sum(r["fallback"] for r in rows)
+    lines = [f"{len(rows)} merge groups, {fallback} kept an existing title"]
+    for row in rows:
+        hidden = [m["title"] for m in row["members"][1:] if m["label"] == DIFFERENT]
+        if hidden:
+            lines.append(f"[{row['pipeline'][9:19]}] {row['written']}")
+            lines += [f"    different: {title}" for title in hidden]
+    return lines
+
+
+def _cmd_dedup_titles(bench: Bench, args: argparse.Namespace) -> None:
+    settings = Settings.from_env()
+    probs = stored_dedup_probs(bench, PAIR_STATE, CHOSEN_DEDUP_QUESTION, DEFAULT_JEV_MODEL)
+    labels = read_dedup_labels(bench.labels("dedup"))
+    rows: list[dict[str, Any]] = []
+    for night in _archived_nights(bench, args.holdout):
+        clusters = replay_dedup(bench.pipelines / night)
+        articles = kept_articles(bench.pipelines / night)
+        similarities = night_similarities(bench, bench.pipelines / night, articles)
+        wide = wide_pairs(night, articles, similarities, clusters, DEDUP_THRESHOLD)
+        groups = night_merge_groups(clusters, wide, probs)
+        print(f"{night}: {len(groups)} merge groups -> one {args.agent} launch")
+        context = _headline_context(bench, settings, night, args.agent)
+        titles = write_merged_titles(context, groups)
+        rows += [title_row(night, g, t, labels) for g, t in zip(groups, titles, strict=True)]
+    out = bench.new_run("dedup-titles", args.agent)
+    out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), "utf-8")
+    print(f"\n{len(rows)} groups -> {out}\n")
+    for line in dedup_titles_report(rows):
+        print(line)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -2152,6 +2265,12 @@ def main() -> None:
         help=f"also score the wider net: pairs at similarity {WIDE_LOW}-{DEDUP_THRESHOLD}",
     )
     dedup.add_argument("--top", type=int, default=TOP_CONFIGS)
+    titles = sub.add_parser(
+        "dedup-titles",
+        help="write merged headlines for Jev's merge groups: one agent launch per night",
+    )
+    titles.add_argument("--holdout", action="store_true", help="the holdout night instead")
+    titles.add_argument("--agent", default="antigravity")
     args = parser.parse_args()
 
     commands = {
@@ -2161,6 +2280,7 @@ def main() -> None:
         "classify": _cmd_classify,
         "route": _cmd_route,
         "dedup": _cmd_dedup,
+        "dedup-titles": _cmd_dedup_titles,
     }
     commands[args.command](Bench.from_settings(), args)
 

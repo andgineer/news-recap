@@ -20,11 +20,13 @@ from news_recap.recap.jev.dedup import (
     pair_state,
     wide_pairs,
 )
-from news_recap.recap.models import Digest, DigestArticle
+from news_recap.recap.exceptions import RecapPipelineError
+from news_recap.recap.models import Digest, DigestArticle, UserPreferences
 from news_recap.recap.storage.pipeline_io import PipelineInput
 from news_recap.recap.tasks import deduplicate as dedup_mod
 from news_recap.recap.tasks.base import FlowContext
 from news_recap.recap.tasks.deduplicate import Deduplicate
+from news_recap.recap.tasks.prompts import PromptBackend
 
 
 def _article(article_id: str, text_len: int = 10, enriched: str | None = None) -> DigestArticle:
@@ -159,6 +161,8 @@ def _ctx(tmp_path: Path, articles: list[DigestArticle]) -> FlowContext:
     inp.dedup_model_name = "intfloat/multilingual-e5-small"
     inp.jev_model = "jev-1.13.0"
     inp.data_dir = str(tmp_path)
+    inp.preferences = UserPreferences(language="ru")
+    inp.prompt_backend = PromptBackend.CLI
     digest = Digest(
         digest_id="test",
         run_date="2026-10-01",
@@ -186,20 +190,43 @@ def _articles() -> list[DigestArticle]:
     ]
 
 
-def test_jev_backend_merges_without_llm(tmp_path: Path) -> None:
+class _HeadlineAgent:
+    """Stands in for ``run_single_agent``: records prompts, answers with *stdout* or raises."""
+
+    def __init__(self, stdout: str | BaseException) -> None:
+        self.stdout = stdout
+        self.prompts: list[str] = []
+
+    def __call__(self, ctx: FlowContext, step_name: str, prompt: str, batch: int) -> Path:
+        self.prompts.append(prompt)
+        if isinstance(self.stdout, BaseException):
+            raise self.stdout
+        path = ctx.pdir / f"dedup-{batch}" / "output" / "agent_stdout.log"
+        path.parent.mkdir(parents=True)
+        path.write_text(self.stdout, "utf-8")
+        return path
+
+
+def test_jev_backend_merges_and_writes_the_headline_in_one_launch(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path, _articles())
     client = _FakeJev({frozenset({"Title a", "Enriched b"}): 0.9, **_same("a", "c", p=0.8)})
+    agent = _HeadlineAgent("GROUP 1: Merged a, b and c\n")
     with (
         patch.object(dedup_mod, "build_embedder", return_value=_VectorEmbedder(_VECTORS)),
         patch.object(dedup_mod, "make_jev_client", return_value=client),
+        patch.object(dedup_mod, "run_single_agent", agent),
         patch.object(dedup_mod, "_run_llm_dedup") as llm,
     ):
         Deduplicate(ctx).execute()
 
     llm.assert_not_called()
+    assert len(agent.prompts) == 1
+    assert "=== GROUP 1 (3 articles) ===" in agent.prompts[0]
+    assert all(t in agent.prompts[0] for t in ("Title a", "Enriched b", "Title c"))
+    assert "OUTPUT LANGUAGE: Russian" in agent.prompts[0]
     assert [a.article_id for a in ctx.digest.articles] == ["a", "d"]
     keeper = ctx.digest.articles[0]
-    assert keeper.enriched_title == "Enriched b"
+    assert keeper.enriched_title == "Merged a, b and c"
     assert [u["url"] for u in keeper.alt_urls] == ["https://example.com/b", "https://example.com/c"]
 
     task_dir = ctx.pdir / "dedup-jev"
@@ -212,18 +239,52 @@ def test_jev_backend_merges_without_llm(tmp_path: Path) -> None:
     ]
 
 
-def test_jev_merge_without_enriched_titles_leaves_keeper_unenriched(tmp_path: Path) -> None:
+def test_failed_headline_launch_keeps_existing_titles(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path, [_article("a", 50), _article("b", 40), _article("d", 20)])
     vectors = {**_VECTORS, "Title b": _VECTORS["Enriched b"]}
     client = _FakeJev(_same("a", "b", p=0.9))
+    agent = _HeadlineAgent(RecapPipelineError("recap_dedup", "quota"))
     with (
         patch.object(dedup_mod, "build_embedder", return_value=_VectorEmbedder(vectors)),
         patch.object(dedup_mod, "make_jev_client", return_value=client),
+        patch.object(dedup_mod, "run_single_agent", agent),
     ):
         Deduplicate(ctx).execute()
 
+    assert len(agent.prompts) == 1
     assert [a.article_id for a in ctx.digest.articles] == ["a", "d"]
-    assert ctx.digest.articles[0].enriched_title is None
+    assert ctx.digest.articles[0].enriched_title is None  # a resumed enrich still sees it
+
+
+def test_group_left_without_a_headline_keeps_its_title(tmp_path: Path) -> None:
+    articles = [_article("a", 50), _article("b", 40, enriched="Enriched b"), _article("c", 30)]
+    ctx = _ctx(tmp_path, [*articles, _article("d", 20), _article("e", 10)])
+    vectors = {**_VECTORS, "Title e": _VECTORS["Title d"]}
+    client = _FakeJev({frozenset({"Title a", "Enriched b"}): 0.9, **_same("d", "e", p=0.9)})
+    agent = _HeadlineAgent("GROUP 2: Merged d and e\n")
+    with (
+        patch.object(dedup_mod, "build_embedder", return_value=_VectorEmbedder(vectors)),
+        patch.object(dedup_mod, "make_jev_client", return_value=client),
+        patch.object(dedup_mod, "run_single_agent", agent),
+    ):
+        Deduplicate(ctx).execute()
+
+    titles = {a.article_id: a.enriched_title for a in ctx.digest.articles}
+    assert titles == {"a": "Enriched b", "c": None, "d": "Merged d and e"}
+
+
+def test_no_merges_means_no_headline_launch(tmp_path: Path) -> None:
+    ctx = _ctx(tmp_path, _articles())
+    agent = _HeadlineAgent("")
+    with (
+        patch.object(dedup_mod, "build_embedder", return_value=_VectorEmbedder(_VECTORS)),
+        patch.object(dedup_mod, "make_jev_client", return_value=_FakeJev({})),
+        patch.object(dedup_mod, "run_single_agent", agent),
+    ):
+        Deduplicate(ctx).execute()
+
+    assert agent.prompts == []
+    assert len(ctx.digest.articles) == 4
 
 
 def test_jev_unavailable_falls_back_to_llm(tmp_path: Path) -> None:

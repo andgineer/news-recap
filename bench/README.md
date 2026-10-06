@@ -74,3 +74,21 @@ One row per pair (1 763):
 
 Scoring: a pair's truth is its label; an unlabelled pair counts only when `jev_merged` and
 `gemini_merged` agree (and then as correct); every disagreement is labelled.
+
+## `dedup-titles-2026-10-06.jsonl`
+
+**Claim** (`spec/plan-jev-decisions.md`, Stage 5b): when one agy launch per night writes the
+headline of every Jev merge group, the headlines state the merged-in story as often as today's
+LLM dedup does (8 of 9 wrongly merged members stated; today 15 of 16 groups), in the output
+language, for every group.
+
+One row per merge group of the four tuning nights (123), as `bench_jev.py dedup-titles` makes
+them: the groups the pipeline builds from the stored Stage 5 probabilities, headlines from
+`write_merged_titles` with agy `gemini-3.7-flash --effort low`. An agent's output is not
+deterministic, so a rerun writes different headlines and costs one launch per night.
+
+- `written`: the headline; `fallback`: the group kept its Decision 6 title instead (none did).
+- `members`: keeper first; `title`, `source`, `label` (the Stage 5 label against the keeper,
+  `null` when unlabelled).
+- `in_headline`, `read_by`: for members labelled `different`, whether the written headline states
+  their story, read by `claude-opus-5-5`.
