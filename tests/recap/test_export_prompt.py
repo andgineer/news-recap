@@ -226,6 +226,8 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
     mock_settings.ingestion.min_resource_chars = 200
     mock_settings.dedup.threshold = 0.90
     mock_settings.dedup.model_name = "intfloat/multilingual-e5-small"
+    mock_settings.jev.model = "jev-1.13.0"
+    mock_settings.jev.classify_backend = "llm"
     mock_settings.orchestrator.workdir_root = tmp_path
     mock_settings.orchestrator.default_agent = "claude"
     mock_settings.orchestrator.task_model_map = {}
@@ -294,6 +296,8 @@ def test_prompt_no_ai_path_skips_pipeline(tmp_path: "Path") -> None:  # type: ig
     mock_settings.ingestion.gc_retention_days = 7
     mock_settings.ingestion.digest_lookback_days = 2
     mock_settings.dedup.model_name = "intfloat/multilingual-e5-small"
+    mock_settings.jev.model = "jev-1.13.0"
+    mock_settings.jev.classify_backend = "llm"
 
     mock_store = MagicMock()
     mock_store.list_retrieval_articles.return_value = [article]
@@ -357,6 +361,8 @@ def test_prompt_fresh_flag_bypasses_resume(tmp_path: "Path") -> None:  # type: i
     mock_settings.ingestion.min_resource_chars = 200
     mock_settings.dedup.threshold = 0.90
     mock_settings.dedup.model_name = "intfloat/multilingual-e5-small"
+    mock_settings.jev.model = "jev-1.13.0"
+    mock_settings.jev.classify_backend = "llm"
     mock_settings.orchestrator.workdir_root = tmp_path
     mock_settings.orchestrator.default_agent = "claude"
     mock_settings.orchestrator.task_model_map = {}

@@ -10,6 +10,7 @@ from news_recap.config import (
     IngestionSettings,
     RssSettings,
     Settings,
+    resolve_typesafe_api_key,
 )
 
 pytestmark = [
@@ -331,3 +332,91 @@ def test_api_model_map_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
     assert settings.orchestrator.api_model_map["recap_oneshot_digest"] == "claude-opus-5"
     assert settings.orchestrator.api_model_map["recap_classify"] == "claude-haiku-4-5-20251001"
+
+
+@pytest.fixture()
+def jev_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path]:
+    """Isolate the TypeSafe key lookup: empty env, cwd and data dir under *tmp_path*."""
+    cwd = tmp_path / "cwd"
+    data_dir = tmp_path / "data"
+    cwd.mkdir()
+    data_dir.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(data_dir))
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.delenv("NEWS_RECAP_CLASSIFY_BACKEND", raising=False)
+    return cwd, data_dir
+
+
+def test_typesafe_key_lookup_precedence(
+    jev_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cwd, data_dir = jev_env
+    assert resolve_typesafe_api_key(data_dir) is None
+
+    (data_dir / ".env").write_text("TYPESAFE_API_KEY=from-data-dir\n")
+    assert resolve_typesafe_api_key(data_dir) == "from-data-dir"
+
+    (cwd / ".env").write_text("TYPESAFE_API_KEY=from-cwd\n")
+    assert resolve_typesafe_api_key(data_dir) == "from-cwd"
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "from-env")
+    assert resolve_typesafe_api_key(data_dir) == "from-env"
+
+
+def test_typesafe_key_empty_value_falls_through(
+    jev_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cwd, data_dir = jev_env
+    monkeypatch.setenv("TYPESAFE_API_KEY", " ")
+    (cwd / ".env").write_text("TYPESAFE_API_KEY=\nOTHER=1\n")
+    (data_dir / ".env").write_text("TYPESAFE_API_KEY=from-data-dir\n")
+    assert resolve_typesafe_api_key(data_dir) == "from-data-dir"
+
+
+def test_typesafe_key_from_dotenv_not_exported(jev_env: tuple[Path, Path]) -> None:
+    _, data_dir = jev_env
+    (data_dir / ".env").write_text("TYPESAFE_API_KEY=from-data-dir\n")
+    settings = Settings.from_env()
+    assert settings.jev.api_key == "from-data-dir"
+    assert "TYPESAFE_API_KEY" not in environ
+    assert "from-data-dir" not in repr(settings)
+
+
+def test_classify_backend_defaults_to_llm(jev_env: tuple[Path, Path]) -> None:
+    _, data_dir = jev_env
+    (data_dir / ".env").write_text("TYPESAFE_API_KEY=k\n")
+    assert Settings.from_env().jev.classify_backend == "llm"
+
+
+def test_classify_backend_jev_with_key(
+    jev_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, data_dir = jev_env
+    (data_dir / ".env").write_text("TYPESAFE_API_KEY=k\n")
+    monkeypatch.setenv("NEWS_RECAP_CLASSIFY_BACKEND", " JEV ")
+    settings = Settings.from_env()
+    assert settings.jev.classify_backend == "jev"
+    assert settings.jev.model == "jev-1.13.0"
+
+
+def test_classify_backend_jev_without_key_downgrades_to_llm(
+    jev_env: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("NEWS_RECAP_CLASSIFY_BACKEND", "jev")
+    with caplog.at_level("WARNING", logger="news_recap.config"):
+        settings = Settings.from_env()
+    assert settings.jev.classify_backend == "llm"
+    assert settings.jev.api_key is None
+    warnings = [r for r in caplog.records if "NEWS_RECAP_CLASSIFY_BACKEND" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+def test_classify_backend_rejects_unknown_value(
+    jev_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NEWS_RECAP_CLASSIFY_BACKEND", "gemini")
+    with pytest.raises(ValueError, match="NEWS_RECAP_CLASSIFY_BACKEND"):
+        Settings.from_env()

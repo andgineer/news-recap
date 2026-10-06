@@ -139,7 +139,7 @@ output language changes (title translation, cached).
 3. **Pinned model** `jev-1.13.0`; thresholds are tuned against it. Upgrading = rerun the bench,
    then bump.
 4. **Thresholds are module constants**, set from the bench.
-5. **Jev failure:** SDK retries, then `JevUnavailable`.
+5. **Jev failure:** SDK retries, then `JevUnavailableError`.
    - In classify: warning, the step reruns on the LLM path (kept until Stage 7).
    - In route and collapse_duplicates: `RecapPipelineError`. The night fails visibly (exit 1
      after Stage 0.3) and resumes from the checkpoint on the next run. No LLM twin is kept for
@@ -286,6 +286,28 @@ on the other three nights only (`HOLDOUT_PIPELINE` in `bench_jev.py`).
 
 ## Stage 2 — Jev foundation (~1 day, no behaviour change)
 
+**Done 2026-10-06** (`recap/jev/`, tests in `tests/recap/jev/`, `tests/test_config.py`,
+`tests/recap/agents/test_ai_agent_env.py`, `tests/recap/storage/test_pipeline_io.py`,
+`tests/test_launcher.py`). Live smoke test: 2 requests, 577 input tokens; a bad key raises
+`JevUnavailableError` (401). Differences from the bullets below:
+
+- `JevSettings` holds only `api_key` (`repr=False`), `model` and `classify_backend`. Steps run
+  from `pipeline_input.json`, not `Settings`, so concurrency and price could never reach them
+  from there: `MAX_CONCURRENCY = 16` is a constant in `jev/client.py`, `PRICE_PER_MTOK = 0.042`
+  in `jev/usage.py`, and `save_jev_usage` has no `price_per_mtok` argument.
+- `JevUnavailable` is named `JevUnavailableError` (ruff N818, same as the other exceptions).
+- The key lookup is `config.resolve_typesafe_api_key(data_dir)`, shared by `Settings.from_env`
+  and `make_jev_client`. An empty value falls through to the next source.
+- `jev_task_dir(pipeline_dir, step)` names the `<step>-jev` workdir.
+- `TYPESAFE_API_KEY` is popped after `extra_env` is merged, so no task-map env can re-add it.
+- `jev_model` and `classify_backend` are written when the pipeline is created and are not
+  refreshed on resume (a resumed night keeps its backend).
+- `JevClient.decide` runs requests in an `asyncio.TaskGroup`: the first SDK error cancels the
+  rest. Tokens are counted per completed request, so a failed batch still reports what was
+  billed.
+- The stage table has no cost column yet. Stage 3 adds one (from `cost_usd`) so the
+  *Verification* check "a `classify-jev` row with tokens and cost" can pass.
+
 2.1 `pyproject.toml`: add `typesafe-sdk>=0.7.2`, `python-dotenv>=1.0`. Run `uv lock`.
 
 2.2 `config.py`: new `JevSettings` dataclass on `Settings`: `api_key: str | None`,
@@ -306,12 +328,12 @@ next to the existing `api_key_vars` stripping.
 2.5 New package `src/news_recap/recap/jev/`:
 
 - `client.py`
-  - `class JevUnavailable(RecapPipelineError)`
+  - `class JevUnavailableError(RecapPipelineError)`
   - `class JevClient` wrapping `AsyncTypeSafeClient`, with
     `decide(requests: list[tuple[JSONContent, dict[str, Question]]]) -> list[SystemOneResponse]`.
     It runs `asyncio.run` with a semaphore of `max_concurrency` and accumulates `input_tokens`
     and request count. It maps `TypeSafeError` and its subclasses (auth, rate-limit after SDK
-    retries, timeout, connection) to `JevUnavailable`.
+    retries, timeout, connection) to `JevUnavailableError`.
   - `make_jev_client(data_dir: Path, model: str) -> JevClient | None`: key lookup per
     Decision 2.
 - `usage.py`
@@ -353,7 +375,7 @@ Tests:
 3.2 `Classify.execute` (`recap/tasks/classify.py:234`): when `classify_backend == "jev"`, set
 `a.verdict` on each `to_classify` article from `classify_articles`, then call the existing
 `_sync_verdicts` (state, `kept_entries`, `enrich_ids` and the log line unchanged). On
-`JevUnavailable`, log a warning and run the existing batch flow. The 80% recognition guard does
+`JevUnavailableError`, log a warning and run the existing batch flow. The 80% recognition guard does
 not apply to the Jev path (every article gets an answer or the call raises).
 
 3.3 `bench_jev.py classify`:
@@ -521,7 +543,7 @@ carries it inside `preferences`.
 5.8 Tests:
 
 - `tests/recap/tasks/test_route.py`: follow precedence, low confidence → "other", a persisted section is not
-  re-routed, `JevUnavailable` → `RecapPipelineError`;
+  re-routed, `JevUnavailableError` → `RecapPipelineError`;
 - `tests/recap/tasks/test_oneshot_digest.py`: packing never splits a section smaller than `_BATCH_SIZE`, the prompt
   carries section headers, id mapping, unknown id → majority section, fixed section order,
   cached batch reused only on matching composition;
@@ -668,7 +690,7 @@ Used if Stage 4 or Stage 6 fails. agy launches 12 → 5 (enrich 1, oneshot 2, me
   `_MergeAction(merged_text=<display title>, indices=<1-based positions in group_ids>)`, so
   `_apply_merge` and `_update_pipeline_state` are reused.
 - `Deduplicate.execute` (`recap/tasks/deduplicate.py:229`) calls it instead of
-  `_run_llm_dedup`, with the LLM path as fallback on `JevUnavailable`.
+  `_run_llm_dedup`, with the LLM path as fallback on `JevUnavailableError`.
 - `bench_jev.py dedup`: parse `dedup-N/input/task_prompt.txt` (`=== CLUSTER N (k articles) ===`,
   lines `n: [source] headline`) and the stdout (`MERGED:` + number line, `SINGLE: n`); pairwise
   co-membership precision/recall vs Gemini's groups; judge disputed pairs; sweep the threshold.

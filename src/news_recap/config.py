@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from dotenv import dotenv_values
+
 from news_recap.user_config import DEFAULT_AGENT, UserConfigManager
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,20 @@ class DedupSettings:
 
     threshold: float = 0.90
     model_name: str = "intfloat/multilingual-e5-small"
+
+
+TYPESAFE_API_KEY_VAR = "TYPESAFE_API_KEY"
+DEFAULT_JEV_MODEL = "jev-1.13.0"
+CLASSIFY_BACKENDS = ("llm", "jev")
+
+
+@dataclass(slots=True)
+class JevSettings:
+    """TypeSafe Jev settings: API key and which pipeline steps use Jev."""
+
+    api_key: str | None = field(default=None, repr=False)
+    model: str = DEFAULT_JEV_MODEL
+    classify_backend: str = "llm"
 
 
 @dataclass(slots=True)
@@ -196,6 +212,7 @@ class Settings:
     dedup: DedupSettings = field(default_factory=DedupSettings)
     rss: RssSettings = field(default_factory=RssSettings)
     orchestrator: OrchestratorSettings = field(default_factory=OrchestratorSettings)
+    jev: JevSettings = field(default_factory=JevSettings)
 
     @classmethod
     def from_env(
@@ -307,6 +324,7 @@ class Settings:
                     os.getenv("NEWS_RECAP_API_DOWNSHIFT_PAUSE_SECONDS", "2.0"),
                 ),
             ),
+            jev=_collect_jev_settings(data_dir),
         )
         if execution_backend is not None:
             settings.orchestrator.execution_backend = execution_backend
@@ -329,6 +347,8 @@ class Settings:
             raise ValueError("NEWS_RECAP_DIGEST_LOOKBACK_DAYS must be >= 1.")
         if not (0.0 < self.dedup.threshold <= 1.0):
             raise ValueError("NEWS_RECAP_DEDUP_THRESHOLD must be in (0, 1].")
+        if self.jev.classify_backend not in CLASSIFY_BACKENDS:
+            raise ValueError("NEWS_RECAP_CLASSIFY_BACKEND must be 'llm' or 'jev'.")
 
     def _validate_orchestrator_routing(self) -> None:  # noqa: C901
         supported_agents = {"codex", "claude", "antigravity"}
@@ -431,6 +451,37 @@ class Settings:
                 )
         if self.rss.snapshot_max_age_hours < 0:
             raise ValueError("NEWS_RECAP_RSS_SNAPSHOT_MAX_AGE_HOURS must be >= 0.")
+
+
+def resolve_typesafe_api_key(data_dir: Path) -> str | None:
+    """Return the TypeSafe API key: env var, then ``./.env``, then ``<data_dir>/.env``.
+
+    ``.env`` values are never exported to ``os.environ``, so agent subprocesses
+    cannot inherit them.
+    """
+    value = os.getenv(TYPESAFE_API_KEY_VAR, "").strip()
+    if value:
+        return value
+    for env_file in (Path.cwd() / ".env", data_dir / ".env"):
+        if env_file.is_file():
+            value = (dotenv_values(env_file).get(TYPESAFE_API_KEY_VAR) or "").strip()
+            if value:
+                return value
+    return None
+
+
+def _collect_jev_settings(data_dir: Path) -> JevSettings:
+    api_key = resolve_typesafe_api_key(data_dir)
+    classify_backend = os.getenv("NEWS_RECAP_CLASSIFY_BACKEND", "llm").strip().lower()
+    if classify_backend == "jev" and api_key is None:
+        logger.warning(
+            "NEWS_RECAP_CLASSIFY_BACKEND=jev but %s is not set (env, ./.env, %s); "
+            "classify uses the LLM.",
+            TYPESAFE_API_KEY_VAR,
+            data_dir / ".env",
+        )
+        classify_backend = "llm"
+    return JevSettings(api_key=api_key, classify_backend=classify_backend)
 
 
 def _collect_feed_urls() -> tuple[str, ...]:

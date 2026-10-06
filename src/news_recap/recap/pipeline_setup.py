@@ -15,7 +15,7 @@ from pathlib import Path
 
 import msgspec
 
-from news_recap.config import Settings
+from news_recap.config import DEFAULT_JEV_MODEL, Settings
 from news_recap.recap.agents.routing import RoutingDefaults
 from news_recap.recap.models import Digest, DigestArticle, UserPreferences
 from news_recap.recap.storage.pipeline_io import _DEFAULT_MIN_RESOURCE_CHARS
@@ -185,7 +185,8 @@ def _aggregate_usage(pdir: Path) -> _UsageStats:
     """Collect usage metrics from all task workdirs.
 
     Field names in usage.json must stay in sync with ``_save_usage`` /
-    ``read_agent_usage`` in ``agents/ai_agent.py`` and ``agents/api_agent.py``.
+    ``read_agent_usage`` in ``agents/ai_agent.py``, ``agents/api_agent.py`` and
+    ``jev/usage.py``.
     """
     stats = _UsageStats()
     for task_dir in pdir.iterdir():
@@ -487,6 +488,8 @@ def _write_pipeline_input(  # noqa: PLR0913
     dedup_model_name: str = "intfloat/multilingual-e5-small",
     use_api_key: bool = False,
     selection_params: dict[str, object] | None = None,
+    jev_model: str = DEFAULT_JEV_MODEL,
+    classify_backend: str = "llm",
 ) -> None:
     """Serialize all pipeline inputs to ``pipeline_input.json`` in *pipeline_dir*."""
     pipeline_dir.mkdir(parents=True, exist_ok=True)
@@ -503,6 +506,8 @@ def _write_pipeline_input(  # noqa: PLR0913
         "dedup_threshold": dedup_threshold,
         "dedup_model_name": dedup_model_name,
         "use_api_key": use_api_key,
+        "jev_model": jev_model,
+        "classify_backend": classify_backend,
     }
     if selection_params is not None:
         payload["selection_params"] = selection_params

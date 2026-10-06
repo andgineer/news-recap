@@ -170,6 +170,8 @@ def _run_ai_pipeline(  # noqa: PLR0913
             dedup_threshold=settings.dedup.threshold,
             dedup_model_name=settings.dedup.model_name,
             selection_params=sel_params,
+            jev_model=settings.jev.model,
+            classify_backend=settings.jev.classify_backend,
         )
         create_digest_entry(
             workdir_root,

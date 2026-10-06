@@ -57,4 +57,6 @@ def make_settings_mock(tmp_path: Path) -> MagicMock:
     settings.ingestion.min_resource_chars = 200
     settings.dedup.threshold = 0.90
     settings.dedup.model_name = "intfloat/multilingual-e5-small"
+    settings.jev.model = "jev-1.13.0"
+    settings.jev.classify_backend = "llm"
     return settings

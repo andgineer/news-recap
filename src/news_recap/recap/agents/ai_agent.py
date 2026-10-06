@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from news_recap.config import TYPESAFE_API_KEY_VAR
 from news_recap.recap.agents.api_agent import run_api_agent
 from news_recap.recap.agents.routing import resolve_routing_for_enqueue
 from news_recap.recap.agents.subprocess import (
@@ -461,6 +462,7 @@ def _run_agent_cli(  # noqa: PLR0913
             env.pop(_key, None)
     if extra_env:
         env.update(extra_env)
+    env.pop(TYPESAFE_API_KEY_VAR, None)
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:

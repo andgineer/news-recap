@@ -476,6 +476,8 @@ class RecapCliController:
                 dedup_model_name=settings.dedup.model_name,
                 use_api_key=command.use_api_key,
                 selection_params=sel_params,
+                jev_model=settings.jev.model,
+                classify_backend=settings.jev.classify_backend,
             )
             digest_id = create_digest_entry(
                 workdir_root,

@@ -107,3 +107,14 @@ def test_no_api_key_vars_leaves_env_unchanged(manifest, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "secret-anthropic")
     env = _run_and_capture_env(manifest, api_key_vars=[])
     assert env.get("ANTHROPIC_API_KEY") == "secret-anthropic"
+
+
+def test_typesafe_key_always_stripped(manifest, monkeypatch):
+    """Agents read untrusted news text, so the Jev key never reaches them."""
+    monkeypatch.setenv("TYPESAFE_API_KEY", "secret-typesafe")
+    env = _run_and_capture_env(manifest, api_key_vars=["ANTHROPIC_API_KEY"], use_api_key=True)
+    assert "TYPESAFE_API_KEY" not in env
+    env = _run_and_capture_env(
+        manifest, api_key_vars=[], extra_env={"TYPESAFE_API_KEY": "from-extra-env"}
+    )
+    assert "TYPESAFE_API_KEY" not in env

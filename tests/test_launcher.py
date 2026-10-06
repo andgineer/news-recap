@@ -384,3 +384,26 @@ def test_from_digest_skips_resume_logic(
 
     assert not any("Resuming" in m for m in messages)
     assert any("Reusing 2" in m for m in messages)
+
+
+@patch("news_recap.recap.launcher.recap_flow")
+@patch("news_recap.recap.launcher.Settings.from_env")
+def test_new_pipeline_records_jev_settings(
+    mock_from_env: MagicMock,
+    mock_flow: MagicMock,
+    tmp_path: Path,
+) -> None:
+    settings = _make_settings_mock(tmp_path)
+    settings.jev.classify_backend = "jev"
+    mock_from_env.return_value = settings
+    workdir_root = settings.orchestrator.workdir_root
+    workdir_root.mkdir(parents=True, exist_ok=True)
+    _make_source_pipeline(tmp_path, n_articles=2, workdir_root=workdir_root)
+
+    list(RecapCliController().run_pipeline(RecapRunCommand(from_digest=_SOURCE_DIGEST_ID)))
+
+    new_inp = read_pipeline_input(mock_flow.call_args[1]["pipeline_dir"])
+    assert new_inp.classify_backend == "jev"
+    assert new_inp.jev_model == "jev-1.13.0"
+    raw = (Path(mock_flow.call_args[1]["pipeline_dir"]) / "pipeline_input.json").read_text()
+    assert "TYPESAFE" not in raw

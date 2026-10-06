@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 import msgspec
 
+from news_recap.config import DEFAULT_JEV_MODEL
 from news_recap.recap.agents.routing import RoutingDefaults
 from news_recap.recap.contracts import ArticleIndexEntry
 from news_recap.recap.loaders.resource_cache import ResourceCache
@@ -46,6 +47,8 @@ class PipelineInput:
     coverage_end: str | None = None
     use_api_key: bool = False
     selection_params: dict[str, object] | None = None
+    jev_model: str = DEFAULT_JEV_MODEL
+    classify_backend: str = "llm"
 
     @property
     def execution_backend(self) -> str:
@@ -97,6 +100,8 @@ def read_pipeline_input(pipeline_dir: str) -> PipelineInput:
         coverage_end=raw.get("coverage_end"),
         use_api_key=bool(raw.get("use_api_key", False)),
         selection_params=raw.get("selection_params"),
+        jev_model=raw.get("jev_model", DEFAULT_JEV_MODEL),
+        classify_backend=raw.get("classify_backend", "llm"),
     )
 
 
