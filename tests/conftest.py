@@ -16,6 +16,12 @@ _ECHO_AGENT_COMMAND_TEMPLATE = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _classify_backend_llm(monkeypatch):
+    # ./.env may hold a real TYPESAFE_API_KEY, which would make classify call live Jev.
+    monkeypatch.setenv("NEWS_RECAP_CLASSIFY_BACKEND", "llm")
+
+
 @pytest.fixture()
 def echo_agent(monkeypatch):
     """Monkeypatch Settings.from_env to use the echo agent for codex."""

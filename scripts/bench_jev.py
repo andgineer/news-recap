@@ -5,6 +5,7 @@ Usage:
     uv run python scripts/bench_jev.py snapshot
     uv run python scripts/bench_jev.py label [--items items.jsonl]
     uv run python scripts/bench_jev.py judge-check --task classify
+    uv run python scripts/bench_jev.py classify [--holdout] [--config full:0.8:full:0.6]
 """
 
 from __future__ import annotations
@@ -29,13 +30,30 @@ from typing import Any
 
 import click
 
-from news_recap.config import Settings
+from news_recap.config import DEFAULT_JEV_MODEL, Settings
+from news_recap.recap.jev.classify import (
+    EXCLUDE_THRESHOLD,
+    STATE_VARIANTS,
+    VAGUE_KEY,
+    VAGUE_THRESHOLD,
+    article_state,
+    policy_questions,
+    verdict,
+)
+from news_recap.recap.jev.client import JevClient, make_jev_client
+from news_recap.recap.jev.usage import PRICE_PER_MTOK
+from news_recap.recap.models import DigestArticle
 from news_recap.storage.io import atomic_write
 
 VERDICTS = ("ok", "vague", "exclude")
 SKIP = "skip"
 KEY_LABELS = {"o": "ok", "v": "vague", "x": "exclude", "s": SKIP}
 HOLDOUT_PIPELINE = "pipeline-2026-10-04-011204"
+TUNING_PIPELINES = (
+    "pipeline-2026-09-29-011209",
+    "pipeline-2026-09-30-011209",
+    "pipeline-2026-10-01-011209",
+)
 
 EXPERIMENT_FILE = Path("jev-exp-2026-10-05") / "generic2_1765.json"
 EXPERIMENT_EXCLUDE_THRESHOLD = 0.6
@@ -126,6 +144,19 @@ class Bench:
 
     def judge_runs(self, task: str) -> Path:
         return self.root / "judge" / "runs" / f"{task}-{datetime.now(UTC):%Y%m%dT%H%M%S}"
+
+    @property
+    def data_dir(self) -> Path:
+        return self.root.parent
+
+    def runs(self, task: str, variant: str) -> list[Path]:
+        return sorted((self.root / "runs").glob(f"{task}-{variant}-*.jsonl"))
+
+    def new_run(self, task: str, variant: str) -> Path:
+        return self.root / "runs" / f"{task}-{variant}-{datetime.now(UTC):%Y-%m-%d}.jsonl"
+
+    def pending(self, task: str) -> Path:
+        return self.root / "labels" / f"pending-{task}.jsonl"
 
 
 def _now() -> str:
@@ -458,6 +489,372 @@ def agreement_report(
 
 
 # ---------------------------------------------------------------------------
+# classify
+# ---------------------------------------------------------------------------
+
+EXCLUDE_GRID = tuple(round(0.40 + 0.05 * i, 2) for i in range(9))
+VAGUE_GRID = tuple(round(0.50 + 0.05 * i, 2) for i in range(9))
+TOP_CONFIGS = 5
+VAGUE_F1_MARGIN = 0.05
+MAX_MONTHLY_COST = 1.0
+DAYS_PER_MONTH = 30
+
+_PROMPT_LINE_RE = re.compile(r"^(\d+): (.+)$", re.MULTILINE)
+_VERDICT_LINE_RE = re.compile(r"^(\d+):\s*(ok|vague|exclude)\s*$", re.MULTILINE)
+
+Probs = dict[str, float]
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class ClassifyConfig:
+    exclude_variant: str
+    exclude_threshold: float
+    vague_variant: str
+    vague_threshold: float
+
+    @classmethod
+    def parse(cls, text: str) -> ClassifyConfig:
+        """``exclude_variant:threshold:vague_variant:threshold``.
+
+        >>> config = ClassifyConfig.parse("full:0.8:headline_only:0.55")
+        >>> config.exclude_threshold, config.variants
+        (0.8, ('full', 'headline_only'))
+        """
+        ev, te, vv, tv = text.split(":")
+        if ev not in STATE_VARIANTS or vv not in STATE_VARIANTS:
+            raise ValueError(f"variants must be among {STATE_VARIANTS}: {text!r}")
+        return cls(ev, float(te), vv, float(tv))
+
+    def __str__(self) -> str:
+        return (
+            f"{self.exclude_variant}:{self.exclude_threshold:.2f}:"
+            f"{self.vague_variant}:{self.vague_threshold:.2f}"
+        )
+
+    @property
+    def variants(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((self.exclude_variant, self.vague_variant)))
+
+
+PRODUCTION_CONFIG = ClassifyConfig("full", EXCLUDE_THRESHOLD, "full", VAGUE_THRESHOLD)
+
+
+def replay_classify(pipeline_dir: Path) -> dict[Item, str]:
+    """Gemini's verdict per headline, parsed from the archived ``classify-N`` workdirs."""
+    verdicts: dict[Item, str] = {}
+    for task_dir in sorted(pipeline_dir.glob("classify-*")):
+        try:
+            prompt = (task_dir / "input" / "task_prompt.txt").read_text("utf-8")
+            stdout = (task_dir / "output" / "agent_stdout.log").read_text("utf-8")
+        except OSError:
+            continue
+        _, _, block = prompt.partition("=== HEADLINES")
+        answers = dict(_VERDICT_LINE_RE.findall(stdout))
+        for num, headline in _PROMPT_LINE_RE.findall(block):
+            if num in answers:
+                verdicts.setdefault(Item(pipeline_dir.name, headline.strip()), answers[num])
+    return verdicts
+
+
+def replay_nights(pipelines_dir: Path, names: Iterable[str]) -> dict[Item, str]:
+    """Replayed Gemini verdicts of *names*, keeping only headlines found in the night's input."""
+    verdicts: dict[Item, str] = {}
+    for name in names:
+        _, articles = _pipeline_articles(pipelines_dir / name)
+        night = replay_classify(pipelines_dir / name)
+        verdicts.update({item: v for item, v in night.items() if item.headline in articles})
+    return verdicts
+
+
+def _digest_article(raw: dict[str, Any]) -> DigestArticle:
+    return DigestArticle(
+        article_id=raw.get("article_id") or "",
+        title=raw["title"],
+        url=raw.get("url") or "",
+        source=raw.get("source") or "",
+        published_at=raw.get("published_at") or "",
+        clean_text=raw.get("clean_text") or "",
+    )
+
+
+def stored_classify_probs(bench: Bench, variant: str, model: str) -> dict[Item, Probs]:
+    """Probabilities from earlier runs of *variant* on *model*; later files win."""
+    probs: dict[Item, Probs] = {}
+    for path in bench.runs("classify", variant):
+        for row in _read_jsonl(path):
+            if row["model"] == model:
+                probs[Item(row["pipeline"], row["headline"])] = row["p"]
+    return probs
+
+
+def run_classify_variant(
+    bench: Bench,
+    client: JevClient,
+    items: Iterable[Item],
+    variant: str,
+) -> dict[Item, Probs]:
+    """Ask Jev only for items without stored probabilities; returns probabilities for all."""
+    probs = stored_classify_probs(bench, variant, client.model)
+    by_night: dict[str, list[Item]] = {}
+    for item in dict.fromkeys(items):
+        if item not in probs:
+            by_night.setdefault(item.pipeline, []).append(item)
+    for night, todo in sorted(by_night.items()):
+        policy, articles = _pipeline_articles(bench.pipelines / night)
+        questions = policy_questions(policy)
+        requests = [
+            (article_state(_digest_article(articles[i.headline]), variant), questions) for i in todo
+        ]
+        before = client.input_tokens
+        print(f"  Jev {variant}: {night}, {len(todo)} headlines", flush=True)
+        responses = client.decide(requests)
+        rows = [
+            {
+                "pipeline": item.pipeline,
+                "headline": item.headline,
+                "variant": variant,
+                "model": client.model,
+                "p": {key: answer.noul for key, answer in response.nouls.items()},
+                "tokens": response.usage.input_tokens or 0,
+                "run_at": _now(),
+            }
+            for item, response in zip(todo, responses, strict=True)
+        ]
+        _append_jsonl(bench.new_run("classify", variant), rows)
+        probs.update({Item(r["pipeline"], r["headline"]): r["p"] for r in rows})
+        print(f"    {client.input_tokens - before:,} tokens", flush=True)
+    return probs
+
+
+def night_tokens(bench: Bench, variants: Iterable[str], model: str) -> dict[str, int]:
+    """Stored Jev input tokens per night, summed over *variants* (latest run per item)."""
+    per_item: dict[tuple[str, Item], int] = {}
+    for variant in variants:
+        for path in bench.runs("classify", variant):
+            for row in _read_jsonl(path):
+                if row["model"] == model:
+                    per_item[variant, Item(row["pipeline"], row["headline"])] = row["tokens"]
+    totals: Counter[str] = Counter()
+    for (_, item), tokens in per_item.items():
+        totals[item.pipeline] += tokens
+    return dict(totals)
+
+
+def jev_verdicts(
+    config: ClassifyConfig,
+    probs: dict[str, dict[Item, Probs]],
+    items: Iterable[Item],
+) -> dict[Item, str]:
+    out = {}
+    for item in items:
+        merged = {k: p for k, p in probs[config.exclude_variant][item].items() if k != VAGUE_KEY}
+        merged[VAGUE_KEY] = probs[config.vague_variant][item][VAGUE_KEY]
+        out[item] = verdict(merged, config.exclude_threshold, config.vague_threshold)
+    return out
+
+
+def resolve_truth(
+    jev: dict[Item, str],
+    gemini: dict[Item, str],
+    labels: dict[Item, str],
+) -> dict[Item, str | None]:
+    """The label when one exists; else the shared verdict when Jev and Gemini agree; else None.
+
+    >>> a, b, c = Item("p", "a"), Item("p", "b"), Item("p", "c")
+    >>> truth = resolve_truth(
+    ...     {a: "ok", b: "ok", c: "ok"}, {a: "ok", b: "vague", c: "vague"}, {c: "vague"}
+    ... )
+    >>> list(truth.values())
+    ['ok', None, 'vague']
+    """
+    truth: dict[Item, str | None] = {}
+    for item, answer in jev.items():
+        label = labels.get(item)
+        if label in VERDICTS:
+            truth[item] = label
+        else:
+            truth[item] = answer if answer == gemini[item] else None
+    return truth
+
+
+@dataclass(frozen=True, slots=True)
+class Scores:
+    """Per-class counts of one system's verdicts against resolved truth."""
+
+    pairs: Counter[tuple[str, str]]  # (truth, predicted)
+
+    @classmethod
+    def of(cls, predicted: dict[Item, str], truth: dict[Item, str | None]) -> Scores:
+        return cls(
+            Counter((t, predicted[item]) for item, t in truth.items() if t is not None),
+        )
+
+    @property
+    def total(self) -> int:
+        return sum(self.pairs.values())
+
+    def correct(self, cls_: str) -> int:
+        return self.pairs[cls_, cls_]
+
+    def predicted(self, cls_: str) -> int:
+        return sum(n for (_, p), n in self.pairs.items() if p == cls_)
+
+    def actual(self, cls_: str) -> int:
+        return sum(n for (t, _), n in self.pairs.items() if t == cls_)
+
+    def precision(self, cls_: str) -> float:
+        return self.correct(cls_) / self.predicted(cls_) if self.predicted(cls_) else 0.0
+
+    def recall(self, cls_: str) -> float:
+        return self.correct(cls_) / self.actual(cls_) if self.actual(cls_) else 0.0
+
+    def f1(self, cls_: str) -> float:
+        p, r = self.precision(cls_), self.recall(cls_)
+        return 2 * p * r / (p + r) if p + r else 0.0
+
+    @property
+    def wrong_excludes(self) -> int:
+        return sum(n for (t, p), n in self.pairs.items() if p == "exclude" and t != "exclude")
+
+    @property
+    def missed_excludes(self) -> int:
+        return sum(n for (t, p), n in self.pairs.items() if t == "exclude" and p != "exclude")
+
+    @property
+    def exclude_decisions_correct(self) -> int:
+        return self.total - self.wrong_excludes - self.missed_excludes
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigResult:
+    config: ClassifyConfig
+    jev: Scores
+    gemini: Scores
+    unknown: tuple[Item, ...]
+
+    @property
+    def exclude_ok(self) -> bool:
+        return (
+            self.jev.wrong_excludes <= self.gemini.wrong_excludes
+            and self.jev.exclude_decisions_correct >= self.gemini.exclude_decisions_correct
+        )
+
+    @property
+    def vague_ok(self) -> bool:
+        return self.jev.f1("vague") >= self.gemini.f1("vague") - VAGUE_F1_MARGIN
+
+    def rank_key(self) -> tuple[bool, int, int, float]:
+        """Exclude gate first, then fewest exclude errors, fewest wrong excludes, best vague F1."""
+        return (
+            not self.exclude_ok,
+            self.jev.wrong_excludes + self.jev.missed_excludes,
+            self.jev.wrong_excludes,
+            -self.jev.f1("vague"),
+        )
+
+
+def evaluate(
+    config: ClassifyConfig,
+    probs: dict[str, dict[Item, Probs]],
+    gemini: dict[Item, str],
+    labels: dict[Item, str],
+) -> ConfigResult:
+    jev = jev_verdicts(config, probs, gemini)
+    truth = resolve_truth(jev, gemini, labels)
+    return ConfigResult(
+        config,
+        Scores.of(jev, truth),
+        Scores.of(gemini, truth),
+        tuple(sorted(item for item, t in truth.items() if t is None)),
+    )
+
+
+def sweep(
+    probs: dict[str, dict[Item, Probs]],
+    gemini: dict[Item, str],
+    labels: dict[Item, str],
+) -> list[ConfigResult]:
+    variants = sorted(probs)
+    results = [
+        evaluate(ClassifyConfig(ev, te, vv, tv), probs, gemini, labels)
+        for ev in variants
+        for te in EXCLUDE_GRID
+        for vv in variants
+        for tv in VAGUE_GRID
+    ]
+    return sorted(results, key=lambda r: (r.rank_key(), r.config))
+
+
+def sweep_table(results: list[ConfigResult], top: int) -> list[str]:
+    lines = [
+        f"{'config':<34}{'wrong-ex':>9}{'missed':>8}{'ex-ok':>7}"
+        f"{'vague P':>9}{'R':>6}{'F1':>6}{'unlab':>7}",
+    ]
+    lines += [
+        f"{r.config!s:<34}{r.jev.wrong_excludes:>9}{r.jev.missed_excludes:>8}"
+        f"{'yes' if r.exclude_ok else 'no':>7}{r.jev.precision('vague'):>9.2f}"
+        f"{r.jev.recall('vague'):>6.2f}{r.jev.f1('vague'):>6.2f}{len(r.unknown):>7}"
+        for r in results[:top]
+    ]
+    return lines
+
+
+def classify_report(result: ConfigResult, cost_per_month: float) -> tuple[bool, list[str]]:
+    """Per-class table for Jev and Gemini plus the Stage 3.4 gate; returns (passed, lines)."""
+    jev, gem = result.jev, result.gemini
+    lines = [
+        f"config {result.config}: {jev.total} headlines scored, "
+        f"{len(result.unknown)} unlabelled disagreements left out",
+        "(unlabelled Jev/Gemini agreements count as correct)",
+        f"{'':<9}{'':<8}{'correct':>8}{'prec':>7}{'recall':>8}{'F1':>6}",
+    ]
+    for cls_ in VERDICTS:
+        for name, s in (("Jev", jev), ("Gemini", gem)):
+            lines.append(
+                f"{cls_ if name == 'Jev' else '':<9}{name:<8}{s.correct(cls_):>8}"
+                f"{s.precision(cls_):>7.2f}{s.recall(cls_):>8.2f}{s.f1(cls_):>6.2f}",
+            )
+    lines.append(
+        f"wrong excludes: Jev {jev.wrong_excludes}, Gemini {gem.wrong_excludes}; "
+        f"missed excludes: Jev {jev.missed_excludes}, Gemini {gem.missed_excludes}",
+    )
+    cost_ok = cost_per_month < MAX_MONTHLY_COST
+    complete = not result.unknown
+    lines += [
+        f"gate exclude: {'PASS' if result.exclude_ok else 'FAIL'} "
+        f"(correct exclude/keep {jev.exclude_decisions_correct} vs "
+        f"{gem.exclude_decisions_correct})",
+        f"gate vague:   {'PASS' if result.vague_ok else 'FAIL'} "
+        f"(F1 {jev.f1('vague'):.3f} vs {gem.f1('vague'):.3f} - {VAGUE_F1_MARGIN})",
+        f"gate cost:    {'PASS' if cost_ok else 'FAIL'} (${cost_per_month:.2f}/month)",
+    ]
+    if not complete:
+        lines.append(f"gate incomplete: label {len(result.unknown)} disagreements first")
+    return complete and result.exclude_ok and result.vague_ok and cost_ok, lines
+
+
+def monthly_cost(tokens_per_night: dict[str, int]) -> tuple[float, list[str]]:
+    """Projected USD per month from the median night; lines report median and max."""
+    if not tokens_per_night:
+        return 0.0, ["no stored token counts"]
+    values = sorted(tokens_per_night.values())
+    median = values[len(values) // 2]
+    cost = median * DAYS_PER_MONTH * PRICE_PER_MTOK / 1_000_000
+    return cost, [
+        f"Jev tokens per night: median {median:,}, max {values[-1]:,} "
+        f"({len(values)} nights) -> ${cost:.2f}/month",
+    ]
+
+
+def write_pending(path: Path, items: Iterable[Item]) -> int:
+    unique = sorted(set(items))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [{"pipeline": i.pipeline, "headline": i.headline} for i in unique]
+    atomic_write(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows).encode())
+    return len(unique)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -493,6 +890,66 @@ def _cmd_judge_check(bench: Bench, args: argparse.Namespace) -> None:
         print(f"  label={labels[item]:<8} judge={answers[item]:<8} {item.headline[:90]}")
 
 
+def _usable_labels(bench: Bench, task: str) -> dict[Item, str]:
+    return {k: v for k, v in read_labels(bench.labels(task)).items() if v in VERDICTS}
+
+
+def _classify_probs(
+    bench: Bench,
+    gemini: dict[Item, str],
+    variants: Iterable[str],
+) -> dict[str, dict[Item, Probs]]:
+    client = make_jev_client(bench.data_dir, DEFAULT_JEV_MODEL)
+    probs: dict[str, dict[Item, Probs]] = {}
+    for variant in variants:
+        if client is not None:
+            probs[variant] = run_classify_variant(bench, client, gemini, variant)
+            continue
+        stored = stored_classify_probs(bench, variant, DEFAULT_JEV_MODEL)
+        if not gemini.keys() <= stored.keys():
+            raise SystemExit("TYPESAFE_API_KEY is not set and stored runs are incomplete")
+        probs[variant] = stored
+    if client is not None and client.requests:
+        cost = client.input_tokens * PRICE_PER_MTOK / 1_000_000
+        print(f"Jev: {client.requests} requests, {client.input_tokens:,} tokens, ${cost:.4f}")
+    return probs
+
+
+def _cmd_classify(bench: Bench, args: argparse.Namespace) -> None:
+    nights = (HOLDOUT_PIPELINE,) if args.holdout else TUNING_PIPELINES
+    gemini = replay_nights(bench.pipelines, nights)
+    print(
+        f"{'Holdout' if args.holdout else 'Tuning'} nights {', '.join(nights)}: "
+        f"{len(gemini)} headlines with a Gemini verdict",
+    )
+    fixed = ClassifyConfig.parse(args.config) if args.config else None
+    if fixed is None and args.holdout:
+        fixed = PRODUCTION_CONFIG
+    variants = fixed.variants if fixed else tuple(args.variants.split(","))
+    probs = _classify_probs(bench, gemini, variants)
+
+    labels = _usable_labels(bench, "classify")
+    if fixed:
+        results = [evaluate(fixed, probs, gemini, labels)]
+    else:
+        results = sweep(probs, gemini, labels)
+        print(f"\nTop {args.top} of {len(results)} configurations (Jev scores):")
+        for line in sweep_table(results, args.top):
+            print("  " + line)
+    pending = [item for r in results[: args.top] for item in r.unknown]
+    if n_pending := write_pending(bench.pending("classify"), pending):
+        print(f"\n{n_pending} unlabelled disagreements -> {bench.pending('classify')}")
+        print(f"  label them: bench_jev.py label --items {bench.pending('classify')}")
+
+    tokens = night_tokens(bench, results[0].config.variants, DEFAULT_JEV_MODEL)
+    cost, cost_lines = monthly_cost({n: t for n, t in tokens.items() if n in nights})
+    passed, lines = classify_report(results[0], cost)
+    print()
+    for line in [*lines, *cost_lines]:
+        print(line)
+    print(f"\nStage 3 gate on these nights: {'PASS' if passed else 'FAIL'}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -503,9 +960,26 @@ def main() -> None:
     judge.add_argument("--task", choices=["classify"], default="classify")
     judge.add_argument("--model", default=JUDGE_MODEL)
     judge.add_argument("--workers", type=int, default=JUDGE_WORKERS)
+    classify = sub.add_parser("classify", help="Jev vs Gemini on classify, threshold sweep, gate")
+    classify.add_argument(
+        "--holdout",
+        action="store_true",
+        help="score one configuration (default: the production constants) on the holdout night",
+    )
+    classify.add_argument(
+        "--config",
+        help="exclude_variant:threshold:vague_variant:threshold instead of sweeping",
+    )
+    classify.add_argument("--variants", default=",".join(STATE_VARIANTS))
+    classify.add_argument("--top", type=int, default=TOP_CONFIGS)
     args = parser.parse_args()
 
-    commands = {"snapshot": _cmd_snapshot, "label": _cmd_label, "judge-check": _cmd_judge_check}
+    commands = {
+        "snapshot": _cmd_snapshot,
+        "label": _cmd_label,
+        "judge-check": _cmd_judge_check,
+        "classify": _cmd_classify,
+    }
     commands[args.command](Bench.from_settings(), args)
 
 

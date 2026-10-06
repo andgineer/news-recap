@@ -472,8 +472,10 @@ def resolve_typesafe_api_key(data_dir: Path) -> str | None:
 
 def _collect_jev_settings(data_dir: Path) -> JevSettings:
     api_key = resolve_typesafe_api_key(data_dir)
-    classify_backend = os.getenv("NEWS_RECAP_CLASSIFY_BACKEND", "llm").strip().lower()
-    if classify_backend == "jev" and api_key is None:
+    classify_backend = os.getenv("NEWS_RECAP_CLASSIFY_BACKEND", "").strip().lower()
+    if not classify_backend:
+        classify_backend = "jev" if api_key else "llm"
+    elif classify_backend == "jev" and api_key is None:
         logger.warning(
             "NEWS_RECAP_CLASSIFY_BACKEND=jev but %s is not set (env, ./.env, %s); "
             "classify uses the LLM.",

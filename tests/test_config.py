@@ -383,9 +383,26 @@ def test_typesafe_key_from_dotenv_not_exported(jev_env: tuple[Path, Path]) -> No
     assert "from-data-dir" not in repr(settings)
 
 
-def test_classify_backend_defaults_to_llm(jev_env: tuple[Path, Path]) -> None:
+def test_classify_backend_defaults_to_jev_with_key(jev_env: tuple[Path, Path]) -> None:
     _, data_dir = jev_env
     (data_dir / ".env").write_text("TYPESAFE_API_KEY=k\n")
+    assert Settings.from_env().jev.classify_backend == "jev"
+
+
+def test_classify_backend_defaults_to_llm_without_key(
+    jev_env: tuple[Path, Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("WARNING", logger="news_recap.config"):
+        assert Settings.from_env().jev.classify_backend == "llm"
+    assert not caplog.records
+
+
+def test_classify_backend_llm_overrides_key(
+    jev_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, data_dir = jev_env
+    (data_dir / ".env").write_text("TYPESAFE_API_KEY=k\n")
+    monkeypatch.setenv("NEWS_RECAP_CLASSIFY_BACKEND", "llm")
     assert Settings.from_env().jev.classify_backend == "llm"
 
 

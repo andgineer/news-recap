@@ -358,6 +358,56 @@ Tests:
 
 ## Stage 3 — Classify on Jev (~1 day + bench)
 
+**Done 2026-10-06: gate passed** (`recap/jev/classify.py`, `Classify._classify_on_jev`,
+`bench_jev.py classify`; tests in `tests/recap/jev/test_classify.py`, `tests/test_bench_jev.py`,
+`tests/test_config.py`, `tests/test_cli_output.py`). `classify_backend` now defaults to `jev`
+when a key is found; `NEWS_RECAP_CLASSIFY_BACKEND=llm` still forces the LLM. Bench rows:
+`bench/classify-2026-10-06.jsonl`.
+
+Results (exclude ≥ 0.75, vague ≥ 0.65, `full` state; every Jev/Gemini disagreement labelled,
+unlabelled agreements count as correct):
+
+| | wrong excludes (Jev / Gemini) | missed excludes | correct exclude/keep | vague F1 |
+|---|---|---|---|---|
+| tuning, 1 459 headlines | 4 / 13 | 6 / 12 | 1 449 / 1 434 | 0.526 / 0.525 |
+| holdout, 277 headlines | 0 / 0 | 4 / 6 | 273 / 271 | 0.629 / 0.629 |
+
+- Cost: 371–387k tokens per tuning night (~785 per headline) → \$0.48/month; holdout night
+  216k. Bench spend: \$0.15 (3 variants × tuning nights + holdout).
+- Exclude improves; vague only ties Gemini (both weak: F1 0.53 on tuning).
+- Threshold curves (tuning, `full`): exclude 0.65 → 27 wrong / 2 missed, 0.70 → 7 / 5,
+  0.75 → 4 / 6, 0.80 → 3 / 10 (+23 unlabelled). Vague F1 0.50 / 0.53 / 0.53 / 0.50 at
+  0.55 / 0.60 / 0.65 / 0.70. 0.75 is the fewest wrong excludes among the best exclude/keep
+  totals (Decision 8); 0.65 is mid-plateau with higher precision than 0.60 (fewer enrich
+  rewrites). Chosen on tuning nights before the holdout run.
+- State variants: `no_source` at 0.70 ties `full` at 0.75 on exclude; vague from a separate
+  `headline_only` request reaches F1 0.56 but doubles tokens (\$0.93/month): a headline-only
+  request still costs 91% of a `full` one, because the six questions dominate. Not adopted.
+- Labels: 126 more (119 tuning, 7 holdout), again by Claude (`labeler: claude-opus-5-5`), blind,
+  under the Stage 1.2 rules; 348 in total.
+- Live check in a scratch copy of the data dir: `create --from 2026-10-05 --limit 300
+  --stop-after classify` with no backend variable → 300 articles in 5 s, `classify-jev` row
+  with 233,766 tokens and \$0.0098, no `classify-N` dirs; 29 excluded (27 Croatian domestic or
+  Croatian sports), 14 vague.
+
+Differences from the bullets below:
+
+- `verdict` takes the thresholds as optional arguments (the bench sweeps them);
+  `policy_questions(policy)` builds the `t0…tN` + `vague` questions.
+- The Jev path also falls back to the LLM when no key is found at run time, and writes
+  `classify-jev/meta/usage.json` even when Jev fails, so billed tokens are recorded. A fallback
+  logs `classify: Jev unavailable (…) — classifying with the LLM`; Stage 7 counts that line in
+  the nightly logs.
+- `bench_jev.py classify` sweeps (exclude state, exclude threshold, vague state, vague
+  threshold) in 0.05 steps, so a configuration may take vague from another state's request.
+  Runs are stored once per (variant, model) and reused; `--holdout` scores the module constants
+  on the holdout night, `--config ev:te:vv:tv` scores one configuration. Unlabelled
+  disagreements of the top configurations go to `bench/labels/pending-classify.jsonl` for
+  `label --items`.
+- The stage table gains a Cost column, shown only when a step reports `cost_usd`.
+- Tests pin `NEWS_RECAP_CLASSIFY_BACKEND=llm` (autouse fixture): `./.env` holds a real key, and
+  the new default would make flow tests call live Jev.
+
 3.1 `recap/jev/classify.py`:
 
 - `topic_question(topic) -> Noul`, instruction text from the experiment:

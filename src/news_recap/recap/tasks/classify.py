@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
+from news_recap.recap.jev.classify import classify_articles
+from news_recap.recap.jev.client import JevUnavailableError, make_jev_client
+from news_recap.recap.jev.usage import jev_task_dir, save_answers, save_jev_usage
 from news_recap.recap.models import DigestArticle, UserPreferences
 from news_recap.recap.storage.pipeline_io import materialize_step, next_batch_number
 from news_recap.recap.tasks.base import (
@@ -247,6 +251,9 @@ class Classify(TaskLauncher):
             self.restore_state()
             return
 
+        if ctx.inp.classify_backend == "jev" and self._classify_on_jev(to_classify):
+            return
+
         batches = split_into_classify_batches(to_classify, ctx.inp.preferences)
         debug_max = int(os.getenv("NEWS_RECAP_CLASSIFY_MAX_BATCHES", "0")) or None
         if debug_max:
@@ -297,6 +304,39 @@ class Classify(TaskLauncher):
         unclassified = sum(1 for a in ctx.digest.articles if a.verdict is None)
         if unclassified > 0:
             self.fully_completed = False
+
+    def _classify_on_jev(self, to_classify: list[DigestArticle]) -> bool:
+        """Set verdicts from Jev; ``False`` means the caller runs the LLM batches instead."""
+        ctx = self.ctx
+        client = make_jev_client(Path(ctx.inp.data_dir), ctx.inp.jev_model)
+        if client is None:
+            logger.warning("classify: no TYPESAFE_API_KEY — classifying with the LLM")
+            return False
+        logger.info("[cyan]classify:[/cyan] %d articles -> Jev", len(to_classify))
+        task_dir = jev_task_dir(ctx.pdir, "classify")
+        started = time.monotonic()
+        try:
+            results = classify_articles(client, to_classify, ctx.inp.preferences.exclude)
+        except JevUnavailableError as exc:
+            logger.warning("classify: Jev unavailable (%s) — classifying with the LLM", exc)
+            return False
+        finally:
+            save_jev_usage(
+                task_dir,
+                elapsed=time.monotonic() - started,
+                input_tokens=client.input_tokens,
+                requests=client.requests,
+                model=client.model,
+            )
+        rows: list[dict[str, object]] = []
+        for a in to_classify:
+            a.verdict, probs = results[a.article_id]
+            rows.append(
+                {"article_id": a.article_id, "title": a.title, "verdict": a.verdict, "p": probs},
+            )
+        save_answers(task_dir, rows)
+        self._sync_verdicts(to_classify, logger)
+        return True
 
     def _sync_verdicts(self, to_classify: list[DigestArticle], logger: Any) -> None:
         """Sync new verdicts into digest and update state."""

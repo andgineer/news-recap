@@ -689,26 +689,27 @@ def _print_ingest(result: IngestionResult) -> None:
     console.print()
 
 
-def _collect_task_rows(workdir: Path) -> list[tuple[str, float, int, int, int]]:
+def _collect_task_rows(workdir: Path) -> list[tuple[str, float, int, int, int, float]]:
     """Scan task sub-dirs for usage/size metrics."""
-    rows: list[tuple[str, float, int, int, int]] = []
+    rows: list[tuple[str, float, int, int, int, float]] = []
     for task_dir in sorted(workdir.iterdir()):
         if not task_dir.is_dir():
             continue
-        elapsed, tokens = 0.0, 0
+        elapsed, tokens, cost = 0.0, 0, 0.0
         usage_path = task_dir / "meta" / "usage.json"
         if usage_path.exists():
             with contextlib.suppress(OSError, json.JSONDecodeError, ValueError):
                 data = json.loads(usage_path.read_text("utf-8"))
                 elapsed = float(data.get("elapsed_seconds", 0))
                 tokens = int(data.get("total_tokens") or data.get("tokens_used") or 0)
+                cost = float(data.get("cost_usd") or 0)
         prompt_size = output_size = 0
         with contextlib.suppress(OSError):
             prompt_size = (task_dir / "input" / "task_prompt.txt").stat().st_size
         with contextlib.suppress(OSError):
             output_size = (task_dir / "output" / "agent_stdout.log").stat().st_size
         if elapsed or tokens or prompt_size or output_size:
-            rows.append((task_dir.name, elapsed, prompt_size, output_size, tokens))
+            rows.append((task_dir.name, elapsed, prompt_size, output_size, tokens, cost))
     return rows
 
 
@@ -725,14 +726,20 @@ def _print_stage_table(workdir: Path) -> None:
     table.add_column("Prompt", justify="right", no_wrap=True)
     table.add_column("Output", justify="right", no_wrap=True)
     table.add_column("Tokens", justify="right", no_wrap=True)
-    for name, elapsed, prompt_sz, output_sz, tok in rows:
-        table.add_row(
+    show_cost = any(row[5] for row in rows)
+    if show_cost:
+        table.add_column("Cost", justify="right", no_wrap=True)
+    for name, elapsed, prompt_sz, output_sz, tok, cost in rows:
+        cells = [
             name,
             _human_elapsed(elapsed),
             _human_size(prompt_sz),
             _human_size(output_sz),
             f"{tok:,}" if tok else "—",
-        )
+        ]
+        if show_cost:
+            cells.append(f"${cost:.4f}" if cost else "—")
+        table.add_row(*cells)
     console.print(table)
 
 

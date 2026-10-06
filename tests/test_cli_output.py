@@ -146,12 +146,13 @@ def test_collect_task_rows_reads_usage(tmp_path: Path) -> None:
     _make_task_dir(tmp_path, "classify-1", elapsed=10.5, tokens=500)
     rows = _collect_task_rows(tmp_path)
     assert len(rows) == 1
-    name, elapsed, prompt_sz, output_sz, tok = rows[0]
+    name, elapsed, prompt_sz, output_sz, tok, cost = rows[0]
     assert name == "classify-1"
     assert elapsed == 10.5
     assert tok == 500
     assert prompt_sz == 0
     assert output_sz == 0
+    assert cost == 0.0
 
 
 def test_collect_task_rows_reads_file_sizes(tmp_path: Path) -> None:
@@ -163,7 +164,7 @@ def test_collect_task_rows_reads_file_sizes(tmp_path: Path) -> None:
     )
     rows = _collect_task_rows(tmp_path)
     assert len(rows) == 1
-    _, _, prompt_sz, output_sz, _ = rows[0]
+    _, _, prompt_sz, output_sz, _, _ = rows[0]
     assert prompt_sz == 1000
     assert output_sz == 400
 
@@ -259,6 +260,51 @@ def test_info_digest_shows_task_table(tmp_path: Path) -> None:
     assert "classify-1" in result.output
     assert "enrich-1" in result.output
     assert "Phase" in result.output
+
+
+def test_info_digest_task_table_shows_jev_cost(tmp_path: Path) -> None:
+    from news_recap.recap.jev.usage import save_jev_usage
+
+    workdir = tmp_path / "pipeline-2026-03-01-100000"
+    _make_task_dir(workdir, "enrich-1", elapsed=5.0, tokens=200, output_text="B" * 300)
+    save_jev_usage(
+        workdir / "classify-jev",
+        elapsed=30.0,
+        input_tokens=350_000,
+        requests=400,
+        model="jev-1.13.0",
+    )
+    settings = MagicMock()
+    settings.orchestrator.workdir_root.resolve.return_value = tmp_path
+
+    runner = CliRunner()
+    with (
+        patch.object(DigestInfoController, "digest_detail", return_value=_make_summary()),
+        patch("news_recap.main.Settings.from_env", return_value=settings),
+    ):
+        result = runner.invoke(news_recap, ["--no-color", "info", "1"])
+    assert result.exit_code == 0
+    assert "Cost" in result.output
+    jev_line = next(line for line in result.output.splitlines() if "classify-jev" in line)
+    assert "350,000" in jev_line
+    assert "$0.0147" in jev_line
+
+
+def test_info_digest_task_table_hides_cost_without_jev(tmp_path: Path) -> None:
+    workdir = tmp_path / "pipeline-2026-03-01-100000"
+    _make_task_dir(workdir, "classify-1", elapsed=10.0, tokens=300)
+    settings = MagicMock()
+    settings.orchestrator.workdir_root.resolve.return_value = tmp_path
+
+    runner = CliRunner()
+    with (
+        patch.object(DigestInfoController, "digest_detail", return_value=_make_summary()),
+        patch("news_recap.main.Settings.from_env", return_value=settings),
+    ):
+        result = runner.invoke(news_recap, ["--no-color", "info", "1"])
+    assert result.exit_code == 0
+    assert "Phase" in result.output
+    assert "Cost" not in result.output
 
 
 def test_info_digest_no_task_table_when_no_workdir(tmp_path: Path) -> None:

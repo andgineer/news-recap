@@ -233,3 +233,197 @@ def test_agreement_report_calibration(monkeypatch):
     report = bench_jev.agreement_report(labels, answers, bench_jev.VERDICTS)
     assert report[-1].startswith("calibrated: no")
     assert report[3].split() == ["ok", "8", "1", "1"]
+
+
+# --- classify ---------------------------------------------------------------
+
+
+def _write_classify_task(pdir: Path, num: int, headlines: list[str], stdout: str) -> None:
+    task = pdir / f"classify-{num}"
+    (task / "input").mkdir(parents=True)
+    (task / "output").mkdir(parents=True)
+    lines = "\n".join(f"{i}: {h}" for i, h in enumerate(headlines, 1))
+    (task / "input" / "task_prompt.txt").write_text(
+        f"EDITORIAL POLICY — EXCLUDE:\n{POLICY}\n\n=== HEADLINES (format: NUMBER: HEADLINE) ===\n"
+        f"Do NOT write any files.\n{lines}",
+    )
+    (task / "output" / "agent_stdout.log").write_text(stdout)
+
+
+def test_replay_nights_joins_prompt_and_stdout(tmp_path):
+    pdir = _write_pipeline(tmp_path, "p1", ["A", "B", "C", "D"])
+    _write_classify_task(pdir, 1, ["A", "B", "Gone"], "1: ok\n2: exclude\n3: vague\n")
+    _write_classify_task(pdir, 2, ["C", "D", "A"], "1: vague\n3: exclude\nnoise\n")
+    (pdir / "classify-jev").mkdir()
+
+    assert bench_jev.replay_nights(tmp_path, ["p1"]) == {
+        Item("p1", "A"): "ok",
+        Item("p1", "B"): "exclude",
+        Item("p1", "C"): "vague",
+    }
+
+
+class _FakeJevClient:
+    model = "jev-1.13.0"
+
+    def __init__(self, probs_by_headline: dict[str, dict[str, float]]) -> None:
+        self.probs_by_headline = probs_by_headline
+        self.input_tokens = 0
+        self.requests = 0
+        self.headlines: list[str] = []
+
+    def decide(self, requests):
+        from typesafe_sdk import SystemOneResponse
+
+        out = []
+        for state, questions in requests:
+            assert list(questions) == ["t0", "t1", "vague"]
+            self.headlines.append(state["headline"])
+            self.input_tokens += 10
+            self.requests += 1
+            out.append(
+                SystemOneResponse.model_validate(
+                    {
+                        "model": self.model,
+                        "usage": {"input_tokens": 10},
+                        "answers": {
+                            k: {"type": "noul", "noul": p}
+                            for k, p in self.probs_by_headline[state["headline"]].items()
+                        },
+                    },
+                ),
+            )
+        return out
+
+
+def test_run_classify_variant_only_asks_for_new_items(tmp_path):
+    bench = _bench(tmp_path)
+    _write_pipeline(bench.pipelines, "p1", ["A", "B"])
+    _write_pipeline(bench.pipelines, "p2", ["C"])
+    probs = {h: {"t0": 0.1, "t1": 0.2, "vague": 0.3} for h in "ABC"}
+    client = _FakeJevClient(probs)
+
+    got = bench_jev.run_classify_variant(bench, client, [Item("p1", "A")], "no_source")
+    assert got == {Item("p1", "A"): probs["A"]}
+
+    items = [Item("p1", "A"), Item("p1", "B"), Item("p2", "C")]
+    got = bench_jev.run_classify_variant(bench, client, items, "no_source")
+    assert client.headlines == ["A", "B", "C"]
+    assert set(got) == set(items)
+    assert bench_jev.night_tokens(bench, ["no_source"], client.model) == {"p1": 20, "p2": 10}
+    assert bench_jev.stored_classify_probs(bench, "no_source", "jev-other") == {}
+    assert bench_jev.stored_classify_probs(bench, "full", client.model) == {}
+
+
+def _night(rows: list[tuple[str, str, float, float, float]]):
+    """(headline, gemini, exclude p, vague p in "full", vague p in "headline_only") rows."""
+    gemini, full, headline_only = {}, {}, {}
+    for headline, gem, excl, vague_full, vague_head in rows:
+        item = Item("p", headline)
+        gemini[item] = gem
+        full[item] = {"t0": excl, "vague": vague_full}
+        headline_only[item] = {"t0": 0.0, "vague": vague_head}
+    return gemini, {"full": full, "headline_only": headline_only}
+
+
+def test_evaluate_scores_against_labels_and_agreements():
+    gemini, probs = _night(
+        [
+            ("excl-both", "exclude", 0.9, 0.0, 0.0),
+            ("excl-jev-wrong", "ok", 0.8, 0.0, 0.0),
+            ("excl-gem-missed", "ok", 0.9, 0.0, 0.0),
+            ("vague-jev", "ok", 0.1, 0.8, 0.0),
+            ("ok-both", "ok", 0.1, 0.1, 0.1),
+            ("unlabelled", "vague", 0.1, 0.1, 0.1),
+        ],
+    )
+    labels = {
+        Item("p", "excl-jev-wrong"): "ok",
+        Item("p", "excl-gem-missed"): "exclude",
+        Item("p", "vague-jev"): "vague",
+        Item("p", "ok-both"): "vague",
+    }
+    config = bench_jev.ClassifyConfig("full", 0.75, "full", 0.65)
+
+    result = bench_jev.evaluate(config, probs, gemini, labels)
+
+    assert result.unknown == (Item("p", "unlabelled"),)
+    assert result.jev.total == result.gemini.total == 5
+    assert (result.jev.wrong_excludes, result.jev.missed_excludes) == (1, 0)
+    assert (result.gemini.wrong_excludes, result.gemini.missed_excludes) == (0, 1)
+    assert result.jev.correct("vague") == 1
+    assert result.jev.recall("vague") == 0.5
+    assert result.gemini.f1("vague") == 0.0
+    assert not result.exclude_ok  # Jev's one wrong exclude is more than Gemini's none
+
+    stricter = bench_jev.evaluate(
+        bench_jev.ClassifyConfig("full", 0.85, "full", 0.65), probs, gemini, labels
+    )
+    assert (stricter.jev.wrong_excludes, stricter.jev.missed_excludes) == (0, 0)
+    assert stricter.exclude_ok
+    assert stricter.vague_ok
+
+    mixed = bench_jev.evaluate(
+        bench_jev.ClassifyConfig("full", 0.85, "headline_only", 0.65), probs, gemini, labels
+    )
+    assert mixed.jev.correct("vague") == 0
+
+
+def test_classify_report_gate():
+    gemini, probs = _night(
+        [
+            ("excl", "ok", 0.9, 0.0, 0.0),
+            ("vague", "vague", 0.1, 0.9, 0.0),
+            ("ok", "ok", 0.1, 0.1, 0.0),
+        ],
+    )
+    labels = {Item("p", "excl"): "exclude"}
+    result = bench_jev.evaluate(bench_jev.PRODUCTION_CONFIG, probs, gemini, labels)
+
+    passed, lines = bench_jev.classify_report(result, cost_per_month=0.5)
+    assert passed
+    assert "wrong excludes: Jev 0, Gemini 0; missed excludes: Jev 0, Gemini 1" in lines
+    assert not bench_jev.classify_report(result, cost_per_month=1.5)[0]
+
+    gemini[Item("p", "new")] = "vague"
+    probs["full"][Item("p", "new")] = {"t0": 0.1, "vague": 0.1}
+    incomplete = bench_jev.evaluate(bench_jev.PRODUCTION_CONFIG, probs, gemini, labels)
+    passed, lines = bench_jev.classify_report(incomplete, cost_per_month=0.5)
+    assert not passed
+    assert lines[-1] == "gate incomplete: label 1 disagreements first"
+
+
+def test_sweep_ranks_exclude_gate_first(monkeypatch):
+    monkeypatch.setattr(bench_jev, "EXCLUDE_GRID", (0.5, 0.9))
+    monkeypatch.setattr(bench_jev, "VAGUE_GRID", (0.5,))
+    gemini, probs = _night(
+        [
+            ("borderline", "ok", 0.6, 0.0, 0.0),
+            ("excl", "exclude", 0.95, 0.0, 0.0),
+        ],
+    )
+    del probs["headline_only"]
+    results = bench_jev.sweep(probs, gemini, {Item("p", "borderline"): "ok"})
+    assert [str(r.config) for r in results] == ["full:0.90:full:0.50", "full:0.50:full:0.50"]
+    assert results[0].exclude_ok and not results[1].exclude_ok
+
+
+def test_classify_config_parse_rejects_unknown_variant():
+    with pytest.raises(ValueError, match="variants"):
+        bench_jev.ClassifyConfig.parse("lead:0.7:full:0.6")
+    assert bench_jev.ClassifyConfig.parse("full:0.7:full:0.6").variants == ("full",)
+
+
+def test_monthly_cost_uses_median_night():
+    cost, lines = bench_jev.monthly_cost({"a": 100_000, "b": 400_000, "c": 900_000})
+    assert cost == pytest.approx(400_000 * 30 * 0.042 / 1_000_000)
+    assert "median 400,000, max 900,000 (3 nights)" in lines[0]
+
+
+def test_write_pending_dedupes_and_replaces(tmp_path):
+    path = tmp_path / "pending.jsonl"
+    items = [Item("p", "b"), Item("p", "a"), Item("p", "b")]
+    assert bench_jev.write_pending(path, items) == 2
+    assert bench_jev.read_items(path) == [Item("p", "a"), Item("p", "b")]
+    assert bench_jev.write_pending(path, []) == 0
+    assert bench_jev.read_items(path) == []
