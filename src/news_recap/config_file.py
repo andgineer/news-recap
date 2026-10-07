@@ -317,7 +317,10 @@ def set_config_value(path: Path, defaults: Settings, name: str, values: Sequence
         raise ValueError(f"unknown key {name!r}; one of: {', '.join(_TOP_LEVEL_BY_NAME)}")
     value = _parse_cli_value(key, values)
     ensure_config_file(path, defaults)
-    doc = tomlkit.parse(path.read_text("utf-8"))
+    try:
+        doc = tomlkit.parse(path.read_text("utf-8"))
+    except tomlkit.exceptions.ParseError as error:
+        raise ConfigError(f"{path}: {error}") from error
     doc[name] = _top_level_item(key, value)
     atomic_write(path, doc.as_string().encode("utf-8"))
     return value

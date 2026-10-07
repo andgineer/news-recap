@@ -21,6 +21,7 @@ from news_recap.automation import (
     _read_template,
     resolve_rss_urls,
 )
+from news_recap.config_file import ConfigError
 from news_recap.main import news_recap
 
 pytestmark = [
@@ -629,3 +630,22 @@ def test_uninstall_windows(tmp_path: Path, monkeypatch):
     assert not run_script.exists()
     assert not (app_dir / "schedule.json").exists()
     assert any("Removed" in t for _, t in output)
+
+
+def test_resolve_rss_urls_rejects_a_malformed_configured_feed(write_config):
+    write_config('rss = ["example.com/rss"]\n')
+    with pytest.raises(ConfigError, match="Invalid RSS feed URL"):
+        resolve_rss_urls(())
+
+
+def test_install_warns_that_the_scheduled_run_ignores_data_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr("news_recap.automation._platform", lambda: "macos")
+    monkeypatch.setattr("news_recap.automation._app_dir", lambda platform: tmp_path / "app")
+    monkeypatch.setattr("news_recap.automation._log_dir", lambda platform: tmp_path / "logs")
+    monkeypatch.setattr(ScheduleController, "_install_macos", lambda self, *a, **k: iter(()))
+    monkeypatch.setattr("news_recap.automation._verify_setup", lambda *a, **k: iter(()))
+
+    lines = list(ScheduleController().install(()))
+
+    assert lines[0][0] == "warn"
+    assert "NEWS_RECAP_DATA_DIR" in lines[0][1]

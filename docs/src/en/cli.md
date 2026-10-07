@@ -19,8 +19,7 @@
 ## Common Notes
 
 - Settings live in `config.toml` in the data directory; see [`config`](#config).
-- The data directory is `~/.news_recap_data`; the `NEWS_RECAP_DATA_DIR` environment variable
-  points elsewhere.
+- The data directory is `~/.news_recap_data`.
 - Data is stored as JSON files with daily partitioning; old partitions are
   garbage-collected automatically after `ingestion.retention_days`.
 
@@ -203,8 +202,8 @@ See [Scheduled Runs](automation.md) for setup, platform details, logs, and troub
 Everyday keys (also settable with `news-recap config set`):
 
 - `language` — digest language, a BCP-47 code (`en`, `ru`, `sr`, …). Default `ru`.
-- `exclude` — topics to drop, one per line. Phrase them as subjects ("Croatian domestic news",
-  not "Croatian news"): Jev reads topics literally.
+- `exclude` — topics to drop, one per line. Name what the stories are about ("celebrity
+  gossip"), not where they come from ("tabloids"): Jev reads topics literally.
 - `follow` — topics that get their own sections, one per line.
 - `agent` — `antigravity` (free Gemini tier, no keys; default), `codex` or `claude`.
 - `rss` — feed URLs.
@@ -226,9 +225,8 @@ Advanced sections, written commented out with the release defaults:
   agent: `models.recap_classify.claude = "--model haiku"`.
 - `[api]` — see [API mode settings](#api-settings).
 
-Environment variables are only for secrets and the data directory:
+Environment variables are only for secrets:
 
-- `NEWS_RECAP_DATA_DIR` — data directory (default `~/.news_recap_data`).
 - `TYPESAFE_API_KEY` — the Jev key; also read from `.env` in the current directory or the data
   directory.
 - `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ANTIGRAVITY_API_KEY` — agent API keys (see below).

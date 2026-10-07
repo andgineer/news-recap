@@ -19,8 +19,7 @@
 ## Общие Замечания
 
 - Настройки хранятся в `config.toml` в каталоге данных; см. [`config`](#config).
-- Каталог данных — `~/.news_recap_data`; переменная окружения `NEWS_RECAP_DATA_DIR`
-  указывает другой.
+- Каталог данных — `~/.news_recap_data`.
 - Данные хранятся в JSON-файлах с ежедневным разбиением; старые партиции
   удаляются автоматически через `ingestion.retention_days` дней.
 
@@ -205,8 +204,8 @@ model_map.recap_merge_sections = "claude-sonnet-5"
 Основные ключи (их же меняет `news-recap config set`):
 
 - `language` — язык дайджеста, код BCP-47 (`en`, `ru`, `sr`, …). По умолчанию `ru`.
-- `exclude` — исключаемые темы, по одной на строку. Формулируйте их как предмет новости
-  («Croatian domestic news», а не «Croatian news»): Jev читает темы буквально.
+- `exclude` — исключаемые темы, по одной на строку. Называйте, о чём новости («celebrity
+  gossip»), а не откуда они («tabloids»): Jev читает темы буквально.
 - `follow` — темы, получающие собственные разделы, по одной на строку.
 - `agent` — `antigravity` (бесплатный тариф Gemini, без ключей; по умолчанию), `codex` или
   `claude`.
@@ -229,9 +228,8 @@ model_map.recap_merge_sections = "claude-sonnet-5"
   агенту: `models.recap_classify.claude = "--model haiku"`.
 - `[api]` — см. [Настройки API-режима](#api-settings).
 
-Переменные окружения — только для секретов и каталога данных:
+Переменные окружения — только для секретов:
 
-- `NEWS_RECAP_DATA_DIR` — каталог данных (по умолчанию `~/.news_recap_data`).
 - `TYPESAFE_API_KEY` — ключ Jev; читается также из `.env` в текущем каталоге или в каталоге
   данных.
 - `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ANTIGRAVITY_API_KEY` — ключи API агентов (см. ниже).

@@ -67,5 +67,5 @@ news-recap config set classify_backend jev
 news-recap config set dedup_backend jev
 ```
 
-Jev читает исключаемые темы буквально, поэтому формулируйте их как предмет новости:
-«Croatian domestic news», а не «Croatian news». Без ключа оба шага остаются на LLM.
+Jev читает исключаемые темы буквально, поэтому называйте, о чём новости («celebrity gossip»),
+а не откуда они («tabloids»). Без ключа оба шага остаются на LLM.

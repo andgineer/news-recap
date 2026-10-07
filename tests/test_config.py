@@ -57,7 +57,7 @@ def test_validate_for_rss_rejects_non_positive_per_feed_override() -> None:
             per_feed_items={"https://example.com/feed.xml": -1},
         ),
     )
-    with pytest.raises(ValueError, match="Per-feed RSS items override"):
+    with pytest.raises(ValueError, match="fetch.per_feed_items must be positive"):
         settings.validate_for_rss()
 
 

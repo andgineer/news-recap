@@ -156,3 +156,52 @@ def test_out_of_range_value_names_the_file(write_config) -> None:
     result = CliRunner().invoke(news_recap, ["--no-color", "list"], env={"COLUMNS": "500"})
     assert result.exit_code == 1
     assert f"{path}: ingestion.retention_days must be >= 1." in result.output
+
+
+def _invoke(*args: str):
+    return CliRunner().invoke(news_recap, ["--no-color", *args], env={"COLUMNS": "500"})
+
+
+@pytest.mark.parametrize(
+    ("text", "match"),
+    [
+        ("", "At least one RSS feed URL is required"),
+        ('rss = ["example.com/rss"]\n', "config.toml: rss: Invalid RSS feed URL"),
+        (
+            'rss = ["https://a.example/rss"]\n[fetch]\ndefault_items_per_feed = 0\n',
+            "config.toml: fetch.default_items_per_feed must be a positive integer",
+        ),
+    ],
+)
+def test_ingest_reports_feed_problems_cleanly(write_config, text: str, match: str) -> None:
+    write_config(text)
+    result = _invoke("ingest")
+    assert result.exit_code == 1
+    assert match in result.output
+    assert "Traceback" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("text", "match"),
+    [
+        ("[llm]\nmodels.recap_clasify.claude = 'x'\n", "unknown task llm.models.recap_clasify"),
+        ("[api]\nmodel_map.recap_dedupe = 'x'\n", "unknown task api.model_map.recap_dedupe"),
+        (
+            "[llm]\nmodels.recap_classify.gemini = 'x'\n",
+            "llm.models.recap_classify.gemini: agent must be one of",
+        ),
+    ],
+)
+def test_model_map_mistakes_name_the_config_key(write_config, text: str, match: str) -> None:
+    path = write_config(text)
+    result = _invoke("list")
+    assert result.exit_code == 1
+    assert str(path) in result.output
+    assert match in result.output
+
+
+def test_config_set_on_an_unparseable_file_names_it(write_config) -> None:
+    path = write_config("language = 'en'\nlanguage = 'ru'\n")
+    result = _invoke("config", "set", "agent", "codex")
+    assert result.exit_code == 1
+    assert str(path) in result.output

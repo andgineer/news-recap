@@ -14,9 +14,10 @@ sets everything with one command, and the file keeps up with new releases' defau
    file means release defaults; loading never writes it.
 2. **Environment variables are for secrets and bootstrap only:** `TYPESAFE_API_KEY` (also read
    from `./.env` and `<data_dir>/.env`, never exported) and the API-mode agent keys,
-   `NEWS_RECAP_DATA_DIR` (where the file lives; tests), and the dev-only switches
-   `NEWS_RECAP_STOP_AFTER` and `NEWS_RECAP_CLASSIFY_MAX_BATCHES`. Every other `NEWS_RECAP_*`
-   setting is gone, with no migration (one installation exists).
+   `NEWS_RECAP_DATA_DIR` (where the file lives; tests and development, not documented for
+   users: the scheduled run does not inherit it, and `schedule set` warns when it is set), and
+   the dev-only switches `NEWS_RECAP_STOP_AFTER` and `NEWS_RECAP_CLASSIFY_MAX_BATCHES`. Every
+   other `NEWS_RECAP_*` setting is gone, with no migration (one installation exists).
 3. **Top-level keys are the everyday settings:** `language`, `exclude`, `follow`, `agent`,
    `rss`, `classify_backend`, `dedup_backend`. `exclude` and `follow` are multi-line strings,
    one topic per line. Enum keys carry a comment listing their values.
@@ -30,8 +31,9 @@ sets everything with one command, and the file keeps up with new releases' defau
    `configure` command and `config.json` are removed.
 6. **CLI flags override the file for one run** (`--agent`, `--rss`, `--language`, …).
 7. **Defaults:** agent `antigravity` (free tier, no keys), both Jev backends `llm`.
-8. **Validation:** an unknown key, a wrong type or a value outside its choices stops the run
-   with a one-line error naming the key and the file (no traceback), for every command.
+8. **Validation:** an unknown key (model-map task names included), a wrong type, a value
+   outside its choices, a malformed feed URL or no feeds at all stops the run with a one-line
+   error naming the key and the file (no traceback), for every command.
 9. **Schedule:** `schedule set` bakes `--rss`/`--agent` into the run script only when given, so
    scheduled runs follow the file.
 10. **Exclude topics split on commas and line breaks** at parenthesis depth 0, so one topic per

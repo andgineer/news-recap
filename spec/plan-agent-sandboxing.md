@@ -127,7 +127,8 @@ Foundation for everything; none of it depends on stdin.
    explicit default-deny builder: always `PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`,
    `TMPDIR`; per-agent auth vars (`agent_api_key_vars` when `use_api_key`); pipeline vars
    already set explicitly (`NEWS_RECAP_*`, `MAX_THINKING_TOKENS`, …); plus
-   `routing.extra_env`. Add `NEWS_RECAP_AGENT_ENV_PASSTHROUGH` (CSV) as an escape hatch.
+   `routing.extra_env`. Add an `[llm]` key in `config.toml` listing extra variables to pass
+   through, as an escape hatch.
    Portable, benefits all agents and the Linux launcher.
 5. **Update `spec/agents.md`** to the shipped templates (it still documents
    `bypassPermissions`, `Write,Edit`, and a stale `output_result_path` contract).
@@ -245,7 +246,8 @@ probability this stays optional. The irreducible residual after any of this is d
 1. **Phase 0** immediately (portable, benefits the Linux launcher too). Ships behind no
    flag — it only removes
    overreach and is proven for claude.
-2. **Phase 1** behind `NEWS_RECAP_AGENT_SANDBOX=1` on the Mac: run E1–E5, settle the
+2. **Phase 1** behind a dev-only `NEWS_RECAP_AGENT_SANDBOX=1` switch (like
+   `NEWS_RECAP_STOP_AFTER`, not a user setting) on the Mac: run E1–E5, settle the
    `settings.json` values, take the fork. On HAPPY, flip agy to the sandboxed settings as
    the default and drop `--dangerously-skip-permissions` for good.
 3. **Phase 2** only on a Phase 1 FAIL/leaky result; **Phase 3** only if Phase 2 also fails.

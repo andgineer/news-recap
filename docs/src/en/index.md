@@ -65,5 +65,5 @@ news-recap config set classify_backend jev
 news-recap config set dedup_backend jev
 ```
 
-Jev reads exclude topics literally, so phrase them as subjects: "Croatian domestic news",
-not "Croatian news". Without a key, both steps stay on the LLM.
+Jev reads exclude topics literally, so name what the stories are about ("celebrity gossip"),
+not where they come from ("tabloids"). Without a key, both steps stay on the LLM.

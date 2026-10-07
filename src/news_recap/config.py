@@ -235,8 +235,13 @@ class Settings:
         """
         data_dir = data_dir_from_env()
         settings = cls.defaults(data_dir)
-        for key, value in load_config_file(config_path(data_dir)):
-            _apply(settings, key.target, value)
+        path = config_path(data_dir)
+        values = load_config_file(path)
+        try:
+            for key, value in values:
+                _apply(settings, key.target, value)
+        except ConfigError as error:
+            raise ConfigError(f"{path}: {error}") from error
         settings.jev.api_key = resolve_typesafe_api_key(data_dir)
         for step in ("classify", "dedup"):
             _require_jev_key(settings, step)
@@ -285,18 +290,15 @@ class Settings:
             )
 
         for task_type, agent_models in self.orchestrator.task_model_map.items():
-            if not task_type.strip():
-                raise ValueError("task_model_map contains empty task_type key.")
             for agent, entry in agent_models.items():
                 if agent not in supported_agents:
                     raise ValueError(
-                        f"task_model_map[{task_type!r}] has unsupported agent: {agent!r}",
+                        f"llm.models.{task_type}.{agent}: agent must be one of "
+                        f"{', '.join(AGENTS)}.",
                     )
                 model = entry.get("model", "") if isinstance(entry, dict) else entry
                 if not model or not model.strip():
-                    raise ValueError(
-                        f"task_model_map[{task_type!r}][{agent!r}] model must not be empty.",
-                    )
+                    raise ValueError(f"llm.models.{task_type}.{agent} must not be empty.")
 
         if execution_backend == "cli":
             for name, template in (
@@ -320,27 +322,33 @@ class Settings:
             raise ValueError("api.downshift_pause_seconds must be >= 0.")
 
     def validate_for_rss(self, override_feed_urls: tuple[str, ...] = ()) -> None:
-        """Raise configuration error if RSS feed URLs are missing or invalid."""
-
+        """Raise ``ConfigError`` if the feeds to fetch, or the fetch settings, are invalid."""
         effective_feed_urls = _normalize_feed_urls(override_feed_urls or self.rss.feed_urls)
         if not effective_feed_urls:
-            raise ValueError(
+            raise ConfigError(
                 "At least one RSS feed URL is required. "
                 "Run `news-recap config set rss URL` or pass --rss.",
             )
+        try:
+            for feed_url in effective_feed_urls:
+                _validate_feed_url(feed_url)
+        except ValueError as error:
+            where = "--rss" if override_feed_urls else f"{config_path(self.data_dir)}: rss"
+            raise ConfigError(f"{where}: {error}") from error
+        try:
+            self._validate_fetch()
+        except ValueError as error:
+            raise ConfigError(f"{config_path(self.data_dir)}: {error}") from error
 
-        for feed_url in effective_feed_urls:
-            _validate_feed_url(feed_url)
+    def _validate_fetch(self) -> None:
         if self.rss.default_items_per_feed <= 0:
-            raise ValueError("rss.default_items_per_feed must be a positive integer.")
+            raise ValueError("fetch.default_items_per_feed must be a positive integer.")
         for feed_url, items in self.rss.per_feed_items.items():
             _validate_feed_url(feed_url)
             if items <= 0:
-                raise ValueError(
-                    f"Per-feed RSS items override must be positive: {feed_url!r} -> {items}",
-                )
+                raise ValueError(f"fetch.per_feed_items must be positive: {feed_url!r} = {items}")
         if self.rss.snapshot_max_age_hours < 0:
-            raise ValueError("rss.snapshot_max_age_hours must be >= 0.")
+            raise ValueError("fetch.snapshot_max_age_hours must be >= 0.")
 
 
 def data_dir_from_env() -> Path:
@@ -397,6 +405,8 @@ def _apply(settings: Settings, target: str, value: Any) -> None:
     elif target == "orchestrator.task_model_map":
         value = _merge_task_model_map(obj.task_model_map, value)
     elif target == "orchestrator.api_model_map":
+        for task in value:
+            _require_known_task("api.model_map", task, obj.api_model_map)
         value = {**obj.api_model_map, **{str(k).lower(): str(v) for k, v in value.items()}}
     setattr(obj, attr, value)
 
@@ -410,10 +420,16 @@ def _merge_task_model_map(
         task: {agent: dict(e) for agent, e in agents.items()} for task, agents in defaults.items()
     }
     for task, agents in overrides.items():
+        _require_known_task("llm.models", task, defaults)
         for agent, flags in agents.items():
-            entry = merged.setdefault(task.lower(), {}).setdefault(agent.lower(), {})
+            entry = merged[task.lower()].setdefault(agent.lower(), {})
             entry["model"] = flags.strip()
     return merged
+
+
+def _require_known_task(key: str, task: str, known: dict[str, Any]) -> None:
+    if task.lower() not in known:
+        raise ConfigError(f"unknown task {key}.{task}; one of: {', '.join(known)}")
 
 
 def _normalize_feed_urls(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:

@@ -19,7 +19,7 @@ from typing import Literal
 
 import click
 
-from news_recap.config import Settings
+from news_recap.config import DATA_DIR_VAR, Settings
 
 Severity = Literal["ok", "info", "warn", "error", "log", "heading"]
 ScheduleLine = tuple[Severity, str]
@@ -37,11 +37,13 @@ class ScheduleMeta:
 
 def resolve_rss_urls(cli_urls: tuple[str, ...]) -> tuple[str, ...]:
     """The feeds to bake into the scheduled run: *cli_urls*, or none to follow config.toml."""
-    if cli_urls or Settings.load().rss.feed_urls:
-        return cli_urls
-    raise click.UsageError(
-        "No RSS feed URLs: run `news-recap config set rss URL` or pass --rss URL.",
-    )
+    settings = Settings.load()
+    if not cli_urls and not settings.rss.feed_urls:
+        raise click.UsageError(
+            "No RSS feed URLs: run `news-recap config set rss URL` or pass --rss URL.",
+        )
+    settings.validate_for_rss(cli_urls)
+    return cli_urls
 
 
 _LAUNCHD_LABEL = "com.news-recap.daily"
@@ -223,6 +225,12 @@ class ScheduleController:
         rss_args = _build_rss_args(rss_urls)
         agent_args = _build_agent_args(agent)
         cmd = venv_bin or "news-recap"
+        if os.getenv(DATA_DIR_VAR):
+            yield (
+                "warn",
+                f"{DATA_DIR_VAR} is set here, but the scheduled run does not see it: "
+                "it reads ~/.news_recap_data.",
+            )
 
         app_dir = _app_dir(platform)
         app_dir.mkdir(parents=True, exist_ok=True)
