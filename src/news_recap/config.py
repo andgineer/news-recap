@@ -13,7 +13,13 @@ from urllib.parse import urlparse
 import msgspec
 from dotenv import dotenv_values
 
-from news_recap.config_file import AGENTS, STEP_BACKENDS, config_path, load_config_file
+from news_recap.config_file import (
+    AGENTS,
+    STEP_BACKENDS,
+    ConfigError,
+    config_path,
+    load_config_file,
+)
 from news_recap.recap.models import UserPreferences
 
 logger = logging.getLogger(__name__)
@@ -238,7 +244,10 @@ class Settings:
             settings.orchestrator.execution_backend = execution_backend
             if execution_backend == "api":
                 settings.orchestrator.default_agent = "claude"
-        settings.validate()
+        try:
+            settings.validate()
+        except ValueError as error:
+            raise ConfigError(f"{config_path(data_dir)}: {error}") from error
         return settings
 
     def validate(self) -> None:

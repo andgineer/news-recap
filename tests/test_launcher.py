@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import msgspec
+import pytest
 from click.testing import CliRunner
 
 from conftest import make_settings_mock
@@ -19,7 +20,7 @@ from news_recap.recap.launcher import (
     _patch_pipeline_input,
     _selection_params_for_create,
 )
-from news_recap.recap.models import Digest, DigestArticle
+from news_recap.recap.models import Digest, DigestArticle, UserPreferences
 from news_recap.recap.storage.pipeline_io import read_pipeline_input
 
 _TODAY = datetime.now(tz=UTC).date()
@@ -407,3 +408,31 @@ def test_new_pipeline_records_jev_settings(
     assert new_inp.jev_model == "jev-1.13.0"
     raw = (Path(mock_flow.call_args[1]["pipeline_dir"]) / "pipeline_input.json").read_text()
     assert "TYPESAFE" not in raw
+
+
+@pytest.mark.parametrize(("language", "expected"), [(None, "en"), ("hr", "hr")])
+@patch("news_recap.recap.launcher.recap_flow")
+@patch("news_recap.recap.launcher.Settings.load")
+def test_pipeline_takes_preferences_from_settings(
+    mock_load: MagicMock,
+    mock_flow: MagicMock,
+    tmp_path: Path,
+    language: str | None,
+    expected: str,
+) -> None:
+    settings = _make_settings_mock(tmp_path)
+    settings.preferences = UserPreferences(language="en", exclude="horoscopes\nsports", follow="X")
+    mock_load.return_value = settings
+    workdir_root = settings.orchestrator.workdir_root
+    workdir_root.mkdir(parents=True, exist_ok=True)
+    _make_source_pipeline(tmp_path, n_articles=2, workdir_root=workdir_root)
+
+    command = RecapRunCommand(from_digest=_SOURCE_DIGEST_ID, language=language)
+    list(RecapCliController().run_pipeline(command))
+
+    preferences = read_pipeline_input(mock_flow.call_args[1]["pipeline_dir"]).preferences
+    assert (preferences.language, preferences.exclude, preferences.follow) == (
+        expected,
+        "horoscopes\nsports",
+        "X",
+    )

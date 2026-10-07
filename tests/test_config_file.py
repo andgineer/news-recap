@@ -139,3 +139,20 @@ def test_config_command_reports_a_broken_file(write_config) -> None:
     result = CliRunner().invoke(news_recap, ["--no-color", "config"])
     assert result.exit_code != 0
     assert "unknown key langauge" in result.output
+
+
+@pytest.mark.parametrize("command", [["ingest"], ["list"], ["info"]])
+def test_broken_config_is_a_clean_error_for_every_command(write_config, command) -> None:
+    write_config("agent = 'Claude'\n[ingestion]\nretention_days = 0\n")
+    result = CliRunner().invoke(news_recap, ["--no-color", *command], env={"COLUMNS": "500"})
+    assert result.exit_code == 1
+    assert "agent must be one of antigravity | codex | claude" in result.output
+    assert "config.toml" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_out_of_range_value_names_the_file(write_config) -> None:
+    path = write_config("[ingestion]\nretention_days = 0\n")
+    result = CliRunner().invoke(news_recap, ["--no-color", "list"], env={"COLUMNS": "500"})
+    assert result.exit_code == 1
+    assert f"{path}: ingestion.retention_days must be >= 1." in result.output

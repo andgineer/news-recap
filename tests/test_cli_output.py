@@ -339,6 +339,7 @@ def test_info_without_id_shows_app_paths() -> None:
         result = runner.invoke(news_recap, ["--no-color", "info"])
     assert result.exit_code == 0
     assert "Data" in result.output
+    assert "config.toml" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +352,6 @@ def test_ingest_output_plain(tmp_path: Path, monkeypatch) -> None:
     from news_recap.ingestion.sources.rss import RssFetchResponse, RssSource
 
     data_dir = tmp_path / "ingest-test"
-    monkeypatch.setenv("NEWS_RECAP_DEDUP_MODEL_NAME", "hashing-test")
     monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(data_dir))
 
     _RSS_XML = """<?xml version="1.0"?>

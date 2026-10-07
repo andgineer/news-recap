@@ -20,8 +20,11 @@ _ECHO_AGENT_COMMAND_TEMPLATE = (
 
 @pytest.fixture(autouse=True)
 def _isolated_data_dir(monkeypatch, tmp_path_factory):
-    # The developer's ~/.news_recap_data (config.toml, .env with a real key) must not reach tests.
+    # The developer's settings and Jev key (~/.news_recap_data, ./.env, the shell) must not
+    # reach tests.
     monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(tmp_path_factory.mktemp("data")))
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path_factory.mktemp("cwd"))
 
 
 @pytest.fixture()

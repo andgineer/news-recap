@@ -29,7 +29,6 @@ _RSS_XML = """<?xml version="1.0"?>
 
 def test_ingest_daily_shows_rss_conditional_get_stats(tmp_path: Path, monkeypatch) -> None:
     data_dir = tmp_path / "daily-cli-data"
-    monkeypatch.setenv("NEWS_RECAP_DEDUP_MODEL_NAME", "hashing-test")
     monkeypatch.setenv("NEWS_RECAP_DATA_DIR", str(data_dir))
 
     def _request_feed(

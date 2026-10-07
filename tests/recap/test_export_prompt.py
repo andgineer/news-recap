@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from unittest.mock import MagicMock, patch
 
 from news_recap.recap.article_ordering import _order_cluster, build_article_lines, reorder_articles
@@ -221,7 +223,7 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
 
     mock_settings = MagicMock()
 
-    mock_settings.preferences = UserPreferences()
+    mock_settings.preferences = UserPreferences(language="en", exclude="horoscopes\nsports")
     mock_settings.data_dir = tmp_path
     mock_settings.ingestion.gc_retention_days = 7
     mock_settings.ingestion.digest_lookback_days = 2
@@ -277,11 +279,14 @@ def test_prompt_ai_path_runs_pipeline_and_reads_digest(tmp_path: "Path") -> None
         ),
     ):
         controller = PromptCliController()
-        output = list(controller.prompt(PromptCommand(ai=True, out="clipboard")))
+        output = list(controller.prompt(PromptCommand(ai=True, out="clipboard", language="hr")))
 
     mock_flow.assert_called_once()
     _, kwargs = mock_flow.call_args
     assert kwargs.get("stop_after") == "deduplicate"
+    raw = json.loads((Path(kwargs["pipeline_dir"]) / "pipeline_input.json").read_text("utf-8"))
+    preferences = raw["preferences"]
+    assert (preferences["language"], preferences["exclude"]) == ("hr", "horoscopes\nsports")
     texts = [text for _, text in output]
     assert any("article" in t.lower() or "copied" in t.lower() for t in texts)
 

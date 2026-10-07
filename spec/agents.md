@@ -1,6 +1,6 @@
 # LLM Agent Backends
 
-Reference for all external CLI agent backends — available models, the manifest contract that governs how agents receive work, workdir layout, command templates, pricing, and env vars.
+Reference for all external CLI agent backends — available models, the manifest contract that governs how agents receive work, workdir layout, command templates, and configuration.
 
 ## Available Models
 
@@ -80,15 +80,12 @@ subscription login would not be used.
 ### Codex
 
 ```
-codex exec --sandbox workspace-write \
-  -c sandbox_workspace_write.network_access=true \
-  -c model_reasoning_effort=high \
-  --model {model} {prompt}
+codex exec --sandbox workspace-write -c sandbox_workspace_write.network_access=true \
+  {model} "Read your task from {prompt_file} and execute it."
 ```
 
 - `workspace-write` lets codex read/write in the project dir.
 - Network access is required so codex can call the OpenAI API.
-- `{prompt}` must **not** be double-quoted in the template — `shlex.split` will fail on nested quotes.
 - Codex needs a git repo in the working directory; the worker runs from the project root.
 
 Token usage: codex prints `tokens used\n10,520` to stderr. Total tokens only — no input/output breakdown.
@@ -96,32 +93,18 @@ Token usage: codex prints `tokens used\n10,520` to stderr. Total tokens only —
 ### Claude
 
 ```
-claude -p --model {model} \
-  --output-format text \
-  --permission-mode bypassPermissions \
-  --allowed-tools "Read,Write,Edit,WebFetch,Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" \
-  -- {prompt}
+claude -p {model} --permission-mode dontAsk \
+  --allowed-tools "Read,WebFetch,Bash(curl:*),Bash(cat:*),Bash(shasum:*),Bash(pwd:*),Bash(ls:*)" \
+  -- "Read your task from {prompt_file} and execute it."
 ```
 
 - `-p` enables pipe/non-interactive mode (required for subprocess).
-- `--output-format text` is safer than JSON; JSON mode can include usage metadata that breaks the stdout recovery path.
-- `--permission-mode bypassPermissions` skips all tool-use confirmation prompts.
-- `--allowed-tools` whitelists the tools Claude may use to read inputs and write the output JSON.
+- `--permission-mode dontAsk` never stops for a confirmation prompt; tools outside
+  `--allowed-tools` are refused instead of asked about.
 
 Token usage: Claude CLI does not print token counts in text mode. Usage data is not captured.
 
 Known issue: Claude CLI can hang inside restricted sandbox environments (e.g., Cursor sandbox). Works fine from a normal terminal session.
-
-### Gemini
-
-```
-gemini --model {model} --approval-mode auto_edit --prompt {prompt}
-```
-
-- `--approval-mode auto_edit` allows Gemini to read/write files without confirmation.
-- Gemini CLI uses Google OAuth — no API key required for Flash models. Auth state is stored in `~/.gemini/settings.json`; do not delete this file or Gemini will require re-authentication.
-
-Token usage: Gemini CLI does not print token counts. Usage data is not captured.
 
 ### Antigravity
 

@@ -1,6 +1,6 @@
 # Plan: Settings in `config.toml`
 
-Status: in progress (2026-10-06).
+Status: done (2026-10-07).
 
 ## Goal
 
@@ -12,17 +12,18 @@ sets everything with one command, and the file keeps up with new releases' defau
 
 1. **One file:** `<data_dir>/config.toml` (default `~/.news_recap_data/config.toml`). A missing
    file means release defaults; loading never writes it.
-2. **Environment variables are for secrets and bootstrap only:** `TYPESAFE_API_KEY` and the
-   API-mode agent keys (also read from `./.env` and `<data_dir>/.env`, never exported),
+2. **Environment variables are for secrets and bootstrap only:** `TYPESAFE_API_KEY` (also read
+   from `./.env` and `<data_dir>/.env`, never exported) and the API-mode agent keys,
    `NEWS_RECAP_DATA_DIR` (where the file lives; tests), and the dev-only switches
    `NEWS_RECAP_STOP_AFTER` and `NEWS_RECAP_CLASSIFY_MAX_BATCHES`. Every other `NEWS_RECAP_*`
    setting is gone, with no migration (one installation exists).
 3. **Top-level keys are the everyday settings:** `language`, `exclude`, `follow`, `agent`,
    `rss`, `classify_backend`, `dedup_backend`. `exclude` and `follow` are multi-line strings,
    one topic per line. Enum keys carry a comment listing their values.
-4. **Advanced keys live in sections** (`[ingestion]`, `[rss]`, `[dedup]`, `[llm]`, `[api]`)
+4. **Advanced keys live in sections** (`[ingestion]`, `[fetch]`, `[dedup]`, `[llm]`, `[api]`)
    and are written commented out with this release's default, so the app follows each
-   release's defaults until the user uncomments a line.
+   release's defaults until the user uncomments a line. RSS fetch knobs are `[fetch]`: a
+   top-level `rss` key and an `[rss]` table cannot coexist in TOML.
 5. **`news-recap config`** creates the file from the template when missing and shows the path
    and the top-level values; `news-recap config set KEY VALUE…` edits a top-level key with
    `tomlkit` (comments and layout kept). Advanced keys are edited by hand. The interactive
@@ -30,7 +31,7 @@ sets everything with one command, and the file keeps up with new releases' defau
 6. **CLI flags override the file for one run** (`--agent`, `--rss`, `--language`, …).
 7. **Defaults:** agent `antigravity` (free tier, no keys), both Jev backends `llm`.
 8. **Validation:** an unknown key, a wrong type or a value outside its choices stops the run
-   with the key and the file named.
+   with a one-line error naming the key and the file (no traceback), for every command.
 9. **Schedule:** `schedule set` bakes `--rss`/`--agent` into the run script only when given, so
    scheduled runs follow the file.
 10. **Exclude topics split on commas and line breaks** at parenthesis depth 0, so one topic per

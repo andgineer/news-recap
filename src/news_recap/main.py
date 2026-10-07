@@ -26,6 +26,7 @@ from news_recap.automation import (
     resolve_rss_urls,
 )
 from news_recap.config import Settings
+from news_recap.config_file import ConfigError, config_path
 from news_recap.ingestion.controllers import (
     DailyIngestionCommand,
     IngestionCliController,
@@ -55,7 +56,7 @@ def _common_article_options(fn):  # type: ignore[no-untyped-def]
             "--agent",
             type=click.Choice(["codex", "claude", "antigravity"], case_sensitive=False),
             default=None,
-            help="LLM agent to use for pipeline steps. Overrides default_agent from config.",
+            help="LLM agent to use for pipeline steps. Overrides `agent` in config.toml.",
         ),
         click.option(
             "--fresh",
@@ -194,7 +195,15 @@ SCHEDULE_CONTROLLER = ScheduleController()
 NO_COLOR = False
 
 
-@click.group()
+class _NewsRecapGroup(click.RichGroup):
+    def invoke(self, ctx: click.Context):  # type: ignore[override]
+        try:
+            return super().invoke(ctx)
+        except ConfigError as error:
+            raise click.ClickException(str(error)) from error
+
+
+@click.group(cls=_NewsRecapGroup)
 @click.version_option(version=__version__, prog_name="news-recap")
 @click.option(
     "--no-color",
@@ -273,7 +282,7 @@ def ingest(feed_urls: tuple[str, ...]) -> None:
 @click.option(
     "--language",
     default=None,
-    help="BCP-47 language code for digest output (e.g. ru, en, hr). Default: ru.",
+    help="BCP-47 language code for digest output (e.g. ru, en, hr). Default: from config.toml.",
 )
 def recap_run(  # noqa: PLR0913
     agent: str | None,
@@ -332,7 +341,7 @@ def recap_run(  # noqa: PLR0913
 @click.option(
     "--language",
     default=None,
-    help="BCP-47 language code for prompt output (e.g. ru, en, hr). Default: from config or ru.",
+    help="BCP-47 language code for prompt output (e.g. ru, en, hr). Default: from config.toml.",
 )
 @click.option(
     "--out",
@@ -605,7 +614,7 @@ def _print_info() -> None:
             "Data",
             [
                 ("Data dir", str(data_dir)),
-                ("Config", str(data_dir / "config.json")),
+                ("Config", str(config_path(data_dir))),
                 ("Feed cache", str(data_dir / "feeds.json")),
                 ("Run history", str(data_dir / "runs.json")),
                 ("Resource cache", str(data_dir / "resources")),

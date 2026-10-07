@@ -359,7 +359,7 @@ class Deduplicate(TaskLauncher):
         ]
         if len(titled) < len(merges):
             # A merge without a written headline would show one member's title and hide the
-            # others' stories; a duplicate left visible is the lesser harm (Decision 8).
+            # others' stories; a duplicate left visible is the lesser harm.
             logger.warning(
                 "dedup: %d of %d merge group(s) without a headline — left unmerged",
                 len(merges) - len(titled),
@@ -375,7 +375,8 @@ class Deduplicate(TaskLauncher):
             )
             for group, title in titled
         ]
-        self._apply(batch_results, id_to_article, source="Jev")
+        if batch_results or not merges:
+            self._apply(batch_results, id_to_article, source="Jev")
         return True
 
 

@@ -19,6 +19,12 @@ if TYPE_CHECKING:
     from news_recap.config import Settings
 
 CONFIG_FILENAME = "config.toml"
+
+
+class ConfigError(ValueError):
+    """A setting in ``config.toml`` (or derived from it) is invalid."""
+
+
 AGENTS = ("antigravity", "codex", "claude")
 STEP_BACKENDS = ("llm", "jev")
 
@@ -175,22 +181,22 @@ def load_config_file(path: Path) -> list[tuple[Key, Any]]:
     try:
         data = tomllib.loads(path.read_text("utf-8"))
     except tomllib.TOMLDecodeError as error:
-        raise ValueError(f"{path}: {error}") from error
+        raise ConfigError(f"{path}: {error}") from error
     found: list[tuple[Key, Any]] = []
     for name, value in data.items():
         if name in SECTIONS:
             if not isinstance(value, dict):
-                raise ValueError(f"{path}: [{name}] must be a table")
+                raise ConfigError(f"{path}: [{name}] must be a table")
             keys = {k.name: k for k in SECTIONS[name]}
             for sub, sub_value in value.items():
                 if sub not in keys:
-                    raise ValueError(f"{path}: unknown key {name}.{sub}")
+                    raise ConfigError(f"{path}: unknown key {name}.{sub}")
                 found.append((keys[sub], _checked(path, f"{name}.{sub}", keys[sub], sub_value)))
         elif name in _TOP_LEVEL_BY_NAME:
             key = _TOP_LEVEL_BY_NAME[name]
             found.append((key, _checked(path, name, key, value)))
         else:
-            raise ValueError(f"{path}: unknown key {name}")
+            raise ConfigError(f"{path}: unknown key {name}")
     return found
 
 
@@ -201,13 +207,15 @@ def _checked(path: Path, label: str, key: Key, value: Any) -> Any:
         else isinstance(value, key.kind) and not isinstance(value, bool)
     )
     if not kind_ok:
-        raise ValueError(f"{path}: {label} must be {_KIND_NAMES[key.kind]}, got {value!r}")
+        raise ConfigError(f"{path}: {label} must be {_KIND_NAMES[key.kind]}, got {value!r}")
     if key.kind is list and not all(isinstance(v, str) for v in value):
-        raise ValueError(f"{path}: {label} must be a list of strings")
+        raise ConfigError(f"{path}: {label} must be a list of strings")
     if key.kind is dict and not _table_shape_ok(key, value):
-        raise ValueError(f"{path}: {label}: {_TABLE_SHAPES[key.name]}")
+        raise ConfigError(f"{path}: {label}: {_TABLE_SHAPES[key.name]}")
     if key.choices and value not in key.choices:
-        raise ValueError(f"{path}: {label} must be one of {' | '.join(key.choices)}, got {value!r}")
+        raise ConfigError(
+            f"{path}: {label} must be one of {' | '.join(key.choices)}, got {value!r}",
+        )
     return float(value) if key.kind is float else value
 
 
