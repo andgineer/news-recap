@@ -51,33 +51,39 @@ split (54): the block's headlines, `same_story` (the split separates reports of 
 
 ## `dedup-2026-10-06.jsonl`
 
-**Claim** (`spec/plan-jev-decisions.md`, Stage 5): with the "news" question, headline-only state,
-merging at ≥ 0.40 inside today's candidate groups, Jev makes fewer wrong pair merges than today's
-LLM dedup (13 vs 31 on the tuning nights, 1 vs 2 on the holdout; in-sample) with as many correct
-pair decisions; the shipped wider net (similarity 0.87–0.90, merging at ≥ 0.70) adds merges that
-are 93% right (22 of 24 tuning, 3 of 3 holdout); at 0.85–0.90, 43 of 46 and 4 of 5.
+**Claims** (`spec/plan-jev-decisions.md`, Stage 5):
 
-One row per pair (1 763):
+- Under the one-story rule (the user's, 2026-10-07; `label`), with the production question
+  (`jev_p`) merging at ≥ 0.60 inside today's candidate groups, Jev misses half as many
+  same-story pairs as today's LLM dedup (53 vs 108 on the tuning nights, 0 vs 7 on the holdout)
+  and makes more wrong pair merges (14 vs 8; 0 vs 0); its wider net (similarity 0.87–0.90,
+  merging at ≥ 0.70) is right on 76 of 79 tuning-night merges and 8 of 9 on the holdout.
+- Under the earlier rule (`label_before` where it differs, else `label`), with the earlier
+  question (`jev_p_news`, `jev_merged_news`, merging at ≥ 0.40): 13 vs 31 wrong merges on the
+  tuning nights, 1 vs 2 on the holdout.
+
+One row per pair (1 875):
 
 - `candidate`: `group` = a pair inside one of today's candidate groups (all 1 654 of the five
-  nights); `wide` = a pair at similarity 0.85–0.90 outside them that Jev scored ≥ 0.40 (the rest
-  of the ~9 600 such pairs scored lower and are left out). Production asks only `wide` pairs with
-  `similarity` ≥ 0.87.
+  nights); `wide` = a pair at similarity 0.85–0.90 outside them that either question scored
+  ≥ 0.40. Production asks only `wide` pairs with `similarity` ≥ 0.87.
 - `similarity`: cosine similarity of the two articles with the pipeline's embedder over the
   archived original titles and text; `null` for 22 `group` rows whose headline is not in the
   night's input.
 - `gemini_merged`: today's agy `gemini-3.7-flash` put both articles in one `MERGED` group (always
   false for `wide`: today's pipeline never sees those pairs).
-- `jev_p`: `jev-1.13.0` probability of "same piece of news", headline-only state.
-- `jev_merged`: what the pipeline merges — for `group`, both articles in one star group of their
-  candidate group at ≥ 0.40 (keeper = longest text, so not recomputable from `jev_p` alone); for
-  `wide`, `jev_p` ≥ 0.70, i.e. Jev says "same" (star grouping still leaves 7 of the 46 such
-  tuning-night pairs unmerged, those matching only a non-keeper member).
-- `label`, `labeler`: `same` | `different` for 319 pairs, all by `claude-opus-5-5`, under the
-  rule in Stage 5; `null` elsewhere.
+- `jev_p`, `jev_merged`: `jev-1.13.0` probability that the two are one story (production
+  question, headline-only state) and what the pipeline merges with it — for `group`, both
+  articles in one star group of their candidate group at ≥ 0.60 (keeper = longest text, so not
+  recomputable from `jev_p` alone); for `wide`, `jev_p` ≥ 0.70. `null` / false where the pair
+  was not asked.
+- `jev_p_news`, `jev_merged_news`: the same for the earlier question (≥ 0.40 inside groups).
+- `label`, `labeler`: `same` | `different` under the one-story rule, 448 pairs, all by
+  `claude-opus-5-5`; `null` elsewhere. `label_before`: the earlier-rule label where it differed
+  (112 pairs).
 
-Scoring: a pair's truth is its label; an unlabelled pair counts only when `jev_merged` and
-`gemini_merged` agree (and then as correct); every disagreement is labelled.
+Scoring: a pair's truth is its label; an unlabelled pair counts only when Jev and the LLM agree
+(and then as correct); every disagreement of the scored configurations is labelled.
 
 ## `dedup-titles-2026-10-06.jsonl`
 
@@ -87,7 +93,8 @@ dedup (1 vs 1: 8 of 9 wrongly merged members stated; today 15 of 16 groups), in 
 language, for every group.
 
 One row per merge group of the four tuning nights (123), as `bench_jev.py dedup-titles` makes
-them with the wider net at 0.85–0.90 (the run predates the 0.87 band): the groups the pipeline
+them with the wider net at 0.85–0.90 and the earlier question (the run predates the 0.87
+band and the one-story rule): the groups the pipeline
 builds from the stored Stage 5 probabilities, headlines from `write_merged_titles` with agy
 `gemini-3.7-flash --effort low`. An agent's output is not deterministic, so a rerun writes
 different headlines and costs one launch per night.

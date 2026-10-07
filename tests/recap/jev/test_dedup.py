@@ -116,7 +116,7 @@ def test_find_duplicates_uses_a_stricter_threshold_for_the_wider_net() -> None:
     a, b, c, d, e = (_article(x, n) for x, n in zip("abcde", (50, 40, 30, 20, 10), strict=True))
     client = _FakeJev(
         {
-            **_same("a", "b", p=0.45),  # candidate group: >= 0.40 merges
+            **_same("a", "b", p=0.65),  # candidate group: >= 0.60 merges
             **_same("c", "d", p=0.6),  # wider net: < 0.70 does not merge
             **_same("a", "e", p=0.75),  # wider net: merges, joins a's group
         },

@@ -16,7 +16,7 @@ from news_recap.recap.models import DigestArticle
 
 logger = logging.getLogger(__name__)
 
-SAME_EVENT_THRESHOLD = 0.40
+SAME_EVENT_THRESHOLD = 0.60
 # Pairs below the embedding pre-filter are far more often different stories, so the wider net
 # asks Jev for more confidence.
 WIDE_SIMILARITY = 0.87
@@ -28,23 +28,24 @@ PAIR_KEY = "same"
 STATE_VARIANTS = ("headline", "lead")
 PAIR_STATE = "headline"
 
-# The yes/no criteria carry the editorial rule; without them Jev merges reactions to a story
-# and splits one incident reported at different moments.
+# The yes/no criteria carry the editorial rule: one item per story, reactions and commentary
+# included; separate events and multi-story roundups stay apart.
 PAIR_QUESTION = Noul(
     instructions=(
-        "Do article_a and article_b report the same piece of news, so that one could replace "
-        "the other in a news digest without the reader losing an important fact?"
+        "Do article_a and article_b cover the same news story, so a news digest should show "
+        "them as one item?"
     ),
     criteria={
         "true": (
             "They report the same event or announcement, including the same incident at "
-            "different moments of its development, live coverage and later reports of the "
-            "same event, and eyewitness accounts of it."
+            "different moments, live coverage and later reports, and eyewitness accounts; or one "
+            "of them reacts to, comments on, analyses or explains that same event: a statement, "
+            "reaction, condemnation, denial, apology or official assessment about it, an "
+            "analysis, explainer or interview about it."
         ),
         "false": (
-            "They report different events, or one of them is a separate piece of news about "
-            "the story: a statement, reaction, condemnation, denial, apology or official "
-            "assessment by someone, an analysis, explainer or interview, or a roundup that "
+            "They report different events, even about the same people, place or topic; or one "
+            "of them is a statement about a different subject; or one of them is a roundup that "
             "also covers other stories."
         ),
     },

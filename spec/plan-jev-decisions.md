@@ -158,7 +158,8 @@ median night: 12 → 9 → 6.
    can cause (wrong excludes, wrong merges) must not increase and its correct decisions must not
    decrease; a gate that requires more says so. Ground truth is labels made blind by Claude
    (`labeler: claude-opus-5-5`) at the user's request, under written rules: the user confirmed
-   the classify rules (Stage 1.2); the dedup rule (Stage 5) awaits the user's confirmation. The
+   the classify rules (Stage 1.2) and, on 2026-10-07, the dedup rule: a news item and the
+   reactions, statements and commentary about it are one story (Stage 5, "One story"). The
    Sonnet judge is used only for tasks where its agreement with the labels has been measured.
 8. **A wrongly excluded story is worse than a wrongly kept one** (the reader never sees it), so
    wrong excludes are gated separately.
@@ -631,11 +632,12 @@ Differences from the bullets below:
   production question asks whether one item could replace the other "without the reader losing
   an important fact", with yes/no criteria stating the rule. The headline-only state beats
   headline + source + lead with this question.
-- Labelling rule: same = one event or announcement reported twice, including the same incident at
-  different moments, live coverage and later reports, eyewitness accounts, and one statement
-  carried by several outlets; different = separate events, or a separate statement, reaction,
-  denial or official assessment, an analysis, explainer or interview, or a roundup covering
-  several stories (Reuters' "World News" videos).
+- Labelling rule (until 2026-10-07): same = one event or announcement reported twice, including
+  the same incident at different moments, live coverage and later reports, eyewitness accounts,
+  and one statement carried by several outlets; different = separate events, or a separate
+  statement, reaction, denial or official assessment, an analysis, explainer or interview, or a
+  roundup covering several stories (Reuters' "World News" videos). The user then chose the
+  one-story rule below.
 - Two thresholds, `SAME_EVENT_THRESHOLD` 0.40 and `WIDE_THRESHOLD` 0.70: below the pre-filter,
   pairs are more often different stories. The 0.80–0.85 band (5–18k pairs a night) was not tried.
 - Merge groups are connected components of "same" pairs, star-grouped inside (keeper = longest
@@ -645,6 +647,31 @@ Differences from the bullets below:
   bench nights).
 - No full `create --stop-after deduplicate` run: it needs enrich, i.e. agy launches. The first
   nightly run with `dedup_backend = "jev"` is the end-to-end check.
+
+**One story (the user's rule since 2026-10-07).** A news item and the reactions, statements,
+denials, assessments, analyses, explainers and interviews about it are one story; separate
+events, a statement on another subject, and roundups covering several stories (Reuters' "World
+News" videos, whose text lists three or four stories) stay apart. 112 of the 152 pairs labelled
+`different` became `same`; 129 more disputed pairs were labelled under the rule (448 labels).
+The production question became the one-story question, merging at ≥ 0.60.
+
+| one-story labels | wrong merges (Jev / LLM) | missed duplicates | correct pairs |
+|---|---|---|---|
+| tuning, 1 569 candidate pairs | 14 / 8 | 53 / 108 | 1 502 / 1 453 |
+| holdout, 85 | 0 / 0 | 0 / 7 | 85 / 78 |
+
+- Thresholds 0.55 / 0.60 / 0.65: 17 / 14 / 12 wrong, 48 / 53 / 59 missed. 0.60 is the middle of
+  the plateau. No threshold beats the LLM on both wrong merges and correct pairs, so the pair
+  gate fails; the LLM also misses twice as many pieces of one story.
+- 7 of Jev's 14 wrong pair merges are the Reuters roundup videos, which the LLM merges as well
+  (neither sees more than the headline). Others: two OpenAI products, the Belgrade councillor
+  case with the Novi Sad attack the same week, two campaign statements.
+- In articles (with the wider net): tuning nights 204 duplicates removed and 9 different stories
+  folded in (LLM 147 and 2); holdout 22 and 0 (LLM 9 and 0).
+- Wider net with the new question: 76 of 79 merges are the same story on the tuning nights, 8 of
+  9 on the holdout.
+- Not measured: the merged headlines (Stage 5b) for the larger groups this rule makes; agy is
+  locked until 2026-10-09.
 
 Today: `group_similar` builds candidate groups (connected components at embedding similarity
 ≥ `dedup_threshold` 0.90 over title + text), then 3–6 agy launches a night answer `MERGED` /
@@ -806,7 +833,7 @@ agy figures are the 10-06 night (412 articles); Jev from the bench.
 |---|---|---|---|
 | Stage 0 | 17 / 629k | 0 | nights lost to `load_resources`: 3/32 → 0 |
 | Stage 3 (classify on Jev) | 14 / ≈515k | ≈ 0.48 | wrong excludes 4 vs 13 (tuning), 0 vs 0 (holdout); ≈ 4 more vague headlines a night, ≈ 13k more enrich tokens |
-| Stage 5 + 5b (dedup on Jev, 0.87 band) | 9 / ≈391k | ≈ 0.48 + 0.74 | stories lost from merged headlines 1 vs today's 1 (gated at the 0.85 band); true duplicates removed 138 vs 132 (4 tuning nights, in-sample), +15 of them from the wider net; merged headlines written in the output language, as today |
+| Stage 5 + 5b (dedup on Jev, 0.87 band, one-story rule) | 9 / ≈391k | ≈ 0.48 + 0.74 | duplicates removed 204 vs today's 147 and different stories folded in 9 vs 2 (4 tuning nights, in-sample); holdout 22 vs 9 and 0 vs 0; merged headlines written in the output language, as today (not yet measured for the one-story groups) |
 
 ## Risks
 

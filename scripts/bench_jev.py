@@ -1392,6 +1392,28 @@ PAIR_LABELS = (SAME, DIFFERENT)
 DEDUP_EMBEDDER = "intfloat/multilingual-e5-small"
 DEDUP_THRESHOLD = 0.90
 # Rows stored before question variants existed used the "event" question.
+# The earlier rule, where a reaction to a story counted as separate news; kept so the Stage 5
+# numbers reproduce.
+NEWS_QUESTION = Noul(
+    instructions=(
+        "Do article_a and article_b report the same piece of news, so that one could replace "
+        "the other in a news digest without the reader losing an important fact?"
+    ),
+    criteria={
+        "true": (
+            "They report the same event or announcement, including the same incident at "
+            "different moments of its development, live coverage and later reports of the "
+            "same event, and eyewitness accounts of it."
+        ),
+        "false": (
+            "They report different events, or one of them is a separate piece of news about "
+            "the story: a statement, reaction, condemnation, denial, apology or official "
+            "assessment by someone, an analysis, explainer or interview, or a roundup that "
+            "also covers other stories."
+        ),
+    },
+)
+
 DEDUP_QUESTIONS = {
     "event": Noul(
         instructions=(
@@ -1399,9 +1421,10 @@ DEDUP_QUESTIONS = {
             "consider them the same piece of news (not merely related stories)?"
         ),
     ),
-    "news": PAIR_QUESTION,
+    "news": NEWS_QUESTION,
+    "story": PAIR_QUESTION,
 }
-CHOSEN_DEDUP_QUESTION = "news"
+CHOSEN_DEDUP_QUESTION = "story"
 
 _CLUSTER_PROMPT_RE = re.compile(r"^=== CLUSTER (\d+) \(\d+ articles\) ===\s*$", re.MULTILINE)
 _CLUSTER_OUTPUT_RE = re.compile(r"^CLUSTER (\d+):\s*$", re.MULTILINE)

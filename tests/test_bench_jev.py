@@ -869,7 +869,7 @@ def test_night_merge_groups_star_groups_candidates_and_the_wider_net():
     }
     cluster = bench_jev.DedupCluster("p", (art["A"], art["B"], art["C"]), ())
     probs = {
-        bench_jev.make_pair("p", "A", "B"): (0.45, 1),  # candidate pair: >= 0.40 merges
+        bench_jev.make_pair("p", "A", "B"): (0.65, 1),  # candidate pair: >= 0.60 merges
         bench_jev.make_pair("p", "A", "C"): (0.10, 1),
         bench_jev.make_pair("p", "B", "C"): (0.90, 1),  # B is not C's keeper: no chaining
         bench_jev.make_pair("p", "A", "E"): (0.75, 1),  # wider net: >= 0.70 merges
