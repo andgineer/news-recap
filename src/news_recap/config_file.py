@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 import langcodes
 import tomlkit
+import tomlkit.exceptions
 from tomlkit.items import String, StringType, Trivia
 
 from news_recap.recap.jev.policy import split_policy_topics
@@ -337,6 +338,8 @@ def set_config_value(path: Path, defaults: Settings, name: str, values: Sequence
         doc = tomlkit.parse(path.read_text("utf-8"))
     except tomlkit.exceptions.ParseError as error:
         raise ConfigError(f"{path}: {error}") from error
+    except UnicodeDecodeError as error:
+        raise ConfigError(f"{path}: not UTF-8 text ({error.reason})") from error
     doc[name] = _top_level_item(key, value)
     atomic_write(path, doc.as_string().encode("utf-8"))
     return value

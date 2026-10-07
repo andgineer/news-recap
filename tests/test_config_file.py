@@ -222,6 +222,9 @@ def test_non_utf8_config_is_a_clean_error(write_config) -> None:
     result = _invoke("list")
     assert result.exit_code == 1
     assert "not UTF-8" in result.output
+    result = _invoke("config", "set", "agent", "codex")
+    assert result.exit_code == 1
+    assert f"{path}: not UTF-8" in result.output
 
 
 def test_config_command_reports_what_other_commands_reject(write_config) -> None:
@@ -229,3 +232,22 @@ def test_config_command_reports_what_other_commands_reject(write_config) -> None
     result = _invoke("config")
     assert result.exit_code == 1
     assert "ingestion.retention_days must be >= 1" in result.output
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'rss = ["example.com/rss"]\n',
+        "[fetch]\ndefault_items_per_feed = 0\n",
+        '[fetch]\nper_feed_items = { "notaurl" = 5 }\n',
+    ],
+)
+def test_config_command_reports_bad_feed_settings(write_config, text: str) -> None:
+    write_config(text)
+    result = _invoke("config")
+    assert result.exit_code == 1
+    assert "config.toml" in result.output
+
+
+def test_config_command_accepts_a_fresh_install_without_feeds() -> None:
+    assert _invoke("config").exit_code == 0

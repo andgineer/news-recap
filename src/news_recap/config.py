@@ -329,8 +329,12 @@ class Settings:
                 f"{config_path(self.data_dir)}: rss has no feed URL. "
                 "Run `news-recap config set rss URL` or pass --rss.",
             )
+        self.validate_feed_settings(override_feed_urls)
+
+    def validate_feed_settings(self, override_feed_urls: tuple[str, ...] = ()) -> None:
+        """Feed URLs and ``[fetch]`` values; having no feeds is not an error here."""
         try:
-            for feed_url in effective_feed_urls:
+            for feed_url in _normalize_feed_urls(override_feed_urls or self.rss.feed_urls):
                 _validate_feed_url(feed_url)
         except ValueError as error:
             where = "--rss" if override_feed_urls else f"{config_path(self.data_dir)}: rss"
