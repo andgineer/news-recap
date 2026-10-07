@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import allure
 import pytest
-from click import UsageError
 from click.testing import CliRunner
 
 from news_recap.automation import (
@@ -139,7 +138,7 @@ def test_resolve_rss_urls_cli_takes_precedence(write_config):
 
 
 def test_resolve_rss_urls_error_when_no_feeds_anywhere():
-    with pytest.raises(UsageError, match="config set rss"):
+    with pytest.raises(ConfigError, match="config.toml: rss has no feed URL"):
         resolve_rss_urls(())
 
 
@@ -646,6 +645,8 @@ def test_install_warns_that_the_scheduled_run_ignores_data_dir(monkeypatch, tmp_
     monkeypatch.setattr("news_recap.automation._verify_setup", lambda *a, **k: iter(()))
 
     lines = list(ScheduleController().install(()))
-
     assert lines[0][0] == "warn"
     assert "NEWS_RECAP_DATA_DIR" in lines[0][1]
+
+    monkeypatch.delenv("NEWS_RECAP_DATA_DIR")
+    assert not any(severity == "warn" for severity, _ in ScheduleController().install(()))

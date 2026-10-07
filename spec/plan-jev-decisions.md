@@ -143,7 +143,7 @@ median night: 12 → 9 → 6.
    value falls through. Read with `dotenv_values()`, never written to `os.environ`.
    `TYPESAFE_API_KEY` is always stripped from agent subprocess env (agents read untrusted news
    text with permissions skipped). Every other setting, the Jev backends included, lives in
-   `<data_dir>/config.toml` (`plan-config-toml.md`).
+   `<data_dir>/config.toml` (`spec/settings.md`).
 3. **Pinned model** `jev-1.13.0`; thresholds are tuned against it. Upgrading = rerun the bench,
    then bump.
 4. **Thresholds are module constants**, set from the bench.
@@ -306,7 +306,7 @@ on the other three nights only (`HOLDOUT_PIPELINE` in `bench_jev.py`).
   in `jev/usage.py`, and `save_jev_usage` has no `price_per_mtok` argument.
 - `JevUnavailable` is named `JevUnavailableError` (ruff N818, same as the other exceptions).
 - The per-step backends are `classify_backend` / `dedup_backend` in `config.toml`, not the
-  `NEWS_RECAP_*_BACKEND` variables of the bullets below (`plan-config-toml.md`).
+  `NEWS_RECAP_*_BACKEND` variables of the bullets below (`spec/settings.md`).
 - The key lookup is `config.resolve_typesafe_api_key(data_dir)`, shared by `Settings.load`
   and `make_jev_client`. An empty value falls through to the next source.
 - `jev_task_dir(pipeline_dir, step)` names the `<step>-jev` workdir.

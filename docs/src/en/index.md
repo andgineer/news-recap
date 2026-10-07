@@ -33,6 +33,7 @@ Save it in your settings and create a digest:
 
 ```bash
 news-recap config set rss "https://www.inoreader.com/stream/..."
+news-recap config set language en          # the digest language; default ru
 news-recap ingest
 news-recap create
 news-recap serve

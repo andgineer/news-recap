@@ -26,7 +26,7 @@ from news_recap.automation import (
     resolve_rss_urls,
 )
 from news_recap.config import Settings
-from news_recap.config_file import ConfigError, config_path
+from news_recap.config_file import LANGUAGE_HINT, ConfigError, config_path, is_language_code
 from news_recap.ingestion.controllers import (
     DailyIngestionCommand,
     IngestionCliController,
@@ -283,6 +283,7 @@ def ingest(feed_urls: tuple[str, ...]) -> None:
     "--language",
     default=None,
     help="BCP-47 language code for digest output (e.g. ru, en, hr). Default: from config.toml.",
+    callback=lambda _ctx, _param, value: _validate_language(value),
 )
 def recap_run(  # noqa: PLR0913
     agent: str | None,
@@ -342,6 +343,7 @@ def recap_run(  # noqa: PLR0913
     "--language",
     default=None,
     help="BCP-47 language code for prompt output (e.g. ru, en, hr). Default: from config.toml.",
+    callback=lambda _ctx, _param, value: _validate_language(value),
 )
 @click.option(
     "--out",
@@ -549,6 +551,12 @@ def schedule_get() -> None:
 def schedule_delete() -> None:
     """Remove the daily scheduled digest job."""
     _emit_schedule(SCHEDULE_CONTROLLER.uninstall())
+
+
+def _validate_language(value: str | None) -> str | None:
+    if value is not None and not is_language_code(value):
+        raise click.BadParameter(f"{LANGUAGE_HINT}, got {value!r}")
+    return value
 
 
 _MAX_HOUR = 23

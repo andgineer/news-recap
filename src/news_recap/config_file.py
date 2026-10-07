@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+import langcodes
 import tomlkit
 from tomlkit.items import String, StringType, Trivia
 
@@ -182,6 +183,8 @@ def load_config_file(path: Path) -> list[tuple[Key, Any]]:
         data = tomllib.loads(path.read_text("utf-8"))
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(f"{path}: {error}") from error
+    except UnicodeDecodeError as error:
+        raise ConfigError(f"{path}: not UTF-8 text ({error.reason})") from error
     found: list[tuple[Key, Any]] = []
     for name, value in data.items():
         if name in SECTIONS:
@@ -216,7 +219,20 @@ def _checked(path: Path, label: str, key: Key, value: Any) -> Any:
         raise ConfigError(
             f"{path}: {label} must be one of {' | '.join(key.choices)}, got {value!r}",
         )
+    if key.name == "language" and not is_language_code(value):
+        raise ConfigError(f"{path}: {LANGUAGE_HINT}, got {value!r}")
     return float(value) if key.kind is float else value
+
+
+LANGUAGE_HINT = "language must be a BCP-47 code such as en, ru, sr"
+
+
+def is_language_code(value: str) -> bool:
+    """
+    >>> [is_language_code(v) for v in ("en", "sr-Latn", "English", "xx")]
+    [True, True, False, False]
+    """
+    return langcodes.tag_is_valid(value.strip())
 
 
 _TABLE_SHAPES = {
@@ -342,6 +358,8 @@ def _parse_cli_value(key: Key, values: Sequence[str]) -> Any:
     value = values[0].strip()
     if key.choices and value not in key.choices:
         raise ValueError(f"{key.name} must be one of {' | '.join(key.choices)}")
+    if key.name == "language" and not is_language_code(value):
+        raise ValueError(f"{LANGUAGE_HINT}, got {value!r}")
     return value
 
 

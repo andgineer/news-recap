@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from news_recap.config import Settings
 from news_recap.config_file import (
+    ConfigError,
     SECTIONS,
     TOP_LEVEL,
     load_config_file,
@@ -148,7 +149,7 @@ def test_broken_config_is_a_clean_error_for_every_command(write_config, command)
     assert result.exit_code == 1
     assert "agent must be one of antigravity | codex | claude" in result.output
     assert "config.toml" in result.output
-    assert "Traceback" not in result.output
+    assert not isinstance(result.exception, ConfigError)
 
 
 def test_out_of_range_value_names_the_file(write_config) -> None:
@@ -165,7 +166,7 @@ def _invoke(*args: str):
 @pytest.mark.parametrize(
     ("text", "match"),
     [
-        ("", "At least one RSS feed URL is required"),
+        ("", "config.toml: rss has no feed URL"),
         ('rss = ["example.com/rss"]\n', "config.toml: rss: Invalid RSS feed URL"),
         (
             'rss = ["https://a.example/rss"]\n[fetch]\ndefault_items_per_feed = 0\n',
@@ -178,7 +179,7 @@ def test_ingest_reports_feed_problems_cleanly(write_config, text: str, match: st
     result = _invoke("ingest")
     assert result.exit_code == 1
     assert match in result.output
-    assert "Traceback" not in result.output
+    assert not isinstance(result.exception, ConfigError)
 
 
 @pytest.mark.parametrize(
@@ -205,3 +206,26 @@ def test_config_set_on_an_unparseable_file_names_it(write_config) -> None:
     result = _invoke("config", "set", "agent", "codex")
     assert result.exit_code == 1
     assert str(path) in result.output
+
+
+def test_language_must_be_a_language_code() -> None:
+    with pytest.raises(ValueError, match="BCP-47"):
+        set_config_value(_data_dir() / "config.toml", _defaults(), "language", ["English"])
+    result = _invoke("create", "--language", "English")
+    assert result.exit_code == 2
+    assert "BCP-47" in result.output
+
+
+def test_non_utf8_config_is_a_clean_error(write_config) -> None:
+    path = write_config("")
+    path.write_bytes('follow = "Сербия"\n'.encode("cp1251"))
+    result = _invoke("list")
+    assert result.exit_code == 1
+    assert "not UTF-8" in result.output
+
+
+def test_config_command_reports_what_other_commands_reject(write_config) -> None:
+    write_config("[ingestion]\nretention_days = 0\n")
+    result = _invoke("config")
+    assert result.exit_code == 1
+    assert "ingestion.retention_days must be >= 1" in result.output

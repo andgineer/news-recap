@@ -17,8 +17,6 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Literal
 
-import click
-
 from news_recap.config import DATA_DIR_VAR, Settings
 
 Severity = Literal["ok", "info", "warn", "error", "log", "heading"]
@@ -37,12 +35,7 @@ class ScheduleMeta:
 
 def resolve_rss_urls(cli_urls: tuple[str, ...]) -> tuple[str, ...]:
     """The feeds to bake into the scheduled run: *cli_urls*, or none to follow config.toml."""
-    settings = Settings.load()
-    if not cli_urls and not settings.rss.feed_urls:
-        raise click.UsageError(
-            "No RSS feed URLs: run `news-recap config set rss URL` or pass --rss URL.",
-        )
-    settings.validate_for_rss(cli_urls)
+    Settings.load().validate_for_rss(cli_urls)
     return cli_urls
 
 

@@ -184,6 +184,7 @@ def test_advanced_sections_come_from_the_file(write_config) -> None:
         ("[api]\nmodel_map.recap_classify = 1\n", "api.model_map: expected task"),
         ("[fetch]\nper_feed_items = { 'https://a' = 'x' }\n", "fetch.per_feed_items: expected"),
         ("language = \n", "config.toml"),
+        ("language = 'English'\n", "language must be a BCP-47 code"),
     ],
 )
 def test_bad_config_names_the_key_and_the_file(write_config, text: str, match: str) -> None:
@@ -228,9 +229,9 @@ def test_api_backend_requires_the_claude_agent(write_config) -> None:
     with pytest.raises(ValueError) as exc_info:
         Settings.load()
     msg = str(exc_info.value)
-    assert "requires the claude agent" in msg
-    assert 'agent = "claude"' in msg
-    assert "codex" in msg
+    assert 'llm.execution_backend = "api" requires agent = "claude"' in msg
+    assert "'codex'" in msg
+    assert "\n" not in msg
 
 
 def test_api_backend_with_the_claude_agent(write_config) -> None:

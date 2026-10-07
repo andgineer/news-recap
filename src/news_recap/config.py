@@ -285,8 +285,8 @@ class Settings:
             raise ValueError("llm.execution_backend must be 'cli' or 'api'.")
         if execution_backend == "api" and default_agent != "claude":
             raise ValueError(
-                f"execution_backend=api requires the claude agent.\n"
-                f'Set agent = "claude" in config.toml (current value: {default_agent}).',
+                f'llm.execution_backend = "api" requires agent = "claude" '
+                f"(agent is {default_agent!r}).",
             )
 
         for task_type, agent_models in self.orchestrator.task_model_map.items():
@@ -326,7 +326,7 @@ class Settings:
         effective_feed_urls = _normalize_feed_urls(override_feed_urls or self.rss.feed_urls)
         if not effective_feed_urls:
             raise ConfigError(
-                "At least one RSS feed URL is required. "
+                f"{config_path(self.data_dir)}: rss has no feed URL. "
                 "Run `news-recap config set rss URL` or pass --rss.",
             )
         try:
@@ -344,7 +344,10 @@ class Settings:
         if self.rss.default_items_per_feed <= 0:
             raise ValueError("fetch.default_items_per_feed must be a positive integer.")
         for feed_url, items in self.rss.per_feed_items.items():
-            _validate_feed_url(feed_url)
+            try:
+                _validate_feed_url(feed_url)
+            except ValueError as error:
+                raise ValueError(f"fetch.per_feed_items: {error}") from error
             if items <= 0:
                 raise ValueError(f"fetch.per_feed_items must be positive: {feed_url!r} = {items}")
         if self.rss.snapshot_max_age_hours < 0:

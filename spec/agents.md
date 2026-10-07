@@ -122,7 +122,7 @@ Token usage: the envelope's input, output, thinking, cache-read and total tokens
 
 The agent, the per-task model flags and the API-mode settings are user settings in
 `<data_dir>/config.toml` (the `agent` key and the `[llm]` and `[api]` sections), with the
-release defaults written there commented out. Agent API keys are secrets: they come only from
+`[llm]` and `[api]` release defaults written there commented out. Agent API keys are secrets: they come only from
 the environment and are stripped from agent subprocesses unless API mode needs them or
 `--use-api-key` is given.
 

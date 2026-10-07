@@ -35,6 +35,7 @@ def show_config() -> Iterator[ConfigLine]:
         value = values.get(key.name, read_attr(defaults, key.target))
         suffix = "" if key.name in values else "  (default)"
         yield from _format(key.name, value, suffix)
+    Settings.load()  # the checks every other command runs, so `config` reports them too
 
 
 def set_config(name: str, values: Sequence[str]) -> Iterator[ConfigLine]:

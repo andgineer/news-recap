@@ -65,6 +65,7 @@ All project documentation lives in `spec/`. The directory is flat — no subdire
 
 - `spec/pipeline.md` — recap pipeline architecture, per-step contracts, state/checkpointing, experiments.
 - `spec/agents.md` — LLM agent backends: available models, manifest contract, workdir layout, command templates, configuration.
+- `spec/settings.md` — where settings live (`config.toml`), defaults, secrets, validation.
 
 ## Coding Conventions
 

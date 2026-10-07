@@ -23,6 +23,7 @@ and the [Antigravity CLI](https://antigravity.google/) (`agy`), then run:
 ```bash
 uv tool install news-recap --upgrade --python 3.13
 news-recap config set rss "YOUR_RSS_URL"
+news-recap config set language en    # the digest language; default ru
 news-recap ingest
 news-recap create
 news-recap serve
