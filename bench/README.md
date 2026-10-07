@@ -2,12 +2,14 @@
 
 Rows that a sentence in `spec/` relies on. A file stays only while a claim rests on it.
 Everything else (archived pipelines, other state variants, judge runs) stays in
-`~/.news_recap_data/bench/`. `scripts/bench_jev.py` produces and scores it.
+`~/.news_recap_data/bench/`. `scripts/bench_jev.py` produces and scores it; the conclusions
+are in `spec/pipeline.md`, *Experiments → Jev decisions*. Nightly workdirs are deleted after 7
+days, so `bench_jev.py snapshot` copies the nights worth keeping into the bench directory.
 
 ## `classify-2026-10-06.jsonl`
 
-**Claim** (`spec/plan-jev-decisions.md`, Stage 3): with the `full` state, exclude ≥ 0.75 and
-vague ≥ 0.65, Jev classify passes the Stage 3.4 gate against Gemini on the three tuning nights
+**Claim** (classify bench): with the `full` state, exclude ≥ 0.75 and
+vague ≥ 0.65, Jev classify passes the gate against Gemini on the three tuning nights
 and on the holdout night (`pipeline-2026-10-04-011204`), at ≈ \$0.48/month.
 
 One row per headline of the four nights with a Gemini classify verdict (1 736):
@@ -15,7 +17,7 @@ One row per headline of the four nights with a Gemini classify verdict (1 736):
 - `gemini`: agy `gemini-3.7-flash --effort low`, replayed from the archived `classify-N`
   workdirs.
 - `label`, `labeler`: ground truth where labelled (348 rows, all by `claude-opus-5-5`, under
-  the rules in Stage 1.2); `null` elsewhere.
+  the classify labelling rules); `null` elsewhere.
 - `jev_p`: `jev-1.13.0` probabilities for the `full` state (headline, source, first 300 chars
   of text). `t0`…`t4` are the exclude-policy topics in order — horoscopes, medical advice,
   sports (except Russia), Epstein files, Croatian news (unless it directly involves Serbia or
@@ -27,7 +29,7 @@ Scoring: a row's truth is its label; an unlabelled row counts only when Jev and 
 
 ## `route-2026-10-06.jsonl`, `route-splits-2026-10-06.jsonl`
 
-**Claim** (`spec/plan-jev-decisions.md`, Stage 4): routing articles to fixed sections on Jev
+**Claim** (section routing bench): routing articles to fixed sections on Jev
 before writing places follow topics as well as today's LLM, but splits 20.7% of today's
 multi-article blocks across sections (21.9% on the holdout), and 11 of 259 blocks put one news
 event in two sections; so routing was rejected.
@@ -51,7 +53,7 @@ split (54): the block's headlines, `same_story` (the split separates reports of 
 
 ## `dedup-2026-10-06.jsonl`
 
-**Claims** (`spec/plan-jev-decisions.md`, Stage 5):
+**Claims** (deduplicate bench):
 
 - Under the one-story rule (the user's, 2026-10-07; `label`), with the production question
   (`jev_p`) merging at ≥ 0.60 inside today's candidate groups, Jev misses half as many
@@ -87,7 +89,7 @@ Scoring: a pair's truth is its label; an unlabelled pair counts only when Jev an
 
 ## `dedup-titles-2026-10-06.jsonl`
 
-**Claim** (`spec/plan-jev-decisions.md`, Stage 5b): when one agy launch per night writes the
+**Claim** (merged headlines bench): when one agy launch per night writes the
 headline of every Jev merge group, the headlines lose as many merged-in stories as today's LLM
 dedup (1 vs 1: 8 of 9 wrongly merged members stated; today 15 of 16 groups), in the output
 language, for every group.
@@ -95,14 +97,14 @@ language, for every group.
 One row per merge group of the four tuning nights (123), as `bench_jev.py dedup-titles` makes
 them with the wider net at 0.85–0.90 and the earlier question (the run predates the 0.87
 band and the one-story rule): the groups the pipeline
-builds from the stored Stage 5 probabilities, headlines from `write_merged_titles` with agy
+builds from the stored pair probabilities, headlines from `write_merged_titles` with agy
 `gemini-3.7-flash --effort low`. An agent's output is not deterministic, so a rerun writes
 different headlines and costs one launch per night.
 
 - `written`: the headline; `null` when the launch wrote none (the group then stays unmerged;
   none here).
 - `launch_tokens`, `launch_seconds`: that night's launch (the same on every row of a night).
-- `members`: keeper first; `title`, `source`, `label` (the Stage 5 label against the keeper,
+- `members`: keeper first; `title`, `source`, `label` (the pair label against the keeper,
   `null` when unlabelled).
 - `in_headline`, `read_by`: for members labelled `different`, whether the written headline states
   their story, read by `claude-opus-5-5`.

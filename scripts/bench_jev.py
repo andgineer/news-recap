@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bench for moving recap decisions to Jev (spec/plan-jev-decisions.md).
+"""Bench for the recap decisions on Jev (spec/pipeline.md, Experiments → Jev decisions).
 
 Usage:
     uv run python scripts/bench_jev.py snapshot
@@ -8,6 +8,7 @@ Usage:
     uv run python scripts/bench_jev.py classify [--holdout] [--config full:0.8:full:0.6]
     uv run python scripts/bench_jev.py route [--holdout] [--config 0.35:0.4]
     uv run python scripts/bench_jev.py dedup [--holdout] [--config lead:news:0.5]
+    uv run python scripts/bench_jev.py dedup-titles [--holdout]   # one agent launch per night
 """
 
 from __future__ import annotations
@@ -823,7 +824,7 @@ def sweep_table(results: list[ConfigResult], top: int) -> list[str]:
 
 
 def classify_report(result: ConfigResult, cost_per_month: float) -> tuple[bool, list[str]]:
-    """Per-class table for Jev and Gemini plus the Stage 3.4 gate; returns (passed, lines)."""
+    """Per-class table for Jev and Gemini plus the classify gate; returns (passed, lines)."""
     jev, gem = result.jev, result.gemini
     lines = [
         f"config {result.config}: {jev.total} headlines scored, "
@@ -1320,7 +1321,7 @@ def section_sizes(result: RouteResult, nights: list[RouteNight]) -> list[str]:
 
 
 def route_report(result: RouteResult, nights: list[RouteNight]) -> tuple[bool, list[str]]:
-    """Metrics of one configuration plus the Stage 4.4 gate; returns (passed, lines)."""
+    """Metrics of one configuration plus the routing gate; returns (passed, lines)."""
     jev_right, llm_right = result.right(result.jev_follow), result.right(result.llm_follow)
     labelled = len(result.disagreements) - len(result.unknown)
     follow_names = list(dict.fromkeys(n for night in nights for n in night.follow_names))
@@ -1392,8 +1393,8 @@ PAIR_LABELS = (SAME, DIFFERENT)
 DEDUP_EMBEDDER = "intfloat/multilingual-e5-small"
 DEDUP_THRESHOLD = 0.90
 # Rows stored before question variants existed used the "event" question.
-# The earlier rule, where a reaction to a story counted as separate news; kept so the Stage 5
-# numbers reproduce.
+# The stricter rule, where a reaction to a story counted as separate news; kept so its numbers
+# in spec/pipeline.md reproduce.
 NEWS_QUESTION = Noul(
     instructions=(
         "Do article_a and article_b report the same piece of news, so that one could replace "
@@ -1773,7 +1774,7 @@ def dedup_sweep_table(results: list[DedupResult], top: int) -> list[str]:
 
 
 def dedup_report(result: DedupResult) -> tuple[bool, list[str]]:
-    """Jev vs Gemini on candidate pairs plus the Stage 5.4 gate; returns (passed, lines)."""
+    """Jev vs Gemini on candidate pairs plus the pair gate; returns (passed, lines)."""
     jev, gem = result.jev, result.gemini
     lines = [
         f"config {result.config}: {result.pairs} candidate pairs, {len(jev.truth)} scored, "
@@ -1908,7 +1909,7 @@ def wide_report(
 
 
 # ---------------------------------------------------------------------------
-# Stage 5b: merged headlines written by one LLM launch per night
+# Merged headlines written by one LLM launch per night
 # ---------------------------------------------------------------------------
 
 
@@ -2110,7 +2111,7 @@ def _cmd_classify(bench: Bench, args: argparse.Namespace) -> None:
     print()
     for line in [*lines, *cost_lines]:
         print(line)
-    print(f"\nStage 3 gate on these nights: {'PASS' if passed else 'FAIL'}")
+    print(f"\nClassify gate on these nights: {'PASS' if passed else 'FAIL'}")
 
 
 def _route_nights(bench: Bench, holdout: bool) -> list[RouteNight]:
@@ -2168,7 +2169,7 @@ def _cmd_route(bench: Bench, args: argparse.Namespace) -> None:
         print(f"\n{args.examples} random follow disagreements:")
         for line in disagreement_examples(results[0], args.examples):
             print(line)
-    print(f"\nStage 4 gate on these nights: {'PASS' if passed else 'FAIL'}")
+    print(f"\nRouting gate on these nights: {'PASS' if passed else 'FAIL'}")
 
 
 def _archived_nights(bench: Bench, holdout: bool) -> list[str]:
@@ -2215,7 +2216,7 @@ def _cmd_dedup(bench: Bench, args: argparse.Namespace) -> None:
     print()
     for line in [*lines, *cost_lines]:
         print(line)
-    print(f"\nStage 5 gate on these nights: {'PASS' if passed else 'FAIL'}")
+    print(f"\nPair gate on these nights: {'PASS' if passed else 'FAIL'}")
     if args.wide:
         _wide_net(bench, client, nights, clusters, results[0].config, labels)
 
@@ -2251,7 +2252,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("snapshot", help="archive pipeline workdirs into <data_dir>/bench/pipelines")
-    label = sub.add_parser("label", help="label classify items (default: the Stage 1 batch)")
+    label = sub.add_parser(
+        "label",
+        help="label classify items (default: the first labelling batch)",
+    )
     label.add_argument("--items", type=Path, help="JSONL of {pipeline, headline} rows")
     judge = sub.add_parser("judge-check", help="judge agreement with the user's labels")
     judge.add_argument("--task", choices=["classify"], default="classify")

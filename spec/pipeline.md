@@ -42,10 +42,12 @@ flowchart TD
 
 The flow `recap_flow` runs steps in fixed order (8 steps):
 
-1. **Classify** — batch-classify articles as `ok / vague / exclude`.
+1. **Classify** — classify articles as `ok / vague / exclude`, in LLM batches or, when turned
+   on, with [Jev](#jev).
 2. **LoadResources** — download full-text for articles needing enrichment.
 3. **Enrich** — rewrite headlines and extract excerpts via LLM agents.
-4. **Deduplicate** — merge near-duplicate articles (embedding pre-filter + LLM clustering).
+4. **Deduplicate** — merge articles that cover one news story (embedding pre-filter, then LLM
+   clustering or, when turned on, Jev pair decisions plus one LLM launch for the merged headlines).
 5. **OneshotDigest** — articles split into batches of ~200, processed in parallel; each batch agent groups and titles blocks and sections in one pass.
 6. **BlockDedup** *(deterministic, no LLM)* — removes exact-duplicate, subset, and semantically similar blocks.
 7. **MergeSections** *(only when > 1 batch)* — reconciles section names from all batches into a unified section list.
@@ -53,6 +55,32 @@ The flow `recap_flow` runs steps in fixed order (8 steps):
 
 Steps 1, 3, 4, and 5 run up to `_MAX_PARALLEL` concurrent workers.
 Steps 2, 6–8 are single-threaded.
+
+### Jev
+
+TypeSafe's Jev answers yes/no questions about a piece of text with a probability, at \$0.042 per
+million input tokens (output is free), but it cannot write text. It takes over the per-article
+*decisions* of Classify and Deduplicate, where it was measured against the LLM
+([Experiments](#jev-decisions)); every step that writes text stays on the LLM.
+
+- **Opt-in per step**, classify and deduplicate separately. Both default to the LLM, so a fresh
+  install runs with no keys on the free agy tier ([settings](settings.md)). Without a key at run
+  time the step uses the LLM.
+- **Pinned model** (`jev-1.13.0`): the thresholds are tuned against it, so an upgrade means
+  rerunning the bench first.
+- **Called through `typesafe-sdk`**, not the `jev` wrapper, which needs Python ≥ 3.14 and
+  discards the probabilities the thresholds need.
+- **A Jev failure** (after the SDK's own retries) or a missing answer sends the whole step to its
+  LLM path for that night, with a warning in the log. Billed tokens are recorded either way.
+- **A resumed night keeps the backends it started with.**
+- **The key never reaches the agents**: they read untrusted news text with their permission
+  checks off.
+- Requests run 16 at a time against a documented limit of 80 per second (61 measured).
+- Questions are in English. Jev handles other languages less well; it shows as the language bias
+  in the [classify bench](#classify-bench).
+- Each Jev step is its own row in the stage table, with tokens and cost, and keeps its
+  per-article probabilities in the night's workdir. Run history records Jev's tokens and cost
+  apart from the agents' tokens.
 
 ## Per-step contracts
 
@@ -84,6 +112,23 @@ Batch sizes here and in enrich are tuned ceilings, not budgets to fill: past the
 silently drops or miscounts items, the recognition guard fails the batch and it reruns whole,
 so larger batches do not save launches.
 
+#### Classify on Jev
+
+One yes/no question per topic of the exclude policy, plus one for vague headlines. The policy is
+split on line breaks and on commas outside parentheses, and an exception in parentheses applies
+("sports (except Russia)"); topics are read literally, so they should name subjects. Each topic
+question tells Jev to judge by what the story is about, not by the country or language of the
+outlet. Jev sees the headline, the source and the first 300 characters of text.
+
+An article is `exclude` when any topic reaches 0.75, else `vague` when the vague question reaches
+0.65, else `ok`. 0.75 has the fewest wrong excludes among the best exclude/keep totals, since a
+wrongly excluded story is never seen; 0.65 is mid-plateau for vague and rewrites fewer headlines
+than 0.60.
+
+Every article gets an answer or the step falls back, so the recognition guards do not apply.
+About 785 tokens per headline, ≈ \$0.48/month. Fallback rate on nightly runs: not yet measured
+(issue #19).
+
 ### LoadResources
 
 | | |
@@ -97,8 +142,10 @@ so larger batches do not save launches.
 Downloads full-text for `vague` articles via `load_resource_texts` and caches
 it under the pipeline directory. Articles that fail to load (or have no URL)
 get their verdict reset to `ok` — they remain in the digest with their
-original headline but won't be enriched. Failure rate above 30% raises
-`RecapPipelineError`.
+original headline but won't be enriched. A failure rate above 30% is logged
+as a warning and the pipeline continues: a failed download costs only that
+headline's rewrite, while failing the run on it would have lost 3 of 32
+nights in September–October 2026.
 
 ### Enrich
 
@@ -155,6 +202,51 @@ SINGLE: <number>
 Up to 4 clusters run in parallel. Partial failures are tolerated:
 a warning is logged, but the phase is marked complete and the pipeline
 continues (dedup is best-effort).
+
+**One story.** A news item and the reactions, statements, denials,
+assessments, analyses, explainers and interviews about it are one story and
+become one digest entry. Separate events (even about the same people or
+place), a statement on a different subject, and roundups covering several
+stories (Reuters' "World News" videos) stay apart. Both paths are measured
+against this rule; the LLM prompt asks for "the same piece of news" and leaves
+about twice as many pieces of one story apart as Jev
+([bench](#deduplicate-bench)).
+
+#### Deduplicate on Jev
+
+The embedding pre-filter is the same; the LLM launches over the clusters are
+replaced by:
+
+1. **Pair decisions.** For every pair inside each candidate group, Jev answers
+   whether the two are one story under the rule above. It sees only the two
+   headlines (Enrich's rewrite where there is one); adding the source and lead
+   scored worse. A pair merges at ≥ 0.60.
+2. **Wider net.** Pairs at embedding similarity 0.87–0.90 that no candidate
+   group holds are asked too. Translations and paraphrases of one report fall
+   there (Starship's first orbit in Serbian and in English, the Vučić → Brnabić
+   handover reports), and the LLM path never sees them. They merge at ≥ 0.70,
+   since below the pre-filter pairs are more often different stories. The net
+   grows with the square of the night's size, so a night is capped at its
+   5 000 most similar such pairs (≈ 80 s, ≈ \$0.10).
+3. **Groups.** "Same" pairs are joined into connected components and
+   star-grouped inside: the keeper is the article with the longest text, and
+   an article joins a group only if it matches the keeper, so A≈B and B≈C do
+   not put C with A.
+4. **Merged headlines.** One LLM launch (the dedup task's model) writes a
+   headline for every merge group under the LLM path's rules: the key facts of
+   every member, a separate statement or reaction included; not much longer
+   than the longest original; in the output language. Keeping one member's
+   title would hide the other story whenever a merge is wrong; the written
+   headline states it.
+5. **No headline, no merge.** A group the launch leaves without a headline —
+   or every group, if the launch fails — stays unmerged: a duplicate left
+   visible is a lesser harm than a hidden story.
+
+As on the LLM path, a candidate group above 20 articles is split into chunks,
+and pairs across chunks are never asked (5–8 pairs a night).
+
+One agy launch a night (≈ 26–33k tokens) instead of 3–6; Jev ≈ 1 200 pair
+requests on a 450-article night, ≈ \$0.74/month.
 
 ### OneshotDigest
 
@@ -319,6 +411,11 @@ The flow catches this and marks the run as completed.
 Valid `stop_after` values: `classify`, `load_resources`, `enrich`,
 `deduplicate`, `oneshot_digest`, `refine_layout`.
 
+### Failure
+
+A failed pipeline makes `create` print "Pipeline failed" and exit with code 1,
+so the scheduled job's log ends with `RESULT: FAILED`.
+
 ## Output shape
 
 The final digest contains:
@@ -351,14 +448,53 @@ There is no event layer; blocks reference articles directly.
 
 ## Cost
 
-Each digest pipeline run consumes roughly 3–4% of the weekly CLI agent
-subscription quota (~\$0.19 per run).  At daily use this adds up to
-~20% of the weekly limit, or ~\$6/month in equivalent dollar terms.
+### agy (default agent)
 
-The dollar figures are approximate.  The pipeline runs under flat-rate
-subscriptions (Codex, Claude Code, Gemini CLI at ~\$20/month), so
-the quota would mostly go unused anyway — the pipeline effectively
-runs for free within the existing subscription.
+The free Antigravity tier is quota-limited, and the quota is the binding
+constraint: from 2026-09-04 to 10-05, 6 of 32 nightly runs were lost to agy
+lockouts (one daily, three weekly). agy reports only "Individual quota
+reached", and the launch count alone does not predict it: one night hit the
+daily cap at its 11th launch while two others ran 17 launches without hitting
+it; the two fully observed weekly windows locked out after 56 and 64 launches.
+Each launch is a multi-turn agent session that spends about 13k input tokens
+before reading the prompt.
+
+Night 2026-10-06, 412 kept articles, every step on the LLM:
+
+| Step | Launches | Tokens |
+|---|---|---|
+| classify | 3 | 126,718 |
+| deduplicate | 6 | 157,484 |
+| enrich | 3 | 123,312 |
+| oneshot_digest | 3 | 170,614 |
+| merge_sections | 1 | 17,869 |
+| refine_layout | 1 | 33,008 |
+| total | 17 | 629,005 |
+
+A median completed night takes 12 launches (classify 3, enrich 1,
+deduplicate 4, oneshot_digest 2, merge_sections 1, refine_layout 1).
+
+With classify on Jev the 10-06 night takes 14 launches / ≈ 515k tokens,
+counting ≈ 13k more enrich tokens for the extra vague headlines Jev finds;
+with deduplicate on Jev as well, 9 / ≈ 391k, counting the merged-headlines
+launch. On the median night: 12 → 9 → 6 launches.
+
+### Jev
+
+Classify ≈ \$0.48/month; deduplicate ≈ \$0.74/month (scaled from the
+bench's pair counts, not a live run). The questions dominate a request's
+tokens: a headline-only classify request still costs 91% of a full one.
+
+### Subscriptions
+
+With codex or claude, each digest run consumes roughly 3–4% of the weekly
+subscription quota (~\$0.19 per run). At daily use this adds up to ~20% of
+the weekly limit, or ~\$6/month in equivalent dollar terms. The dollar
+figures are approximate: under a flat-rate subscription (~\$20/month) the
+quota would mostly go unused anyway, so the pipeline effectively runs for
+free within it.
+
+### API mode
 
 An API-key mode (`--api`) is available using Haiku for most tasks and
 Sonnet for the oneshot digest.  It is faster per-token but adds up to
@@ -367,10 +503,10 @@ where CLI agents are not available.
 
 ## Experiments
 
-All experiments below were run on the same 703-article corpus (25 Mar 2026)
-using Claude CLI agents under a \$20/month subscription.
-
 ### Pipeline tuning
+
+Run on one 703-article corpus (25 Mar 2026) using Claude CLI agents under a
+\$20/month subscription.
 
 Before settling on the current pipeline, an alternative **map-reduce**
 approach was evaluated.  It used five LLM stages after Deduplicate:
@@ -421,6 +557,126 @@ incorporated into the oneshot pipeline as the fuzzy title merge phase of
 BlockDedup, making the five extra LLM stages unnecessary.  The map-reduce
 code was removed.
 
-### API mode
+### Jev decisions
 
-See [Cost](#cost) for API mode details and pricing comparison.
+`scripts/bench_jev.py` replays archived nights (2026-09-29, 09-30, 10-01 and
+10-06 for tuning; 10-04 is the holdout, run once after the thresholds were
+chosen). Today's LLM decisions (agy `gemini-3.7-flash --effort low`) are
+replayed from the archived workdirs, so both are scored on the same items.
+The rows the conclusions below rely on are in `bench/`; its README names the
+claim each file supports.
+
+- **Ground truth** is labels made blind by Claude (Opus 5.5) at the user's
+  request, under written rules the user confirmed. Every disagreement between
+  Jev and the LLM in a scored configuration is labelled; an unlabelled
+  agreement counts as correct (59 of 60 sampled classify agreements were).
+- **Gate:** the reader-visible errors a step can cause (wrong excludes, wrong
+  merges) must not increase and its correct decisions must not decrease, on
+  the tuning nights and on the holdout separately. A wrongly excluded story
+  counts as worse than a wrongly kept one, since the reader never sees it, so
+  wrong excludes are gated on their own.
+- **No LLM judge:** a Sonnet judge agreed with the classify labels only 74.3%
+  (it reads "vague" narrowly), so the gates use labels directly.
+
+#### Classify bench
+
+Labelling rules: *exclude* when the story's subject (not the outlet's
+language) is Croatian domestic affairs, non-Russian sports, health or wellness
+advice to the reader (symptoms, diet, sleep, anxiety tips), horoscopes or the
+Epstein files; health research news and local notices caused by a sports event
+are kept. *Vague* when the headline withholds the fact it is about (an unnamed
+entity — "a famous singer", "this setting", "33 things"; a teaser question; a
+puzzle or show title); guide questions ("Is X worth buying?") and deal posts
+are ok. 348 labels.
+
+| exclude ≥ 0.75, vague ≥ 0.65 | wrong excludes (Jev / LLM) | missed excludes | correct exclude/keep | vague F1 |
+|---|---|---|---|---|
+| tuning, 3 nights, 1 459 headlines | 4 / 13 | 6 / 12 | 1 449 / 1 434 | 0.526 / 0.525 |
+| holdout, 277 headlines | 0 / 0 | 4 / 6 | 273 / 271 | 0.629 / 0.629 |
+
+- Exclude improves; vague only ties the LLM, and both are weak at it. Jev
+  calls more headlines vague (113 vs 98 on four nights), and Enrich rewrites
+  each (≈ 3.2k agy tokens): about 13k of the 127k classify saving on an
+  average night.
+- Exclude threshold on the tuning nights: 0.65 → 27 wrong / 2 missed,
+  0.70 → 7 / 5, 0.75 → 4 / 6, 0.80 → 3 / 10. Jev's wrong excludes are mostly
+  Croatian-language stories not about Croatia (44 of 50 at 0.60): it leans on
+  the outlet's language despite the instruction, and the higher threshold
+  removes most of them.
+- Asking about vague on the headline alone reaches F1 0.56 but doubles the
+  tokens; not adopted.
+
+#### Section routing bench (rejected)
+
+Placing articles into fixed sections on Jev before writing — one yes/no
+question per follow topic plus one choice over six general sections, with the
+URL in what Jev sees, since many Serbian outlets carry no text — would save
+51k more agy tokens a night than deduplicate on Jev, and it agrees with
+today's digests on follow topics (Serbia 365 of 366). It was rejected because
+it splits 20.7% of today's multi-article blocks across sections (21.9% on the
+holdout; the gate was ≤ 10%). Most splits separate stories the LLM bundled by
+theme, but 11 of 259 blocks put one news event in two sections: about three
+stories a night shown twice.
+
+- Grouping by embedding clusters before routing does not help: with the
+  pipeline's embedder, components at 0.65–0.80 swallow the whole night and at
+  0.90 they chain unrelated stories (split rate 22.5%).
+- One choice over all sections, follow topics included, is worse (30.8%): its
+  probabilities are exclusive and peaked, so a follow topic loses to a general
+  section that also fits.
+
+#### Deduplicate bench
+
+Under the one-story rule, inside today's candidate groups, Jev merging at
+≥ 0.60 (448 labelled pairs):
+
+| | wrong merges (Jev / LLM) | missed same-story pairs | correct pairs |
+|---|---|---|---|
+| tuning, 4 nights, 1 569 pairs | 14 / 8 | 53 / 108 | 1 502 / 1 453 |
+| holdout, 85 pairs | 0 / 0 | 0 / 7 | 85 / 78 |
+
+- No threshold beats the LLM on both wrong merges and correct pairs
+  (0.55 / 0.60 / 0.65: 17 / 14 / 12 wrong, 48 / 53 / 59 missed), so the pair
+  gate fails; the LLM in turn leaves twice as many pieces of one story apart.
+  7 of Jev's 14 wrong merges are Reuters roundup videos, which the LLM merges
+  too: neither sees more than the headline.
+- In articles, with the wider net: on the tuning nights Jev removes 204
+  duplicates and folds in 9 different stories, the LLM 147 and 2; on the
+  holdout 22 and 0, the LLM 9 and 0.
+- Wider net: 76 of its 79 merges on the tuning nights are one story, 8 of 9 on
+  the holdout. Under the stricter rule below, the 0.85–0.87 band took 74% of
+  the net's requests for 22 of its 47 correct merges, so the net starts at
+  0.87; and without the net Jev removed fewer true duplicates than the LLM
+  (123 vs 132).
+- The question: "the same specific news event" merged separate statements
+  about one story and split one incident reported at different moments. The
+  shipped question asks whether a digest should show the two as one item, with
+  yes/no criteria stating the rule. The headline alone beats headline, source
+  and lead.
+- A stricter rule, where a reaction is a separate story, was measured too:
+  with the matching question, Jev made fewer wrong merges than the LLM (13 vs
+  31; holdout 1 vs 2) but missed more duplicates (25 vs 8). The committed rows
+  keep both labels.
+- The numbers are in-sample: the question, the rule and both thresholds were
+  chosen on the tuning nights' labels, and the holdout is too small to
+  separate the two.
+- Live, on a copy of night 10-06 (real embedder and Jev, no agy, the 0.85 band
+  and the stricter question): 452 articles → 410 (the LLM removed 40 that
+  night), 3 576 pair requests, 1.72M tokens, \$0.072, 72 s. The bench builds
+  the wider net from the archived original titles, production from the
+  rewritten headlines, so the bench sees fewer wider pairs (2 688 vs 3 187 on
+  10-06); cost figures come from the live run.
+
+#### Merged headlines bench
+
+One agy launch per tuning night on the merge groups Jev made (0.85 band,
+stricter rule): 123 groups, every one headlined, all in the output language,
+median length 1.16 × the longest original. Of the 9 members that were a
+different story from their keeper, 8 are stated in the written headline
+("OpenAI expanded ChatGPT with apps, automation and an office suite"); one,
+an opinion piece on an AI Greta Garbo advert, is lost. The LLM path loses one
+story in its 16 wrongly merged groups (a "Spaniards welcome snap election"
+reaction). 25.8–33.0k tokens per launch, ≈ 20 s.
+
+Not measured: headlines for the larger groups the one-story rule makes, and
+the holdout night.
