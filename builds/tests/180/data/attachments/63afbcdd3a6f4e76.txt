@@ -1,0 +1,3 @@
+Judging 3 items in 2 calls (m), logs in /tmp/pytest-of-runner/pytest-0/test_judge_classify_caches_ans0/bench/judge/runs/classify-20261006T142639
+Judging 1 items in 1 calls (m), logs in /tmp/pytest-of-runner/pytest-0/test_judge_classify_caches_ans0/bench/judge/runs/classify-20261006T142639
+Judging 3 items in 2 calls (other), logs in /tmp/pytest-of-runner/pytest-0/test_judge_classify_caches_ans0/bench/judge/runs/classify-20261006T142639

@@ -1,0 +1,7 @@
+           INFO     dedup: Computing embeddings for 3 articles                  
+           INFO     dedup: 1 groups with 2 articles (threshold=0.90)            
+           INFO     dedup: 1 candidate group(s) + 0 wider pair(s) -> Jev        
+           WARNING  dedup: merged headlines failed (Step recap_dedup failed:    
+                    quota)                                                      
+           WARNING  dedup: 1 of 1 merge group(s) without a headline — left      
+                    unmerged                                                    

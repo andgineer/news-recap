@@ -1,0 +1,1 @@
+WARNING  news_recap.recap.tasks.load_resources:load_resources.py:115 load_resources: high failure rate 5/10 (50% > 30%) — failed articles keep their original headlines

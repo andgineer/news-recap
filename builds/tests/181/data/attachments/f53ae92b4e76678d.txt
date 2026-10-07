@@ -1,0 +1,4 @@
+           INFO     dedup: Computing embeddings for 4 articles                  
+           INFO     dedup: 1 groups with 2 articles (threshold=0.90)            
+           INFO     dedup: 1 candidate group(s) + 1 wider pair(s) -> Jev        
+           INFO     dedup: No duplicates found by Jev                           

@@ -1,0 +1,4 @@
+           INFO     dedup: Computing embeddings for 4 articles                  
+           INFO     dedup: 1 groups with 2 articles (threshold=0.90)            
+           WARNING  dedup: no TYPESAFE_API_KEY — deduplicating with the LLM     
+           INFO     dedup: No duplicates found by LLM                           

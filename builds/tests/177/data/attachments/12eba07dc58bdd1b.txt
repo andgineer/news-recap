@@ -1,0 +1,2 @@
+           WARNING  refine_layout: LLM omitted 1 block(s) [3] — appending to    
+                    last section                                                

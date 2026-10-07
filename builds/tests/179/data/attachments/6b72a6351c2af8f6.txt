@@ -1,0 +1,2 @@
+           INFO     classify: 1 articles -> 1 batch(es)                         
+           INFO     Classify: 1 kept (0 vague for enrichment), 0 excluded       
