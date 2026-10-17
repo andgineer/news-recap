@@ -181,6 +181,7 @@ def recap_flow(  # noqa: PLR0915
         transport=transport,
         cc=cc,
     )
+    digest.error = None
     ctx.save_checkpoint()
 
     try:
@@ -203,17 +204,20 @@ def recap_flow(  # noqa: PLR0915
 
     except RecapPipelineError as exc:
         digest.status = "failed"
+        digest.error = ctx.batch_errors.get(exc.step, str(exc))
         logger.error("[bold red]Pipeline failed:[/bold red] %s", exc)
 
     except KeyboardInterrupt:
         digest.status = "failed"
+        digest.error = "Interrupted (Ctrl+C)"
         ctx.save_checkpoint()
         finalize_digest_entry(pdir.parent, pdir, digest)
         logger.warning("Pipeline interrupted (Ctrl+C)")
         os._exit(130)  # force-exit: avoids blocking on in-flight HTTP thread joins
 
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         digest.status = "failed"
+        digest.error = f"Unexpected error: {type(exc).__name__}: {exc}"
         logger.exception("Pipeline unexpected error")
 
     finally:

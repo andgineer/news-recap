@@ -12,6 +12,7 @@ from pathlib import Path
 import rich_click as click
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
@@ -410,6 +411,7 @@ def info_cmd(digest_id: int | None) -> None:
 def list_cmd(show_all: bool) -> None:
     """Show completed digests and uncovered article periods.
 
+    An uncovered period that a run failed to cover shows that run's error.
     With --all, also show running and failed digests.
     """
     DIGEST_INFO_CONTROLLER.digest_info(no_color=NO_COLOR, show_all=show_all)
@@ -807,6 +809,8 @@ def _print_digest_detail(digest_id: int) -> None:
     if s.total_tokens:
         _row("Tokens", f"{s.total_tokens:,}")
     _row("Workdir", str(workdir))
+    if s.error:
+        _row("Error", escape(s.error))
 
     if workdir.is_dir():
         _print_stage_table(workdir)

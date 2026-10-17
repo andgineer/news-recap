@@ -115,6 +115,8 @@ class FlowContext:
     state: dict[str, Any] = field(default_factory=dict)
     transport: LLMTransport | None = None
     cc: ConcurrencyController | None = None
+    # First batch error per step: the step's own failure only says "see errors above".
+    batch_errors: dict[str, str] = field(default_factory=dict)
 
     def save_checkpoint(self) -> None:
         save_msgspec(self.pdir / _DIGEST_FILENAME, self.digest)

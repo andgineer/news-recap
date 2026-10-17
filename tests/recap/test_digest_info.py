@@ -11,6 +11,7 @@ import msgspec
 from news_recap.ingestion.repository import IngestionStore
 from news_recap.recap.digest_info import (
     DigestInfoController,
+    _failed_attempt,
     _find_uncovered_periods,
     _human_elapsed,
     _human_size,
@@ -962,3 +963,105 @@ def test_list_all_with_no_completed_digests(tmp_path: Path, capsys: object) -> N
         DigestInfoController().digest_info(show_all=True)
     out = capsys.readouterr().out  # type: ignore[union-attr]
     assert "running" in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# Failed attempt shown under an uncovered period
+# ---------------------------------------------------------------------------
+
+
+def _register_failed(
+    workdir: Path,
+    dir_name: str,
+    run_date: str,
+    *,
+    coverage_start: str,
+    coverage_end: str,
+    error: str | None,
+) -> None:
+    pdir = workdir / dir_name
+    _make_digest(pdir, run_date, status="failed", completed_phases=["classify"])
+    create_digest_entry(workdir, dir_name, run_date, 5, coverage_start=coverage_start)
+    digest = Digest(
+        digest_id="d-" + run_date,
+        run_date=run_date,
+        status="failed",
+        pipeline_dir=str(pdir),
+        articles=[],
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+        error=error,
+    )
+    finalize_digest_entry(workdir, pdir, digest)
+
+
+def test_failed_attempt_is_newest_overlapping_failure(tmp_path: Path) -> None:
+    _register_failed(
+        tmp_path,
+        "pipeline-2026-03-02-011200",
+        "2026-03-02",
+        coverage_start="2026-03-01T10:00:00+00:00",
+        coverage_end="2026-03-02T01:00:00+00:00",
+        error="older",
+    )
+    _register_failed(
+        tmp_path,
+        "pipeline-2026-03-04-011200",
+        "2026-03-04",
+        coverage_start="2026-03-02T00:00:00+00:00",
+        coverage_end="2026-03-04T01:00:00+00:00",
+        error="newer",
+    )
+    failed = _list_digests(tmp_path, completed_only=False)
+    gap_start = datetime(2026, 3, 1, 10, tzinfo=UTC)
+
+    attempt = _failed_attempt(failed, gap_start, datetime(2026, 3, 4, 3, tzinfo=UTC))
+    assert attempt is not None
+    assert attempt.error == "newer"
+    earlier = datetime(2026, 3, 1, 6, tzinfo=UTC)
+    assert _failed_attempt(failed, earlier, gap_start) is None
+    later = datetime(2026, 3, 5, tzinfo=UTC)
+    assert _failed_attempt(failed, later, later + timedelta(hours=1)) is None
+
+
+def test_list_shows_failure_reason_under_uncovered_period(tmp_path: Path, capsys: object) -> None:
+    workdir = tmp_path / "workdirs"
+    _make_and_register(
+        workdir,
+        "pipeline-2026-03-01-011200",
+        "2026-03-01",
+        articles=[_article("2026-03-01T10:00:00+00:00")],
+        coverage_start="2026-02-28T00:00:00+00:00",
+    )
+    _register_failed(
+        workdir,
+        "pipeline-2026-03-02-011200",
+        "2026-03-02",
+        coverage_start="2026-03-01T10:00:00+00:00",
+        coverage_end="2026-03-02T01:00:00+00:00",
+        error="Step recap_enrich failed: antigravity: Invalid model [gemini-3.7-flash]",
+    )
+
+    settings = MagicMock()
+    settings.orchestrator.workdir_root = workdir
+    settings.data_dir = tmp_path
+    store = MagicMock()
+    store.list_retrieval_articles.return_value = [_article("2026-03-01T20:00:00+00:00")]
+    with (
+        patch("news_recap.recap.digest_info.Settings.load", return_value=settings),
+        patch("news_recap.recap.digest_info.IngestionStore", return_value=store),
+        patch(
+            "news_recap.recap.digest_info._last_successful_ingestion",
+            return_value=datetime(2026, 3, 2, 1, 12, tzinfo=UTC),
+        ),
+    ):
+        DigestInfoController().digest_info(no_color=True)
+    out = capsys.readouterr().out  # type: ignore[union-attr]
+
+    assert "Uncovered periods:" in out
+    assert "(1 articles)" in out
+    assert (
+        "last attempt #2 (2026-03-02) failed: Step recap_enrich failed: "
+        "antigravity: Invalid model [gemini-3.7-flash]"
+    ) in " ".join(out.split())
+    assert "Status" not in out

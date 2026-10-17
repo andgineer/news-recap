@@ -120,6 +120,7 @@ def submit_and_collect(  # noqa: PLR0913, PLR0915, C901
                     task_id = prepare_fn(item, batch_num)
                 except RecapPipelineError as exc:
                     logger.error("%s %d: preparation failed: %s", step_label, batch_num, exc)
+                    ctx.batch_errors.setdefault(step_name, str(exc))
                     n_failed += 1
                     break
                 except Exception as exc:
@@ -143,6 +144,7 @@ def submit_and_collect(  # noqa: PLR0913, PLR0915, C901
                     results.append(result)
                 except RecapPipelineError as exc:
                     logger.error("%s %d failed: %s", step_label, bnum, exc)
+                    ctx.batch_errors.setdefault(step_name, str(exc))
                     n_failed += 1
                 completed_task_ids.append(resolved_tid)
 

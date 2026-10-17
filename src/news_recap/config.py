@@ -116,7 +116,7 @@ _CODEX_TERRA_FLAGS = "--model gpt-5.6-terra -c model_reasoning_effort=low"
 _CODEX_SOL_FLAGS = "--model gpt-5.6-sol -c model_reasoning_effort=low"
 _CLAUDE_HAIKU_FLAGS = "--model haiku"
 _CLAUDE_SONNET_FLAGS = "--model claude-sonnet-5 --effort low"
-_ANTIGRAVITY_FLASH_LOW_FLAGS = "--model gemini-3.7-flash --effort low"
+_ANTIGRAVITY_FLASH_LOW_FLAGS = "--model gemini-3.8-flash-low"
 
 
 def _default_task_model_map() -> dict[str, dict[str, Any]]:

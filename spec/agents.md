@@ -4,18 +4,20 @@ Reference for all external CLI agent backends — available models, the manifest
 
 ## Available Models
 
-Verified from current provider documentation and local CLI model discovery on 2026-08-30.
+Verified from current provider documentation and local CLI model discovery on 2026-08-30;
+the Antigravity list (`agy models`) on 2026-10-17.
 
 ### Gemini
 
 | Model | Type | Notes |
 |-------|------|-------|
-| `gemini-3.7-flash` | current Flash | Default CLI quality profile; GA |
+| `gemini-3.8-flash-low` / `-medium` / `-high` | current Flash in Antigravity | Effort is part of the name; agy rejects `--effort` for it |
+| `gemini-3.7-flash` | previous Flash | No longer listed by Antigravity |
 | `gemini-3.5-flash-lite` | current Flash-Lite | Cheapest current API/Gemini CLI profile |
 | `gemini-3.1-pro-preview` | current Pro | Experimental quality comparison only |
 
-Antigravity CLI exposes Gemini 3.7 Flash but not Flash-Lite. Production pipeline routing uses
-Gemini 3.7 Flash with low effort for every task to preserve the constrained free-tier quota.
+Antigravity CLI exposes Gemini Flash but not Flash-Lite. Production pipeline routing uses
+`gemini-3.8-flash-low` for every task to preserve the constrained free-tier quota.
 Higher effort levels belong in explicit experiments, not in the default pipeline.
 
 ### Codex
@@ -116,7 +118,16 @@ agy {model} --dangerously-skip-permissions --output-format json -p "Read your ta
 - agy's internal log is redirected to the task's stderr log, so quota and auth errors land where error detection looks.
 - `--output-format json` wraps the answer in an envelope with `response`, `error` and `usage`. The pipeline unwraps it: `response` becomes the captured stdout the parsers read, and `error` is appended to the stderr log.
 
-Token usage: the envelope's input, output, thinking, cache-read and total tokens are saved per task. Measured 2026-10-05 with `gemini-3.7-flash --effort low`: a "Reply OK" launch used 12,921 input tokens, which is the per-launch agent overhead, and a 20-headline classify launch used 25,117 input and 2,245 output tokens.
+Token usage: the envelope's input, output, thinking, cache-read and total tokens are saved per task. Measured 2026-10-05 with `gemini-3.7-flash --effort low`: a "Reply OK" launch used 12,921 input tokens, which is the per-launch agent overhead, and a 20-headline classify launch used 25,117 input and 2,245 output tokens. On 2026-10-16 the same "Reply OK" launch on `gemini-3.8-flash-low` used 11,887 input tokens.
+
+Model switch: Antigravity renames its models without notice and updates itself, so a configured
+model can stop being accepted overnight (from 2026-10-13 agy rejected `gemini-3.7-flash --effort low`,
+and five nights produced no digest). When agy rejects the configured model, the pipeline reads agy's
+current model list, takes the lowest-effort Flash model (newest version first, plain Flash before
+Lite), retries that launch on it, and uses it for the rest of the run. The switch is logged as a
+warning. Each run starts from the configured model again, so a fixed configuration takes over
+without anyone undoing the switch. If agy lists no other Flash model, the launch fails with the
+rejection as before.
 
 ## Configuration
 

@@ -6,6 +6,7 @@ import shutil
 from datetime import datetime
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from news_recap.config import Settings
@@ -159,6 +160,25 @@ def _find_uncovered_periods(
     return gaps
 
 
+def _failed_attempt(
+    failed_newest_first: list[DigestSummary],
+    start: datetime,
+    end: datetime,
+) -> DigestSummary | None:
+    """Return the newest failed digest whose coverage overlaps the gap ``start .. end``."""
+    for s in failed_newest_first:
+        if s.coverage_start is None or s.coverage_start >= end:
+            continue
+        if s.coverage_end is None or s.coverage_end > start:
+            return s
+    return None
+
+
+def _failure_line(attempt: DigestSummary) -> str:
+    reason = escape(attempt.error or "reason not recorded")
+    return f"    last attempt #{attempt.digest_id} ({attempt.run_date}) failed: {reason}"
+
+
 class DigestInfoController:
     """Show/delete completed and unfinished digests."""
 
@@ -166,7 +186,10 @@ class DigestInfoController:
         settings = Settings.load()
         workdir_root = settings.orchestrator.workdir_root.resolve()
 
-        summaries = _list_digests(workdir_root, completed_only=not show_all)
+        all_summaries = _list_digests(workdir_root, completed_only=False)
+        summaries = (
+            all_summaries if show_all else [s for s in all_summaries if s.status == "completed"]
+        )
 
         show_status = show_all and any(s.status != "completed" for s in summaries)
 
@@ -186,12 +209,16 @@ class DigestInfoController:
         ingestion_store = IngestionStore(settings.data_dir)
         latest_ingested = _last_successful_ingestion(ingestion_store)
         gaps = _find_uncovered_periods(completed, latest_ingested=latest_ingested)
+        failed = [s for s in all_summaries if s.status == "failed"]
         gap_lines: list[str] = []
         for start, end in gaps:
             articles = ingestion_store.list_retrieval_articles(since=start)
             n = sum(1 for a in articles if datetime.fromisoformat(a.published_at) <= end)
             if n > 0:
                 gap_lines.append(f"  {_fmt_dt(start)} .. {_fmt_dt(end)}  ({n} articles)")
+                attempt = _failed_attempt(failed, start, end)
+                if attempt is not None:
+                    gap_lines.append(_failure_line(attempt))
         if gap_lines:
             console.print()
             console.print(

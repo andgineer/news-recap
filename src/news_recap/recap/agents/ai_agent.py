@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import shlex
+import subprocess
 import tempfile
 import threading
 import time
@@ -73,13 +74,15 @@ def run_ai_agent(  # noqa: PLR0913
         model_override=None,
     )
     timeout = inp.routing_defaults.task_type_timeout_map.get(step_name, _DEFAULT_TIMEOUT)
+    is_agy = routing.agent == "antigravity"
+    model = _agy_model_switches.get(routing.model, routing.model) if is_agy else routing.model
 
     logger.info(
         "[dim][cyan]%s:[/cyan] backend=%s agent=%s model=%s timeout=%ds[/dim]",
         step_name,
         routing.execution_backend,
         routing.agent,
-        routing.model,
+        model,
         timeout,
     )
 
@@ -103,20 +106,25 @@ def run_ai_agent(  # noqa: PLR0913
             stop_event=stop_event,
         )
 
+    def launch(model: str):
+        return _run_agent_cli(
+            manifest=manifest,
+            timeout_seconds=timeout,
+            command_template=routing.command_template,
+            model=model,
+            extra_env=routing.extra_env,
+            api_key_vars=inp.routing_defaults.agent_api_key_vars.get(routing.agent, []),
+            use_api_key=inp.use_api_key,
+            log_label=step_name,
+            stop_event=stop_event,
+        )
+
     step_start = time.monotonic()
-    result = _run_agent_cli(
-        manifest=manifest,
-        timeout_seconds=timeout,
-        command_template=routing.command_template,
-        model=routing.model,
-        extra_env=routing.extra_env,
-        api_key_vars=inp.routing_defaults.agent_api_key_vars.get(routing.agent, []),
-        use_api_key=inp.use_api_key,
-        log_label=step_name,
-        stop_event=stop_event,
-    )
+    if is_agy:
+        result, envelope_usage = _launch_agy(launch, model, routing.command_template, step_name)
+    else:
+        result, envelope_usage = launch(model), None
     elapsed = time.monotonic() - step_start
-    envelope_usage = _unwrap_agy_envelope(result) if routing.agent == "antigravity" else None
     tokens = (
         envelope_usage.get("total_tokens")
         if envelope_usage
@@ -188,6 +196,8 @@ _RESET_IN_RE = re.compile(
 )
 _DAILY_WINDOW = timedelta(hours=24)
 
+_AGY_MODEL_REJECTED = re.compile(r"invalid model selection|requires --effort", re.IGNORECASE)
+
 
 def _parse_reset_in(text: str) -> timedelta | None:
     match = _RESET_IN_RE.search(text)
@@ -239,7 +249,7 @@ _KNOWN_ERRORS: list[tuple[re.Pattern[str], str | Callable[[str], str], re.Patter
         _AUTH_SUCCEEDED,
     ),
     (
-        re.compile(r"invalid model selection|requires --effort", re.IGNORECASE),
+        _AGY_MODEL_REJECTED,
         "Invalid model/effort selection — check the agent's --model flags",
         None,
     ),
@@ -368,6 +378,85 @@ def _unwrap_agy_envelope(result) -> dict[str, int] | None:
     if not isinstance(usage, dict):
         return None
     return {k: v for k, v in usage.items() if k in _USAGE_BREAKDOWN_KEYS and isinstance(v, int)}
+
+
+_EFFORT_LEVELS = ("minimal", "low", "medium", "high", "xhigh", "max")
+_MODELS_LIST_TIMEOUT = 60
+
+# Rejected model flags → replacement, kept for the rest of the process so later
+# launches skip the failing attempt.
+_agy_model_switches: dict[str, str] = {}
+_agy_switch_lock = threading.Lock()
+
+
+def _launch_agy(launch, model: str, command_template: str, step_name: str):
+    """Run agy once, and once more on a listed Flash model if it rejects *model*."""
+    result = launch(model)
+    usage = _unwrap_agy_envelope(result)
+    if _agy_rejected_model(result):
+        replacement = _switch_agy_model(model, command_template, step_name)
+        if replacement:
+            result = launch(replacement)
+            usage = _unwrap_agy_envelope(result)
+    return result, usage
+
+
+def _agy_rejected_model(result) -> bool:
+    return result.exit_code != 0 and bool(
+        _AGY_MODEL_REJECTED.search(_read_stderr_safe(result.stderr_path)),
+    )
+
+
+def _switch_agy_model(rejected: str, command_template: str, step_name: str) -> str | None:
+    """Return model flags to retry with after agy rejected *rejected*, or ``None``."""
+    with _agy_switch_lock:
+        if rejected in _agy_model_switches:
+            return _agy_model_switches[rejected]
+        model_id = _cheapest_flash_model(command_template.split(maxsplit=1)[0])
+        replacement = f"--model {model_id}" if model_id else None
+        if replacement is None or replacement == rejected:
+            logger.error(
+                "[cyan]%s:[/cyan] antigravity rejected %r and lists no other Flash model",
+                step_name,
+                rejected,
+            )
+            return None
+        _agy_model_switches[rejected] = replacement
+        logger.warning(
+            "[cyan]%s:[/cyan] antigravity rejected %r — switching to %r for the rest of this run",
+            step_name,
+            rejected,
+            replacement,
+        )
+        return replacement
+
+
+def _cheapest_flash_model(agy: str) -> str | None:
+    """Pick from ``agy models`` the lowest-effort Flash model, newest first, Lite last."""
+    try:
+        listing = subprocess.run(  # noqa: S603
+            [agy, "models"],
+            capture_output=True,
+            text=True,
+            timeout=_MODELS_LIST_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    model_ids = [
+        line.split("\t", 1)[0].strip() for line in listing.stdout.splitlines() if "\t" in line
+    ]
+    flash = [m for m in model_ids if "flash" in m]
+    return min(flash, key=_flash_cost_rank) if flash else None
+
+
+def _flash_cost_rank(model_id: str) -> tuple[int, bool, tuple[int, ...], str]:
+    suffix = model_id.rsplit("-", 1)[-1]
+    # A name without an effort suffix runs at agy's default thinking level.
+    effort = _EFFORT_LEVELS.index(suffix if suffix in _EFFORT_LEVELS else "medium")
+    version = re.search(r"\d+(?:\.\d+)*", model_id)
+    newest_first = tuple(-int(n) for n in version.group().split(".")) if version else ()
+    return effort, "lite" in model_id, newest_first, model_id
 
 
 _USAGE_FILENAME = "meta/usage.json"

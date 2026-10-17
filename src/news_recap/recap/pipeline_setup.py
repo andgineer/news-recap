@@ -46,6 +46,7 @@ class DigestIndexEntry(msgspec.Struct):
     input_article_count: int = 0
     jev_tokens: int = 0
     jev_cost_usd: float = 0.0
+    error: str | None = None
 
 
 def _load_digest_index(workdir_root: Path) -> list[DigestIndexEntry]:
@@ -115,6 +116,7 @@ class DigestSummary:
     prompt_bytes: int = 0
     output_bytes: int = 0
     input_article_count: int = 0
+    error: str | None = None
 
 
 def load_pipeline_digest(pipeline_dir: Path) -> Digest | None:
@@ -281,6 +283,7 @@ def finalize_digest_entry(workdir_root: Path, pdir: Path, digest: Digest) -> Non
     for e in entries:
         if e.pipeline_dir_name == dir_name:
             e.status = digest.status
+            e.error = digest.error
             e.coverage_end = None if stopped_early else digest.coverage_end
             e.article_count = len(digest.articles)
             usage = _aggregate_usage(pdir)
@@ -321,6 +324,7 @@ def _entry_to_summary(e: DigestIndexEntry) -> DigestSummary:
         prompt_bytes=e.prompt_bytes,
         output_bytes=e.output_bytes,
         input_article_count=e.input_article_count,
+        error=e.error,
     )
 
 

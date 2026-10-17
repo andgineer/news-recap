@@ -125,3 +125,4 @@ class Digest(msgspec.Struct):
     day_summary: str = ""
     coverage_start: str | None = None
     coverage_end: str | None = None
+    error: str | None = None

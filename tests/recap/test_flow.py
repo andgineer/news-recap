@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from news_recap.recap.flow import _log_pipeline_token_summary
+from news_recap.recap.exceptions import RecapPipelineError
+from news_recap.recap.flow import _log_pipeline_token_summary, recap_flow
+from news_recap.recap.models import Digest
+from news_recap.recap.tasks.classify import Classify
 
 
 def _write_usage(task_dir: Path, *, tokens: int) -> None:
@@ -52,3 +55,41 @@ def test_log_token_summary_empty_dir(tmp_path: Path) -> None:
     mock_logger = MagicMock()
     _log_pipeline_token_summary(mock_logger, tmp_path)
     mock_logger.info.assert_not_called()
+
+
+def _fail_run(tmp_path: Path, first_step) -> Digest:
+    inp = MagicMock(articles=[], coverage_start=None, coverage_end=None, selection_params=None)
+    inp.routing_defaults.execution_backend = "cli"
+    with (
+        patch("news_recap.recap.flow.read_pipeline_input", return_value=inp),
+        patch.object(Classify, "run", side_effect=first_step),
+        patch("news_recap.recap.flow.finalize_digest_entry") as finalize,
+    ):
+        recap_flow(str(tmp_path), "2026-10-17")
+    return finalize.call_args.args[2]
+
+
+def test_failed_run_records_the_failing_steps_batch_error(tmp_path: Path) -> None:
+    def fail(ctx) -> None:
+        ctx.batch_errors["recap_dedup"] = "Step recap_dedup failed: tolerated earlier"
+        ctx.batch_errors["recap_enrich"] = "Step recap_enrich failed: antigravity: Invalid model"
+        raise RecapPipelineError("recap_enrich", "batch failed (0/3 enriched) — see errors above")
+
+    digest = _fail_run(tmp_path, fail)
+    assert digest.status == "failed"
+    assert digest.error == "Step recap_enrich failed: antigravity: Invalid model"
+
+
+def test_failed_run_without_batch_error_records_the_step_error(tmp_path: Path) -> None:
+    def fail(_ctx) -> None:
+        raise RecapPipelineError("recap_oneshot_digest", "coverage too low")
+
+    digest = _fail_run(tmp_path, fail)
+    assert digest.error == "Step recap_oneshot_digest failed: coverage too low"
+
+
+def test_unexpected_error_is_recorded(tmp_path: Path) -> None:
+    def fail(_ctx) -> None:
+        raise ValueError("bad json")
+
+    assert _fail_run(tmp_path, fail).error == "Unexpected error: ValueError: bad json"

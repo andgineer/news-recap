@@ -101,9 +101,7 @@ def test_default_model_maps_and_command_templates() -> None:
     assert task_map["recap_merge_sections"]["claude"]["model"] == (
         "--model claude-sonnet-5 --effort low"
     )
-    assert task_map["recap_classify"]["antigravity"]["model"] == (
-        "--model gemini-3.7-flash --effort low"
-    )
+    assert task_map["recap_classify"]["antigravity"]["model"] == ("--model gemini-3.8-flash-low")
     assert orch.api_model_map["recap_merge_sections"] == "claude-sonnet-5"
     assert orch.antigravity_command_template == (
         "agy {model} --dangerously-skip-permissions --output-format json "

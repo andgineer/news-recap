@@ -416,6 +416,15 @@ Valid `stop_after` values: `classify`, `load_resources`, `enrich`,
 A failed pipeline makes `create` print "Pipeline failed" and exit with code 1,
 so the scheduled job's log ends with `RESULT: FAILED`.
 
+A failed run records why it failed. When a step fails because one of its agent
+batches failed, the reason is that batch's error (for example "antigravity:
+Invalid model/effort selection"), not the step's "see errors above" summary.
+An error from a batch of another step that the run tolerated is never reported
+as the reason. `news-recap list` shows the reason under the uncovered period
+the run was trying to cover, with the digest's number and date, so a scheduled
+run that keeps failing is visible without reading the logs. A rerun that
+succeeds clears it.
+
 ## Output shape
 
 The final digest contains:

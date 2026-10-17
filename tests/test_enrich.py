@@ -326,6 +326,33 @@ class TestRunEnrichParallel:
         assert had_crash is False
         assert call_count == 2
 
+    def test_failed_batch_error_is_kept_for_the_step(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from news_recap.recap.exceptions import RecapPipelineError
+        from news_recap.recap.tasks import enrich as enrich_mod
+        from news_recap.recap.tasks import parallel as parallel_mod
+
+        ctx = _make_fake_ctx(tmp_path)
+        error = RecapPipelineError("recap_enrich", "antigravity: Invalid model/effort selection")
+        mock_agent = MagicMock(side_effect=error)
+
+        with (
+            patch.object(enrich_mod, "materialize_step", return_value="enrich-1"),
+            patch.object(parallel_mod, "run_ai_agent", mock_agent),
+        ):
+            enriched, had_crash = enrich_mod._run_enrich(
+                ctx,
+                step_name="recap_enrich",
+                entries=self._make_enrich_entries(["a1", "a2"]),
+            )
+
+        assert had_crash is True
+        assert enriched == {}
+        assert ctx.batch_errors == {
+            "recap_enrich": "Step recap_enrich failed: antigravity: Invalid model/effort selection"
+        }
+
     def test_empty_stdout_is_worker_crash(self, tmp_path, monkeypatch):
         """Agent produces empty stdout — recognition error triggers crash_detail."""
         from unittest.mock import MagicMock, patch
