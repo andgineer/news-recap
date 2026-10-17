@@ -1,0 +1,3 @@
+           INFO     classify: 1 already classified, 2 remaining                 
+           INFO     classify: 2 articles -> Jev                                 
+           INFO     Classify: 3 kept (1 vague for enrichment), 0 excluded       

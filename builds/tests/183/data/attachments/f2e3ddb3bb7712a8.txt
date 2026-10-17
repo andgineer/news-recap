@@ -1,0 +1,5 @@
+INFO     news_recap.recap.agents.ai_agent:ai_agent.py:80 [dim][cyan]recap_enrich:[/cyan] backend=cli agent=antigravity model=--model gemini-3.7-flash --effort low timeout=600s[/dim]
+WARNING  news_recap.recap.agents.ai_agent:ai_agent.py:425 [cyan]recap_enrich:[/cyan] antigravity rejected '--model gemini-3.7-flash --effort low' — switching to '--model gemini-3.8-flash-low' for the rest of this run
+INFO     news_recap.recap.agents.ai_agent:ai_agent.py:137 [green]✓[/green] [cyan]recap_enrich:[/cyan] Finished in 0.0s
+ERROR    news_recap.recap.agents.ai_agent:ai_agent.py:317 [cyan]recap_enrich:[/cyan] agent stderr: Invalid model/effort selection — check the agent's --model flags
+Full agent log: /tmp/pytest-of-runner/pytest-0/test_rejected_replacement_is_n0/out/agent_stderr.log

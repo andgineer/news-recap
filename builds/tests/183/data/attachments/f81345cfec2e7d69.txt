@@ -1,0 +1,2 @@
+WARNING  news_recap.config:config.py:386 classify_backend = "jev" in config.toml but TYPESAFE_API_KEY is not set (env, ./.env, /tmp/pytest-of-runner/pytest-0/test_jev_without_a_key_falls_b0/data/.env); classify uses the LLM.
+WARNING  news_recap.config:config.py:386 dedup_backend = "jev" in config.toml but TYPESAFE_API_KEY is not set (env, ./.env, /tmp/pytest-of-runner/pytest-0/test_jev_without_a_key_falls_b0/data/.env); dedup uses the LLM.

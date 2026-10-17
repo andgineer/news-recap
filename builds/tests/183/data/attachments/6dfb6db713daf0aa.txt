@@ -1,0 +1,17 @@
+INFO     news_recap.recap.flow:flow.py:150 [bold]Pipeline starting:[/bold] 0 articles, date=2026-10-17
+ERROR    news_recap.recap.flow:flow.py:221 Pipeline unexpected error
+Traceback (most recent call last):
+  File "/home/runner/work/news-recap/news-recap/src/news_recap/recap/flow.py", line 188, in recap_flow
+    Classify.run(ctx)
+    ~~~~~~~~~~~~^^^^^
+  File "/opt/hostedtoolcache/Python/3.13.16/x64/lib/python3.13/unittest/mock.py", line 1169, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.13.16/x64/lib/python3.13/unittest/mock.py", line 1173, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.13.16/x64/lib/python3.13/unittest/mock.py", line 1240, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/home/runner/work/news-recap/news-recap/tests/recap/test_flow.py", line 93, in fail
+    raise ValueError("bad json")
+ValueError: bad json

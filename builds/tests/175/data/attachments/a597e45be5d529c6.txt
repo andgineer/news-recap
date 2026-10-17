@@ -1,0 +1,1 @@
+WARNING  news_recap.http.fetcher:fetcher.py:81 HTTP error fetching https://example.com/broken: connection reset

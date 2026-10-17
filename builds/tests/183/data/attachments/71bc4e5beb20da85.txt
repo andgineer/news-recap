@@ -1,0 +1,9 @@
+[11:33:29] INFO     recap_enrich: backend=cli agent=antigravity model=--model   
+                    gemini-3.7-flash --effort low timeout=600s                  
+           WARNING  recap_enrich: antigravity rejected '--model gemini-3.7-flash
+                    --effort low' — switching to '--model gemini-3.8-flash-low' 
+                    for the rest of this run                                    
+           INFO     ✓ recap_enrich: Finished in 0.0s tokens=11,888              
+           INFO     recap_enrich: backend=cli agent=antigravity model=--model   
+                    gemini-3.8-flash-low timeout=600s                           
+           INFO     ✓ recap_enrich: Finished in 0.0s tokens=11,888              

@@ -1,0 +1,5 @@
+INFO     news_recap.recap.tasks.enrich:enrich.py:244 recap_enrich: 2 articles to enrich
+INFO     news_recap.recap.tasks.enrich:enrich.py:273 recap_enrich: Round 1: 2 articles -> 1 batch(es)
+INFO     news_recap.recap.tasks.enrich:enrich.py:259 recap_enrich: Batch 1 — 2 articles
+ERROR    news_recap.recap.tasks.enrich:parallel.py:146 recap_enrich batch 1 failed: Step recap_enrich failed: antigravity: Invalid model/effort selection
+INFO     news_recap.recap.tasks.enrich:enrich.py:313 recap_enrich: 0/2 articles enriched

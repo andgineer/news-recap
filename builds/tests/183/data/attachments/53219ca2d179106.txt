@@ -1,0 +1,4 @@
+INFO     news_recap.recap.tasks.classify:classify.py:315 [cyan]classify:[/cyan] 2 articles -> Jev
+WARNING  news_recap.recap.tasks.classify:classify.py:321 classify: Jev unavailable (Step jev failed: TypeSafeRateLimitError: 429) — classifying with the LLM
+INFO     news_recap.recap.tasks.classify:classify.py:261 [cyan]classify:[/cyan] 2 articles -> 1 batch(es)
+INFO     news_recap.recap.tasks.classify:classify.py:360 Classify: 2 kept (0 vague for enrichment), 0 excluded

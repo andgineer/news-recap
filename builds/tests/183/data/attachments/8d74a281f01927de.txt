@@ -1,0 +1,3 @@
+           INFO     Pipeline starting: 0 articles, date=2026-10-17              
+           ERROR    Pipeline failed: Step recap_enrich failed: batch failed (0/3
+                    enriched) — see errors above                                

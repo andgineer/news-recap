@@ -1,0 +1,5 @@
+INFO     news_recap.recap.tasks.deduplicate:deduplicate.py:422 [cyan]dedup:[/cyan] Computing embeddings for 4 articles
+INFO     news_recap.recap.tasks.deduplicate:deduplicate.py:432 [cyan]dedup:[/cyan] 1 groups with 2 articles (threshold=0.90)
+INFO     news_recap.recap.tasks.deduplicate:deduplicate.py:320 [cyan]dedup:[/cyan] 1 candidate group(s) + 1 wider pair(s) -> Jev
+WARNING  news_recap.recap.tasks.deduplicate:deduplicate.py:330 dedup: Jev unavailable (Step jev failed: TypeSafeRateLimitError: 429) — deduplicating with the LLM
+INFO     news_recap.recap.tasks.deduplicate:deduplicate.py:299 [cyan]dedup:[/cyan] No duplicates found by LLM

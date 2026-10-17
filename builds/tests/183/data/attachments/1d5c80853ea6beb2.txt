@@ -1,0 +1,2 @@
+INFO     news_recap.recap.flow:flow.py:150 [bold]Pipeline starting:[/bold] 0 articles, date=2026-10-17
+ERROR    news_recap.recap.flow:flow.py:208 [bold red]Pipeline failed:[/bold red] Step recap_oneshot_digest failed: coverage too low

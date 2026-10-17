@@ -1,0 +1,4 @@
+           WARNING  recap_classify: rate limit / overload (attempt 0): rate     
+                    limited                                                     
+           INFO     recap_classify: retrying in 1.0s                            
+           INFO     ✓ recap_classify: Finished in 0.0s tokens=15                

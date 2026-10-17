@@ -1,0 +1,2 @@
+INFO     news_recap.recap.pipeline_setup:pipeline_setup.py:237 Created digest #1 (pipeline-2026-10-05-080000)
+INFO     news_recap.recap.pipeline_setup:pipeline_setup.py:281 Finalized digest (pipeline-2026-10-05-080000) → completed

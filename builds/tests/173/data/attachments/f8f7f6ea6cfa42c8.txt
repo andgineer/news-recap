@@ -1,0 +1,10 @@
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:205 Loading resource texts for 1 articles…
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:184 Resource loading summary:
+  HTML domains (top 1):
+    example.com: 1/1 loaded (1 KB)
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:234 Resource texts: 1 loaded (0 cached), 0 failed, 0 filtered
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:205 Loading resource texts for 1 articles…
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:184 Resource loading summary: (1/1 from cache)
+  HTML domains (top 1):
+    example.com: 1/1 loaded (1 KB)
+INFO     news_recap.recap.storage.pipeline_io:pipeline_io.py:234 Resource texts: 1 loaded (1 cached), 0 failed, 0 filtered

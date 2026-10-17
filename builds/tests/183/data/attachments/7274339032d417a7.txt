@@ -1,0 +1,3 @@
+           INFO     Pipeline starting: 0 articles, date=2026-10-17              
+           ERROR    Pipeline failed: Step recap_oneshot_digest failed: coverage 
+                    too low                                                     
