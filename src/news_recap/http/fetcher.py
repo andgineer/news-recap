@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from http import HTTPStatus
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -30,6 +32,33 @@ class FetchResult:
     content_type: str
     is_success: bool
     error: str | None = None
+
+
+def resolve_istories_url(url: str) -> str:
+    """Use the mirror's index page only after confirming that the feed URL is missing."""
+    if not url.startswith(
+        (
+            "https://storage.googleapis.com/istories/news/",
+            "http://storage.googleapis.com/istories/news/",
+        ),
+    ):
+        return url
+    parsed = urlsplit(url)
+    if not parsed.path.endswith("/"):
+        return url
+    index_url = parsed._replace(path=parsed.path + "index.html").geturl()
+    try:
+        with httpx.Client(timeout=3.0, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
+            with client.stream("GET", url) as response:
+                if response.status_code != HTTPStatus.NOT_FOUND:
+                    return url
+            with client.stream("GET", index_url) as response:
+                media_type = response.headers.get("content-type", "").partition(";")[0]
+                if response.status_code == HTTPStatus.OK and media_type.lower() == "text/html":
+                    return index_url
+    except httpx.RequestError as exc:
+        logger.debug("Could not verify iStories link %s: %s", url, exc)
+    return url
 
 
 class HttpFetcher:

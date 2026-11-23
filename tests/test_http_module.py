@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from news_recap.http.fetcher import HttpFetcher
+from news_recap.http.fetcher import HttpFetcher, resolve_istories_url
 from news_recap.http.html_extractor import ExtractionResult, extract_text
 from news_recap.http.youtube_extractor import (
     AGE_RESTRICTED_ERROR,
@@ -19,6 +19,53 @@ from news_recap.http.youtube_extractor import (
     fetch_transcript,
     is_youtube_url,
 )
+
+
+@pytest.mark.parametrize(
+    ("responses", "use_index"),
+    [
+        ([200], False),
+        ([301], False),
+        ([503], False),
+        ([404, 200], True),
+        ([404, 404], False),
+        ([404, None], False),
+    ],
+)
+def test_istories_index_fallback(responses, use_index):
+    base = "https://storage.googleapis.com/istories/news/article/"
+    query = "?lang=ru#story"
+    requested = []
+
+    def handle(request):
+        requested.append(request.url.path)
+        status = responses[len(requested) - 1]
+        if status is None:
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(status, headers={"content-type": "text/html; charset=utf-8"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handle))
+    with patch("news_recap.http.fetcher.httpx.Client", return_value=client):
+        expected = base + ("index.html" if use_index else "") + query
+        assert resolve_istories_url(base + query) == expected
+    assert (
+        requested
+        == ["/istories/news/article/", "/istories/news/article/index.html"][: len(responses)]
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/news/article/",
+        "https://storage.googleapis.com/another-bucket/news/article/",
+        "https://storage.googleapis.com/istories/news/article/index.html",
+    ],
+)
+def test_other_links_skip_istories_check(url):
+    with patch("news_recap.http.fetcher.httpx.Client") as client:
+        assert resolve_istories_url(url) == url
+        client.assert_not_called()
 
 
 class TestHtmlExtractor:

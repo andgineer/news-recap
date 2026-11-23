@@ -16,6 +16,7 @@ from pathlib import Path
 import msgspec
 
 from news_recap.config import DEFAULT_JEV_MODEL, Settings
+from news_recap.http.fetcher import resolve_istories_url
 from news_recap.recap.agents.routing import RoutingDefaults
 from news_recap.recap.jev.usage import is_jev_task_dir
 from news_recap.recap.models import Digest, DigestArticle, UserPreferences
@@ -513,7 +514,9 @@ def _write_pipeline_input(  # noqa: PLR0913
     pipeline_dir.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {
         "run_date": run_date.isoformat(),
-        "articles": [msgspec.structs.asdict(a) for a in articles],
+        "articles": [
+            msgspec.structs.asdict(a) | {"url": resolve_istories_url(a.url)} for a in articles
+        ],
         "preferences": msgspec.structs.asdict(preferences),
         "routing_defaults": msgspec.structs.asdict(routing_defaults),
         "agent_override": agent_override,

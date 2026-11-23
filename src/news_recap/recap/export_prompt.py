@@ -15,6 +15,7 @@ import click
 import msgspec
 
 from news_recap.config import Settings
+from news_recap.http.fetcher import resolve_istories_url
 from news_recap.ingestion.repository import IngestionStore
 from news_recap.recap.article_ordering import (  # noqa: F401 — re-exported
     build_article_lines,
@@ -257,6 +258,8 @@ class PromptCliController:
                 upper = _effective_to(command.date_from, command.date_to)
                 if upper is not None:
                     kept_articles = _filter_articles_before(kept_articles, upper)
+                for article in kept_articles:
+                    article.url = resolve_istories_url(article.url)
 
         if not kept_articles:
             yield ("warn", "No articles found.")
