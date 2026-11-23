@@ -1,0 +1,2 @@
+INFO     news_recap.recap.tasks.classify:classify.py:261 [cyan]classify:[/cyan] 1 articles -> 1 batch(es)
+INFO     news_recap.recap.tasks.classify:classify.py:360 Classify: 1 kept (0 vague for enrichment), 0 excluded

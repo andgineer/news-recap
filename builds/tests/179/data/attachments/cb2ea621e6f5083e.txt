@@ -1,0 +1,3 @@
+INFO     news_recap.recap.tasks.classify:classify.py:244 [cyan]classify:[/cyan] 1 already classified, 2 remaining
+INFO     news_recap.recap.tasks.classify:classify.py:315 [cyan]classify:[/cyan] 2 articles -> Jev
+INFO     news_recap.recap.tasks.classify:classify.py:360 Classify: 3 kept (1 vague for enrichment), 0 excluded

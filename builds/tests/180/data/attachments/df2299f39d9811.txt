@@ -1,0 +1,3 @@
+INFO     news_recap.recap.tasks.deduplicate:deduplicate.py:353 [cyan]dedup:[/cyan] Computing embeddings for 4 articles
+INFO     news_recap.recap.tasks.deduplicate:deduplicate.py:363 [cyan]dedup:[/cyan] 1 groups with 2 articles (threshold=0.90)
+INFO     news_recap.recap.tasks.deduplicate:deduplicate.py:274 [cyan]dedup:[/cyan] No duplicates found by LLM

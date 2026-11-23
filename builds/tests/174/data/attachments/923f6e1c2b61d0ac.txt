@@ -1,0 +1,2 @@
+DEBUG    news_recap.http.youtube_extractor:youtube_extractor.py:127 Primary transcript fetch failed for dQw4w9WgXcQ, trying fallback
+WARNING  news_recap.http.youtube_extractor:youtube_extractor.py:145 Transcript retrieval failed for dQw4w9WgXcQ: RuntimeError

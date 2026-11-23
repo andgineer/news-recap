@@ -1,0 +1,1 @@
+WARNING  news_recap.ingestion.repository:repository.py:140 Recovered stale running ingestion run (run_id=a7d0cc99-dc85-4e72-a055-21426e972bfc).

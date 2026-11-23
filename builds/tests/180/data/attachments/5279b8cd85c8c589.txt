@@ -1,0 +1,1 @@
+WARNING  news_recap.config:config.py:483 NEWS_RECAP_DEDUP_BACKEND=jev but TYPESAFE_API_KEY is not set (env, ./.env, /tmp/pytest-of-runner/pytest-0/test_dedup_backend_follows_the0/data/.env); dedup uses the LLM.

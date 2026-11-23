@@ -1,0 +1,3 @@
+           INFO     dedup: Computing embeddings for 4 articles                  
+           INFO     dedup: 1 groups with 2 articles (threshold=0.90)            
+           INFO     dedup: No duplicates found by LLM                           

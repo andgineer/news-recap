@@ -1,0 +1,1 @@
+WARNING  news_recap.user_config:user_config.py:45 Could not read config file /tmp/pytest-of-runner/pytest-0/test_load_corrupt_json0/config.json, using defaults

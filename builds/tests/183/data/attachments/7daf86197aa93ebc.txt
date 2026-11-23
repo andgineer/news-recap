@@ -1,0 +1,10 @@
+           INFO     recap_enrich: backend=cli agent=antigravity model=--model   
+                    gemini-3.7-flash --effort low timeout=600s                  
+           ERROR    recap_enrich: antigravity rejected '--model gemini-3.7-flash
+                    --effort low' and lists no other Flash model                
+           INFO     ✓ recap_enrich: Finished in 0.0s                            
+           ERROR    recap_enrich: agent stderr: Invalid model/effort selection —
+                    check the agent's --model flags                             
+                    Full agent log:                                             
+                    /tmp/pytest-of-runner/pytest-0/test_no_flash_model_keeps_the
+                    _0/out/agent_stderr.log                                     

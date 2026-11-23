@@ -1,0 +1,2 @@
+           ERROR    Dedup parse failure — raw agent stdout (first 500 chars):   
+                    CLUSTER 1:\nMERGED: Merged headline\n1, 2\n                 

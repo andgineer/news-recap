@@ -1,0 +1,59 @@
+           INFO     Pipeline starting: 0 articles, date=2026-10-17              
+           ERROR    Pipeline unexpected error                                   
+                    ╭─────────── Traceback (most recent call last) ────────────╮
+                    │ /home/runner/work/news-recap/news-recap/src/news_recap/r │
+                    │ ecap/flow.py:188 in recap_flow                           │
+                    │                                                          │
+                    │   185 │   ctx.save_checkpoint()                          │
+                    │   186 │                                                  │
+                    │   187 │   try:                                           │
+                    │ ❱ 188 │   │   Classify.run(ctx)                          │
+                    │   189 │   │   LoadResources.run(ctx)                     │
+                    │   190 │   │   Enrich.run(ctx)                            │
+                    │   191 │   │   Deduplicate.run(ctx)                       │
+                    │                                                          │
+                    │ /opt/hostedtoolcache/Python/3.13.16/x64/lib/python3.13/u │
+                    │ nittest/mock.py:1169 in __call__                         │
+                    │                                                          │
+                    │   1166 │   │   # in the signature                        │
+                    │   1167 │   │   self._mock_check_sig(*args, **kwargs)     │
+                    │   1168 │   │   self._increment_mock_call(*args, **kwargs │
+                    │ ❱ 1169 │   │   return self._mock_call(*args, **kwargs)   │
+                    │   1170 │                                                 │
+                    │   1171 │                                                 │
+                    │   1172 │   def _mock_call(self, /, *args, **kwargs):     │
+                    │                                                          │
+                    │ /opt/hostedtoolcache/Python/3.13.16/x64/lib/python3.13/u │
+                    │ nittest/mock.py:1173 in _mock_call                       │
+                    │                                                          │
+                    │   1170 │                                                 │
+                    │   1171 │                                                 │
+                    │   1172 │   def _mock_call(self, /, *args, **kwargs):     │
+                    │ ❱ 1173 │   │   return self._execute_mock_call(*args, **k │
+                    │   1174 │                                                 │
+                    │   1175 │   def _increment_mock_call(self, /, *args, **kw │
+                    │   1176 │   │   self.called = True                        │
+                    │                                                          │
+                    │ /opt/hostedtoolcache/Python/3.13.16/x64/lib/python3.13/u │
+                    │ nittest/mock.py:1240 in _execute_mock_call               │
+                    │                                                          │
+                    │   1237 │   │   │   │   if _is_exception(result):         │
+                    │   1238 │   │   │   │   │   raise result                  │
+                    │   1239 │   │   │   else:                                 │
+                    │ ❱ 1240 │   │   │   │   result = effect(*args, **kwargs)  │
+                    │   1241 │   │   │                                         │
+                    │   1242 │   │   │   if result is not DEFAULT:             │
+                    │   1243 │   │   │   │   return result                     │
+                    │                                                          │
+                    │ /home/runner/work/news-recap/news-recap/tests/recap/test │
+                    │ _flow.py:93 in fail                                      │
+                    │                                                          │
+                    │   90                                                     │
+                    │   91 def test_unexpected_error_is_recorded(tmp_path: Pat │
+                    │   92 │   def fail(_ctx) -> None:                         │
+                    │ ❱ 93 │   │   raise ValueError("bad json")                │
+                    │   94 │                                                   │
+                    │   95 │   assert _fail_run(tmp_path, fail).error == "Unex │
+                    │   96                                                     │
+                    ╰──────────────────────────────────────────────────────────╯
+                    ValueError: bad json                                        

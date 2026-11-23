@@ -1,0 +1,6 @@
+           INFO     dedup: Computing embeddings for 4 articles                  
+           INFO     dedup: 1 groups with 2 articles (threshold=0.90)            
+           INFO     dedup: 1 candidate group(s) + 1 wider pair(s) -> Jev        
+[12:32:17] INFO     dedup: merged headlines written for 1 of 1 group(s)         
+           INFO     dedup: 1 merge(s) → removed 2 duplicate(s), 2 articles      
+                    remain                                                      

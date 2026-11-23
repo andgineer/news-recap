@@ -1,0 +1,1 @@
+WARNING  news_recap.config:config.py:386 classify_backend = "jev" in config.toml but TYPESAFE_API_KEY is not set (env, ./.env, /tmp/pytest-of-runner/pytest-0/data501/.env); classify uses the LLM.

@@ -1,0 +1,1 @@
+WARNING  news_recap.http.fetcher:fetcher.py:74 Timeout fetching https://example.com/slow
